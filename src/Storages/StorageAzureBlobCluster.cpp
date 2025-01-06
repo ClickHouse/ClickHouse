@@ -32,14 +32,14 @@ namespace ErrorCodes
 StorageAzureBlobCluster::StorageAzureBlobCluster(
     const String & cluster_name_,
     const StorageAzureBlob::Configuration & configuration_,
-    std::unique_ptr<AzureObjectStorage> && object_storage_,
+    std::shared_ptr<AzureObjectStorage> object_storage_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const ContextPtr & context)
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageAzureBlobCluster (" + table_id_.table_name + ")"))
     , configuration{configuration_}
-    , object_storage(std::move(object_storage_))
+    , object_storage(object_storage_)
 {
     context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.getConnectionURL());
     StorageInMemoryMetadata storage_metadata;
@@ -49,15 +49,15 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
         ColumnsDescription columns;
         /// `format_settings` is set to std::nullopt, because StorageAzureBlobCluster is used only as table function
         if (configuration.format == "auto")
-            std::tie(columns, configuration.format) = StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context);
+            std::tie(columns, configuration.format) = StorageAzureBlob::getTableStructureAndFormatFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context);
         else
-            columns = StorageAzureBlob::getTableStructureFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context);
+            columns = StorageAzureBlob::getTableStructureFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context);
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (configuration.format == "auto")
-            configuration.format = StorageAzureBlob::getTableStructureAndFormatFromData(object_storage.get(), configuration, /*format_settings=*/std::nullopt, context).second;
+            configuration.format = StorageAzureBlob::getTableStructureAndFormatFromData(object_storage, configuration, /*format_settings=*/std::nullopt, context).second;
         storage_metadata.setColumns(columns_);
     }
 
@@ -79,7 +79,7 @@ void StorageAzureBlobCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, cons
 RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-        object_storage.get(), configuration.container, configuration.blob_path,
+        object_storage, configuration.container, configuration.blob_path,
         predicate, getVirtualsList(), context, nullptr);
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next().relative_path; });

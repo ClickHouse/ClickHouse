@@ -62,7 +62,7 @@ public:
 
     StorageAzureBlob(
         const std::optional<Configuration> & configuration_,
-        std::unique_ptr<AzureObjectStorage> && object_storage_,
+        std::shared_ptr<AzureObjectStorage> object_storage_,
         const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -120,13 +120,13 @@ public:
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
     static ColumnsDescription getTableStructureFromData(
-        AzureObjectStorage * object_storage,
+        std::shared_ptr<AzureObjectStorage> object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
-        AzureObjectStorage * object_storage,
+        std::shared_ptr<AzureObjectStorage> object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
@@ -140,7 +140,7 @@ protected:
 private:
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
         std::optional<String> format,
-        AzureObjectStorage * object_storage,
+        std::shared_ptr<AzureObjectStorage> object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
@@ -152,7 +152,7 @@ private:
     std::string name;
     std::optional<Configuration> configuration;
     mutable std::recursive_mutex configuration_update_mutex;
-    std::unique_ptr<AzureObjectStorage> object_storage;
+    std::shared_ptr<AzureObjectStorage> object_storage;
 
     const bool distributed_processing;
     ASTPtr partition_by;
@@ -175,7 +175,7 @@ public:
     {
     public:
         GlobIterator(
-            AzureObjectStorage * object_storage_,
+            std::shared_ptr<AzureObjectStorage> object_storage_,
             const std::string & container_,
             String blob_path_with_globs_,
             const ActionsDAG::Node * predicate,
@@ -188,7 +188,7 @@ public:
         ~GlobIterator() override = default;
 
     private:
-        AzureObjectStorage * object_storage;
+        std::shared_ptr<AzureObjectStorage> object_storage;
         std::string container;
         String blob_path_with_globs;
         ActionsDAGPtr filter_dag;
@@ -229,7 +229,7 @@ public:
     {
     public:
         KeysIterator(
-            AzureObjectStorage * object_storage_,
+            std::shared_ptr<AzureObjectStorage> object_storage_,
             const std::string & container_,
             const Strings & keys_,
             const ActionsDAG::Node * predicate,
@@ -242,7 +242,7 @@ public:
         ~KeysIterator() override = default;
 
     private:
-        AzureObjectStorage * object_storage;
+        std::shared_ptr<AzureObjectStorage> object_storage;
         std::string container;
         RelativePathsWithMetadata keys;
 
@@ -260,7 +260,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         UInt64 max_block_size_,
         String compression_hint_,
-        AzureObjectStorage * object_storage_,
+        std::shared_ptr<AzureObjectStorage> object_storage_,
         const String & container_,
         const String & connection_url_,
         std::shared_ptr<IIterator> file_iterator_,
@@ -284,7 +284,7 @@ private:
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
     String compression_hint;
-    AzureObjectStorage * object_storage;
+    std::shared_ptr<AzureObjectStorage> object_storage;
     String container;
     String connection_url;
     std::shared_ptr<IIterator> file_iterator;

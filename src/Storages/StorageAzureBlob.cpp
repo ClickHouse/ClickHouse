@@ -320,10 +320,10 @@ void registerStorageAzureBlob(StorageFactory & factory)
             auto configuration = std::get<StorageAzureBlob::Configuration>(configuration_or_collection_name);
             auto client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
             auto settings = StorageAzureBlob::createSettings(args.getContext());
-            auto object_storage  = std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container);
+            auto object_storage  = std::make_shared<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container);
             return std::make_shared<StorageAzureBlob>(
                 configuration,
-                std::move(object_storage),
+                object_storage,
                 args.getContext(),
                 args.table_id,
                 args.columns,
@@ -501,7 +501,7 @@ Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
 
 StorageAzureBlob::StorageAzureBlob(
     const std::optional<Configuration> & configuration_,
-    std::unique_ptr<AzureObjectStorage> && object_storage_,
+    std::shared_ptr<AzureObjectStorage> object_storage_,
     const ContextPtr & context,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -516,7 +516,7 @@ StorageAzureBlob::StorageAzureBlob(
     , format_settings(format_settings_)
     , name("AzureBlobStorage")
     , configuration(configuration_)
-    , object_storage(std::move(object_storage_))
+    , object_storage(object_storage_)
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
@@ -537,9 +537,9 @@ StorageAzureBlob::StorageAzureBlob(
         {
             ColumnsDescription columns;
             if (configuration->format == "auto")
-                std::tie(columns, configuration->format) = getTableStructureAndFormatFromData(object_storage.get(), *configuration, format_settings, context);
+                std::tie(columns, configuration->format) = getTableStructureAndFormatFromData(object_storage, *configuration, format_settings, context);
             else
-                columns = getTableStructureFromData(object_storage.get(), *configuration, format_settings, context);
+                columns = getTableStructureFromData(object_storage, *configuration, format_settings, context);
             storage_metadata.setColumns(columns);
         }
     }
@@ -547,7 +547,7 @@ StorageAzureBlob::StorageAzureBlob(
     {
         if (configuration.has_value()) {
             if (configuration->format == "auto")
-                configuration->format = getTableStructureAndFormatFromData(object_storage.get(), *configuration, format_settings, context).second;
+                configuration->format = getTableStructureAndFormatFromData(object_storage, *configuration, format_settings, context).second;
         }
 
         /// We don't allow special columns in File storage.
@@ -602,12 +602,12 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration() const {
 void StorageAzureBlob::reload(ContextPtr context_, ASTs engine_args) {
     auto new_configuration = StorageAzureBlob::getConfiguration(engine_args, context_);
     if (new_configuration.format == "auto") {
-        new_configuration.format = getTableStructureAndFormatFromData(object_storage.get(), new_configuration, format_settings, context_).second;
+        new_configuration.format = getTableStructureAndFormatFromData(object_storage, new_configuration, format_settings, context_).second;
     }
     FormatFactory::instance().checkFormatName(new_configuration.format);
     setConfiguration(new_configuration);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration->getConnectionURL());
-    object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorage", createClient(*configuration, false), createSettings(context_), configuration->container);
+    object_storage = std::make_shared<AzureObjectStorage>("AzureBlobStorage", createClient(*configuration, false), createSettings(context_), configuration->container);
     namedCollectionRestored();
 }
 
@@ -624,7 +624,7 @@ public:
         const ContextPtr & context,
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method,
-        AzureObjectStorage * object_storage,
+        std::shared_ptr<AzureObjectStorage> object_storage,
         const String & blob_path)
         : SinkToStorage(sample_block_)
         , sample_block(sample_block_)
@@ -721,7 +721,7 @@ public:
         const ContextPtr & context_,
         std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method_,
-        AzureObjectStorage * object_storage_,
+        std::shared_ptr<AzureObjectStorage> object_storage_,
         const String & blob_)
         : PartitionedSink(partition_by, context_, sample_block_), WithContext(context_)
         , format(format_)
@@ -753,7 +753,7 @@ private:
     const String format;
     const Block sample_block;
     const CompressionMethod compression_method;
-    AzureObjectStorage * object_storage;
+    std::shared_ptr<AzureObjectStorage> object_storage;
     const String blob;
     const std::optional<FormatSettings> format_settings;
 
@@ -867,13 +867,13 @@ void ReadFromAzureBlob::createIterator(const ActionsDAG::Node * predicate)
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-            storage->object_storage.get(), configuration->container, configuration->blob_path,
+            storage->object_storage, configuration->container, configuration->blob_path,
             predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
-            storage->object_storage.get(), configuration->container, configuration->blobs_paths,
+            storage->object_storage, configuration->container, configuration->blobs_paths,
             predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
 }
@@ -895,7 +895,7 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
             storage->format_settings,
             max_block_size,
             configuration.compression_method,
-            storage->object_storage.get(),
+            storage->object_storage,
             configuration.container,
             configuration.connection_url,
             iterator_wrapper,
@@ -931,7 +931,7 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             local_context,
             format_settings,
             chosen_compression_method,
-            object_storage.get(),
+            object_storage,
             new_configuration.blobs_paths.back());
     }
     else
@@ -978,7 +978,7 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             local_context,
             format_settings,
             chosen_compression_method,
-            object_storage.get(),
+            object_storage,
             new_configuration.blobs_paths.back());
     }
 }
@@ -1011,7 +1011,7 @@ bool StorageAzureBlob::parallelizeOutputAfterReading(ContextPtr context) const
 }
 
 StorageAzureBlobSource::GlobIterator::GlobIterator(
-    AzureObjectStorage * object_storage_,
+    std::shared_ptr<AzureObjectStorage> object_storage_,
     const std::string & container_,
     String blob_path_with_globs_,
     const ActionsDAG::Node * predicate,
@@ -1126,7 +1126,7 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 }
 
 StorageAzureBlobSource::KeysIterator::KeysIterator(
-    AzureObjectStorage * object_storage_,
+    std::shared_ptr<AzureObjectStorage> object_storage_,
     const std::string & container_,
     const Strings & keys_,
     const ActionsDAG::Node * predicate,
@@ -1254,7 +1254,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     std::optional<FormatSettings> format_settings_,
     UInt64 max_block_size_,
     String compression_hint_,
-    AzureObjectStorage * object_storage_,
+    std::shared_ptr<AzureObjectStorage> object_storage_,
     const String & container_,
     const String & connection_url_,
     std::shared_ptr<IIterator> file_iterator_,
@@ -1270,7 +1270,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , columns_desc(info.columns_description)
     , max_block_size(max_block_size_)
     , compression_hint(compression_hint_)
-    , object_storage(std::move(object_storage_))
+    , object_storage(object_storage_)
     , container(container_)
     , connection_url(connection_url_)
     , file_iterator(file_iterator_)
@@ -1392,7 +1392,7 @@ namespace
     public:
         ReadBufferIterator(
             const std::shared_ptr<StorageAzureBlobSource::IIterator> & file_iterator_,
-            AzureObjectStorage * object_storage_,
+            std::shared_ptr<AzureObjectStorage> object_storage_,
             std::optional<String> format_,
             const StorageAzureBlob::Configuration & configuration_,
             const std::optional<FormatSettings> & format_settings_,
@@ -1600,7 +1600,7 @@ namespace
         }
 
         std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
-        AzureObjectStorage * object_storage;
+        std::shared_ptr<AzureObjectStorage> object_storage;
         const StorageAzureBlob::Configuration & configuration;
         std::optional<String> format;
         const std::optional<FormatSettings> & format_settings;
@@ -1613,7 +1613,7 @@ namespace
 
 std::pair<ColumnsDescription, String> StorageAzureBlob::getTableStructureAndFormatFromDataImpl(
     std::optional<String> format,
-    AzureObjectStorage * object_storage,
+    std::shared_ptr<AzureObjectStorage> object_storage,
     const Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & ctx)
@@ -1638,7 +1638,7 @@ std::pair<ColumnsDescription, String> StorageAzureBlob::getTableStructureAndForm
 }
 
 std::pair<ColumnsDescription, String> StorageAzureBlob::getTableStructureAndFormatFromData(
-    DB::AzureObjectStorage * object_storage,
+    std::shared_ptr<DB::AzureObjectStorage> object_storage,
     const DB::StorageAzureBlob::Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
     const DB::ContextPtr & ctx)
@@ -1647,7 +1647,7 @@ std::pair<ColumnsDescription, String> StorageAzureBlob::getTableStructureAndForm
 }
 
 ColumnsDescription StorageAzureBlob::getTableStructureFromData(
-    DB::AzureObjectStorage * object_storage,
+    std::shared_ptr<DB::AzureObjectStorage> object_storage,
     const DB::StorageAzureBlob::Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
     const DB::ContextPtr & ctx)

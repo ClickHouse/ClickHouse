@@ -23,7 +23,7 @@ public:
     StorageAzureBlobCluster(
         const String & cluster_name_,
         const StorageAzureBlob::Configuration & configuration_,
-        std::unique_ptr<AzureObjectStorage> && object_storage_,
+        std::shared_ptr<AzureObjectStorage> object_storage_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -43,7 +43,7 @@ private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     StorageAzureBlob::Configuration configuration;
-    std::unique_ptr<AzureObjectStorage> object_storage;
+    std::shared_ptr<AzureObjectStorage> object_storage;
 };
 
 
