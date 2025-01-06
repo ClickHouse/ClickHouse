@@ -1,4 +1,3 @@
-{"progress":{}}
 {"progress":{"read_rows":"100000","read_bytes":"800000"}}
 {"meta":[{"name":"number","type":"UInt64"}]}
 {"row":{"number":"1"}}

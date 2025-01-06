@@ -76,6 +76,8 @@ void JSONEachRowWithProgressRowOutputFormat::writeMaxExtreme(const Columns & col
 
 void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & value)
 {
+    if (value.empty())
+        return;
     writeCString("{\"progress\":", *ostr);
     value.writeJSON(*ostr);
     writeCString("}\n", *ostr);
