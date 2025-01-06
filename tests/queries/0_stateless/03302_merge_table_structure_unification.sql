@@ -26,7 +26,6 @@ CREATE TABLE test_merge ENGINE = Merge(currentDatabase(), '^test_');
 -- TODO: defaults are not calculated
 SELECT * FROM test_merge ORDER BY a;
 
--- TODO: fix the order of columns
 DESCRIBE merge('^test_');
 
 -- Note that this will also pick up the test_merge table, duplicating the results

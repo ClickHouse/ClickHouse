@@ -205,7 +205,7 @@ ColumnsDescription StorageMerge::unifyColumnsDescription(std::function<void(std:
             }
             else if (column != res.get(column.name))
             {
-                res.modify(column.name, prev_column_name, prev_column_name.empty(), [&column](ColumnDescription & what)
+                res.modify(column.name, [&column](ColumnDescription & what)
                 {
                     what.type = getLeastSupertypeOrVariant(DataTypes{what.type, column.type});
                     if (what.default_desc != column.default_desc)
