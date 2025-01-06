@@ -407,7 +407,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return Path.cwd()
+        return str(Path.cwd())
 
     @staticmethod
     def cpu_count():

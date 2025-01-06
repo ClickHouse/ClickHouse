@@ -165,8 +165,8 @@ def main():
         is_new_ci = True
         for option in check_name.split(","):
             if '/' in option:
-                job_batch = int(option.slit('/')[0]) - 1
-                total_batches = int(option.slit('/')[1])
+                job_batch = int(option.split('/')[0]) - 1
+                total_batches = int(option.split('/')[1])
                 break
 
     if "RUN_BY_HASH_NUM" in os.environ:
