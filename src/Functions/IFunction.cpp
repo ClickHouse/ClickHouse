@@ -191,7 +191,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     NullPresence null_presence = getNullPresense(args);
 
-    if (null_presence.has_null_constant || null_presence.has_nullable)
+    if (null_presence.has_null_constant)
     {
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
