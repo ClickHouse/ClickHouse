@@ -444,6 +444,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }},*/
     {"max_number_of_partitions_for_independent_aggregation",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 15)); }},
+    {"max_parallel_replicas", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }},
     {"max_parsing_threads",
      [](RandomGenerator & rg, std::string & ret)
      {
@@ -676,10 +677,28 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"output_format_values_escape_quote_with_quote", trueOrFalse},
     {"output_format_write_statistics", trueOrFalse},
     {"page_cache_inject_eviction", trueOrFalse},
+    {"parallel_replica_offset", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }},
     {"parallel_replicas_allow_in_with_subquery", trueOrFalse},
+    {"parallel_replicas_count", [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }},
     {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalse},
     {"parallel_replicas_index_analysis_only_on_coordinator", trueOrFalse},
+    {"parallel_replicas_custom_key_range_lower",
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"parallel_replicas_custom_key_range_upper",
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"parallel_replicas_local_plan", trueOrFalse},
+    {"parallel_replicas_mark_segment_size",
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"parallel_replicas_min_number_of_rows_per_replica",
+     [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+    {"parallel_replicas_mode",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices = {"sampling_key", "read_tasks", "custom_key_range", "custom_key_sampling", "auto"};
+         ret += "'";
+         ret += rg.pickRandomlyFromVector(choices);
+         ret += "'";
+     }},
     {"parallel_replicas_prefer_local_join", trueOrFalse},
     {"parallel_view_processing", trueOrFalse},
     {"parallelize_output_from_storages", trueOrFalse},

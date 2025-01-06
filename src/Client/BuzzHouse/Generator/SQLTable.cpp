@@ -11,11 +11,11 @@ namespace BuzzHouse
 void collectColumnPaths(
     const std::string cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
-    ArrayType * at;
-    MapType * mt;
-    TupleType * ttp;
-    NestedType * ntp;
-    JSONType * jt;
+    ArrayType * at = nullptr;
+    MapType * mt = nullptr;
+    TupleType * ttp = nullptr;
+    NestedType * ntp = nullptr;
+    JSONType * jt = nullptr;
 
     checkStackSize();
     // Append this node to the path
@@ -31,29 +31,29 @@ void collectColumnPaths(
         paths.push_back(next);
         next.path.pop_back();
     }
-    else if ((flags & collect_generated) != 0 && (at = dynamic_cast<ArrayType *>(tp)))
+    else if ((flags & collect_generated) != 0 && ((at = dynamic_cast<ArrayType *>(tp)) || (mt = dynamic_cast<MapType *>(tp))))
     {
         uint32_t i = 1;
 
         next.path.push_back(ColumnPathChainEntry("size0", size_tp));
         paths.push_back(next);
         next.path.pop_back();
-        while ((at = dynamic_cast<ArrayType *>(at->subtype)))
+        while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
         {
             next.path.push_back(ColumnPathChainEntry("size" + std::to_string(i), size_tp));
             paths.push_back(next);
             next.path.pop_back();
             i++;
         }
-    }
-    else if ((flags & collect_generated) != 0 && (mt = dynamic_cast<MapType *>(tp)))
-    {
-        next.path.push_back(ColumnPathChainEntry("keys", mt->key));
-        paths.push_back(next);
-        next.path.pop_back();
-        next.path.push_back(ColumnPathChainEntry("values", mt->value));
-        paths.push_back(next);
-        next.path.pop_back();
+        if (mt)
+        {
+            next.path.push_back(ColumnPathChainEntry("keys", mt->key));
+            paths.push_back(next);
+            next.path.pop_back();
+            next.path.push_back(ColumnPathChainEntry("values", mt->value));
+            paths.push_back(next);
+            next.path.pop_back();
+        }
     }
     else if ((flags & flat_tuple) != 0 && (ttp = dynamic_cast<TupleType *>(tp)))
     {
