@@ -58,11 +58,11 @@ std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
     std::vector<String> answer{};
     if (multidisk_commands.contains(command_ptr->command_name))
     {
-        answer = client->getAllFilesByPatternFromInitializedDisks("");
+        answer = client->getAllFilesByPatternFromInitializedDisks("", true);
     }
     else
     {
-        answer = client->getCurrentDiskWithPath().getAllFilesByPattern("");
+        answer = client->getCurrentDiskWithPath().getAllFilesByPattern("", true);
     }
     for (const auto & disk_name : client->getAllDiskNames())
     {
@@ -150,6 +150,8 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         return {last_token};
     }
 
+    std::cerr << last_token << std::endl;
+
     std::vector<String> answer = {};
     if (command->command_name == "help")
         return getCommandsToComplete(last_token);
@@ -157,10 +159,13 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     answer = [&]() -> std::vector<String>
     {
         if (multidisk_commands.contains(command->command_name))
-            return client->getAllFilesByPatternFromInitializedDisks(last_token);
+            return client->getAllFilesByPatternFromInitializedDisks(last_token, true);
 
-        return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
+        return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token, true);
     }();
+
+    std::cerr << answer.size() << std::endl;
+
 
     for (const auto & disk_name : client->getAllDiskNames())
     {
@@ -169,6 +174,9 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
             answer.push_back(disk_name);
         }
     }
+
+    std::cerr << answer.size() << std::endl;
+
     for (const auto & option : command->options_description.options())
     {
         String option_sign = "--" + option->long_name();
@@ -177,6 +185,8 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
             answer.push_back(option_sign);
         }
     }
+
+    std::cerr << answer.size() << std::endl;
 
     if (!answer.empty())
     {
@@ -309,7 +319,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("touch", makeCommandTouch());
     command_descriptions.emplace("init", makeCommandInit());
     command_descriptions.emplace("help", makeCommandHelp(*this));
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
     for (const auto & [command_name, command_ptr] : command_descriptions)

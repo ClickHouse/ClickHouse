@@ -17,8 +17,11 @@ A utility providing filesystem-like operations for ClickHouse disks. It can work
 * `--query, -q` -- single query that can be executed without launching interactive mode
 * `--help, -h` -- print all the options and commands with description
 
+## Lazy initialization
+All disks which are available in config are initialized lazily. You need to use `init` command to explicitly initialize each of them. This is done to make the utility more robust and to avoid touching of disks which are described in config but can fail during initialization. However, there should be a disk which is initialized at the clickhouse-disks launch. This disk is specified with parameter `--disk` through command-line (default value is `default`).
+
 ## Default Disks
-After the launch two disks are initialized. The first one is a disk `local` that is supposed to imitate local file system from which clickhouse-disks utility was launched. The second one is a disk `default` that is mounted to the local filesystem in the directory that can be found in config as a parameter `clickhouse/path` (default value is `/var/lib/clickhouse`).
+After the launch two disks which are not specified in config but available for initialization. The first one is a disk `local` that is supposed to imitate local file system from which clickhouse-disks utility was launched (initial path is directory from which clickhouse-disks was launched, mount point is fs root directory). The second one is a disk `default` that is mounted to the local filesystem in the directory that can be found in config as a parameter `clickhouse/path` (default value is `/var/lib/clickhouse`) with initial path `/`.
 
 ## Clickhouse-disks state
 For each disk that was added the utility stores current directory (as in a usual filesystem). User can change current directory and switch between disks.
@@ -29,6 +32,8 @@ State is reflected in a prompt "`disk_name`:`path_name`"
 
 In these documentation file all mandatory positional arguments are referred as `<parameter>`, named arguments are referred as `[--parameter value]`. All positional parameters could be mentioned as a named parameter with a corresponding name.
 
+* `init (initialize, initialise, add, add-disk, add_disk, init-disk, init_disk) [--path path, --switch] <disk>`
+  Initialize disk `disk` with initial path `path` and switch to it if `--switch` is specified. If `--path` is not specified, the initial path is set to `/` or launch path for `local` disk.
 * `cd (change-dir, change_dir) [--disk disk] <path>`
   Change directory to path `path` on disk `disk` (default value is a current disk). No disk switching happens.
 * `copy (cp) [--disk-from disk_1] [--disk-to disk_2] <path-from> <path-to>`.

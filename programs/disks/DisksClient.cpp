@@ -61,34 +61,43 @@ std::vector<String> DiskWithPath::listAllFilesByPath(const String & any_path) co
     return {};
 }
 
-std::vector<String> DiskWithPath::getAllFilesByPattern(const String & pattern) const
+std::vector<String> DiskWithPath::getAllFilesByPattern(const String & pattern, bool ignore_exception) const
 {
-    auto [path_before, path_after] = [&]() -> std::pair<String, String>
-    {
-        auto slash_pos = pattern.find_last_of('/');
-        if (slash_pos >= pattern.size())
-            return {"", pattern};
-
-        return {pattern.substr(0, slash_pos + 1), pattern.substr(slash_pos + 1, pattern.size() - slash_pos - 1)};
-    }();
-
-    if (!isDirectory(path_before))
-        return {};
-
-    std::vector<String> file_names = listAllFilesByPath(path_before);
     std::vector<String> answer;
-
-    for (const auto & file_name : file_names)
+    try
     {
-        if (file_name.starts_with(path_after))
+        auto [path_before, path_after] = [&]() -> std::pair<String, String>
         {
-            String file_pattern = path_before + file_name;
-            if (isDirectory(file_pattern))
+            auto slash_pos = pattern.find_last_of('/');
+            if (slash_pos >= pattern.size())
+                return {"", pattern};
+
+            return {pattern.substr(0, slash_pos + 1), pattern.substr(slash_pos + 1, pattern.size() - slash_pos - 1)};
+        }();
+
+        if (!isDirectory(path_before))
+            return {};
+
+        std::vector<String> file_names = listAllFilesByPath(path_before);
+
+        for (const auto & file_name : file_names)
+        {
+            if (file_name.starts_with(path_after))
             {
-                file_pattern = file_pattern + "/";
+                String file_pattern = path_before + file_name;
+                if (isDirectory(file_pattern))
+                {
+                    file_pattern = file_pattern + "/";
+                }
+                answer.push_back(file_pattern);
             }
-            answer.push_back(file_pattern);
         }
+        return answer;
+    }
+    catch (...)
+    {
+        if (!ignore_exception)
+            throw;
     }
     return answer;
 };
@@ -136,7 +145,7 @@ String DiskWithPath::normalizePath(const String & path)
 DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_)
     : config(config_), context(std::move(context_))
 {
-    String begin_disk = config.getString("disk", "default");
+    String begin_disk = config.getString("disk", DEFAULT_DISK_NAME);
     String config_prefix = "storage_configuration.disks";
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -298,14 +307,23 @@ std::vector<String> DisksClient::getAllDiskNames() const
 }
 
 
-std::vector<String> DisksClient::getAllFilesByPatternFromInitializedDisks(const String & pattern) const
+std::vector<String> DisksClient::getAllFilesByPatternFromInitializedDisks(const String & pattern, bool ignore_exception) const
 {
     std::vector<String> answer{};
     for (const auto & [_, disk] : disks_with_paths)
     {
-        for (auto & word : disk.getAllFilesByPattern(pattern))
+        try
         {
-            answer.push_back(word);
+            std::cerr << disk.getDisk()->getName() << std::endl;
+            for (auto & word : disk.getAllFilesByPattern(pattern, ignore_exception))
+            {
+                answer.push_back(word);
+            }
+        }
+        catch (...)
+        {
+            if (!ignore_exception)
+                throw;
         }
     }
     return answer;
@@ -324,12 +342,24 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
 
     DiskPtr disk = postponed_disks.at(disk_name).first();
     chassert(disk_name == disk->getName());
-    created_disks.emplace(disk_name, disk);
+    auto disk_with_path = DiskWithPath{disk, path};
     if (!path.has_value())
     {
         path = postponed_disks.at(disk_name).second;
     }
-    postponed_disks.erase(disk_name);
-    disks_with_paths.emplace(disk_name, DiskWithPath{disk, path});
+
+    // This should be the noexcept block of code not to break the invariants in program. We hope there is no room for exception here.
+    try
+    {
+        created_disks.emplace(disk_name, disk);
+        postponed_disks.erase(disk_name);
+        disks_with_paths.emplace(disk_name, std::move(disk_with_path));
+    }
+    catch (...)
+    {
+        LOG_FATAL(
+            &Poco::Logger::get("DisksClient"), "Disk {} was not created, which leaded to broken invariants in the program", disk_name);
+        std::terminate();
+    }
 }
 }
