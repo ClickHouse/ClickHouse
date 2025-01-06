@@ -1029,11 +1029,9 @@ def test_max_set_age(started_cluster):
             "tracked_file_ttl_sec": max_age,
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
-            "loading_retries": 0,
             "polling_max_timeout_ms": 5000,
             "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
-            "loading_retries": 0,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -2241,8 +2239,9 @@ def test_alter_settings(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "processing_threads_num": 10,
-            "loading_retries": 20,
+            "s3queue_processing_threads_num": 10,
+            "s3queue_loading_retries": 20,
+            "s3queue_tracked_files_limit": 1000,
         },
         database_name="r",
     )
@@ -2284,24 +2283,32 @@ def test_alter_settings(started_cluster):
         f"""
         ALTER TABLE r.{table_name}
         MODIFY SETTING processing_threads_num=5,
-        loading_retries=10,
+        loading_retries=44,
         after_processing='delete',
         tracked_files_limit=50,
         tracked_file_ttl_sec=10000,
         polling_min_timeout_ms=222,
-        polling_max_timeout_ms=333,
-        polling_backoff_ms=111
+        s3queue_polling_max_timeout_ms=333,
+        polling_backoff_ms=111,
+        max_processed_files_before_commit=444,
+        s3queue_max_processed_rows_before_commit=555,
+        max_processed_bytes_before_commit=666,
+        max_processing_time_sec_before_commit=777
     """
     )
 
     int_settings = {
         "processing_threads_num": 5,
-        "loading_retries": 10,
+        "loading_retries": 44,
         "tracked_files_ttl_sec": 10000,
         "tracked_files_limit": 50,
         "polling_min_timeout_ms": 222,
         "polling_max_timeout_ms": 333,
         "polling_backoff_ms": 111,
+        "max_processed_files_before_commit": 444,
+        "max_processed_rows_before_commit": 555,
+        "max_processed_bytes_before_commit": 666,
+        "max_processing_time_sec_before_commit": 777,
     }
     string_settings = {"after_processing": "delete"}
 
@@ -2353,7 +2360,7 @@ def test_alter_settings(started_cluster):
 
     node1.query(
         f"""
-        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec
+        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec, loading_retries, s3queue_tracked_files_limit
     """
     )
 
@@ -2361,7 +2368,7 @@ def test_alter_settings(started_cluster):
         "processing_threads_num": 5,
         "loading_retries": 10,
         "tracked_files_ttl_sec": 0,
-        "tracked_files_limit": 50,
+        "tracked_files_limit": 1000,
     }
     string_settings = {"after_processing": "keep"}
 
@@ -2666,7 +2673,8 @@ def test_upgrade_3(started_cluster):
     node.query(f"DROP TABLE {table_name} SYNC")
 
 
-def test_migration(started_cluster):
+@pytest.mark.parametrize("setting_prefix", ["", "s3queue_"])
+def test_migration(started_cluster, setting_prefix):
     node1 = started_cluster.instances["instance3_24.5"]
     node2 = started_cluster.instances["instance4_24.5"]
 
@@ -2763,7 +2771,7 @@ def test_migration(started_cluster):
     assert (
         "Changing setting buckets is not allowed only with detached dependencies"
         in node1.query_and_get_error(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING buckets={buckets_num}"
+            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num}"
         )
     )
 
@@ -2773,12 +2781,12 @@ def test_migration(started_cluster):
     assert (
         "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1"
         in node1.query_and_get_error(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING buckets={buckets_num}"
+            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num}"
         )
     )
 
     node1.query(
-        f"ALTER TABLE r.{table_name} MODIFY SETTING buckets={buckets_num} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
+        f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
     )
 
     for node in [node1, node2]:

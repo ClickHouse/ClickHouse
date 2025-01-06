@@ -232,7 +232,6 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     bool refresh_append;
-    bool in_database_replicated;
 
     RefreshSet::Handle set_handle;
 
