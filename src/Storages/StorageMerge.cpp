@@ -207,7 +207,7 @@ ColumnsDescription StorageMerge::unifyColumnsDescription(std::function<void(std:
             {
                 res.modify(column.name, prev_column_name, prev_column_name.empty(), [&column](ColumnDescription & what)
                 {
-                    what.type = getLeastSupertype(DataTypes{what.type, column.type});
+                    what.type = getLeastSupertypeOrVariant(DataTypes{what.type, column.type});
                     if (what.default_desc != column.default_desc)
                         what.default_desc = {};
                 });
