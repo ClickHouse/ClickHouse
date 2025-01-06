@@ -90,6 +90,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
 {
+    lazyInitialize();
 }
 
 StorageObjectStorageSource::~StorageObjectStorageSource()
