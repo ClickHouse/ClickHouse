@@ -45,28 +45,30 @@ BlockIO InterpreterParallelWithQuery::execute()
 
     LOG_TRACE(log, "Executing {} subqueries in {} threads", subqueries.size(), max_threads);
 
-    ThreadPoolCallbackRunnerUnsafe<void> schedule;
-    std::unique_ptr<ThreadPool> thread_pool;
-
     if (max_threads > 1)
     {
-        thread_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::ParallelWithQueryThreads,
-            CurrentMetrics::ParallelWithQueryActiveThreads,
-            CurrentMetrics::ParallelWithQueryScheduledThreads,
-            max_threads);
-        schedule = threadPoolCallbackRunnerUnsafe<void>(*thread_pool, "ParallelWithQry");
+        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::ParallelWithQueryThreads,
+                                                   CurrentMetrics::ParallelWithQueryActiveThreads,
+                                                   CurrentMetrics::ParallelWithQueryScheduledThreads,
+                                                   max_threads);
+        runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, "ParallelWithQry");
     }
 
-    executeSubqueries(subqueries, schedule);
-    waitFutures(/* throw_if_error = */ true);
-    waitBigPipeline();
+    /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
+    /// one combined pipeline.
+    executeSubqueries(subqueries);
+
+    if (runner)
+        runner->waitForAllToFinishAndRethrowFirstError();
+
+    /// Execute the combined pipeline if now we have it.
+    executeCombinedPipeline();
 
     return {};
 }
 
 
-void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries, ThreadPoolCallbackRunnerUnsafe<void> schedule)
+void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 {
     for (const auto & subquery : subqueries)
     {
@@ -93,15 +95,14 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries, Th
                 }
             };
 
-            if (schedule)
-                futures.push_back(schedule(callback, Priority{}));
+            if (runner)
+                (*runner)(callback);
             else
                 callback();
         }
         catch (...)
         {
             error_found = true;
-            waitFutures(/* throw_if_error = */ false);
             throw;
         }
     }
@@ -134,55 +135,26 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
         if (subquery->getQueryKind() == IAST::QueryKind::Select)
             reason += " (Use UNION to combine select queries)";
 
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
                         subquery->formatForLogging(), reason);
     }
 
     chassert(pipeline.completed());
     std::lock_guard lock{mutex};
-    big_pipeline.addCompletedPipeline(std::move(pipeline));
+    combined_pipeline.addCompletedPipeline(std::move(pipeline));
 
     /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
 }
 
 
-void InterpreterParallelWithQuery::waitFutures(bool throw_if_error)
-{
-    std::exception_ptr error;
-
-    /// Wait for all tasks to finish.
-    for (auto & future : futures)
-    {
-        try
-        {
-            future.get();
-        }
-        catch (...)
-        {
-            if (!error)
-                error = std::current_exception();
-        }
-    }
-
-    if (error)
-    {
-        if (throw_if_error)
-            std::rethrow_exception(error);
-        else
-            tryLogException(error, log);
-    }
-
-    futures.clear();
-}
-
-
-void InterpreterParallelWithQuery::waitBigPipeline()
+void InterpreterParallelWithQuery::executeCombinedPipeline()
 {
     std::lock_guard lock{mutex};
-    if (!big_pipeline.initialized())
-        return; /// `big_pipeline` is empty, skipping
+    if (!combined_pipeline.initialized())
+        return; /// `combined_pipeline` is empty, skipping
 
-    CompletedPipelineExecutor executor(big_pipeline);
+    CompletedPipelineExecutor executor(combined_pipeline);
     executor.execute();
 }
 

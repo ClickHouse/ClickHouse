@@ -16,16 +16,17 @@ public:
     BlockIO execute() override;
 
 private:
-    void executeSubqueries(const ASTs & subqueries, ThreadPoolCallbackRunnerUnsafe<void> schedule);
+    void executeSubqueries(const ASTs & subqueries);
     void executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context);
     void waitFutures(bool throw_if_error);
-    void waitBigPipeline();
+    void executeCombinedPipeline();
 
     ASTPtr query;
     LoggerPtr log;
-    std::vector<std::future<void>> futures;
+    std::unique_ptr<ThreadPool> thread_pool;
+    std::unique_ptr<ThreadPoolCallbackRunnerLocal<void>> runner;
     std::atomic<bool> error_found = false;
-    QueryPipeline big_pipeline TSA_GUARDED_BY(mutex);
+    QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
