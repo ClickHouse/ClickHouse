@@ -354,6 +354,20 @@ void KafkaConsumer::subscribe()
     doPoll();
 }
 
+void KafkaConsumer::subscribe(String topic, int partition, long offset)
+{
+    cppkafka::TopicPartitionList partitions;
+    partitions.push_back(cppkafka::TopicPartition(topic, partition, offset));
+    consumer->assign(partitions);
+    LOG_DEBUG(log, "Assign to topic: {}, partition: {}, offset: {}", topic, partition, offset);
+
+    cleanUnprocessed();
+
+    // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
+    if (stalled_status != CONSUMER_STOPPED)
+        stalled_status = NO_MESSAGES_RETURNED;
+}
+
 void KafkaConsumer::cleanUnprocessed()
 {
     messages.clear();

@@ -48,6 +48,7 @@ public:
 
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
+    void subscribe(String topic, int partition, long offset);
 
     // used during exception processing to restart the consumption from last committed offset
     // Notes: duplicates can appear if the some data were already flushed
