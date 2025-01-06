@@ -247,6 +247,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     {
         std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
+        if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
         {
             Coordination::Requests requests;
             std::string processed_node_data;
@@ -274,12 +275,33 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                     processed_node_stat = get_response->stat;
 
                     LOG_TEST(log, "Current max processed file {} from path: {}",
-                                processed_node->file_path, processed_node_path);
+                             processed_node->file_path, processed_node_path);
 
                     if (!processed_node->file_path.empty() && path <= processed_node->file_path)
                     {
                         return {false, FileStatus::State::Processed};
                     }
+                }
+            }
+        }
+        else
+        {
+            NodeMetadata node_metadata;
+            if (getMaxProcessedFile(node_metadata, &processed_node_stat, zk_client))
+            {
+                if (zk_client->exists(failed_node_path))
+                {
+                    LOG_TEST(log, "File {} is Failed", path);
+                    return {false, FileStatus::State::Failed};
+                }
+
+                processed_node.emplace(node_metadata);
+                LOG_TEST(log, "Current max processed file {} from path: {}",
+                         processed_node->file_path, processed_node_path);
+
+                if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                {
+                    return {false, FileStatus::State::Processed};
                 }
             }
         }
