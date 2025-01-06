@@ -1,13 +1,11 @@
-# rebuild in #33610
 # docker build -t clickhouse/integration-test .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:19.1.4"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
 #    && apt-get install \
@@ -63,8 +61,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-#COPY requirements.txt /
-#RUN pip3 install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
@@ -81,7 +79,7 @@ RUN arch=${TARGETARCH:-amd64} \
   && rpm2archive mysql-odbc.rpm \
   && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
   && rm mysql-odbc.rpm mysql-odbc.rpm.tgz \
-  && ODBC_DIR=$(dpkg -L odbc-postgresql | rg '^/usr/lib/.*-linux-gnu/odbc$') \
+  && ODBC_DIR=$(dpkg -L odbc-postgresql | grep '^/usr/lib/.*-linux-gnu/odbc$') \
   && ln -s /usr/lib64/libmyodbc8a.so "$ODBC_DIR" \
   && ln -s /usr/lib64/libmyodbc8a.so "$ODBC_DIR"/libmyodbc.so
 
