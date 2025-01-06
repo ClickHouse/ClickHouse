@@ -6,6 +6,7 @@ sidebar_label: Other
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 # Other Functions
 
@@ -1508,6 +1509,8 @@ Result:
 ```
 
 ## neighbor
+
+<DeprecatedBadge/>
 
 The window function that provides access to a row at a specified offset before or after the current row of a given column.
 

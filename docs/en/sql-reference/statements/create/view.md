@@ -4,6 +4,7 @@ sidebar_position: 37
 sidebar_label: VIEW
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
@@ -150,7 +151,9 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View [Deprecated]
+## Live View
+
+<DeprecatedBadge/>
 
 This feature is deprecated and will be removed in the future.
 
