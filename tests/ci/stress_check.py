@@ -162,9 +162,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     if check_name.startswith("amd_") or check_name.startswith("arm_"):
         # this is praktika based CI
         print("Copy input *.deb artifacts")
-        assert Shell.check(
-            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
-        )
+        assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
         docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
