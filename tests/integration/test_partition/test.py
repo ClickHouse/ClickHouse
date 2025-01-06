@@ -492,7 +492,7 @@ def test_system_detached_parts(drop_detached_parts_table):
             q("alter table sdp_{} attach partition id '{}'".format(i, p))
 
     assert (
-        q("select n, x, count() from merge('default', 'sdp_') group by n, x")
+        q("select n, x::String, count() from merge('default', '^sdp_') group by ALL")
         == "0\t0\t4\n1\t1\t4\n"
     )
 
