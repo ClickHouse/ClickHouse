@@ -27,6 +27,9 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
+
+#if defined(__x86_64__)
+
 #include <llvm/Transforms/Scalar/InstSimplifyPass.h>
 #include <llvm/Transforms/Scalar/LoopRotation.h>
 #include <llvm/Transforms/Scalar/LoopReroll.h>
@@ -53,6 +56,8 @@
 #include <llvm/Transforms/IPO/SCCP.h>
 #include <llvm/Transforms/IPO/MergeFunctions.h>
 #include <llvm/Transforms/IPO/GlobalOpt.h>
+
+#endif
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
@@ -522,8 +527,11 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     pto.MergeFunctions = true;
     //pto.LoopInterleaving = true;
     //pto.LoopVectorization = true;
-
+#if defined(__x86_64__)
     llvm::PassBuilder pb(machine.get(), pto);
+#else
+    llvm::PassBuilder pb(nullptr, pto);
+#endif
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
@@ -531,6 +539,8 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     pb.registerLoopAnalyses(lam);
     //pb.registerMachineFunctionAnalyses(mfm);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+#if defined(__x86_64__)
 
     llvm::FunctionPassManager FPM;
 
@@ -584,7 +594,11 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 
     FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM)));
 
+#endif
+
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+
+#if defined(__x86_64__)
     mpm.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
 
     // Inlines parts of functions (e.g. if-statements if they surround a function body)
@@ -597,6 +611,7 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     mpm.addPass(llvm::MergeFunctionsPass());
     // Removes unused global variables
     mpm.addPass(llvm::GlobalOptPass());
+#endif
 
     mpm.run(module, mam);
 }
