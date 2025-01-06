@@ -228,18 +228,23 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
 
     node1.stop_clickhouse()
 
+    num_tables = 2
+
     for i in range(10):
         exec_id = node1.start_clickhouse()
         assert exec_id is not None
 
         if i == 0:
             node1.query("select '===test_refresh_vs_shutdown_smoke start==='")
-            node1.query(
-                "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
-            )
+            for j in range(num_tables):
+                node1.query(
+                    f"create materialized view re.a{j} refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
+                )
 
         if randint(0, 1):
-            node1.query("system refresh view re.a")
+            for j in range(num_tables):
+                if randint(0, 1):
+                    node1.query(f"system refresh view re.a{j}")
         r = randint(0, 2)
         if r == 1:
             time.sleep(randint(0, 10) / 1000)

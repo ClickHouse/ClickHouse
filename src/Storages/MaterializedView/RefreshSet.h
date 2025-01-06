@@ -85,6 +85,7 @@ private:
     InnerTableMap inner_tables;
 
     std::atomic<bool> refreshes_stopped {false};
+    std::chrono::steady_clock::time_point refreshes_stopped_at;
 
     RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
     void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);
