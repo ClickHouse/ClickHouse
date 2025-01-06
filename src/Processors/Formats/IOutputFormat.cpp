@@ -65,14 +65,6 @@ static Chunk prepareTotals(Chunk chunk)
 
 void IOutputFormat::work()
 {
-    std::lock_guard lock(writing_mutex);
-
-    if (has_progress_update_to_write)
-    {
-        writeProgress(statistics.progress);
-        has_progress_update_to_write = false;
-    }
-
     writePrefixIfNeeded();
 
     if (finished && !finalized)
@@ -81,9 +73,9 @@ void IOutputFormat::work()
             setRowsBeforeLimit(rows_before_limit_counter->get());
         if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
             setRowsBeforeAggregation(rows_before_aggregation_counter->get());
-        finalizeUnlocked();
+        finalize();
         if (auto_flush)
-            flushImpl();
+            flush();
         return;
     }
 
@@ -109,40 +101,26 @@ void IOutputFormat::work()
     }
 
     if (auto_flush)
-        flushImpl();
+        flush();
 
     has_input = false;
 }
 
-void IOutputFormat::flushImpl()
+void IOutputFormat::flush()
 {
     out.next();
 }
 
-void IOutputFormat::flush()
-{
-    std::lock_guard lock(writing_mutex);
-    flushImpl();
-}
-
 void IOutputFormat::write(const Block & block)
 {
-    std::lock_guard lock(writing_mutex);
-
-    if (has_progress_update_to_write)
-    {
-        writeProgress(statistics.progress);
-        has_progress_update_to_write = false;
-    }
-
     writePrefixIfNeeded();
     consume(Chunk(block.getColumns(), block.rows()));
 
     if (auto_flush)
-        flushImpl();
+        flush();
 }
 
-void IOutputFormat::finalizeUnlocked()
+void IOutputFormat::finalize()
 {
     if (finalized)
         return;
@@ -151,28 +129,6 @@ void IOutputFormat::finalizeUnlocked()
     finalizeImpl();
     finalizeBuffers();
     finalized = true;
-}
-
-void IOutputFormat::finalize()
-{
-    std::lock_guard lock(writing_mutex);
-    finalizeUnlocked();
-}
-
-void IOutputFormat::onProgress(const Progress & progress)
-{
-    statistics.progress.incrementPiecewiseAtomically(progress);
-    if (writesProgressConcurrently())
-    {
-        std::unique_lock lock(writing_mutex, std::try_to_lock);
-        if (lock)
-        {
-            writeProgress(statistics.progress);
-            has_progress_update_to_write = false;
-        }
-        else
-            has_progress_update_to_write = true;
-    }
 }
 
 }

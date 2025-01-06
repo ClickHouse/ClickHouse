@@ -1,20 +1,16 @@
 ---
 slug: /en/operations/system-tables/query_thread_log
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # query_thread_log
-
-<SystemTableCloud/>
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
 To start logging:
 
-1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#query_thread_log) section.
+1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
 2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 

@@ -159,7 +159,7 @@ protected:
 };
 
 template <typename Derived, typename Base, typename Visitor>
-class Visitable : public Base  /// NOLINT(bugprone-crtp-constructor-accessibility)
+class Visitable : public Base
 {
 public:
     void accept(Visitor & visitor) override { visitor.visit(*static_cast<Derived *>(this)); }

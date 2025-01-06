@@ -3,11 +3,8 @@ slug: /en/sql-reference/statements/alter/statistics
 sidebar_position: 45
 sidebar_label: STATISTICS
 ---
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Manipulating Column Statistics
-
-<ExperimentalBadge/>
 
 The following operations are available:
 

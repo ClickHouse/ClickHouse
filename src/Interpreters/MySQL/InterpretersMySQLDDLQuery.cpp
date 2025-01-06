@@ -55,10 +55,12 @@ static inline String resolveDatabase(
             /// USE replica_mysql_database; CREATE TABLE replica_mysql_database.table_name;
             return replica_clickhouse_database;
         }
-
-        /// USE other_database_name; CREATE TABLE other_database_name.table_name;
-        /// USE replica_mysql_database; CREATE TABLE other_database_name.table_name;
-        return "";
+        else
+        {
+            /// USE other_database_name; CREATE TABLE other_database_name.table_name;
+            /// USE replica_mysql_database; CREATE TABLE other_database_name.table_name;
+            return "";
+        }
     }
 
     /// When USE other_database_name; CREATE TABLE table_name;
@@ -103,7 +105,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
             if (is_unsigned)
             {
                 /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
-                if (type_name_upper.contains("INT") && !endsWith(type_name_upper, "SIGNED")
+                if (type_name_upper.find("INT") != String::npos && !endsWith(type_name_upper, "SIGNED")
                     && !endsWith(type_name_upper, "UNSIGNED"))
                     data_type_node->name = type_name_upper + " UNSIGNED";
             }
@@ -115,7 +117,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
             /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
             /// Elements on a position further than 32767 are assigned negative values, starting with -32768.
             /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
-            if (type_name_upper.contains("ENUM"))
+            if (type_name_upper.find("ENUM") != String::npos)
             {
                 UInt16 i = 0;
                 for (ASTPtr & child : data_type_node->arguments->children)

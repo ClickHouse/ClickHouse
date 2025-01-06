@@ -14,6 +14,7 @@
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
+    M(MetricLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
     M(QueryLogElement) \
@@ -31,7 +32,7 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement)
+    M(ErrorLogElement)
 
 namespace Poco
 {
@@ -215,8 +216,6 @@ public:
     static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:
-    void stopFlushThread() final;
-
     std::shared_ptr<SystemLogQueue<LogElement>> queue;
 };
 }

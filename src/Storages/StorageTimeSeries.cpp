@@ -20,10 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_time_series_table;
-}
 
 namespace ErrorCodes
 {
@@ -130,7 +126,7 @@ StorageTimeSeries::StorageTimeSeries(
     : IStorage(table_id)
     , WithContext(local_context->getGlobalContext())
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef().allow_experimental_time_series_table)
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental TimeSeries table engine "
@@ -179,9 +175,9 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
-const TimeSeriesSettings & StorageTimeSeries::getStorageSettings() const
+TimeSeriesSettings StorageTimeSeries::getStorageSettings() const
 {
-    return *storage_settings;
+    return *getStorageSettingsPtr();
 }
 
 void StorageTimeSeries::startup()
@@ -475,7 +471,6 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
-        .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
     });
 }
 

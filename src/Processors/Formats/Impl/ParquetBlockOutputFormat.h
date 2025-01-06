@@ -138,8 +138,6 @@ private:
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
     std::vector<parquet::format::RowGroup> row_groups_complete;
-    std::vector<std::vector<parquet::format::ColumnIndex>> column_indexes;
-    std::vector<std::vector<parquet::format::OffsetIndex>> offset_indexes;
     size_t base_offset = 0;
 
 

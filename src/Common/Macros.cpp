@@ -53,7 +53,7 @@ String Macros::expand(const String & s,
     /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
     assert(info.level == 0 || !info.expand_special_macros_only);
 
-    if (!s.contains('{'))
+    if (s.find('{') == String::npos)
         return s;
 
     if (info.level && s.size() > 65536)
@@ -77,9 +77,10 @@ String Macros::expand(const String & s,
             res.append(s, pos, String::npos);
             break;
         }
-
-        res.append(s, pos, begin - pos);
-
+        else
+        {
+            res.append(s, pos, begin - pos);
+        }
 
         ++begin;
         size_t end = s.find('}', begin);

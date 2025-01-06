@@ -25,7 +25,7 @@ struct ProxyConfiguration
         {
             return Protocol::HTTP;
         }
-        if (str == "https")
+        else if (str == "https")
         {
             return Protocol::HTTPS;
         }
