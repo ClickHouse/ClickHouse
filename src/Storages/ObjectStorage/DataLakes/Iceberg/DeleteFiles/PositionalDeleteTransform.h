@@ -25,7 +25,7 @@ public:
 
     PositionalDeleteTransform(
         const Block & header_, std::vector<std::shared_ptr<Source>> delete_file_sources_, const std::string & source_filename_)
-        : ISimpleTransform(header_, header_, false), delete_file_sources(delete_file_sources_), source_filename(source_filename_)
+        : ISimpleTransform(header_, header_, false), delete_file_sources(delete_file_sources_), source_filename(cropPrefix(source_filename_))
     {
         unprocessed_delete_chunk.resize(delete_file_sources_.size());
         filename_column_index.resize(delete_file_sources_.size());
@@ -56,7 +56,7 @@ protected:
                 auto filename_column = delete_chunk.getColumns()[filename_index];
 
                 auto last_filename = filename_column->getDataAt(delete_chunk.getNumRows() - 1).toString();
-                if (last_filename < source_filename)
+                if (cropPrefix(std::move(last_filename)) < source_filename)
                     break;
 
                 auto last_position = position_column->get64(delete_chunk.getNumRows() - 1);
@@ -64,7 +64,7 @@ protected:
                     break;
 
                 auto first_filename = filename_column->getDataAt(0).toString();
-                if (first_filename > source_filename)
+                if (cropPrefix(std::move(first_filename)) > source_filename)
                 {
                     unprocessed_delete_chunk[delete_source_id] = std::move(delete_chunk);
                     break;
@@ -82,7 +82,7 @@ protected:
                 {
                     auto position_to_delete = position_column->get64(i);
                     auto filename_to_delete = filename_column->getDataAt(i).toString();
-                    if (filename_to_delete == source_filename)
+                    if (cropPrefix(std::move(filename_to_delete)) == source_filename)
                     {
                         if (position_to_delete - chunk_rows_iterator < chunk.getNumRows())
                         {
@@ -131,6 +131,13 @@ private:
             return result;
         }
         return delete_file_sources[source_id]->generate();
+    }
+
+    std::string cropPrefix(std::string path) const
+    {
+        if (path[0] == '/')
+            return path.substr(1);
+        return path;
     }
 
     int getFilenameColumnIndex(size_t delete_source_id)

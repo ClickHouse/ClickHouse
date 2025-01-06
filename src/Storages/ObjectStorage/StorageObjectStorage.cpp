@@ -150,7 +150,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard())
         sample_path = getPathSample(context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
@@ -292,7 +292,6 @@ public:
             {
                 const auto & path = paths[path_iterator];
                 sources_filenames.push_back(path.filename);
-                auto old_path = configuration->getPath();
                 configuration->setPaths({path});
 
                 if (!path.meta)
@@ -311,6 +310,7 @@ public:
                         false);
 
                     sources.emplace_back(std::move(source));
+                    configuration->setPaths(paths);
                     continue;
                 }
 
@@ -378,7 +378,6 @@ public:
                         break;
                     }
                 }
-                configuration->setPath(old_path);
                 configuration->setPaths(paths);
             }
             if (!positional_delete_sources.empty())
