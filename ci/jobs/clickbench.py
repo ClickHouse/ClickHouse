@@ -4,7 +4,6 @@ import time
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 

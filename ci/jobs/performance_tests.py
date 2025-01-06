@@ -11,7 +11,6 @@ from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 
-
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 perf_wd = f"{temp_dir}/perf_wd"
 db_path = f"{perf_wd}/db0/"

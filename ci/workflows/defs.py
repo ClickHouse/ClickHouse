@@ -1,7 +1,5 @@
-from praktika.utils import Utils
-
 from praktika import Artifact, Docker, Job, Secret
-
+from praktika.utils import Utils
 
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == SettingsTEMP_DIR
 
