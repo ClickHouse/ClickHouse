@@ -381,13 +381,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
-            read_buf_schema = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+            if (read_all_columns)
+                read_buf_schema = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
-            read_buf_schema = createReadBuffer(*object_info, object_storage, context_, log);
+            if (read_all_columns)
+                read_buf_schema = createReadBuffer(*object_info, object_storage, context_, log);
         }
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))

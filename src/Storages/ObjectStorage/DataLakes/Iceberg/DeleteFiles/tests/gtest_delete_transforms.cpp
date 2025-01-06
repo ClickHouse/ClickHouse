@@ -14,7 +14,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -44,13 +43,6 @@ public:
         }
         return {};
     }
-
-#if 0
-    std::string getPath() const
-    {
-        return "";
-    }
-#endif
 
     const Block & getHeader() const { return header; }
 
@@ -166,9 +158,7 @@ TEST(IcebergDeletesTest, PositionalDeleteSimple)
     pipeline_builder.init(Pipe(source));
     pipeline_builder.addSimpleTransform(
         [delete_file](const Block & block) -> SimpleTransformPtr
-        {
-            return std::make_shared<PositionalDeleteTransform<ChunksSource>>(block, std::vector{delete_file}, "a");
-        });
+        { return std::make_shared<PositionalDeleteTransform<ChunksSource>>(block, std::vector{delete_file}, "a"); });
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromOwnString out_buf;
@@ -210,9 +200,7 @@ TEST(IcebergDeletesTest, ChunkCached)
     pipeline_builder.init(Pipe(source));
     pipeline_builder.addSimpleTransform(
         [delete_file](const Block & block) -> SimpleTransformPtr
-        {
-            return std::make_shared<PositionalDeleteTransform<ChunksSource>>(block, std::vector{delete_file}, "a");
-        });
+        { return std::make_shared<PositionalDeleteTransform<ChunksSource>>(block, std::vector{delete_file}, "a"); });
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromOwnString out_buf;
