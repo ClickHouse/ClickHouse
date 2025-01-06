@@ -250,7 +250,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
         {
             Coordination::Requests requests;
-            std::string processed_node_data;
             requests.push_back(zkutil::makeGetRequest(processed_node_path));
             requests.push_back(zkutil::makeGetRequest(failed_node_path));
 
