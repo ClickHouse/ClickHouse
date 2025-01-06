@@ -280,10 +280,13 @@ static void addFilters(
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters)
 {
+    if (!query_tree || !planner_context)
+        return;
+
     const auto & settings = context->getSettingsRef();
     const auto * query_node = query_tree->as<QueryNode>();
 
-    if (!(query_node && planner_context))
+    if (!query_node)
         return;
 
     std::unordered_map<std::string, QueryTreeNodePtr> input_to_projection;
