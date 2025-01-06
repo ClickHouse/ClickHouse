@@ -172,6 +172,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickPipes
 ClickVisual
 ClickableSquare
 CloudAvailableBadge
