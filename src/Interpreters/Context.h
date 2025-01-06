@@ -1463,6 +1463,9 @@ public:
     ThrottlerPtr getRemoteReadThrottler() const;
     ThrottlerPtr getRemoteWriteThrottler() const;
 
+    void setRemoteReadThrottler(size_t bandwidth);
+    void setRemoteWriteThrottler(size_t bandwidth);
+
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
@@ -1474,6 +1477,9 @@ public:
     /// Kitchen sink
     using ContextData::KitchenSink;
     using ContextData::kitchen_sink;
+
+private:
+    void setThrottler(std::shared_ptr<Throttler> & throttler, size_t bandwidth);
 };
 
 struct HTTPContext : public IHTTPContext

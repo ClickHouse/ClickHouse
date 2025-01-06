@@ -1446,6 +1446,31 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
         shared->addWarningMessage(message);
 }
 
+void Context::setRemoteReadThrottler(size_t bandwidth)
+{
+    setThrottler(shared->remote_read_throttler, bandwidth);
+}
+
+void Context::setRemoteWriteThrottler(size_t bandwidth)
+{
+    setThrottler(shared->remote_write_throttler, bandwidth);
+}
+
+void Context::setThrottler(std::shared_ptr<Throttler> & throttler, size_t bandwidth)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (bandwidth > 0)
+    {
+        if (!throttler)
+            throttler = std::make_shared<Throttler>(bandwidth);
+        else
+            throttler->setMaxSpeed(bandwidth);
+    }
+    else
+        throttler.reset();
+}
+
 void Context::setConfig(const ConfigurationPtr & config)
 {
     shared->setConfig(config);

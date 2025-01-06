@@ -241,6 +241,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
@@ -1818,6 +1820,13 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+
+            global_context->setRemoteReadThrottler(new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server]);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server]);
+
+            global_context->setRemoteWriteThrottler(new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server]);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server]);
+
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
