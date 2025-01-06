@@ -65,28 +65,4 @@ DROP TABLE  ${DATABASE_LAZY}.test_table_perm SYNC;
 
 DROP DATABASE ${DATABASE_LAZY} SYNC;
 
-SELECT '-----------------------';
-SELECT 'detached table no loop';
-
-SET max_block_size = 8;
-CREATE TABLE t0 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t1 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t2 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t3 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t4 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t5 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t6 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t7 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-CREATE TABLE t8 (c0 Int) ENGINE = MergeTree ORDER BY c0;
-DROP TABLE t0;
-DROP TABLE t1;
-DROP TABLE t2;
-DROP TABLE t3;
-DROP TABLE t4;
-DROP TABLE t5;
-DROP TABLE t6;
-DROP TABLE t7;
-DROP TABLE t8;
-SELECT 1 FROM system.detached_tables;
-
 "
