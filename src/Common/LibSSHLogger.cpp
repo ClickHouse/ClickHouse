@@ -5,6 +5,16 @@
 #    include <Common/LibSSHLogger.h>
 #    include <Common/clibssh.h>
 
+#include <Common/Exception.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
+
 namespace ssh
 {
 
@@ -23,10 +33,16 @@ void libssh_logger_callback(int priority, const char *, const char * buffer, voi
             LOG_WARNING(logger, "{}", buffer);
             break;
         case SSH_LOG_PROTOCOL:
+            LOG_INFO(logger, "{}", buffer);
+            break;
         case SSH_LOG_PACKET:
-        case SSH_LOG_FUNCTIONS:
             LOG_TRACE(logger, "{}", buffer);
             break;
+        case SSH_LOG_FUNCTIONS:
+            LOG_TEST(logger, "{}", buffer);
+            break;
+        default:
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown logger level received from the libssh: {}", priority);
     }
 }
 

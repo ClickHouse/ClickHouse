@@ -10,7 +10,10 @@
 
 /**
  * This function is taken from Musl with a few modifications.
+ * Clang-tidy produces several warning, but we would love to keep the implementation
+ * as close as possible to the original one.
  */
+// NOLINTBEGIN
 int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
 {
 	int m, s, n=0, cs;
@@ -42,3 +45,4 @@ fail:
 	pthread_setcancelstate(cs, nullptr);
 	return -1;
 }
+// NOLINTEND
