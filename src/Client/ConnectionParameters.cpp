@@ -54,8 +54,7 @@ ConnectionParameters ConnectionParameters::createForEmbedded(const String & user
     connection_params.default_database = database;
     connection_params.compression = Protocol::Compression::Disable;
 
-    // TODO: Pass settings struct.
-    // connection_params.timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(getGlobal);
+    /// We don't need to configure the timeouts for the embedded client.
 
     connection_params.timeouts.sync_request_timeout = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0);
     return connection_params;

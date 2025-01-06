@@ -131,6 +131,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int USER_EXPIRED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 }
@@ -549,7 +550,7 @@ try
 {
     if (!output_format)
     {
-        auto is_embedded = global_context->getApplicationType() == Context::ApplicationType::SERVER;
+        auto is_embedded = global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT;
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -589,11 +590,10 @@ try
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
             if (query_with_output->out_file && is_embedded)
-            {
-                error_stream << "Out files are disabled when you are running client embedded into server. Ignoring this option.\n";
-            }
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
+
             String out_file;
-            if (query_with_output->out_file && !is_embedded)
+            if (query_with_output->out_file)
             {
                 select_into_file = true;
 
@@ -653,7 +653,7 @@ try
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
             }
-            else if (query_with_output->out_file && !is_embedded)
+            else if (query_with_output->out_file)
             {
                 auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
                 if (format_name)
@@ -881,7 +881,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
-    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
     progress_table_toggle_on = !progress_table_toggle_enabled;
 
     /// If need_render_progress and need_render_progress_table are enabled,
@@ -896,7 +896,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     // Actually we need to pass tty's name, if we don't want this condition statement,
     // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
     // So it's easier to just pass a descriptor, without the terminal name.
-    if (global_context->getApplicationType() == Context::ApplicationType::SERVER)
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
     {
          tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
          return;
@@ -1106,6 +1106,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         String out_file;
         if (query_with_output->out_file)
         {
+            if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
+
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
@@ -1571,7 +1574,7 @@ void ClientBase::resetOutput()
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
-        // setupSignalHandler();
+        setupSignalHandler();
     }
     pager_cmd = nullptr;
 
@@ -1674,27 +1677,9 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
         return;
     }
-    // Validate infile before we pass further, as some files may be unsafe if client is embedded into server
-    if (global_context->getApplicationType() == Context::ApplicationType::SERVER && parsed_insert_query.infile)
-    {
-        const auto & in_file_node = parsed_insert_query.infile->as<ASTLiteral &>();
-        const auto in_file = in_file_node.value.safeGet<std::string>();
-        String user_files_absolute_path = fs::weakly_canonical(global_context->getUserFilesPath());
-        fs::path fs_table_path(in_file);
-        if (fs_table_path.is_relative())
-            fs_table_path = user_files_absolute_path / fs_table_path;
 
-        /// Do not use fs::canonical or fs::weakly_canonical.
-        /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-        String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
-
-        auto table_path_stat = fs::status(path);
-        if (!fs::exists(table_path_stat))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Provided file doesn't exist: {}", in_file);
-
-        if (!fileOrSymlinkPathStartsWith(path, user_files_absolute_path))
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", path, user_files_absolute_path);
-    }
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT && parsed_insert_query.infile)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
@@ -1724,7 +1709,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
-        if (global_context->getApplicationType() != Context::ApplicationType::SERVER)
+        if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
         {
             setInsertionTable(parsed_insert_query);
         }
@@ -3065,8 +3050,9 @@ void ClientBase::runInteractive()
             highlight(query, colors, *client_context);
         };
 
+    /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
-    if (global_context->getApplicationType() != Context::ApplicationType::SERVER)
+    if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
         actual_history_file_path = history_file;
 
     lr = std::make_unique<ReplxxLineReader>(

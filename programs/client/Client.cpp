@@ -115,10 +115,10 @@ void Client::showWarnings()
         std::vector<String> messages = loadWarningMessages();
         if (!messages.empty())
         {
-            std::cout << "Warnings:" << std::endl;
+            output_stream << "Warnings:" << std::endl;
             for (const auto & message : messages)
-                std::cout << " * " << message << std::endl;
-            std::cout << std::endl;
+                output_stream << " * " << message << std::endl;
+            output_stream << std::endl;
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -334,8 +334,8 @@ try
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
-    std::cout << std::fixed << std::setprecision(3);
-    std::cerr << std::fixed << std::setprecision(3);
+    output_stream << std::fixed << std::setprecision(3);
+    error_stream << std::fixed << std::setprecision(3);
 
     registerFormats();
     registerFunctions();
@@ -458,10 +458,16 @@ void Client::connect()
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
 
             if (is_interactive)
+<<<<<<< HEAD
                 std::cout << "Connecting to "
                           << (!connection_parameters.default_database.empty()
                                   ? "database " + connection_parameters.default_database + " at "
                                   : "")
+=======
+                output_stream << "Connecting to "
+                          << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
+                                                                              : "")
+>>>>>>> 4ff43a65c54 (Fix build and cleanup)
                           << connection_parameters.host << ":" << connection_parameters.port
                           << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
@@ -529,7 +535,7 @@ void Client::connect()
 
     if (is_interactive)
     {
-        std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
+        output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
 #if not CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
@@ -537,6 +543,7 @@ void Client::connect()
 
         if (client_version_tuple < server_version_tuple)
         {
+<<<<<<< HEAD
             std::cout << "ClickHouse client version is older than ClickHouse server. "
                       << "It may lack support for new features." << std::endl
                       << std::endl;
@@ -546,6 +553,17 @@ void Client::connect()
             std::cout << "ClickHouse server version is older than ClickHouse client. "
                       << "It may indicate that the server is out of date and can be upgraded." << std::endl
                       << std::endl;
+=======
+            output_stream << "ClickHouse client version is older than ClickHouse server. "
+                        << "It may lack support for new features." << std::endl
+                        << std::endl;
+        }
+        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
+        {
+            output_stream << "ClickHouse server version is older than ClickHouse client. "
+                        << "It may indicate that the server is out of date and can be upgraded." << std::endl
+                        << std::endl;
+>>>>>>> 4ff43a65c54 (Fix build and cleanup)
         }
 #endif
     }

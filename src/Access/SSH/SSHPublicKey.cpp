@@ -21,9 +21,7 @@ namespace ssh
 SSHPublicKey::SSHPublicKey(KeyPtr key_, bool own) : key(key_, own ? &deleter : &disabledDeleter)
 { // disable deleter if class is constructed without ownership
     if (!key)
-    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No ssh_key provided in explicit constructor");
-    }
 }
 
 SSHPublicKey::~SSHPublicKey() = default;
@@ -31,9 +29,7 @@ SSHPublicKey::~SSHPublicKey() = default;
 SSHPublicKey::SSHPublicKey(const SSHPublicKey & other) : key(ssh_key_dup(other.key.get()), &deleter)
 {
     if (!key)
-    {
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed to duplicate ssh_key");
-    }
 }
 
 SSHPublicKey & SSHPublicKey::operator=(const SSHPublicKey & other)
@@ -42,11 +38,8 @@ SSHPublicKey & SSHPublicKey::operator=(const SSHPublicKey & other)
     {
         KeyPtr new_key = ssh_key_dup(other.key.get());
         if (!new_key)
-        {
             throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed to duplicate ssh_key");
-        }
-        key = UniqueKeyPtr(new_key, deleter); // We don't have access to the pointer from external code, opposed to non owning key object.
-                                              // So here we always go for default deleter, regardless of other's
+        key = UniqueKeyPtr(new_key, deleter);
     }
     return *this;
 }
@@ -71,13 +64,9 @@ SSHPublicKey SSHPublicKey::createFromBase64(const String & base64, const String 
     KeyPtr key;
     int rc = ssh_pki_import_pubkey_base64(base64.c_str(), ssh_key_type_from_name(key_type.c_str()), &key);
     if (rc != SSH_OK)
-    {
-        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed importing public key from base64 format.\n\
-                Key: {}\n\
-                Type: {}",
-                base64, key_type
-        );
-    }
+        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION,
+            "Failed importing public key from base64 format. Key: {}; Type: {}", base64, key_type);
+
     return SSHPublicKey(key);
 }
 
@@ -88,12 +77,9 @@ SSHPublicKey SSHPublicKey::createFromFile(const std::string & filename)
     if (rc != SSH_OK)
     {
         if (rc == SSH_EOF)
-        {
-            throw DB::Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Can't import ssh public key from file {} as it doesn't exist or permission denied", filename
-                    );
-        }
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                "Can't import ssh public key from file {} as it doesn't exist or permission denied", filename);
+
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Can't import ssh public key from file {}", filename);
     }
     return SSHPublicKey(key);
@@ -120,12 +106,10 @@ String SSHPublicKey::getBase64Representation() const
     int rc = ssh_pki_export_pubkey_base64(key.get(), &buf);
 
     if (rc != SSH_OK)
-    {
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed to export public key to base64");
-    }
 
     // Create a String from cstring, which makes a copy of the first one and requires freeing memory after it
-    std::unique_ptr<char, CStringDeleter> buf_ptr(buf); // This is to safely manage buf memory
+    std::unique_ptr<char, CStringDeleter> buf_ptr(buf);
     return String(buf_ptr.get());
 }
 

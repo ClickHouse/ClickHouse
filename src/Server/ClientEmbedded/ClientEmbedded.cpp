@@ -167,7 +167,7 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::CLIENT);
+    global_context->setApplicationType(Context::ApplicationType::EMBEDDED_CLIENT);
     global_context->setSettings(cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -184,7 +184,7 @@ try
     }
 
     server_display_name = getFQDNOrHostName();
-    prompt_by_server_display_name = fmt::format("{} :) ", server_display_name);
+    prompt = fmt::format("{} :) ", server_display_name);
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
     enable_highlight = getClientConfiguration().getBool("highlight", true);
@@ -198,7 +198,7 @@ try
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
 
     /// TODO: Support progress table.
-    initKeystrokeInterceptor();
+    /// initKeystrokeInterceptor();
 
     client_context = session->sessionContext();
     initClientContext();

@@ -393,16 +393,6 @@ static std::string getCanonicalPath(std::string && path)
     return std::move(path);
 }
 
-
-Server::Server()
-{
-#if USE_SSL
-    ::ssh::LibSSHInitializer::instance();
-    ::ssh::libsshLogger::initialize();
-#endif
-}
-
-
 Poco::Net::SocketAddress Server::socketBindListen(
     const Poco::Util::AbstractConfiguration & config,
     Poco::Net::ServerSocket & socket,
@@ -885,6 +875,11 @@ try
 {
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
+#endif
+
+#if USE_SSL
+    ::ssh::LibSSHInitializer::instance();
+    ::ssh::libsshLogger::initialize();
 #endif
 
     Stopwatch startup_watch;
