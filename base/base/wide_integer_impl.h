@@ -647,7 +647,7 @@ private:
     }
 
     template <typename T>
-    constexpr static integer<Bits, Signed>
+    constexpr static integer<Bits, Signed> NO_SANITIZE_UNDEFINED
     multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (could_use_bitint256)
@@ -973,6 +973,9 @@ public:
     {
         static_assert(std::is_unsigned_v<Signed>);
 
+        if (is_zero(denominator))
+            throwError("Division by zero");
+
         if constexpr (could_use_bitint256)
         {
             auto new_numerator = toBitInt256(numerator);
@@ -1001,9 +1004,6 @@ public:
 
             return res;
         }
-
-        if (is_zero(denominator))
-            throwError("Division by zero");
 
         integer<Bits2, unsigned> x = 1;
         integer<Bits2, unsigned> quotient = 0;
