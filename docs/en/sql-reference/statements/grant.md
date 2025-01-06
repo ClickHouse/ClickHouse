@@ -611,6 +611,7 @@ Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
 The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
+Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 
 ### NONE

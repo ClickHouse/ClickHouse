@@ -10,7 +10,11 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 ## Executable User Defined Functions
 
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
+
+:::note
+This feature is supported in private preview in ClickHouse Cloud. Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
+:::
 
 ClickHouse can call any external executable program or script to process data.
 
