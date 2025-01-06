@@ -152,6 +152,13 @@ void IOutputFormat::finalizeUnlocked()
     if (finalized)
         return;
     writePrefixIfNeeded();
+
+    if (has_progress_update_to_write)
+    {
+        writeProgress(statistics.progress);
+        has_progress_update_to_write = false;
+    }
+
     writeSuffixIfNeeded();
     finalizeImpl();
     finalizeBuffers();
@@ -167,17 +174,22 @@ void IOutputFormat::finalize()
 void IOutputFormat::onProgress(const Progress & progress)
 {
     statistics.progress.incrementPiecewiseAtomically(progress);
+    UInt64 elapsed_ns = statistics.watch.elapsedNanoseconds();
+    statistics.progress.elapsed_ns = elapsed_ns;
     if (writesProgressConcurrently())
     {
-        std::unique_lock lock(writing_mutex, std::try_to_lock);
-        if (lock)
+        has_progress_update_to_write = true;
+        if (elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
         {
-            writeProgress(statistics.progress);
-            flushImpl();
-            has_progress_update_to_write = false;
+            std::unique_lock lock(writing_mutex, std::try_to_lock);
+            if (lock)
+            {
+                writeProgress(statistics.progress);
+                flushImpl();
+                prev_progress_write_ns = elapsed_ns;
+                has_progress_update_to_write = false;
+            }
         }
-        else
-            has_progress_update_to_write = true;
     }
 }
 

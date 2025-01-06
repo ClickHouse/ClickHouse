@@ -194,7 +194,7 @@ By default, it is `/clickhouse/series/`.
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
                   )"}},
-        .categories{"Unique identifiers"}
+        .category{"Other"}
     });
 }
 

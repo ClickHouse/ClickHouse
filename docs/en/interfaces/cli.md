@@ -199,6 +199,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--progress` – Print progress of query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress printing. Default: TTY in interactive mode, disabled in non-interactive.
 - `--progress-table` – Print a progress table with changing metrics during query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress table. Default: TTY in interactive mode, disabled in non-interactive.
 - `--enable-progress-table-toggle` – Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table printing enabled. Default: 'true'.
+- `--prompt` - Specify a custom prompt. Default value: The `display_name` of the server.
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 
@@ -380,6 +381,28 @@ secure: true
 openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
+```
+
+### Connection credentials {#connection-credentials}
+
+If you frequently connect to the same ClickHouse server, you can save the connection details including credentials in
+the configuration file like this:
+
+```xml
+<config>
+    <connections_credentials>
+        <name>production</name>
+        <hostname>127.0.0.1</hostname>
+        <port>9000</port>
+        <secure>1</secure>
+        <user>default</user>
+        <password></password>
+        <database></database>
+
+        <!-- You can use colors and macros, see clickhouse-client.xml for more documentation. -->
+        <prompt>\e[31m[PRODUCTION]\e[0m {user}@{display_name}</prompt>
+    </connections_credentials>
+</config>
 ```
 
 ### Query ID Format {#query-id-format}
