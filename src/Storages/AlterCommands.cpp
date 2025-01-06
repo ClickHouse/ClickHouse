@@ -967,7 +967,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 auto index_type = makeASTFunction("minmax");
                 index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
                                                                              IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
-                index.definition_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                index.definition_ast->as<ASTIndexDeclaration>()->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
             }
             else
                 rename_visitor.visit(index.definition_ast);
