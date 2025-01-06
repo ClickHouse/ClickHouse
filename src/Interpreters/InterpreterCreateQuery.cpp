@@ -1897,7 +1897,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         if (!table_function->canBeUsedToCreateTable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} cannot be used to create a table", table_function->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -1907,17 +1907,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
-        if (ASTStorage * storage_def = create_query.storage)
-        {
-            if (storage_def->engine)
-            {
-                auto table_engine_ast = storage_def->engine->ptr();
-                auto table_function = TableFunctionFactory::instance().tryGet(Poco::toLower(table_engine_ast->as<ASTFunction>()->name), getContext());
-                if (table_function && !table_function->canBeUsedToCreateTable())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} cannot be used to create a table", table_function->getName());
-            }
-        }
         res = StorageFactory::instance().get(create,
             data_path,
             getContext(),
@@ -1927,6 +1916,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             mode);
 
         /// If schema was inferred while storage creation, add columns description to create query.
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
