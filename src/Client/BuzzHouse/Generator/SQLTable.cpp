@@ -544,7 +544,7 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
 }
 
 template <typename T>
-void StatementGenerator::setMergeTableParamter(RandomGenerator & rg, const char initial)
+void StatementGenerator::setMergeTableParamter(RandomGenerator & rg, char initial)
 {
     const uint32_t noption = rg.nextSmallNumber();
 

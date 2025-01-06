@@ -320,6 +320,7 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("enable_named_columns_in_function_tuple", {"0", "1"}),
     TestSetting("enable_optimize_predicate_expression", {"0", "1"}),
     TestSetting("enable_optimize_predicate_expression_to_final_subquery", {"0", "1"}),
+    TestSetting("enable_parallel_replicas", {"0", "1"}),
     TestSetting("enable_parsing_to_custom_serialization", {"0", "1"}),
     TestSetting("enable_reads_from_query_cache", {"0", "1"}),
     TestSetting("enable_scalar_subquery_optimization", {"0", "1"}),
