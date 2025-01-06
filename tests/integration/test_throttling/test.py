@@ -366,6 +366,7 @@ def test_read_throttling(policy, mode, setting, value, should_take):
     _, took = elapsed(node.query, f"select * from data")
     assert_took(took, should_take)
 
+
 def test_read_throttling_reload():
     node.query(
         f"""
@@ -379,12 +380,15 @@ def test_read_throttling_reload():
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
-    node_update_config("server", "max_remote_read_network_bandwidth_for_server", "2M", False)
+    node_update_config(
+        "server", "max_remote_read_network_bandwidth_for_server", "2M", False
+    )
     node.query("SYSTEM RELOAD CONFIG")
 
     # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
     _, took = elapsed(node.query, f"select * from data")
     assert_took(took, 3)
+
 
 @pytest.mark.parametrize(
     "policy,mode,setting,value,should_take",
@@ -446,6 +450,7 @@ def test_write_throttling(policy, mode, setting, value, should_take):
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
     assert_took(took, should_take)
 
+
 def test_write_throttling_reload():
     node.query(
         f"""
@@ -459,12 +464,15 @@ def test_write_throttling_reload():
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
-    node_update_config("server", "max_remote_write_network_bandwidth_for_server", "2M", False)
+    node_update_config(
+        "server", "max_remote_write_network_bandwidth_for_server", "2M", False
+    )
     node.query("SYSTEM RELOAD CONFIG")
 
     # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
     assert_took(took, 3)
+
 
 def test_max_mutations_bandwidth_for_server():
     node.query(
