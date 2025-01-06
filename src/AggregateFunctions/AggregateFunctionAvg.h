@@ -217,19 +217,19 @@ public:
         if constexpr (is_decimal<Numerator>)
         {
             auto scale = getDecimalScale(*removeNullable(this->argument_types[0]));
-            auto multipler = DecimalUtils::scaleMultiplier<NativeType<Numerator>>(scale);
+            auto multiplier = DecimalUtils::scaleMultiplier<NativeType<Numerator>>(scale);
 
-            llvm::Value * multipler_value = nullptr;
+            llvm::Value * multiplier_value = nullptr;
             if constexpr (!is_over_big_decimal<Numerator>)
-                multipler_value = llvm::ConstantInt::get(numerator_type, static_cast<uint64_t>(multipler), true);
+                multiplier_value = llvm::ConstantInt::get(numerator_type, static_cast<uint64_t>(multiplier), true);
             else
             {
-                llvm::APInt value(numerator_type->getIntegerBitWidth(), multipler.items);
-                multipler_value = llvm::ConstantInt::get(numerator_type, value);
+                llvm::APInt value(numerator_type->getIntegerBitWidth(), multiplier.items);
+                multiplier_value = llvm::ConstantInt::get(numerator_type, value);
             }
 
-            auto double_multipler = nativeCast<Numerator>(b, multipler_value, this->getResultType());
-            double_denominator = b.CreateFMul(double_denominator, double_multipler);
+            auto double_multiplier = nativeCast<Numerator>(b, multiplier_value, this->getResultType());
+            double_denominator = b.CreateFMul(double_denominator, double_multiplier);
         }
 
         return b.CreateFDiv(double_numerator, double_denominator);
