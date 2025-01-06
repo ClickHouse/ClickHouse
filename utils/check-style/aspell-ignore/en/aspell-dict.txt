@@ -172,6 +172,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickPipes
 ClickVisual
 ClickableSquare
 CloudAvailableBadge
@@ -251,6 +252,7 @@ DeliveryTag
 DeltaLake
 Deltalake
 Denormalize
+DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
@@ -827,6 +829,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic

@@ -37,11 +37,10 @@ The client can be used in interactive and non-interactive (batch) mode.
 
 ### Interactive
 
-To connect to your ClickHouse Cloud service, or any ClickHouse server using TLS and passwords, interactively use `--secure`, port 9440, and provide your username and password:
+To connect to your ClickHouse Cloud service or any ClickHouse server using TLS and passwords, specify port `9440` (or `--secure`) and provide your username and password:
 
 ```bash
 clickhouse-client --host <HOSTNAME> \
-                  --secure \
                   --port 9440 \
                   --user <USERNAME> \
                   --password <PASSWORD>
@@ -62,7 +61,6 @@ This example is appropriate for ClickHouse Cloud, or any ClickHouse server using
 
 ```bash
 clickhouse-client --host HOSTNAME.clickhouse.cloud \
-  --secure \
   --port 9440 \
   --user default \
   --password PASSWORD \
@@ -188,7 +186,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--memory-usage` – If specified, print memory usage to ‘stderr’ in non-interactive mode]. Possible values: 'none' - do not print memory usage, 'default' - print number of bytes, 'readable' - print memory usage in human-readable format.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
-- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
+- `--secure` – If specified, will connect to server over secure connection (TLS). Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud. You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
 - `--history_file` — Path to a file containing command history.
 - `--history_max_entries` — Maximum number of entries in the history file. Default value: 1 000 000.
 - `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
