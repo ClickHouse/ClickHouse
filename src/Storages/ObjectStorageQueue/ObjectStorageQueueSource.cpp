@@ -663,8 +663,15 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         {
             case FileState::Processed:
             {
-                applyActionAfterProcessing(file_metadata->getPath());
-                file_metadata->setProcessed();
+                if (insert_succeeded)
+                {
+                    applyActionAfterProcessing(file_metadata->getPath());
+                    file_metadata->setProcessed();
+                }
+                else
+                {
+                    file_metadata->setFailed(exception_message, /* reduce_retry_count */false);
+                }
                 break;
             }
             case FileState::Cancelled: [[fallthrough]];
