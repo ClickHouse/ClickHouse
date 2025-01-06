@@ -157,6 +157,10 @@ void StatementGenerator::addTableRelation(
                 rel.cols.push_back(SQLRelationCol(rel_name, {"_etag"}));
             }
         }
+        else if (t.isMergeEngine())
+        {
+            rel.cols.push_back(SQLRelationCol(rel_name, {"_table"}));
+        }
     }
     if (rel_name.empty())
     {
@@ -539,6 +543,66 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
     return 0;
 }
 
+template <typename T>
+void StatementGenerator::setMergeTableParamter(RandomGenerator & rg, const char initial)
+{
+    const uint32_t noption = rg.nextSmallNumber();
+
+    buf.resize(0);
+    if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    {
+        if (collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && noption < 4)
+        {
+            const std::shared_ptr<SQLDatabase> & d
+                = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+
+            buf += initial;
+            buf += std::to_string(d->dname);
+            return;
+        }
+    }
+    else
+    {
+        if (collectionHas<SQLTable>(attached_tables) && noption < 4)
+        {
+            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+
+            buf += initial;
+            buf += std::to_string(t.tname);
+            return;
+        }
+    }
+    if (noption < 7)
+    {
+        buf += initial;
+        buf += std::to_string(rg.nextSmallNumber() - 1);
+        buf += ".*";
+    }
+    else if (noption < 10)
+    {
+        const uint32_t first = rg.nextSmallNumber() - 1;
+        const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
+
+        buf += initial;
+        buf += "[";
+        buf += std::to_string(first);
+        buf += "-";
+        buf += std::to_string(second);
+        buf += "].*";
+    }
+    else
+    {
+        if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+        {
+            buf += "default";
+        }
+        else
+        {
+            buf += "t0";
+        }
+    }
+}
+
 int StatementGenerator::generateMergeTreeEngineDetails(
     RandomGenerator & rg, const TableEngineValues teng, const PeerTableDatabase peer, const bool add_pkey, TableEngine * te)
 {
@@ -816,6 +880,14 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
                 generateTableKey(rg, b.teng, false, te->mutable_partition_by());
             }
         }
+    }
+    else if (b.isMergeEngine())
+    {
+        setMergeTableParamter<std::shared_ptr<SQLDatabase>>(rg, 'd');
+        te->add_params()->set_regexp(buf);
+
+        setMergeTableParamter<SQLTable>(rg, 't');
+        te->add_params()->set_svalue(buf);
     }
     if ((b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
@@ -1228,6 +1300,7 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
     this->ids.push_back(Log);
     this->ids.push_back(TinyLog);
     this->ids.push_back(EmbeddedRocksDB);
+    this->ids.push_back(Merge);
     if (collectionHas<SQLTable>([](const SQLTable & t)
                                 { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; })
         || collectionHas<SQLView>([](const SQLView & v)
@@ -1285,7 +1358,8 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::StripeLog,
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
-       TableEngineValues::EmbeddedRocksDB};
+       TableEngineValues::EmbeddedRocksDB,
+       TableEngineValues::Merge};
 
 int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
@@ -1319,7 +1393,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
     }
     else
     {
-        if (!next.is_temp && rg.nextSmallNumber() < 9)
+        if (!next.is_temp && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
         {
             next.db = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
         }

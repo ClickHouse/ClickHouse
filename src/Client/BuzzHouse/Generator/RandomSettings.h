@@ -113,7 +113,8 @@ const std::map<TableEngineValues, std::map<std::string, std::function<void(Rando
        {S3Queue, {}},
        {Hudi, {}},
        {DeltaLake, {}},
-       {IcebergS3, {}}};
+       {IcebergS3, {}},
+       {Merge, {}}};
 
 void setRandomSetting(
     RandomGenerator & rg,

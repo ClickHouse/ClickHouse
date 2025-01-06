@@ -165,10 +165,12 @@ public:
 
     bool isIcebergEngine() const { return teng == TableEngineValues::IcebergS3; }
 
+    bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine();
+            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine();
     }
 
     bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }

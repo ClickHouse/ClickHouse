@@ -2539,6 +2539,11 @@ CONV_FN(TableEngineParam, tep)
             ColumnPathListToString(ret, 0, tep.col_list());
             ret += ")";
             break;
+        case TableEngineParamType::kRegexp:
+            ret += "REGEXP('";
+            tep.regexp();
+            ret += "')";
+            break;
         default:
             ret += "c0";
     }

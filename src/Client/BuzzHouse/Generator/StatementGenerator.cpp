@@ -163,7 +163,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     }
     else
     {
-        if (rg.nextSmallNumber() < 9)
+        if (collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
         {
             next.db = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
         }

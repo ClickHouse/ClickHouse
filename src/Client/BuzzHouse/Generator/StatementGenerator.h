@@ -125,6 +125,9 @@ private:
     void generatingPeerQuery(const bool value) { peer_query = value; }
 
     template <typename T>
+    void setMergeTableParamter(RandomGenerator & rg, const char initial);
+
+    template <typename T>
     const std::map<uint32_t, T> & getNextCollection() const
     {
         if constexpr (std::is_same_v<T, SQLTable>)
@@ -144,6 +147,7 @@ private:
             return databases;
         }
     }
+
 
 public:
     template <typename T>

@@ -1049,7 +1049,8 @@ std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGener
        {S3Queue, s3QueueTableSettings},
        {Hudi, {}},
        {DeltaLake, {}},
-       {IcebergS3, {}}};
+       {IcebergS3, {}},
+       {Merge, {}}};
 
 void loadFuzzerSettings(const FuzzConfig & fc)
 {

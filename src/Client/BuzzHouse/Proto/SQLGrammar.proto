@@ -2888,6 +2888,7 @@ enum TableEngineValues {
     Hudi = 24;
     DeltaLake = 25;
     IcebergS3 = 26;
+    Merge = 27;
 }
 
 enum TableEngineOption {
@@ -2908,6 +2909,7 @@ message TableEngineParam {
         uint32 num = 9;
         string svalue = 10;
         ColumnPathList col_list = 11;
+        string regexp = 12;
     }
 }
 
