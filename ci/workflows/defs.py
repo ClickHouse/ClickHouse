@@ -1,5 +1,5 @@
 from praktika import Artifact, Docker, Job, Secret
-from praktika.utils import Utils
+from praktika.utils import MetaClasses, Utils
 
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == SettingsTEMP_DIR
 
@@ -129,12 +129,12 @@ DOCKERS = [
         depends_on=[],
     ),
     # TODO: move images into ./ci
-    # Docker.Config(
-    #     name="clickhouse/integration-tests-runner",
-    #     path="./docker/test/integration/runner",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
+    Docker.Config(
+        name="clickhouse/integration-tests-runner",
+        path="./docker/test/integration/runner",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     # Docker.Config(
     #     name="clickhouse/integration-helper",
     #     path="./docker/test/integration/runner",
@@ -240,7 +240,7 @@ DOCKERS = [
 # },
 
 
-class BuildTypes:
+class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
     AMD_BINARY = "amd_binary"
@@ -301,6 +301,20 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
+    CH_AMD_COV_BIN = "CH_AMDCOV_BIN"
+    CH_ARM_BIN = "CH_ARM_BIN"
+    CH_TIDY_BIN = "CH_TIDY_BIN"
+    CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
+    CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
+    CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
+    CH_PPC64LE = "CH_PPC64LE_BIN"
+    CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
+    CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
+    CH_RISCV64 = "CH_RISCV64_BIN"
+    CH_S390X = "CH_S390X_BIN"
+    CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
+
     CH_ODBC_B_AMD_DEBUG = "CH_ODBC_B_AMD_DEBUG"
     CH_ODBC_B_AMD_RELEASE = "CH_ODBC_B_AMD_RELEASE"
     CH_ODBC_B_AMD_ASAN = "CH_ODBC_B_AMD_ASAN"
@@ -324,6 +338,12 @@ class ArtifactNames:
     DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
+
+    RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
+    RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
+
+    TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
+    TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
     PERF_REPORTS_AMD_1_3 = "PERF_REPORTS_AMD_1_3"
     PERF_REPORTS_AMD_2_3 = "PERF_REPORTS_AMD_2_3"
@@ -349,6 +369,19 @@ ARTIFACTS = [
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
+            ArtifactNames.CH_AMD_COV_BIN,
+            ArtifactNames.CH_ARM_BIN,
+            ArtifactNames.CH_TIDY_BIN,
+            ArtifactNames.CH_AMD_DARWIN_BIN,
+            ArtifactNames.CH_ARM_DARWIN_BIN,
+            ArtifactNames.CH_ARM_V80COMPAT,
+            ArtifactNames.CH_AMD_FREEBSD,
+            ArtifactNames.CH_PPC64LE,
+            ArtifactNames.CH_AMD_COMPAT,
+            ArtifactNames.CH_AMD_MUSL,
+            ArtifactNames.CH_RISCV64,
+            ArtifactNames.CH_S390X,
+            ArtifactNames.CH_LOONGARCH64,
         ]
     ),
     *Artifact.Config(
@@ -386,9 +419,29 @@ ARTIFACTS = [
         path=f"{TEMP_DIR}/*.deb",
     ),
     Artifact.Config(
+        name=ArtifactNames.RPM_AMD_RELEASE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/*.rpm",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.TGZ_AMD_RELEASE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/*64.tgz*",
+    ),
+    Artifact.Config(
         name=ArtifactNames.DEB_ARM_RELEASE,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/*.deb",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.RPM_ARM_RELEASE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/*.rpm",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.TGZ_ARM_RELEASE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/*64.tgz*",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_ASAN,
@@ -470,6 +523,20 @@ class Jobs:
             BuildTypes.AMD_BINARY,
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
+            # special builds
+            BuildTypes.AMD_COVERAGE,
+            BuildTypes.ARM_BINARY,
+            BuildTypes.AMD_TIDY,
+            BuildTypes.AMD_DARWIN,
+            BuildTypes.ARM_DARWIN,
+            BuildTypes.ARM_V80COMPAT,
+            BuildTypes.AMD_FREEBSD,
+            BuildTypes.PPC64LE,
+            BuildTypes.AMD_COMPAT,
+            BuildTypes.AMD_MUSL,
+            BuildTypes.RISCV64,
+            BuildTypes.S390X,
+            BuildTypes.LOONGARCH64,
         ],
         provides=[
             [
@@ -481,6 +548,8 @@ class Jobs:
                 ArtifactNames.CH_AMD_RELEASE,
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_ODBC_B_AMD_RELEASE,
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.TGZ_AMD_RELEASE,
             ],
             [
                 ArtifactNames.CH_AMD_ASAN,
@@ -504,22 +573,36 @@ class Jobs:
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.CH_ODBC_B_AMD_UBSAN,
-                # ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
-                # ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ODBC_B_ARM_RELEASE,
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
                 ArtifactNames.CH_ODBC_B_ARM_ASAN,
             ],
+            # special builds
+            [ArtifactNames.CH_AMD_COV_BIN],
+            [ArtifactNames.CH_ARM_BIN],
+            [ArtifactNames.CH_TIDY_BIN],
+            [ArtifactNames.CH_AMD_DARWIN_BIN],
+            [ArtifactNames.CH_ARM_DARWIN_BIN],
+            [ArtifactNames.CH_ARM_V80COMPAT],
+            [ArtifactNames.CH_AMD_FREEBSD],
+            [ArtifactNames.CH_PPC64LE],
+            [ArtifactNames.CH_AMD_COMPAT],
+            [ArtifactNames.CH_AMD_MUSL],
+            [ArtifactNames.CH_RISCV64],
+            [ArtifactNames.CH_S390X],
+            [ArtifactNames.CH_LOONGARCH64],
         ],
         runs_on=[
             [RunnerLabels.BUILDER_AMD],
@@ -531,6 +614,20 @@ class Jobs:
             [RunnerLabels.BUILDER_AMD],
             [RunnerLabels.BUILDER_ARM],
             [RunnerLabels.BUILDER_ARM],
+            # special builds
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_COVERAGE
+            [RunnerLabels.BUILDER_ARM],  # BuildTypes.ARM_BINARY
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_TIDY,
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_DARWIN,
+            [RunnerLabels.BUILDER_ARM],  # BuildTypes.ARM_DARWIN,
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.ARM_V80COMPAT,
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_FREEBSD,
+            [RunnerLabels.BUILDER_ARM],  # BuildTypes.PPC64LE,
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_COMPAT,
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_MUSL,
+            [RunnerLabels.BUILDER_ARM],  # BuildTypes.RISCV64,
+            [RunnerLabels.BUILDER_AMD],  # BuildTypes.S390X,
+            [RunnerLabels.BUILDER_ARM],  # BuildTypes.LOONGARCH64
         ],
     )
 
