@@ -23,7 +23,6 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & valu
     writeCString("{\"progress\":", *ostr);
     value.writeJSON(*ostr);
     writeCString("}\n", *ostr);
-    ostr->next();
 }
 
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
