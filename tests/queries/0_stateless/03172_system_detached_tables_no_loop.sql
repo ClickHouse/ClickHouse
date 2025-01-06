@@ -25,6 +25,6 @@ DETACH TABLE test_no_loop.t5;
 DETACH TABLE test_no_loop.t6;
 DETACH TABLE test_no_loop.t7;
 DETACH TABLE test_no_loop.t8;
-SELECT 1 FROM system.detached_tables WHERE database='test_no_loop';
+SELECT count(*) FROM system.detached_tables WHERE database='test_no_loop';
 
 DROP DATABASE test_no_loop;
