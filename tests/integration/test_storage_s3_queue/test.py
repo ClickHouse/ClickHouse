@@ -1910,7 +1910,7 @@ def test_exception_during_insert(started_cluster):
         if check_inserted:
             wait_for_rows(expected_rows[0])
 
-    generate(True)
+    generate(False)
     generate(False)
 
     node.wait_for_log_line(
