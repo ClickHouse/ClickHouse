@@ -2425,6 +2425,7 @@ pread
 preallocate
 prebuild
 prebuilt
+preconfigured
 preemptable
 preferServerCiphers
 prefetch
