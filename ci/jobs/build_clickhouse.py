@@ -100,7 +100,7 @@ def main():
         build_type in BUILD_TYPE_TO_CMAKE
     ), f"--build_type option is invalid [{build_type}]"
 
-    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
+    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type] + " " + current_directory
 
     res = True
     results = []

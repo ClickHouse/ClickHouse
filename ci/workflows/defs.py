@@ -124,7 +124,7 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/integration-test",
-        path="./ci/docker/integration-test",
+        path="./ci/docker/integration/integration-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
