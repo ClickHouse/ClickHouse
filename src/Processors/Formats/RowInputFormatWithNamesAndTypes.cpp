@@ -1,3 +1,5 @@
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -15,6 +17,7 @@
 #include <Processors/Formats/Impl/JSONCompactRowInputFormat.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -178,10 +181,13 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
         return;
     }
 
+    auto log = getLogger("InputFormat");
+
     /// First row is a header with column names.
     column_names_out = std::move(first_row_values);
     peekable_buf->dropCheckpoint();
     is_header_detected = true;
+    LOG_DEBUG(log, "Detected header: {}", fmt::join(column_names_out, ","));
 
     /// Data contains only 1 row and it's just names.
     if (unlikely(format_reader->checkForSuffix()))
@@ -208,6 +214,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     /// The second row is a header with type names.
     type_names_out = std::move(second_row_values);
     peekable_buf->dropCheckpoint();
+    LOG_DEBUG(log, "Detected header types: {}", fmt::join(type_names_out, ","));
 }
 
 template <typename FormatReaderImpl>
