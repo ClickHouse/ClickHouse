@@ -252,7 +252,7 @@ public:
         const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
         size_t estimated_keys_count = 0;
         for (const auto & iter : iterator_wrapper)
-            estimated_keys_count += iter->estimatedKeysCount();
+            estimated_keys_count += !iter.empty() ? iter[0]->estimatedKeysCount() : 0;
 
         if (estimated_keys_count > 1)
             num_streams = std::min(num_streams, estimated_keys_count);
@@ -304,7 +304,7 @@ public:
                         format_settings,
                         context,
                         max_block_size,
-                        iterator_wrapper[path_iterator],
+                        iterator_wrapper[path_iterator][0],
                         max_parsing_threads,
                         need_only_count,
                         false);
@@ -326,7 +326,7 @@ public:
                             format_settings,
                             context,
                             max_block_size,
-                            iterator_wrapper[path_iterator],
+                            iterator_wrapper[path_iterator][0],
                             max_parsing_threads,
                             need_only_count,
                             false);
@@ -350,7 +350,7 @@ public:
                                 format_settings,
                                 context,
                                 max_block_size,
-                                iterator_wrapper[path_iterator],
+                                iterator_wrapper[path_iterator][source_id],
                                 max_parsing_threads,
                                 false,
                                 true);
@@ -368,7 +368,7 @@ public:
                             format_settings,
                             context,
                             max_block_size,
-                            iterator_wrapper[path_iterator],
+                            iterator_wrapper[path_iterator][0],
                             max_parsing_threads,
                             false,
                             true);
@@ -413,7 +413,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
-    std::vector<std::shared_ptr<StorageObjectStorageSource::IIterator>> iterator_wrapper;
+    std::vector<std::vector<std::shared_ptr<StorageObjectStorageSource::IIterator>>> iterator_wrapper;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
@@ -446,20 +446,30 @@ private:
                 return std::tie(left_prior, path_left.filename) < std::tie(right_prior, path_right.filename);
             });
 
+        int num_data_files = 0;
         for (const auto & path : paths)
         {
             auto old_paths = configuration->getPaths();
             configuration->setPaths({path});
-            iterator_wrapper.push_back(StorageObjectStorageSource::createFileIterator(
-                configuration,
-                configuration->getQuerySettings(context),
-                object_storage,
-                distributed_processing,
-                context,
-                predicate,
-                virtual_columns,
-                nullptr,
-                context->getFileProgressCallback()));
+
+            if (!path.meta || std::static_pointer_cast<DataFileMeta>(path.meta)->type == DataFileMeta::DataFileType::DATA_FILE)
+                num_data_files++;
+
+            int num_iterators = (path.meta && std::static_pointer_cast<DataFileMeta>(path.meta)->type == DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE) ? num_data_files : 1;
+            iterator_wrapper.push_back({});
+            for (int i = 0; i < num_iterators; ++i)
+            {
+                iterator_wrapper.back().push_back(StorageObjectStorageSource::createFileIterator(
+                    configuration,
+                    configuration->getQuerySettings(context),
+                    object_storage,
+                    distributed_processing,
+                    context,
+                    predicate,
+                    virtual_columns,
+                    nullptr,
+                    context->getFileProgressCallback()));
+            }
             configuration->setPaths(old_paths);
         }
     }
