@@ -63,8 +63,7 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
     /// Load current quorum status.
     auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
 
-    partition_ids_hint = std::move(partition_ids_hint_);
-    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint));
+    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint_));
 
     std::tie(merges_version, std::ignore) = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
@@ -116,7 +115,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeZooKeeperMergePredic
     if (prev_virtual_parts && prev_virtual_parts->getContainingPart(part->info).empty())
         return std::unexpected(PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name));
 
-    if (partition_ids_hint && !partition_ids_hint->contains(part->info.partition_id))
+    if (committing_blocks && !committing_blocks->contains(part->info.partition_id))
         return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", part->info.partition_id));
 
     /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
@@ -246,8 +245,8 @@ bool ReplicatedMergeTreeZooKeeperMergePredicate::isMutationFinished(
         if (checked_partitions_cache.contains(partition_id))
             continue;
 
-        if (partition_ids_hint && !partition_ids_hint->contains(partition_id))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition id {} was not provided as hint, it's a bug", partition_id);
+        if (committing_blocks && !committing_blocks->contains(partition_id))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Committing blocks were not loaded for partition {}, it's a bug", partition_id);
 
         auto partition_it = committing_blocks->find(partition_id);
         if (partition_it != committing_blocks->end())

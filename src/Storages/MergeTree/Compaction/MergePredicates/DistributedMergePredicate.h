@@ -54,8 +54,8 @@ public:
         /// Simple check to verify method preconditions.
         chassert(!prev_virtual_parts_ptr || !prev_virtual_parts_ptr->getContainingPart(left.part_info).empty());
         chassert(!prev_virtual_parts_ptr || !prev_virtual_parts_ptr->getContainingPart(right.part_info).empty());
-        chassert(!partition_ids_hint || partition_ids_hint->contains(left.part_info.partition_id));
-        chassert(!partition_ids_hint || partition_ids_hint->contains(right.part_info.partition_id));
+        chassert(!committing_blocks_ptr || committing_blocks_ptr->contains(left.part_info.partition_id));
+        chassert(!committing_blocks_ptr || committing_blocks_ptr->contains(right.part_info.partition_id));
         chassert(left.name != right.name);
 
         if (left.part_info.partition_id != right.part_info.partition_id)
@@ -117,9 +117,6 @@ public:
     }
 
 protected:
-    /// A list of partitions that can be used in the merge predicate
-    std::optional<PartitionIdsHint> partition_ids_hint;
-
     /// A snapshot of active parts that would appear if the replica executes all log entries in its queue.
     const VirtualPartsT * prev_virtual_parts_ptr = nullptr;
     const VirtualPartsT * virtual_parts_ptr = nullptr;

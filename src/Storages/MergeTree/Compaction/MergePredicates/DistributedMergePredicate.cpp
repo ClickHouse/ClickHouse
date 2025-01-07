@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
-#include "base/defines.h"
+
+#include <base/defines.h>
 
 namespace DB
 {
@@ -29,7 +30,12 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     {
         auto & response = locks_children[i];
         if (response.error == Coordination::Error::ZNONODE)
-            throw Coordination::Exception::fromPath(response.error, paths[i]);
+        {
+            if (!partition_ids_hint.has_value())
+                throw Coordination::Exception::fromPath(response.error, paths[i]);
+
+            continue;
+        }
 
         chassert(response.error == Coordination::Error::ZOK);
 
