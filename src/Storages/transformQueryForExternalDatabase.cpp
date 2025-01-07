@@ -389,7 +389,6 @@ String transformQueryForExternalDatabaseImpl(
     IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::Always;
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(
-        /*ostr_=*/out,
         /*one_line=*/true,
         /*hilite=*/false,
         /*identifier_quoting_rule=*/identifier_quoting_rule,
@@ -397,7 +396,7 @@ String transformQueryForExternalDatabaseImpl(
         /*show_secrets_=*/true,
         /*literal_escaping_style=*/literal_escaping_style);
 
-    select->format(settings);
+    select->format(out, settings);
 
     return out.str();
 }

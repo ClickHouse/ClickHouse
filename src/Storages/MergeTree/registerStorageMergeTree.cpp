@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
@@ -37,11 +38,13 @@ namespace Setting
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
 }
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -717,24 +720,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
                 constraints.push_back(constraint);
-        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
-            (*storage_settings)[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
-        {
-            auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
-            sign_column_check_constraint->name = "check_sign_column";
-            sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
-
-            Array valid_values_array;
-            valid_values_array.emplace_back(-1);
-            valid_values_array.emplace_back(1);
-
-            auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
-            auto sign_column_ast = std::make_unique<ASTIdentifier>(merging_params.sign_column);
-            sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
-
-            constraints.push_back(std::move(sign_column_check_constraint));
-        }
         metadata.constraints = ConstraintsDescription(constraints);
     }
     else
@@ -831,6 +816,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
 
+        ZooKeeperRetriesInfo create_query_zk_retries_info{
+            local_settings[Setting::keeper_max_retries],
+            local_settings[Setting::keeper_retry_initial_backoff_ms],
+            local_settings[Setting::keeper_retry_max_backoff_ms],
+            args.getLocalContext()->getProcessListElementSafe()};
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_info,
             args.mode,
@@ -841,8 +832,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            need_check_table_structure);
+            need_check_table_structure,
+            create_query_zk_retries_info);
     }
+
     return std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,
@@ -867,6 +860,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
+        .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
     factory.registerStorage("MergeTree", create, features);

@@ -47,6 +47,8 @@ struct Settings;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 class TableJoin
 {
 public:
@@ -123,13 +125,7 @@ public:
 
     using Clauses = std::vector<JoinOnClause>;
 
-    static std::string formatClauses(const Clauses & clauses, bool short_format = false)
-    {
-        std::vector<std::string> res;
-        for (const auto & clause : clauses)
-            res.push_back("[" + clause.formatDebug(short_format) + "]");
-        return fmt::format("{}", fmt::join(res, "; "));
-    }
+    static std::string formatClauses(const Clauses & clauses, bool short_format = false);
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -149,7 +145,7 @@ private:
     const UInt64 cross_join_min_rows_to_compress = 1000;
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
-    std::vector<JoinAlgorithm> join_algorithm;
+    std::vector<JoinAlgorithm> join_algorithms;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -172,6 +168,9 @@ private:
     ASTTableJoin table_join;
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
+
+    NamesAndTypesList columns_from_left_table;
+    NamesAndTypesList result_columns_from_left_table;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -207,6 +206,8 @@ private:
     std::string right_storage_name;
 
     bool is_join_with_constant = false;
+
+    bool enable_analyzer = false;
 
     Names requiredJoinedNames() const;
 
@@ -253,7 +254,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , join_algorithm({JoinAlgorithm::DEFAULT})
+        , join_algorithms({JoinAlgorithm::DEFAULT})
     {
         clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
@@ -271,25 +272,33 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
+    bool enableEnalyzer() const { return enable_analyzer; }
+    void assertEnableEnalyzer() const;
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
 
-    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
+    ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
 
-    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
+    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithms; }
 
-    bool isEnabledAlgorithm(JoinAlgorithm val) const
+    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val)
     {
-        /// When join_algorithm = 'default' (not specified by user) we use [parallel_]hash or direct algorithm.
+        /// When join_algorithms = {'default'} (not specified by user) we use [parallel_]hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
-        bool is_default_enabled = std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::DEFAULT) != join_algorithm.end();
+        bool is_default_enabled = std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::DEFAULT) != join_algorithms.end();
         constexpr auto default_algorithms = std::array<JoinAlgorithm, 4>{
             JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::DIRECT};
         if (is_default_enabled && std::ranges::find(default_algorithms, val) != default_algorithms.end())
             return true;
-        return std::find(join_algorithm.begin(), join_algorithm.end(), val) != join_algorithm.end();
+        return std::find(join_algorithms.begin(), join_algorithms.end(), val) != join_algorithms.end();
+    }
+
+    bool isEnabledAlgorithm(JoinAlgorithm val) const
+    {
+        return isEnabledAlgorithm(join_algorithms, val);
     }
 
     bool allowParallelHashJoin() const;
+    void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
 
@@ -380,6 +389,9 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
+
+    void setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side);
+
     void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
     {
         columns_added_by_join = columns_added_by_join_value;
@@ -405,11 +417,17 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
+    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix, const NamesAndTypesList & columns_from_left_table_)
     {
         columns_from_joined_table = std::move(columns_from_joined_table_value);
         deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
+        result_columns_from_left_table = columns_from_left_table_;
+        columns_from_left_table = columns_from_left_table_;
     }
+
+    void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
+    const NamesAndTypesList & getOutputColumns(JoinTableSide side);
+
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

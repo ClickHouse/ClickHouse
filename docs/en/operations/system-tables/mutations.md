@@ -27,6 +27,12 @@ The table contains information about [mutations](/docs/en/sql-reference/statemen
 
 - `parts_to_do` ([Int64](/docs/en/sql-reference/data-types/int-uint.md)) — The number of data parts that need to be mutated for the mutation to complete.
 
+- `is_killed` ([UInt8](/docs/en/sql-reference/data-types/int-uint.md)) — Indicates whether a mutation has been killed. **Only available in ClickHouse Cloud.**
+
+:::note 
+`is_killed=1` does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
+:::
+
 - `is_done` ([UInt8](/docs/en/sql-reference/data-types/int-uint.md)) — The flag whether the mutation is done or not. Possible values:
     - `1` if the mutation is completed,
     - `0` if the mutation is still in process.
