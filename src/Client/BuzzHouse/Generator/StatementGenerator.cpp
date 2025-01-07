@@ -457,6 +457,7 @@ int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * 
     else if (desc_function && nopt < (desc_table + desc_view + desc_query + desc_function + 1))
     {
         generateTableFuncCall(rg, dt->mutable_stf());
+        this->levels.clear();
     }
     else
     {

@@ -743,6 +743,9 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     return 0;
 }
 
+/*
+Don't forget to clear levels!
+*/
 int StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
 {
     const size_t funcs_size = CHTableFuncs.size();
