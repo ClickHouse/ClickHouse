@@ -109,7 +109,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeZooKeeperMergePredic
     if (pinned_part_uuids && pinned_part_uuids->part_uuids.contains(part->uuid))
         return std::unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid));
 
-    if (inprogress_quorum_part && part->name == *inprogress_quorum_part)
+    if (inprogress_quorum_part && *inprogress_quorum_part == part->name)
         return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
 
     if (prev_virtual_parts && prev_virtual_parts->getContainingPart(part->info).empty())
@@ -120,8 +120,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeZooKeeperMergePredic
 
     /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
     /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-    String containing_part = virtual_parts_ptr->getContainingPart(part->info);
-    if (containing_part != part->name)
+    if (String containing_part = virtual_parts_ptr->getContainingPart(part->info); containing_part != part->name)
         return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part));
 
     return {};

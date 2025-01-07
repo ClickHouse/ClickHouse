@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
-#include "Storages/StorageReplicatedMergeTree.h"
+
+#include <Storages/StorageReplicatedMergeTree.h>
 
 namespace DB
 {
