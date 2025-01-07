@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
