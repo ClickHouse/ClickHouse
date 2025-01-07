@@ -6,11 +6,8 @@ namespace DB
 {
 
 PartsRanges constructPartsRanges(
-    std::vector<MergeTreeDataPartsVector> && ranges, const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy, const time_t & current_time)
+    std::vector<MergeTreeDataPartsVector> && ranges, const StorageMetadataPtr & metadata_snapshot, const time_t & current_time)
 {
-    const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
-
     PartsRanges properties_ranges;
     properties_ranges.reserve(ranges.size());
 
@@ -20,7 +17,7 @@ PartsRanges constructPartsRanges(
         properties_ranges.reserve(range.size());
 
         for (const auto & part : range)
-            properties_range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
+            properties_range.push_back(buildPartProperties(part, metadata_snapshot, current_time));
 
         properties_ranges.push_back(std::move(properties_range));
     }

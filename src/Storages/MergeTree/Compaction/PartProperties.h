@@ -14,10 +14,8 @@ struct PartProperties
 {
     const std::string name;
     const MergeTreePartInfo part_info;
-    const UUID uuid = UUIDHelpers::Nil;
     const std::set<std::string> projection_names = {};
 
-    const bool shall_participate_in_merges = true;
     const bool all_ttl_calculated_if_any = false;
 
     /// Size of data part in bytes.
@@ -50,8 +48,6 @@ using PartsRanges = std::vector<PartsRange>;
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    time_t current_time,
-    bool has_volumes_with_disabled_merges);
+    time_t current_time);
 
 }

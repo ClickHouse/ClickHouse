@@ -73,9 +73,11 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
     return data_parts;
 }
 
-auto constructPreconditionsPredicate(const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
+auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
-    auto predicate = [tx, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
+    bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
+
+    auto predicate = [storage_policy, tx, merge_pred, has_volumes_with_disabled_merges](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
     {
         if (tx)
         {
@@ -89,6 +91,9 @@ auto constructPreconditionsPredicate(const MergeTreeTransactionPtr & tx, const M
                 return std::unexpected(PreformattedMessage::create("Part {} is locked for removal", part->name));
         }
 
+        if (has_volumes_with_disabled_merges && !part->shallParticipateInMerges(storage_policy))
+            return std::unexpected(PreformattedMessage::create("Merges for part's {} volume are disabled", part->name));
+
         chassert(merge_pred);
         return merge_pred->canUsePartInMerges(part);
     };
@@ -96,14 +101,18 @@ auto constructPreconditionsPredicate(const MergeTreeTransactionPtr & tx, const M
     return predicate;
 }
 
-std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(MergeTreeDataPartsVector && parts, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred, LogSeriesLimiter & series_log)
+std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(
+    MergeTreeDataPartsVector && parts,
+    const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred, LogSeriesLimiter & series_log)
 {
-    return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(tx, merge_pred), series_log);
+    return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(storage_policy, tx, merge_pred), series_log);
 }
 
-std::expected<void, PreformattedMessage> checkAllParts(const MergeTreeDataPartsVector & parts, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
+std::expected<void, PreformattedMessage> checkAllParts(
+    const MergeTreeDataPartsVector & parts,
+    const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
-    return checkAllPartsSatisfyPredicate(parts, constructPreconditionsPredicate(tx, merge_pred));
+    return checkAllPartsSatisfyPredicate(parts, constructPreconditionsPredicate(storage_policy, tx, merge_pred));
 }
 
 }
@@ -123,8 +132,8 @@ PartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     LogSeriesLimiter & series_log) const
 {
     auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
-    auto ranges = splitPartsByPreconditions(std::move(parts), tx, merge_pred, series_log);
-    return constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time);
+    auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
+    return constructPartsRanges(std::move(ranges), metadata_snapshot, current_time);
 }
 
 std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllPartsInsidePartition(
@@ -134,10 +143,10 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     const std::string & partition_id) const
 {
     auto parts = filterByPartitions(collectInitial(storage, tx), PartitionIdsHint{partition_id});
-    if (auto result = checkAllParts(parts, tx, merge_pred); !result)
+    if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
-    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, storage_policy, current_time);
+    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, current_time);
     chassert(ranges.size() == 1);
 
     return std::move(ranges.front());

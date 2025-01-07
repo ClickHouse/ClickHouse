@@ -13,10 +13,15 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data)
     return data.getDataPartsVectorForInternalUsage();
 }
 
-auto constructPreconditionsPredicate(const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
+auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
 {
-    auto predicate = [merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
+    bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
+
+    auto predicate = [storage_policy, merge_pred, has_volumes_with_disabled_merges](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
     {
+        if (has_volumes_with_disabled_merges && !part->shallParticipateInMerges(storage_policy))
+            return std::unexpected(PreformattedMessage::create("Merges for part's {} volume are disabled", part->name));
+
         chassert(merge_pred);
         return merge_pred->canUsePartInMerges(part);
     };
@@ -24,14 +29,18 @@ auto constructPreconditionsPredicate(const ReplicatedMergeTreeMergePredicatePtr 
     return predicate;
 }
 
-std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(MergeTreeDataPartsVector && parts, const ReplicatedMergeTreeMergePredicatePtr & merge_pred, LogSeriesLimiter & series_log)
+std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(
+    MergeTreeDataPartsVector && parts,
+    const StoragePolicyPtr & storage_policy, const ReplicatedMergeTreeMergePredicatePtr & merge_pred, LogSeriesLimiter & series_log)
 {
-    return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(merge_pred), series_log);
+    return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(storage_policy, merge_pred), series_log);
 }
 
-std::expected<void, PreformattedMessage> checkAllParts(const MergeTreeDataPartsVector & parts, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
+std::expected<void, PreformattedMessage> checkAllParts(
+    const MergeTreeDataPartsVector & parts,
+    const StoragePolicyPtr & storage_policy, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
 {
-    return checkAllPartsSatisfyPredicate(parts, constructPreconditionsPredicate(merge_pred));
+    return checkAllPartsSatisfyPredicate(parts, constructPreconditionsPredicate(storage_policy, merge_pred));
 }
 
 }
@@ -50,8 +59,8 @@ PartsRanges ReplicatedMergeTreePartsCollector::grabAllPossibleRanges(
     LogSeriesLimiter & series_log) const
 {
     auto parts = filterByPartitions(collectInitial(storage), partitions_hint);
-    auto ranges = splitPartsByPreconditions(std::move(parts), merge_pred, series_log);
-    return constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time);
+    auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, merge_pred, series_log);
+    return constructPartsRanges(std::move(ranges), metadata_snapshot, current_time);
 }
 
 std::expected<PartsRange, PreformattedMessage> ReplicatedMergeTreePartsCollector::grabAllPartsInsidePartition(
@@ -61,10 +70,10 @@ std::expected<PartsRange, PreformattedMessage> ReplicatedMergeTreePartsCollector
     const std::string & partition_id) const
 {
     auto parts = filterByPartitions(collectInitial(storage), PartitionIdsHint{partition_id});
-    if (auto result = checkAllParts(parts, merge_pred); !result)
+    if (auto result = checkAllParts(parts, storage_policy, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
-    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, storage_policy, current_time);
+    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, current_time);
     chassert(ranges.size() == 1);
 
     return std::move(ranges.front());

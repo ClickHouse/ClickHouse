@@ -67,16 +67,12 @@ std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & 
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    time_t current_time,
-    bool has_volumes_with_disabled_merges)
+    time_t current_time)
 {
     return PartProperties{
         .name = part->name,
         .part_info = part->info,
-        .uuid = part->uuid,
         .projection_names = getCalculatedProjectionNames(part),
-        .shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true,
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .size = part->getExistingBytesOnDisk(),
         .age = current_time - part->modification_time,
