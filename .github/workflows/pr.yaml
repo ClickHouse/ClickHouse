@@ -59,7 +59,7 @@ jobs:
           fi
 
   docker_builds:
-    runs-on: [style-checker-aarch64]
+    runs-on: [style-checker]
     needs: [config_workflow]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIEJ1aWxkcw==') }}
     name: "Docker Builds"
