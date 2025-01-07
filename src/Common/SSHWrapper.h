@@ -40,7 +40,7 @@ public:
     void setNeedsDeallocation(bool needs_deallocation_);
 
     friend class SSHKeyFactory;
-// private:
+
     explicit SSHKey(ssh_key key_) : key(key_) { }
 
 private:

@@ -15,6 +15,7 @@ class PtyClientDescriptorSet : public IClientDescriptorSet
 {
 public:
     PtyClientDescriptorSet(const String & term_name, int width, int height, int width_pixels, int height_pixels);
+    ~PtyClientDescriptorSet() override;
 
     DescriptorSet getDescriptorsForClient() override
     {
@@ -22,16 +23,10 @@ public:
     }
 
     DescriptorSet getDescriptorsForServer() override { return DescriptorSet{.in = pty_master.get(), .out = pty_master.get(), .err = -1}; }
-
     StreamSet getStreamsForClient() override { return StreamSet{.in = input_stream, .out = output_stream, .err = output_stream}; }
-
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels) const;
-
     void closeServerDescriptors() override { pty_master.close(); }
-
     bool isPty() const override { return true; }
-
-    ~PtyClientDescriptorSet() override;
 
 private:
     class FileDescriptorWrapper

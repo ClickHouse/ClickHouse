@@ -71,7 +71,6 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-
 class InternalTextLogs;
 class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
@@ -242,7 +241,6 @@ protected:
         void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
 
         /// Set value not greater then 0 to mark the query as stopped.
-
         void stop() { exit_after_signals.store(0); }
 
         /// Return true if the query was stopped.
@@ -340,7 +338,8 @@ protected:
     MergeTreeSettings cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
-    std::optional<ThreadStatus> thread_status; // may be not initialized in embedded client
+    /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
+    std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;

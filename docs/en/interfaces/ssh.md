@@ -55,11 +55,11 @@ In order to enable the SSH server capability, you need to uncomment or place the
 
 ```xml
 <tcp_ssh_port>9022</tcp_ssh_port>
-<ssh>
+<ssh_server>
    <host_rsa_key>path-to-the-key</host_rsa_key>
    <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
    <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
-</ssh>
+</ssh_server>
 ```
 
 The host key is an integral part of a SSH protocol. The public part of this key is stored in the `~/.ssh/known_hosts` file on the client side and typically needed to prevent man-in-the-middle type of attacks. When connecting to the server for the first time you will see the message below:

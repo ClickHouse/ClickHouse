@@ -34,9 +34,8 @@ SSHEvent::SSHEvent(SSHEvent && other) noexcept : event(std::move(other.event))
 SSHEvent & SSHEvent::operator=(SSHEvent && other) noexcept
 {
     if (this != &other)
-    {
         event = std::move(other.event);
-    }
+
     return *this;
 }
 

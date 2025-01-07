@@ -22,17 +22,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_insert_block_size;
 }
-namespace
-{
 
-template<typename T>
-T getEnvOption(const NameToNameMap & envVars, const String & key, T defaultValue)
-{
-    auto it = envVars.find(key);
-    return it == envVars.end() ? defaultValue : parse<T>(it->second);
-}
-
-}
 
 void ClientEmbedded::printHelpMessage(const OptionsDescription & options_description)
 {

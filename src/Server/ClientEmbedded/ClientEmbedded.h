@@ -45,7 +45,8 @@ public:
 
     int run(const NameToNameMap & envVars, const String & first_query);
 
-    /// NOP
+    /// NOP. The embedded client runs inside the server process which has its own signal handlers.
+    /// Thus we cannot override it in any way.
     void setupSignalHandler() override {}
 
     ~ClientEmbedded() override { cleanup(); }

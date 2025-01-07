@@ -512,7 +512,6 @@ void LocalServer::connect()
         input = std::make_unique<ReadBufferFromFile>(table_file);
         in = input.get();
     }
-
     connection = LocalConnection::createConnection(
         connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }

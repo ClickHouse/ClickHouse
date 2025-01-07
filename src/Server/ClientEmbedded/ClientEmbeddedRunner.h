@@ -18,27 +18,19 @@ namespace DB
 class ClientEmbeddedRunner
 {
 public:
-    bool hasStarted() { return started.test(); }
-
-    bool hasFinished() { return finished.test(); }
-
-    // void stopQuery() { client.stopQuery(); } // this is save for client until he uses thread-safe structures to handle query stopping
-
-    void run(const NameToNameMap & envs, const String & starting_query = "");
-
-    IClientDescriptorSet::DescriptorSet getDescriptorsForServer() { return client_descriptors->getDescriptorsForServer(); }
-
-    bool hasPty() const { return client_descriptors->isPty(); }
-
-    // Sets new window size for tty. Works only if IClientDescriptorSet is pty
-    void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
-
-    ~ClientEmbeddedRunner();
-
     explicit ClientEmbeddedRunner(std::unique_ptr<IClientDescriptorSet> && client_descriptor_, std::unique_ptr<Session> && dbSession_)
         : client_descriptors(std::move(client_descriptor_)), db_session(std::move(dbSession_)), log(&Poco::Logger::get("ClientEmbeddedRunner"))
     {
     }
+    ~ClientEmbeddedRunner();
+
+    bool hasStarted() { return started.test(); }
+    bool hasFinished() { return finished.test(); }
+    void run(const NameToNameMap & envs, const String & starting_query = "");
+    IClientDescriptorSet::DescriptorSet getDescriptorsForServer() { return client_descriptors->getDescriptorsForServer(); }
+    bool hasPty() const { return client_descriptors->isPty(); }
+    // Sets new window size for tty. Works only if IClientDescriptorSet is pty
+    void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
 
 private:
     void clientRoutine(NameToNameMap envs, String starting_query);
