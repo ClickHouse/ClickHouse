@@ -97,10 +97,38 @@ Octal literals are not supported to avoid accidental errors in interpretation.
 ### String
 
 String literals must be enclosed in single quotes, double quotes are not supported.
-Escaping works either
+Escaping works by either:
 
 - using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
-- using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
+- using a preceding backslash with the following supported standard escape sequences:
+
+| Standard Escapes |
+|------------------|
+| `\x`             |
+| `\N`             | 
+| `\a`             |
+| `\b`             | 
+| `\e`             |
+| `\f`             | 
+| `\n`             |
+| `\r`             | 
+| `\t`             | 
+| `\v`             |
+| `\0`             |
+
+:::note
+Non-standard escape sequences are returned as is (including the backslash) unless they are one of the following:
+
+| Non Standard Escapes                |
+|-------------------------------------|
+| `\\`                                | 
+| `'`                                 | 
+| `"`                                 |
+| `` ` `` (backtick)                  |
+| `/`                                 |
+| `=`                                 |
+| ASCII control characters (c <= 31). |
+:::
 
 In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
 
