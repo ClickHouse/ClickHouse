@@ -34,13 +34,13 @@ int StatementGenerator::generateSettingValues(
     SettingValues * vals)
 {
     return generateSettingValues(
-        rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 10) + 1)), vals);
+        rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 20) + 1)), vals);
 }
 
 int StatementGenerator::generateSettingList(
     RandomGenerator & rg, const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings, SettingList * sl)
 {
-    const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 4) + 1));
+    const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 7) + 1));
 
     for (size_t i = 0; i < nvalues; i++)
     {
@@ -182,7 +182,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     {
         TableEngine * te = cv->mutable_engine();
         const bool has_with_cols
-            = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() == next.ncols; });
+            = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() >= next.ncols; });
         const bool has_tables = has_with_cols || !tables.empty();
 
         next.teng = getNextTableEngine(rg, false);
@@ -203,13 +203,26 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
 
         if ((has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6))
         {
+            CreateMatViewTo * cmvt = cv->mutable_to();
             const SQLTable & t = has_with_cols
                 ? rg.pickRandomlyFromVector(
-                        filterCollection<SQLTable>([&next](const SQLTable & tt) { return tt.numberOfInsertableColumns() == next.ncols; }))
+                        filterCollection<SQLTable>([&next](const SQLTable & tt) { return tt.numberOfInsertableColumns() >= next.ncols; }))
                       .get()
                 : rg.pickValueRandomlyFromMap(this->tables);
 
-            cv->mutable_to_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
+            cmvt->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
+            if (has_with_cols && rg.nextBool())
+            {
+                ColumnPathList * clist = cmvt->mutable_col_list();
+
+                flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+                std::shuffle(entries.begin(), entries.end(), rg.generator);
+                for (size_t i = 0; i < next.ncols; i++)
+                {
+                    columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
+                }
+                entries.clear();
+            }
         }
         if ((next.is_refreshable = rg.nextBool()))
         {
@@ -406,22 +419,17 @@ int StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable 
 
 int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * dt)
 {
-    ExprSchemaTable * est = dt->mutable_est();
-    const bool has_tables = collectionHas<SQLTable>(attached_tables);
-    const bool has_views = collectionHas<SQLView>(attached_views);
+    const uint32_t desc_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t desc_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t desc_query = 5;
+    const uint32_t desc_function = 5;
+    const uint32_t prob_space = desc_table + desc_view + desc_query + desc_function;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
 
-    if (has_views && (!has_tables || rg.nextBool()))
+    if (desc_table && nopt < (desc_table + 1))
     {
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
-
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
-    }
-    else if (has_tables)
-    {
+        ExprSchemaTable * est = dt->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
         if (t.db)
@@ -430,11 +438,30 @@ int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * 
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
+    else if (desc_view && nopt < (desc_table + desc_view + 1))
+    {
+        ExprSchemaTable * est = dt->mutable_est();
+        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
+
+        if (v.db)
+        {
+            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
+        }
+        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+    }
+    else if (desc_query && nopt < (desc_table + desc_view + desc_query + 1))
+    {
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        generateSelect(rg, false, false, (rg.nextLargeNumber() % 5) + 1, std::numeric_limits<uint32_t>::max(), dt->mutable_sel());
+    }
+    else if (desc_function && nopt < (desc_table + desc_view + desc_query + desc_function + 1))
+    {
+        generateTableFuncCall(rg, dt->mutable_stf());
+    }
     else
     {
         assert(0);
     }
-    dt->set_sub_cols(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
     {
         SettingValues * vals = dt->mutable_setting_values();
@@ -453,7 +480,7 @@ int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * 
 
 int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
-    const uint32_t noption = rg.nextMediumNumber();
+    const uint32_t noption = rg.nextLargeNumber();
     ExprSchemaTable * est = ins->mutable_est();
     const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
@@ -2594,8 +2621,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                 return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily();
             }));
     const uint32_t check_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
-    const uint32_t desc_table
-        = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views));
+    const uint32_t desc_table = 2;
     const uint32_t exchange_tables = 1
         * static_cast<uint32_t>(collectionCount<SQLTable>(
                                     [](const SQLTable & t)

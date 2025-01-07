@@ -1533,6 +1533,17 @@ enum SQLFunc {
     FUNCzookeeperSessionUptime = 1528;
 }
 
+enum SQLTableFunc {
+    TFfile = 1;
+    TFformat = 2;
+    TFgenerateSeries = 3;
+    TFmysql = 4;
+    TFpostgresql = 5;
+    TFremote = 6;
+    TFS3 = 7;
+    TFsqlite = 8;
+}
+
 message Database {
     required string database = 1;
 }
@@ -2417,6 +2428,11 @@ message S3Func {
     optional string fcomp = 6;
 }
 
+message SQLTableFuncCall {
+    required SQLTableFunc func = 1;
+    repeated SQLFuncArg args = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2427,6 +2443,7 @@ message TableFunction {
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
         S3Func s3 = 8;
+        SQLTableFuncCall func = 9;
     }
 }
 
@@ -3125,9 +3142,12 @@ message CheckTable {
 }
 
 message DescTable {
-    required ExprSchemaTable est = 1;
-    optional bool sub_cols = 2;
-    optional SettingValues setting_values = 3;
+    oneof desc_oneof {
+        ExprSchemaTable est = 1;
+        Select sel = 2;
+        SQLTableFuncCall stf = 3;
+    }
+    optional SettingValues setting_values = 4;
 }
 
 message DeduplicateExpr {
@@ -3273,12 +3293,17 @@ message RefreshableView {
     optional bool append = 5;
 }
 
+message CreateMatViewTo {
+    required ExprSchemaTable est = 1;
+    optional ColumnPathList col_list = 2;
+}
+
 message CreateView {
     optional bool replace = 1;
     optional bool materialized = 2;
     required ExprSchemaTable est = 3;
     optional RefreshableView refresh = 4;
-    optional ExprSchemaTable to_est = 5;
+    optional CreateMatViewTo to = 5;
     optional TableEngine engine = 6;
     optional bool populate = 7;
     optional bool empty = 8;

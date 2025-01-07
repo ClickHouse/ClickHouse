@@ -294,6 +294,7 @@ private:
     int generateExpression(RandomGenerator & rg, Expr * expr);
     int generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
     int generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
+    int generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call);
 
     int generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, OrderByStatement * ob);
 

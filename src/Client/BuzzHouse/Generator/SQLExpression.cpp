@@ -743,6 +743,48 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     return 0;
 }
 
+int StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
+{
+    const size_t funcs_size = CHTableFuncs.size();
+    std::uniform_int_distribution<uint32_t> next_dist(0, funcs_size - 1);
+    const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
+    const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
+    uint32_t generated_params = 0;
+    uint32_t n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
+    uint32_t min_args = func.min_args;
+    uint32_t max_args = std::min(this->fc.max_width - this->width, func_max_args);
+
+    tfunc_call->set_func(static_cast<SQLTableFunc>(func.fnum));
+    if (n_lambda > 0)
+    {
+        assert(n_lambda == 1);
+        generateLambdaCall(rg, (rg.nextSmallNumber() % 3) + 1, tfunc_call->add_args()->mutable_lambda());
+        this->width++;
+        generated_params++;
+    }
+    if (max_args > 0 && max_args >= min_args)
+    {
+        std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);
+        const uint32_t nfunc_args = nparams(rg.generator);
+
+        for (uint32_t i = 0; i < nfunc_args; i++)
+        {
+            this->generateExpression(rg, tfunc_call->add_args()->mutable_expr());
+            this->width++;
+            generated_params++;
+        }
+    }
+    else if (min_args > 0)
+    {
+        for (uint32_t i = 0; i < min_args; i++)
+        {
+            generateLiteralValue(rg, tfunc_call->add_args()->mutable_expr());
+        }
+    }
+    this->width -= generated_params;
+    return 0;
+}
+
 int StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
 {
     if (rg.nextBool())

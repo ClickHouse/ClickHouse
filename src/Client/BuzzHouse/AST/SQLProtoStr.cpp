@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <limits>
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
@@ -1861,6 +1860,34 @@ CONV_FN(S3Func, sfunc)
     ret += ")";
 }
 
+CONV_FN(SQLTableFuncCall, sfc)
+{
+    ret += SQLTableFunc_Name(sfc.func()).substr(2);
+    ret += '(';
+    for (int i = 0; i < sfc.args_size(); i++)
+    {
+        const SQLFuncArg & sfa = sfc.args(i);
+
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        if (sfa.has_lambda())
+        {
+            LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_expr())
+        {
+            ExprToString(ret, sfa.expr());
+        }
+        else
+        {
+            ret += "1";
+        }
+    }
+    ret += ')';
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -1889,6 +1916,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kS3:
             S3FuncToString(ret, tf.s3());
+            break;
+        case TableFunctionType::kFunc:
+            SQLTableFuncCallToString(ret, tf.func());
             break;
         default:
             ret += "numbers(10)";
@@ -2996,8 +3026,24 @@ CONV_FN(CheckTable, ct)
 
 CONV_FN(DescTable, dt)
 {
-    ret += "DESCRIBE TABLE ";
-    ExprSchemaTableToString(ret, dt.est());
+    ret += "DESCRIBE ";
+    using DescType = DescTable::DescOneofCase;
+    switch (dt.desc_oneof_case())
+    {
+        case DescType::kEst:
+            ExprSchemaTableToString(ret, dt.est());
+            break;
+        case DescType::kSel:
+            ret += "(";
+            SelectToString(ret, dt.sel());
+            ret += ")";
+            break;
+        case DescType::kStf:
+            SQLTableFuncCallToString(ret, dt.stf());
+            break;
+        default:
+            ret += "t0";
+    }
     if (dt.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -3136,10 +3182,18 @@ CONV_FN(CreateView, create_view)
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (create_view.has_to_est())
+        if (create_view.has_to())
         {
+            const CreateMatViewTo & cmvt = create_view.to();
+
             ret += " TO ";
-            ExprSchemaTableToString(ret, create_view.to_est());
+            ExprSchemaTableToString(ret, cmvt.est());
+            if (cmvt.has_col_list())
+            {
+                ret += "(";
+                ColumnPathListToString(ret, 0, cmvt.col_list());
+                ret += ")";
+            }
         }
         if (create_view.has_engine())
         {
