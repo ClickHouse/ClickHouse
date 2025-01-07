@@ -46,12 +46,11 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
-    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
 }
 
 namespace ServerSetting
@@ -765,24 +764,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
                 constraints.push_back(constraint);
-        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
-            (*storage_settings)[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
-        {
-            auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
-            sign_column_check_constraint->name = "check_sign_column";
-            sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
-
-            Array valid_values_array;
-            valid_values_array.emplace_back(-1);
-            valid_values_array.emplace_back(1);
-
-            auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
-            auto sign_column_ast = std::make_unique<ASTIdentifier>(merging_params.sign_column);
-            sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
-
-            constraints.push_back(std::move(sign_column_check_constraint));
-        }
         metadata.constraints = ConstraintsDescription(constraints);
     }
     else

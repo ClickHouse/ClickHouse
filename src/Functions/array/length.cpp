@@ -38,7 +38,7 @@ It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
                 {"unicode", "SELECT 'ёлка' AS str1, length(str1), lengthUTF8(str1), normalizeUTF8NFKD(str1) AS str2, length(str2), lengthUTF8(str2)", ""},
                 {"nul", R"(SELECT 'abc\0\0\0' AS str, length(str))", ""},
                 },
-            .categories{"String", "Array"}
+            .category{"Arrays"}
         },
         FunctionFactory::Case::Insensitive);
     factory.registerAlias("OCTET_LENGTH", "length", FunctionFactory::Case::Insensitive);

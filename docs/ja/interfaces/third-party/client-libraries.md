@@ -75,6 +75,7 @@ ClickHouse Inc は以下にリストされたライブラリを**維持してお
  - [clickhousex](https://github.com/appodeal/clickhousex/)
  - [pillar](https://github.com/sofakingworld/pillar)
  - [ecto_ch](https://github.com/plausible/ecto_ch)
+ - [req_ch](https://github.com/livebook-dev/req_ch)
 ### Nim
  - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 ### Haskell
