@@ -31,6 +31,22 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         info.started = true;
     }
 
+    if (const UInt64 & max_execution_time = limits.speed_limits.max_execution_time.totalMilliseconds(); max_execution_time != 0)
+    {
+        if (info.total_stopwatch.elapsedMilliseconds() > static_cast<UInt64>(max_execution_time))
+        {
+            ExecutionSpeedLimits::handleOverflowMode(
+                limits.timeout_overflow_mode,
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded: elapsed {} ms, maximum: {} ms",
+                static_cast<double>(info.total_stopwatch.elapsed()) / 1000000ULL,
+                max_execution_time);
+
+            stopReading();
+            return;
+        }
+    }
+
     if (chunk)
     {
         info.update(chunk);
