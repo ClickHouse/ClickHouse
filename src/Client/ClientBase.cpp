@@ -938,6 +938,21 @@ void ClientBase::initKeystrokeInterceptor()
     }
 }
 
+
+String ClientBase::appendSmileyIfNeeded(const String & prompt_)
+{
+    static constexpr String smiley = ":) ";
+
+    if (prompt_.empty())
+        return smiley;
+
+    if (prompt_.ends_with(smiley))
+        return prompt_;
+
+    return prompt_ + " " + smiley;
+}
+
+
 void ClientBase::updateSuggest(const ASTPtr & ast)
 {
     std::vector<std::string> new_words;
@@ -2610,9 +2625,9 @@ bool ClientBase::processQueryText(const String & text)
 }
 
 
-String ClientBase::prompt() const
+String ClientBase::getPrompt() const
 {
-    return prompt_by_server_display_name;
+    return prompt;
 }
 
 
@@ -2817,7 +2832,7 @@ void ClientBase::runInteractive()
             lr.enableBracketedPaste();
             SCOPE_EXIT({ lr.disableBracketedPaste(); });
 
-            input = lr.readLine(prompt(), ":-] ");
+            input = lr.readLine(getPrompt(), ":-] ");
         }
 
         if (input.empty())
@@ -2899,7 +2914,7 @@ void ClientBase::runInteractive()
     if (isNewYearMode())
         output_stream << "Happy new year." << std::endl;
     else if (isChineseNewYearMode(local_tz))
-        output_stream << "Happy Chinese new year. 春节快乐!" << std::endl;
+        output_stream << "Happy Chinese new year. 春节快乐!" << fmt::format(" {}年快乐.", getChineseZodiac()) << std::endl;
     else
         output_stream << "Bye." << std::endl;
 }

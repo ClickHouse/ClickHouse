@@ -5,6 +5,8 @@ sidebar_label: View all formats...
 title: Formats for Input and Output Data
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 All format names are case insensitive.
@@ -1749,6 +1751,8 @@ Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,an
 
 ## CapnProto {#capnproto}
 
+<CloudNotSupportedBadge/>
+
 CapnProto is a binary message format similar to [Protocol Buffers](https://developers.google.com/protocol-buffers/) and [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift), but not like [JSON](#json) or [MessagePack](https://msgpack.org/).
 
 CapnProto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
@@ -1911,6 +1915,8 @@ something_weird{problem="division by zero"} +Inf -3982045
 
 ## Protobuf {#protobuf}
 
+<CloudNotSupportedBadge/>
+
 Protobuf - is a [Protocol Buffers](https://protobuf.dev/) format.
 
 This format requires an external format schema. The schema is cached between queries.
@@ -2013,9 +2019,13 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
 ## ProtobufSingle {#protobufsingle}
 
+<CloudNotSupportedBadge/>
+
 Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
 
 ## ProtobufList {#protobuflist}
+
+<CloudNotSupportedBadge/>
 
 Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
 
