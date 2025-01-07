@@ -1139,7 +1139,13 @@ When `cache_populated_by_fetch` is disabled (the default setting), new data part
 
 If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action. 
 
-Default value: 0.
+Default value: false
+
+**See Also**
+
+- [ignore_cold_parts_seconds](settings.md/#ignore_cold_parts_seconds)
+- [prefer_warmed_unmerged_parts_seconds](settings.md/#prefer_warmed_unmerged_parts_seconds)
+- [cache_warmer_threads](settings.md/#cache_warmer_threads)
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine
 
