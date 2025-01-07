@@ -1,13 +1,27 @@
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/Operators.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Transforms/ColumnPermuteTransform.h>
+
+namespace
+{
+
+bool hasLowCardinalityColumn(const DB::Block & header)
+{
+    for (const auto & column : header)
+        if (column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type))
+            return true;
+    return false;
+}
+
+}
 
 namespace DB
 {
@@ -140,7 +154,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin())
+    if (min_block_size_bytes && !hasLowCardinalityColumn(joined_pipeline->getHeader()) && join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform([&](const Block & header)
                                      { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
