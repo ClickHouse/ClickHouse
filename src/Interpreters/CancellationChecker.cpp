@@ -49,6 +49,7 @@ void CancellationChecker::cancelTask(QueryToTrack task)
         task.query->setTimedOut();
         if (task.overflow_mode == OverflowMode::THROW)
             task.query->cancelQuery(CancelReason::TIMEOUT);
+        task.query->checkTimeLimit();
     }
 }
 

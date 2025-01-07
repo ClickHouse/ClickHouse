@@ -545,9 +545,18 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
 bool QueryStatus::checkTimeLimit()
 {
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), watch.elapsed());
+    auto elapsed_ns = watch.elapsed();
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
 
-    return checkTimeLimitSoft();
+    if (is_timed_out)
+        return ExecutionSpeedLimits::handleOverflowMode(
+            overflow_mode,
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
+            static_cast<double>(elapsed_ns) / 1000000000ULL,
+            limits.max_execution_time.totalMicroseconds() / 1000000.0);
+
+    return true;
 }
 
 void QueryStatus::throwQueryWasCancelled() const
@@ -564,11 +573,11 @@ bool QueryStatus::checkTimeLimitSoft()
         return false;
 
     if (is_timed_out)
-        ExecutionSpeedLimits::handleOverflowMode(
-            overflow_mode,
+        return ExecutionSpeedLimits::handleOverflowMode(
+            OverflowMode::BREAK,
             ErrorCodes::TIMEOUT_EXCEEDED,
             "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
-            static_cast<double>(watch.elapsed()) / 1000000000ULL,
+            static_cast<double>(watch.elapsedNanoseconds()) / 1000000000ULL,
             limits.max_execution_time.totalMicroseconds() / 1000000.0);
 
     return true;
