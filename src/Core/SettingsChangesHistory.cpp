@@ -66,6 +66,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
+            {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
@@ -92,6 +94,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
+            {"allow_experimental_kusto_dialect", true, false, "A new setting"},
+            {"allow_experimental_prql_dialect", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

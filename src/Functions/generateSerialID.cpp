@@ -190,7 +190,7 @@ The series are stored in Keeper nodes under the path, which can be configured in
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
                   )"}},
-        .categories{"Other"}
+        .category{"Other"}
     });
 }
 
