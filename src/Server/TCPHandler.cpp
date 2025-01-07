@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -63,11 +64,16 @@
 
 #include <Core/Protocol.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Interpreters/ClientInfo.h>
+
 #include "TCPHandler.h"
 
 #include <Common/config_version.h>
 
 #include <fmt/format.h>
+
+#include <fmt/ostream.h>
+#include <Common/StringUtils.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -111,6 +117,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool send_settings_to_client;
 }
 }
 
@@ -493,6 +500,7 @@ void TCPHandler::runImpl()
                 query_state->query_context->getSettingsRef(),
                 query_state->query_context->getOpenTelemetrySpanLog());
             thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
             query_scope.emplace(query_state->query_context, /* fatal_error_callback */ [this, &query_state]
             {
@@ -520,6 +528,7 @@ void TCPHandler::runImpl()
                 query_state->logs_queue->setSourceRegexp(query_state->query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
+
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -1060,6 +1069,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
         auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+
+        sendLogs(state);
+        sendInsertProfileEvents(state);
+
         if (result_chunk)
         {
             auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
@@ -1103,7 +1116,12 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 startInsertQuery(state);
 
             while (receivePacketsExpectDataConcurrentWithExecutor(state))
+            {
                 executor.push(std::move(state.block_for_insert));
+
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+            }
 
             state.read_all_data = true;
 
@@ -1148,6 +1166,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
             /// Reset pipeline because it may hold write lock for some storages.
+            state.io.pipeline.cancel();
             state.io.pipeline.reset();
             if (settings[Setting::wait_for_async_insert])
             {
@@ -1540,11 +1559,27 @@ bool TCPHandler::receiveProxyHeader()
             return false;
         }
 
+        bool is_tcp6 = ('6' == *limit_in.position());
+
         ++limit_in.position();
         assertChar(' ', limit_in);
 
         /// Read the first field and ignore other.
         readStringUntilWhitespace(forwarded_address, limit_in);
+
+        if (is_tcp6)
+            forwarded_address = "[" + forwarded_address + "]";
+
+        /// Skip second field (destination address)
+        assertChar(' ', limit_in);
+        skipStringUntilWhitespace(limit_in);
+        assertChar(' ', limit_in);
+
+        /// Read source port
+        String port;
+        readStringUntilWhitespace(port, limit_in);
+
+        forwarded_address += ":" + port;
 
         /// Skip until \r\n
         while (!limit_in.eof() && *limit_in.position() != '\r')
@@ -1838,6 +1873,15 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
+    {
+        if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
+            Settings::writeEmpty(*out); // send empty list of setting changes
+        else
+            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
+
     out->next();
 }
 
@@ -1960,6 +2004,13 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
+    std::string received_extra_roles;
+    // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+    {
+        readStringBinary(received_extra_roles, *in);
+    }
+
     /// Interserver secret.
     std::string received_hash;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
@@ -2019,6 +2070,7 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         data += state->query;
         data += state->query_id;
         data += client_info.initial_user;
+        data += received_extra_roles;
 
         std::string calculated_hash = encodeSHA256(data);
         assert(calculated_hash.size() == 32);
@@ -2039,13 +2091,25 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
         }
         else
         {
+            // In a cluster, query originator may have an access to the external auth provider (like LDAP server),
+            // that grants specific roles to the user. We want these roles to be granted to the user on other nodes of cluster when
+            // query is executed.
+            Strings external_roles;
+            if (!received_extra_roles.empty())
+            {
+                ReadBufferFromString buffer(received_extra_roles);
+
+                readVectorBinary(external_roles, buffer);
+                LOG_DEBUG(log, "Parsed extra roles [{}]", fmt::join(external_roles, ", "));
+            }
+
             LOG_DEBUG(log, "User (initial, interserver mode): {} (client: {})", client_info.initial_user, getClientAddress(client_info).toString());
             /// In case of inter-server mode authorization is done with the
             /// initial address of the client, not the real address from which
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address, external_roles);
         }
 
         is_interserver_authenticated = true;
@@ -2292,7 +2356,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
+            getFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -2573,9 +2637,9 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
 {
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
-    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
+    auto forwarded_address = client_info.getLastForwardedFor();
+    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
+        return *forwarded_address;
     return socket().peerAddress();
 }
 

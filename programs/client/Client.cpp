@@ -50,6 +50,8 @@
 
 #include <Poco/Util/Application.h>
 
+#include "config.h"
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -70,6 +72,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_PASSWORD;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int USER_EXPIRED;
 }
@@ -220,7 +223,7 @@ std::vector<String> Client::loadWarningMessages()
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {});
+                          &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -376,7 +379,7 @@ try
     }
     catch (const Exception & e)
     {
-        if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED ||
+        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
             config().has("password") ||
             config().getBool("ask-password", false) ||
             !is_interactive)
@@ -480,12 +483,23 @@ void Client::connect()
                 connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
+
+            /// Apply setting changes received from server, but with lower priority than settings
+            /// changed from command line.
+            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
+            const Settings & settings = global_context->getSettingsRef();
+            std::erase_if(settings_from_server, [&](const SettingChange & change)
+            {
+                return settings.isChanged(change.name);
+            });
+            global_context->applySettingsChanges(settings_from_server);
+
             break;
         }
         catch (const Exception & e)
         {
             /// This problem can't be fixed with reconnection so it is not attempted
-            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
                 throw;
 
             if (attempted_address_index == hosts_and_ports.size() - 1)
@@ -516,7 +530,7 @@ void Client::connect()
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
-#ifndef CLICKHOUSE_CLOUD
+#if not CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 

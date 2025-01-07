@@ -79,6 +79,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -110,6 +111,9 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsString primary_index_cache_policy;
+    extern const ServerSettingsUInt64 primary_index_cache_size;
+    extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
 }
 
@@ -395,10 +399,13 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
+    String compression = "auto";
     if (!getClientConfiguration().has("table-file") || getClientConfiguration().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
+        if (default_input_compression_method != CompressionMethod::None)
+            compression = toContentEncodingName(default_input_compression_method);
     }
     else
     {
@@ -414,8 +421,8 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
-                       table_name, table_structure, data_format, table_file);
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+                       table_name, table_structure, data_format, table_file, compression);
 }
 
 
@@ -494,7 +501,7 @@ void LocalServer::connect()
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
-        in = &std_in;
+        in = std_in.get();
     }
     else
     {
@@ -778,6 +785,16 @@ void LocalServer::processConfig()
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
+    String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
+    size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
+    double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
+    if (primary_index_cache_size > max_cache_size)
+    {
+        primary_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
+    }
+    global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -788,6 +805,9 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query cache.
     global_context->setQueryCache(0, 0, 0, 0);
+
+    /// Initialize allowed tiers
+    global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];

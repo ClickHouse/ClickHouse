@@ -136,7 +136,7 @@ using ModelPtr = std::unique_ptr<IModel>;
 
 
 template <typename... Ts>
-UInt64 hash(Ts... xs)
+static UInt64 hash(Ts... xs)
 {
     SipHash hash;
     (hash.update(xs), ...);
@@ -271,7 +271,7 @@ public:
 
 /// Pseudorandom permutation of mantissa.
 template <typename Float>
-Float transformFloatMantissa(Float x, UInt64 seed)
+static Float transformFloatMantissa(Float x, UInt64 seed)
 {
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;

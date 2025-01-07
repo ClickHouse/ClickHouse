@@ -3,9 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <fmt/format.h>
-
 
 namespace DB
 {

@@ -122,6 +122,14 @@ Default value: `0`.
 
 Cloud default value: half the memory amount per replica.
 
+## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
+
+The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external memory for aggregation.
+
+For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
+
+Default value: `0.5`.
+
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
 Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
@@ -132,6 +140,14 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 Default value: 0.
 
 Cloud default value: half the memory amount per replica.
+
+## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
+
+The ratio of available memory that is allowed for `ORDER BY`, once reached, uses external sort.
+
+For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+
+Default value: `0.5`.
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
@@ -189,10 +205,10 @@ Result:
 Maximum query execution time in seconds.
 At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
 
-The `max_execution_time` parameter can be a bit tricky to understand. 
-It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)). 
+The `max_execution_time` parameter can be a bit tricky to understand.
+It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)).
 ClickHouse will interrupt a query if the projected execution time exceeds the specified `max_execution_time`.
-By default, the timeout_before_checking_execution_speed is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse will begin estimating the total execution time. 
+By default, the timeout_before_checking_execution_speed is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse will begin estimating the total execution time.
 If, for example, `max_execution_time` is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated time exceeds this 3600-second limit.
 If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use clock time as the basis for `max_execution_time`.
 

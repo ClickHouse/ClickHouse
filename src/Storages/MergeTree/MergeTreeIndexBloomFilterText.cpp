@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -614,7 +615,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
         auto & value = const_value.safeGet<String>();
         String required_substring;
-        bool dummy_is_trivial, dummy_required_substring_is_prefix;
+        bool dummy_is_trivial;
+        bool dummy_required_substring_is_prefix;
         std::vector<String> alternatives;
         OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
 
