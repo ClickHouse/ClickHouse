@@ -63,7 +63,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
     /// Recompression - 3 priority
     if (metadata_snapshot->hasAnyRecompressionTTL())
     {
-        TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, current_time, metadata_snapshot->getRecompressionTTLs());
+        TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, current_time);
 
         if (auto parts = recompress_ttl_selector.select(ranges, applier.max_total_size_to_merge); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLRecompress};

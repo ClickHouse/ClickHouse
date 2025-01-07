@@ -78,7 +78,7 @@ private:
 class TTLRecompressMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, const TTLDescriptions & recompression_ttls_);
+    explicit TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
 private:
     /// Return part min recompression TTL.
@@ -87,8 +87,6 @@ private:
     /// Checks that part's codec is not already equal to required codec
     /// according to recompression TTL. It doesn't make sense to assign such merge.
     bool canConsiderPart(const PartProperties & part) const override;
-
-    const TTLDescriptions & recompression_ttls;
 };
 
 }

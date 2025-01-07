@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 
 #include <Storages/StorageReplicatedMergeTree.h>
 
