@@ -39,13 +39,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeLocalMergePredicate:
 {
     /// FIXME: remove lock here
     std::lock_guard lock(queue.state_mutex);
-
-    /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
-    /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-    if (String containing_part = virtual_parts_ptr->getContainingPart(part->info); containing_part != part->name)
-        return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part));
-
-    return {};
+    return MergeCore::canUsePartInMerges(part->name, part->info);
 }
 
 ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePredicate(
@@ -112,18 +106,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeZooKeeperMergePredic
     if (inprogress_quorum_part && *inprogress_quorum_part == part->name)
         return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
 
-    if (prev_virtual_parts && prev_virtual_parts->getContainingPart(part->info).empty())
-        return std::unexpected(PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name));
-
-    if (committing_blocks && !committing_blocks->contains(part->info.partition_id))
-        return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", part->info.partition_id));
-
-    /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
-    /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-    if (String containing_part = virtual_parts_ptr->getContainingPart(part->info); containing_part != part->name)
-        return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part));
-
-    return {};
+    return MergeCore::canUsePartInMerges(part->name, part->info);
 }
 
 bool ReplicatedMergeTreeZooKeeperMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const

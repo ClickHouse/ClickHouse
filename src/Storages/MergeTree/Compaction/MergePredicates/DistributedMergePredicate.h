@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 #include <base/defines.h>
 
@@ -52,11 +53,8 @@ public:
         /// and then check that these two parts have the same mutation version according to queue.mutations_by_partition.
 
         /// Simple check to verify method preconditions.
-        chassert(!prev_virtual_parts_ptr || !prev_virtual_parts_ptr->getContainingPart(left.part_info).empty());
-        chassert(!prev_virtual_parts_ptr || !prev_virtual_parts_ptr->getContainingPart(right.part_info).empty());
-        chassert(!committing_blocks_ptr || committing_blocks_ptr->contains(left.part_info.partition_id));
-        chassert(!committing_blocks_ptr || committing_blocks_ptr->contains(right.part_info.partition_id));
         chassert(left.name != right.name);
+        chassert(canUsePartInMerges(left.name, left.part_info) && canUsePartInMerges(right.name, right.part_info));
 
         if (left.part_info.partition_id != right.part_info.partition_id)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
@@ -112,6 +110,22 @@ public:
             return std::unexpected(PreformattedMessage::create(
                     "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
                     fmt::join(left.projection_names, ", "), left.name, fmt::join(right.projection_names, ", "), right.name));
+
+        return {};
+    }
+
+    std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
+    {
+        if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
+            return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previouse virtual parts", name));
+
+        if (committing_blocks_ptr && !committing_blocks_ptr->contains(info.partition_id))
+            return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.partition_id));
+
+        /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+        /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+        if (String containing_part = virtual_parts_ptr->getContainingPart(info); containing_part != name)
+            return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", name, containing_part));
 
         return {};
     }

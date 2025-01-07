@@ -21,7 +21,7 @@ public:
     ~ReplicatedMergeTreeLocalMergePredicate() override = default;
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr &part) const override;
+    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const override;
 
 private:
     ReplicatedMergeTreeQueue & queue;
@@ -36,7 +36,7 @@ public:
     ~ReplicatedMergeTreeZooKeeperMergePredicate() override = default;
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr &part) const override;
+    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const override;
 
     /// Returns true if part is needed for some REPLACE_RANGE entry.
     /// We should not drop part in this case, because replication queue may stuck without that part.
