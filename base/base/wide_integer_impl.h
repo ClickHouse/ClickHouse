@@ -5,6 +5,7 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+#include "defines.h"
 
 #include <bit>
 #include <cmath>
@@ -12,6 +13,7 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+
 
 // NOLINTBEGIN(*)
 
@@ -647,8 +649,7 @@ private:
     }
 
     template <typename T>
-    constexpr static integer<Bits, Signed> NO_SANITIZE_UNDEFINED
-    multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    constexpr static integer<Bits, Signed> NO_SANITIZE_UNDEFINED multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (could_use_bitint256)
         {
