@@ -2230,7 +2230,7 @@ Result:
 
 ## filesystemAvailable
 
-Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for the operating system.
+Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemUnreserved](#filesystemUnreserved)) because some space is reserved for the operating system.
 
 **Syntax**
 
