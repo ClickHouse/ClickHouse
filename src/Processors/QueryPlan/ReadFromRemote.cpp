@@ -176,6 +176,8 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
+/// This is an attempt to convert fiters (pushed down from the plan optimizations) from ActionsDAG back to AST.
+/// It shoud not be needed after we send a full plan for distributed queries.
 static ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
@@ -203,19 +205,17 @@ static ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
-        if (WhichDataType(node->result_type).isFunction())
+        /// Labmdas are not supported (converting back to AST is complicated).
+        /// We have two cases here cause function with no capture can be constant-folded.
+        if (WhichDataType(node->result_type).isFunction()
+            || (node->type == ActionsDAG::ActionType::FUNCTION
+                && typeid_cast<const FunctionCapture *>(node->function_base.get())))
         {
             node_to_ast[node] = nullptr;
             continue;
         }
 
-        if (node->type == ActionsDAG::ActionType::FUNCTION
-            && typeid_cast<const FunctionCapture *>(node->function_base.get()))
-        {
-            node_to_ast[node] = nullptr;
-            continue;
-        }
-
+        /// Support for IN. The stored AST from the Set is taken.
         if (WhichDataType(node->result_type).isSet())
         {
             auto maybe_set = node->column;
@@ -248,10 +248,16 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->type == ActionsDAG::ActionType::INPUT)
         {
+            /// The column name can be taken from the projection name, or from the projection expression.
+            /// It depends on the predicate and query stage.
+
             auto it = input_to_projection.find(node->result_name);
             if (it != input_to_projection.end())
+                /// In case of expression match, append full expression as an AST.
+                /// We rely on plan optimization that the result is (expected to be) valid.
                 res = it->second->toAST();
             else if (projection_names.contains(node->result_name))
+                /// We can reuse the name from projection if there is one.
                 res = std::make_shared<ASTIdentifier>(node->result_name);
         }
 
@@ -275,9 +281,21 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 arguments.push_back(std::move(ast));
         }
 
+        /// Allow to skip children only for AND function.
         auto func_name = node->function_base->getName();
+        bool is_function_and = func_name == "and";
+        if (!has_all_args && !is_function_and)
+            continue;
 
-        if (isNameOfGlobalInFunction(func_name) && external_tables)
+        if (is_function_and && arguments.empty())
+            continue;
+
+        /// and() with 1 arg is not allowed. Make it AND(condition, 1)
+        if (is_function_and && arguments.size() == 1)
+            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
+
+        /// Support for GLOBAL IN.
+        if (external_tables && isNameOfGlobalInFunction(func_name))
         {
             const auto * second_arg = node->children.at(1);
             auto maybe_set = second_arg->column;
@@ -294,6 +312,11 @@ static ASTPtr tryBuildAdditionalFilterAST(
                     auto & external_table = (*external_tables)[temporary_table_name];
                     if (!external_table)
                     {
+                        /// Here we create a new temporary table and attach it to the FutureSetFromSubquery.
+                        /// At the moment FutureSet is created, temporary table will be filled.
+                        /// This should happen because filter expression on initiator needs the set as well,
+                        /// and it should be built before sending the external tables.
+
                         auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
                         NamesAndTypesList columns = header.getNamesAndTypesList();
 
@@ -312,17 +335,6 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 }
             }
         }
-
-        bool is_function_and = func_name == "and";
-        if (!has_all_args && !is_function_and)
-            continue;
-
-        if (is_function_and && arguments.empty())
-            continue;
-
-        /// and() with 1 arg is not supported.
-        if (is_function_and && arguments.size() == 1)
-            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
 
         auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
         res = std::move(function);
@@ -452,6 +464,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
+        /// For the lazy case we are ignoring external tables.
+        /// This is becasue the set could be build before the lambda call.
+        /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
         String query_string = formattedAST(query);
@@ -555,22 +570,6 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     }
     else
     {
-        // if (shard.query_tree)
-        // {
-        //     const auto * query_node = shard.query_tree->as<QueryNode>();
-        //     for (const auto & node : query_node->getProjection())
-        //     {
-        //         std::cerr << "\n----------------------\n";
-        //         std::cerr << node->dumpTree() << std::endl;
-        //         std::cerr << queryToString(node->toAST()) << std::endl;
-        //         std::cerr << calculateActionNodeName(node, *shard.planner_context) << std::endl;
-        //     }
-        //     std::cerr << shard.query_tree->dumpTree() << std::endl;
-        // }
-
-        // if (filter_actions_dag)
-        //     std::cerr << filter_actions_dag->dumpDAG() << std::endl;
-
         if (filter_actions_dag)
             addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
@@ -605,13 +604,6 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header)
 {
     Pipes pipes;
-
-    // if (filter_actions_dag)
-    // {
-    //     std::cerr << filter_actions_dag->dumpDAG() << std::endl;
-    //     pushed_down_filters = tryBuildAdditionalFilterAST(*filter_actions_dag);
-    //     std::cerr << pushed_down_filters->dumpTree() << std::endl;
-    // }
 
     for (const auto & shard : used_shards)
     {
