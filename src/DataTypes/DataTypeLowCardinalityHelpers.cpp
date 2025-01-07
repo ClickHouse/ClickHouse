@@ -45,10 +45,7 @@ bool isLowCardinalityOrContainsLowCardinality(const DataTypePtr & type)
             || isLowCardinalityOrContainsLowCardinality(map_type->getValueType());
     }
 
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        return true;
-
-    return false;
+    return type->lowCardinality();
 }
 
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
