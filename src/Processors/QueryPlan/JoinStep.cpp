@@ -10,19 +10,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
-namespace
-{
-
-bool hasLowCardinalityColumn(const DB::Block & header)
-{
-    for (const auto & column : header)
-        if (column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type))
-            return true;
-    return false;
-}
-
-}
-
 namespace DB
 {
 
@@ -154,7 +141,10 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (min_block_size_bytes && !hasLowCardinalityColumn(joined_pipeline->getHeader()) && join->supportParallelJoin())
+    const bool has_low_cardinality = std::ranges::any_of(
+        joined_pipeline->getHeader(),
+        [](const auto & column) { return column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type); });
+    if (min_block_size_bytes && !has_low_cardinality && join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform([&](const Block & header)
                                      { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });

@@ -34,19 +34,6 @@
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
-namespace
-{
-
-bool hasLowCardinalityColumn(const DB::Block & header)
-{
-    for (const auto & column : header)
-        if (column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type))
-            return true;
-    return false;
-}
-
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -452,6 +439,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             num_streams = max_streams;
         }
 
+        const bool has_low_cardinality = std::ranges::any_of(
+            right->getHeader(),
+            [](const auto & column) { return column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type); });
         right->resize(max_streams);
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
@@ -459,7 +449,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             for (auto & outport : outports)
             {
                 OutputPort * out = outport;
-                if (min_block_size_bytes && !hasLowCardinalityColumn(right->getHeader()))
+                if (min_block_size_bytes && !has_low_cardinality)
                 {
                     auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
                     connect(*out, squashing->getInputs().front());
@@ -520,9 +510,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
 
     Block left_header = left->getHeader();
+    const bool has_low_cardinality = std::ranges::any_of(
+        left_header, [](const auto & column) { return column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type); });
     for (size_t i = 0; i < num_streams; ++i)
     {
-        if (min_block_size_bytes && !hasLowCardinalityColumn(left->getHeader()))
+        if (min_block_size_bytes && !has_low_cardinality)
         {
             auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
             connect(**lit, squashing->getInputs().front());

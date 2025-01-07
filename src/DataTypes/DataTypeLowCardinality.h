@@ -97,6 +97,6 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
 /// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
 DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
 
-/// Checks if `type` is LowCardinality or contains LowCardinality amond nested types.
+/// Checks if `type` is LowCardinality or contains LowCardinality among nested types.
 bool isLowCardinalityOrContainsLowCardinality(const DataTypePtr & type);
 }
