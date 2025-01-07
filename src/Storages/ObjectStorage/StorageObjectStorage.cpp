@@ -413,7 +413,7 @@ public:
             processors.emplace_back(processor);
 
         pipeline.init(std::move(pipe));
-        configuration->setPaths(std::move(paths));
+        configuration->setPaths(paths);
     }
 
 private:
