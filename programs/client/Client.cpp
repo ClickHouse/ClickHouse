@@ -458,16 +458,10 @@ void Client::connect()
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
 
             if (is_interactive)
-<<<<<<< HEAD
-                std::cout << "Connecting to "
+                output_stream << "Connecting to "
                           << (!connection_parameters.default_database.empty()
                                   ? "database " + connection_parameters.default_database + " at "
                                   : "")
-=======
-                output_stream << "Connecting to "
-                          << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
-                                                                              : "")
->>>>>>> 4ff43a65c54 (Fix build and cleanup)
                           << connection_parameters.host << ":" << connection_parameters.port
                           << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
@@ -543,27 +537,15 @@ void Client::connect()
 
         if (client_version_tuple < server_version_tuple)
         {
-<<<<<<< HEAD
-            std::cout << "ClickHouse client version is older than ClickHouse server. "
+            output_stream << "ClickHouse client version is older than ClickHouse server. "
                       << "It may lack support for new features." << std::endl
                       << std::endl;
         }
         else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
         {
-            std::cout << "ClickHouse server version is older than ClickHouse client. "
+            output_stream << "ClickHouse server version is older than ClickHouse client. "
                       << "It may indicate that the server is out of date and can be upgraded." << std::endl
                       << std::endl;
-=======
-            output_stream << "ClickHouse client version is older than ClickHouse server. "
-                        << "It may lack support for new features." << std::endl
-                        << std::endl;
-        }
-        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
-        {
-            output_stream << "ClickHouse server version is older than ClickHouse client. "
-                        << "It may indicate that the server is out of date and can be upgraded." << std::endl
-                        << std::endl;
->>>>>>> 4ff43a65c54 (Fix build and cleanup)
         }
 #endif
     }
