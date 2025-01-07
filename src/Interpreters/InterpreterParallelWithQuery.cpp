@@ -43,10 +43,11 @@ BlockIO InterpreterParallelWithQuery::execute()
     const auto & settings = getContext()->getSettingsRef();
     size_t max_threads = settings[Setting::max_threads];
 
-    LOG_TRACE(log, "Executing {} subqueries in {} threads", subqueries.size(), max_threads);
+    LOG_TRACE(log, "Executing {} subqueries using {} threads", subqueries.size(), max_threads);
 
     if (max_threads > 1)
     {
+        /// Create a thread pool to call the interpreters of all the subqueries in parallel.
         thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::ParallelWithQueryThreads,
                                                    CurrentMetrics::ParallelWithQueryActiveThreads,
                                                    CurrentMetrics::ParallelWithQueryScheduledThreads,
@@ -61,6 +62,11 @@ BlockIO InterpreterParallelWithQuery::execute()
     if (runner)
         runner->waitForAllToFinishAndRethrowFirstError();
 
+    /// We don't need our thread pool anymore.
+    /// (Function executeCombinedPipeline() below will use its own thread pool.)
+    runner.reset();
+    thread_pool.reset();
+
     /// Execute the combined pipeline if now we have it.
     executeCombinedPipeline();
 
@@ -70,9 +76,11 @@ BlockIO InterpreterParallelWithQuery::execute()
 
 void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 {
+    auto error_found = std::make_shared<std::atomic<bool>>(false);
+
     for (const auto & subquery : subqueries)
     {
-        if (error_found)
+        if (*error_found)
             break;
 
         try
@@ -80,9 +88,9 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
             ContextMutablePtr subquery_context = Context::createCopy(context);
             subquery_context->makeQueryContext();
 
-            auto callback = [this, subquery, subquery_context]
+            auto callback = [this, subquery, subquery_context, error_found]
             {
-                if (error_found)
+                if (*error_found)
                     return;
                 try
                 {
@@ -90,7 +98,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
                 }
                 catch (...)
                 {
-                    error_found = true;
+                    *error_found = true;
                     throw;
                 }
             };
@@ -102,7 +110,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
         }
         catch (...)
         {
-            error_found = true;
+            *error_found = true;
             throw;
         }
     }

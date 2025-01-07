@@ -18,14 +18,12 @@ public:
 private:
     void executeSubqueries(const ASTs & subqueries);
     void executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context);
-    void waitFutures(bool throw_if_error);
     void executeCombinedPipeline();
 
     ASTPtr query;
     LoggerPtr log;
     std::unique_ptr<ThreadPool> thread_pool;
     std::unique_ptr<ThreadPoolCallbackRunnerLocal<void>> runner;
-    std::atomic<bool> error_found = false;
     QueryPipeline combined_pipeline TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
