@@ -304,10 +304,11 @@ function run_tests()
 
     if [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--parallel-replicas')
-#        ADDITIONAL_OPTIONS+=('--replace-log-with-mt')
         ADDITIONAL_OPTIONS+=('--no-zookeeper')
+        ADDITIONAL_OPTIONS+=('--no-shard')
     else
         ADDITIONAL_OPTIONS+=('--zookeeper')
+        ADDITIONAL_OPTIONS+=('--shard')
     fi
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
@@ -318,7 +319,6 @@ function run_tests()
 
     TEST_ARGS=(
         --testname
-        --shard
         --check-zookeeper-session
         --hung-check
         --print-time

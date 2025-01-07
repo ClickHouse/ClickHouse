@@ -3,6 +3,8 @@
     enable_analyzer=0
     DB::Exception: Method read is not supported by storage Set: While processing x IN (_data_11099353983780129364_3343188837740940051). (NOT_IMPLEMENTED) (version 25.1.1.568) (from [::1]:49284) (comment: 00116_storage_set.sql) (in query: SELECT * FROM tab PREWHERE x IN (set) WHERE x IN (set) LIMIT 1 settings enable_analyzer=0;)
 00116_storage_set
+    plan and incorrect result
+01763_filter_push_down_bugs
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
@@ -11,6 +13,12 @@
 00375_shard_group_uniq_array_of_string
     !!!max rows: 2.00, current rows: 10.00 thousand. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:52250) (comment: 00979_toFloat_monotonicity.sql) (in query: SELECT `__table1`.`n` AS `n` FROM `test_pvvtiao6`.`test1` AS `__table1` WHERE toFloat64(`__table1`.`n`) = 7777.)
 00979_toFloat_monotonicity
+    !!!max rows: 16.00, current rows: 3.08 thousand
+00990_hasToken_and_tokenbf
+    !!!max rows: 2.00 thousand, current rows: 1.00 million
+01312_comparison_with_constant_string_in_index_analysis
+    !!!max rows: 8.00, current rows: 16.38 thousand
+01414_push_predicate_when_contains_with_clause
 
     max rows: 3.00, current rows: 8.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:38554) (comment: 00319_index_for_like.sql) (in query: SELECT `__table1`.`s` AS `s` FROM `test_l6on3y96`.`index_for_like` AS `__table1` WHERE `__table1`.`s` LIKE 'Hello, World%')
 00319_index_for_like
@@ -34,7 +42,16 @@
 01585_use_index_for_global_in
     max rows: 20.00, current rows: 100.00
 02465_limit_trivial_max_rows_to_read
-
+    max rows: 5.00, current rows: 20.00
+00926_adaptive_index_granularity_pk
+    max rows: 8.00, current rows: 10.00
+01114_materialize_clear_index_compact_parts
+    max rows: 1.00, current rows: 3.00
+01440_to_date_monotonicity
+    max rows: 12.00, current rows: 20.00
+01583_const_column_in_set_index
+    max rows: 2.00, current rows: 11.00
+01585_use_index_for_global_in_with_null
 
     ORDER BY ALL is missing for multiple queries
 00326_long_function_multi_if
@@ -61,6 +78,8 @@
 
 
     https://github.com/ClickHouse/ClickHouse/issues/74226
+    Database _table_function does not exist
+    --no-shard
 00944_ml_test
 00098_shard_i_union_all
 00459_group_array_insert_at
@@ -69,10 +88,20 @@
 01568_window_functions_distributed
 00162_shard_global_join
 01223_dist_on_dist
+01418_query_scope_constants_and_remote
+01758_optimize_skip_unused_shards_once
 
-    Transactions?
+    Transactions
 02421_truncate_isolation_no_merges
 02421_truncate_isolation_with_mutations
+    Storage StorageDummy (table test_8yblzvrs.mt1 (560aada5-04ba-4faa-9297-c032a1798def)) does not support transactions. (NOT_IMPLEMENTED)
+    query: select 'commit', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
+01173_transaction_control_queries
+
+    Storage Join/Set
+    Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (version 25.1.1.1927 (official build)) (from [::1]:37472) (comment: 01594_storage_join_uuid.sql) (in query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
+01594_storage_join_uuid
+
 
     WINDOW VIEW
 01047_window_view_parser_inner_table
@@ -223,21 +252,6 @@
 03154_recursive_cte_distributed
 
 
-    https://github.com/ClickHouse/clickhouse-private/issues/20276
-    01031_pmj_new_any_semi_join
-    02273_full_sort_join.gen
-    02275_full_sort_join_long
-    01881_join_on_conditions_merge.gen
-    01881_join_on_conditions_hash.gen
-    03006_join_on_inequal_expression_fast.gen
-
-    https://github.com/ClickHouse/clickhouse-private/issues/20277
-    01031_new_any_join
-    02274_full_sort_join_nodistinct.gen
-
-    https://github.com/ClickHouse/clickhouse-private/issues/20285
-    02374_analyzer_join_using.gen
-
     https://github.com/ClickHouse/clickhouse-private/issues/14832
 02319_quantile_interpolated_weighted
 00753_quantile_format
@@ -292,6 +306,13 @@
 02798_explain_settings_not_applied_bug
 02809_prewhere_and_in
 02918_optimize_count_for_merge_tables
+00175_partition_by_ignore
+01655_plan_optimizations_optimize_read_in_window_order
+01625_constraints_index_append
+    Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
+01655_plan_optimizations_optimize_read_in_window_order_long
+01824_move_to_prewhere_many_columns
+
 
     https://github.com/ClickHouse/clickhouse-private/issues/14887
     Projections
@@ -318,13 +339,10 @@
 02494_zero_copy_and_projection_and_mutation_work_together
 02680_illegal_type_of_filter_projection
 02998_projection_after_attach_partition
+01710_aggregate_projections
+01710_projection_analysis_reuse_partition
+01710_projections_in_distributed_query
 
-    https://github.com/ClickHouse/clickhouse-private/issues/15795
-    01345_array_join_LittleMaverick
-    02974_analyzer_array_join_subcolumn
-    00612_pk_in_tuple
-    00014_select_from_table_with_nested
-    01825_new_type_json_ghdata
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 02023_transform_or_to_in
