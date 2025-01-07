@@ -24,9 +24,9 @@ auto constructPreconditionsPredicate(const ReplicatedMergeTreeMergePredicatePtr 
     return predicate;
 }
 
-std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(MergeTreeDataPartsVector && parts, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
+std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(MergeTreeDataPartsVector && parts, const ReplicatedMergeTreeMergePredicatePtr & merge_pred, LogSeriesLimiter & series_log)
 {
-    return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(merge_pred));
+    return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(merge_pred), series_log);
 }
 
 std::expected<void, PreformattedMessage> checkAllParts(const MergeTreeDataPartsVector & parts, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)
@@ -46,10 +46,11 @@ PartsRanges ReplicatedMergeTreePartsCollector::grabAllPossibleRanges(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
-    const std::optional<PartitionIdsHint> & partitions_hint) const
+    const std::optional<PartitionIdsHint> & partitions_hint,
+    LogSeriesLimiter & series_log) const
 {
     auto parts = filterByPartitions(collectInitial(storage), partitions_hint);
-    auto ranges = splitPartsByPreconditions(std::move(parts), merge_pred);
+    auto ranges = splitPartsByPreconditions(std::move(parts), merge_pred, series_log);
     return constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time);
 }
 

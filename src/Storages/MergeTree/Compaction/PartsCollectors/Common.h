@@ -3,13 +3,16 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
 
+#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/logger_useful.h>
+
 #include <expected>
 
 namespace DB
 {
 
 template <class Part, class Predicate>
-std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts, Predicate predicate)
+std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts, Predicate predicate, LogSeriesLimiter & series_log)
 {
     auto build_next_range = [&](auto & parts_it)
     {
@@ -20,8 +23,11 @@ std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts,
             Part part = std::move(*parts_it++);
 
             /// Close current range if next part can't be used.
-            if (!predicate(part))
+            if (auto result = predicate(part); !result)
+            {
+                LOG_TRACE(series_log, "Filtered part in collector: {}", result.error().text);
                 return range;
+            }
 
             /// Otherwise include part to current range
             range.push_back(std::move(part));
