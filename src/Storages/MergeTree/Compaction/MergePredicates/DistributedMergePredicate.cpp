@@ -39,6 +39,9 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 
         chassert(response.error == Coordination::Error::ZOK);
 
+        auto [_, is_inserted] = committing_blocks.insert({partitions[i], {}});
+        chassert(is_inserted);
+
         Strings partition_block_numbers = locks_children[i].names;
         for (const String & entry : partition_block_numbers)
         {
