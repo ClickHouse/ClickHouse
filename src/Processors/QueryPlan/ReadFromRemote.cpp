@@ -55,6 +55,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
+    extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
 }
 
 namespace ErrorCodes
@@ -342,8 +343,10 @@ static void addFilters(
         return;
 
     const auto & settings = context->getSettingsRef();
-    const auto * query_node = query_tree->as<QueryNode>();
+    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
+        return;
 
+    const auto * query_node = query_tree->as<QueryNode>();
     if (!query_node)
         return;
 
