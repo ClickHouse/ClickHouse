@@ -558,22 +558,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == DROP_COLUMN)
     {
         const auto * column = metadata.columns.tryGet(column_name);
-        if (column)
+        if (column && metadata.settings_changes
+            && ((isNumber(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+                || (isString(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
         {
-            if ((isNumber(column->type) && metadata.settings_changes && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
-                || ((isString(column->type) && metadata.settings_changes && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
-            {
-                for (auto index_it = metadata.secondary_indices.begin();
+            for (auto index_it = metadata.secondary_indices.begin();
                      index_it != metadata.secondary_indices.end();)
+            {
+                if (index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
                 {
-                    if (index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
-                    {
-                        index_it = metadata.secondary_indices.erase(index_it);
-                        break;
-                    }
-                    else
-                        ++index_it;
+                    index_it = metadata.secondary_indices.erase(index_it);
+                    break;
                 }
+                else
+                    ++index_it;
             }
         }
 
