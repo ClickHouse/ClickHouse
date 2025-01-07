@@ -69,7 +69,7 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     auto metadata_storage = data_disk->getMetadataStorage();
     auto file_path = getFileName(path);
 
-    if (!metadata_storage->exists(file_path))
+    if (!metadata_storage->existsFile(file_path))
         return false;
     auto metadata_str = metadata_storage->readFileToString(file_path);
     ReadBufferFromString buffer(metadata_str);
@@ -105,7 +105,7 @@ void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
 {
     auto metadata_storage = data_disk->getMetadataStorage();
     auto fname = getFileName(path);
-    if (metadata_storage->exists(fname))
+    if (metadata_storage->existsFile(fname))
     {
         auto tx = metadata_storage->createTransaction();
         tx->unlinkFile(fname);
@@ -150,10 +150,11 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 
     for (const auto & disk: disks)
     {
-        for (const auto& store_path: store_paths)
+        for (const auto & store_path : store_paths)
         {
-            if (!disk->exists(store_path))
+            if (!disk->existsDirectory(store_path))
                 continue;
+
             for (auto prefix_it = disk->iterateDirectory(store_path); prefix_it->isValid(); prefix_it->next())
             {
                 auto prefix_directory = store_path / prefix_it->name();
@@ -173,7 +174,8 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                 }
             }
         }
-        if (disk->exists(backup_path))
+
+        if (disk->existsDirectory(backup_path))
         {
             /// After unfreezing we need to clear revision.txt file and empty directories
             disk->removeRecursive(backup_path);
@@ -211,7 +213,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
     for (const auto & disk : disks)
     {
-        if (!disk->exists(table_directory))
+        if (!disk->existsDirectory(table_directory))
             continue;
 
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())

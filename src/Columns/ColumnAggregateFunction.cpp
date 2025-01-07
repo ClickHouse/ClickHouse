@@ -1,4 +1,6 @@
+#include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -406,9 +408,10 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
     std::vector<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
-        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
-        func->serialize(data[i], wbuf, version);
-        wbuf.finalize();
+        {
+            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+            func->serialize(data[i], wbuf, version);
+        }
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
 
@@ -417,9 +420,10 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 {
-    /// Fallback to per-element hashing, as there is no faster way
-    for (size_t i = 0; i < size(); ++i)
-        updateHashWithValue(i, hash);
+    WriteBufferFromOwnString wbuf;
+    const ColumnAggregateFunction::Container & vec = getData();
+    func->serializeBatch(vec, 0, size(), wbuf);
+    hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
 /// The returned size is less than real size. The reason is that some parts of
@@ -457,9 +461,9 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = AggregateFunctionStateData();
-    field.get<AggregateFunctionStateData &>().name = type_string;
+    field.safeGet<AggregateFunctionStateData &>().name = type_string;
     {
-        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer(field.safeGet<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer, version);
     }
     return field;
@@ -467,12 +471,20 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
-    res = AggregateFunctionStateData();
-    res.get<AggregateFunctionStateData &>().name = type_string;
+    res = operator[](n);
+}
+
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
+{
+    String state;
     {
-        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
+        WriteBufferFromOwnString buffer;
         func->serialize(data[n], buffer, version);
+        WriteBufferFromString wb(state);
+        writeQuoted(buffer.str(), wb);
     }
+
+    return {state, DataTypeFactory::instance().get(type_string)};
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
@@ -552,7 +564,7 @@ void ColumnAggregateFunction::insert(const Field & x)
             "Inserting field of type {} into ColumnAggregateFunction. Expected {}",
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
-    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.safeGet<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
                 field_name, type_string);
@@ -560,7 +572,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
+    ReadBufferFromString read_buffer(x.safeGet<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
@@ -569,14 +581,14 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
     if (x.getType() != Field::Types::AggregateFunctionState)
         return false;
 
-    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.safeGet<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         return false;
 
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
+    ReadBufferFromString read_buffer(x.safeGet<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
     return true;
 }
@@ -751,18 +763,16 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
         res_data.assign(data.begin(), data.begin() + size);
         return res;
     }
-    else
-    {
-        /// Create a new column to return.
-        MutableColumnPtr cloned_col = cloneEmpty();
-        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
 
-        res->insertRangeFrom(*this, 0, from_size);
-        for (size_t i = from_size; i < size; ++i)
-            res->insertDefault();
+    /// Create a new column to return.
+    MutableColumnPtr cloned_col = cloneEmpty();
+    auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
 
-        return cloned_col;
-    }
+    res->insertRangeFrom(*this, 0, from_size);
+    for (size_t i = from_size; i < size; ++i)
+        res->insertDefault();
+
+    return cloned_col;
 }
 
 }

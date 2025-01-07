@@ -15,7 +15,7 @@ assignees: ''
 
 **Use case**
 
-> A clear and concise description of what is the intended usage scenario is.
+> A clear and concise description of what the intended usage scenario is.
 
 **Describe the solution you'd like**
 

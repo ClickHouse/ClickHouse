@@ -79,18 +79,24 @@ std::vector<String> parseRemoteDescription(
             /// Look for the corresponding closing bracket
             for (m = i + 1; m < r; ++m)
             {
-                if (description[m] == '{') ++cnt;
-                if (description[m] == '}') --cnt;
-                if (description[m] == '.' && description[m-1] == '.') last_dot = m;
-                if (description[m] == separator) have_splitter = true;
-                if (cnt == 0) break;
+                if (description[m] == '{')
+                    ++cnt;
+                if (description[m] == '}')
+                    --cnt;
+                if (description[m] == '.' && description[m-1] == '.')
+                    last_dot = m;
+                if (description[m] == separator)
+                    have_splitter = true;
+                if (cnt == 0)
+                    break;
             }
             if (cnt != 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': incorrect brace sequence in first argument", func_name);
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
-                size_t left, right;
+                size_t left;
+                size_t right;
                 if (description[last_dot - 1] != '.')
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

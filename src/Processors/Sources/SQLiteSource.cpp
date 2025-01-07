@@ -65,16 +65,19 @@ Chunk SQLiteSource::generate()
         {
             continue;
         }
-        else if (status == SQLITE_DONE)
+        if (status == SQLITE_DONE)
         {
             compiled_statement.reset();
             break;
         }
-        else if (status != SQLITE_ROW)
+        if (status != SQLITE_ROW)
         {
-            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+            throw Exception(
+                ErrorCodes::SQLITE_ENGINE_ERROR,
                 "Expected SQLITE_ROW status, but got status {}. Error: {}, Message: {}",
-                status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
+                status,
+                sqlite3_errstr(status),
+                sqlite3_errmsg(sqlite_db.get()));
         }
 
         int column_count = sqlite3_column_count(compiled_statement.get());

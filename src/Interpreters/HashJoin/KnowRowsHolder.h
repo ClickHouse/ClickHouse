@@ -104,7 +104,7 @@ void addFoundRowAll(
         {
             if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
             {
-                added.appendFromBlock(*it->block, it->row_num, false);
+                added.appendFromBlock(*it, false);
                 ++current_offset;
                 if (!new_known_rows_ptr)
                 {
@@ -124,11 +124,16 @@ void addFoundRowAll(
             known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
         }
     }
+    else if constexpr (AddedColumns::isLazy())
+    {
+        added.appendFromBlock(&mapped, false);
+        current_offset += mapped.rows;
+    }
     else
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(*it->block, it->row_num, false);
+            added.appendFromBlock(*it, false);
             ++current_offset;
         }
     }

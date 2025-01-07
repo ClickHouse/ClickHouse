@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 
+#include <base/scope_guard.h>
+
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/column_reader.h>
@@ -211,7 +213,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromFLBA()
             {
                 if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal128)))
                     return makeDecimalLeafReader<Decimal128>();
-                else if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
+                if (col_descriptor.type_length() <= static_cast<int>(sizeof(Decimal256)))
                     return makeDecimalLeafReader<Decimal256>();
             }
 
@@ -231,8 +233,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt32INT(const parque
         {
             if (int_type.is_signed())
                 return makeLeafReader<DataTypeInt32>();
-            else
-                return makeLeafReader<DataTypeUInt32>();
+            return makeLeafReader<DataTypeUInt32>();
         }
         default:
             return throwUnsupported(PreformattedMessage::create(", bit width: {}", int_type.bit_width()));
@@ -247,8 +248,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::fromInt64INT(const parque
         {
             if (int_type.is_signed())
                 return makeLeafReader<DataTypeInt64>();
-            else
-                return makeLeafReader<DataTypeUInt64>();
+            return makeLeafReader<DataTypeUInt64>();
         }
         default:
             return throwUnsupported(PreformattedMessage::create(", bit width: {}", int_type.bit_width()));
@@ -265,7 +265,7 @@ std::unique_ptr<ParquetColumnReader> ColReaderFactory::makeReader()
     switch (col_descriptor.physical_type())
     {
         case parquet::Type::BOOLEAN:
-            break;
+            return makeLeafReader<DataTypeUInt8>();
         case parquet::Type::INT32:
             return fromInt32();
         case parquet::Type::INT64:

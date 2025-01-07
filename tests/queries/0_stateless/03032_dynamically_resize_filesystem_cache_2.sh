@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 disk_name="s3_cache"
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
 INSERT INTO test SELECT randomString(1000);
@@ -26,7 +26,7 @@ sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_siz
 # echo $prev_max_size
 # echo $new_max_size
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --query "SELECT current_size <= max_size FROM system.filesyst
 
 sed -i "s|<max_size>$new_max_size<\/max_size>|<max_size>$prev_max_size<\/max_size>|"  $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 

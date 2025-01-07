@@ -35,6 +35,7 @@ function wait_for_all_mutations()
 
         if [[ $i -eq 200 ]]; then
             echo "Timed out while waiting for mutation to execute!"
+            ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
         fi
 
         sleep 0.3

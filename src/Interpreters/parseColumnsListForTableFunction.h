@@ -19,10 +19,11 @@ struct DataTypeValidationSettings
     bool allow_suspicious_low_cardinality_types = true;
     bool allow_experimental_object_type = true;
     bool allow_suspicious_fixed_string_types = true;
-    bool allow_experimental_variant_type = true;
+    bool enable_variant_type = true;
     bool allow_suspicious_variant_types = true;
     bool validate_nested_types = true;
-    bool allow_experimental_dynamic_type = true;
+    bool enable_dynamic_type = true;
+    bool enable_json_type = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);

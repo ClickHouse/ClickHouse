@@ -5,8 +5,11 @@
 namespace DB
 {
 
-MaterializingTransform::MaterializingTransform(const Block & header)
-    : ISimpleTransform(header, materializeBlock(header), false) {}
+MaterializingTransform::MaterializingTransform(const Block & header, bool remove_sparse_)
+    : ISimpleTransform(header, materializeBlock(header), false)
+    , remove_sparse(remove_sparse_)
+{
+}
 
 void MaterializingTransform::transform(Chunk & chunk)
 {
@@ -14,7 +17,11 @@ void MaterializingTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & col : columns)
-        col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
+    {
+        col = col->convertToFullColumnIfConst();
+        if (remove_sparse)
+            col = recursiveRemoveSparse(col);
+    }
 
     chunk.setColumns(std::move(columns), num_rows);
 }

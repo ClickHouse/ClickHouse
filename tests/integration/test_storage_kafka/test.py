@@ -1,45 +1,43 @@
+import ast
+import io
 import json
+import logging
+import math
 import os.path as p
 import random
 import socket
+import string
 import threading
 import time
-import logging
-import io
-import string
-import ast
-import math
+from contextlib import contextmanager
 
-import avro.schema
-import avro.io
 import avro.datafile
+import avro.io
+import avro.schema
+import kafka.errors
+import pytest
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-
-import kafka.errors
-import pytest
 from google.protobuf.internal.encoder import _VarintBytes
+from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
+from kafka.admin import NewTopic
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
-from kafka.protocol.admin import DescribeGroupsRequest_v1
-from kafka.protocol.group import MemberAssignment
-from kafka.admin import NewTopic
-from contextlib import contextmanager
 
+from . import kafka_pb2, message_with_repeated_pb2, social_pb2
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
 
-from . import kafka_pb2
-from . import social_pb2
-from . import message_with_repeated_pb2
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -61,6 +59,9 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
+    keeper_required_feature_flags=[
+        "create_if_not_exists"
+    ],  # new Kafka doesn't work without this feature
     macros={
         "kafka_broker": "kafka1",
         "kafka_topic_old": KAFKA_TOPIC_OLD,
@@ -1019,7 +1020,7 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
 
             DROP TABLE IF EXISTS test.kafka_{format_name}_mv;
 
-            CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv Engine=Log AS
+            CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name};
             """.format(
                 topic_name=topic_name,
@@ -1890,7 +1891,15 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         )
 
         # data was not flushed yet (it will be flushed 7.5 sec after creating MV)
-        assert int(instance.query("SELECT count() FROM test.view")) == 240
+        assert (
+            int(
+                instance.query_with_retry(
+                    sql="SELECT count() FROM test.view",
+                    check_callback=lambda x: x == 240,
+                )
+            )
+            == 240
+        )
 
         instance.query(
             """
@@ -2460,7 +2469,7 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
         (generate_old_create_table_query, "kafka.*Committed offset 2.*virt2_[01]"),
         (
             generate_new_create_table_query,
-            r"kafka.*Saved offset 2[0-9]* for topic-partition \[virt2_[01]:[0-9]+",
+            r"kafka.*Saved offset 2 for topic-partition \[virt2_[01]:[0-9]+",
         ),
     ],
 )
@@ -2494,7 +2503,7 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
                 f"""
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms), _headers.name, _headers.value FROM test.kafka;
                 """
             )
@@ -2729,7 +2738,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
             DROP TABLE IF EXISTS test.consumer;
             {writer_create_query};
             {reader_create_query};
-            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT key, value, inserted_key, toUnixTimestamp(inserted_timestamp), _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
         """
         )
@@ -2755,7 +2764,7 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
             )
         )
 
-        # instance.wait_for_log_line(log_line)
+        instance.wait_for_log_line(log_line)
 
         expected = """\
     1	1	k1	1577836801	k1	insert3	0	0	1577836801
@@ -2865,7 +2874,7 @@ def test_kafka_produce_consume_avro(kafka_cluster, create_query_generator):
             {writer_create_query};
             {reader_create_query};
 
-            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT key, value FROM test.kafka;
             """
         )
@@ -3537,7 +3546,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
         f"""
         {create_query};
 
-        CREATE MATERIALIZED VIEW test.destination Engine=Log AS
+        CREATE MATERIALIZED VIEW test.destination ENGINE=MergeTree ORDER BY tuple() AS
         SELECT
             key,
             now() as consume_ts,
@@ -3745,7 +3754,7 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
             f"""
             {create_query};
 
-            CREATE MATERIALIZED VIEW test.destination_unavailable Engine=Log AS
+            CREATE MATERIALIZED VIEW test.destination_unavailable ENGINE=MergeTree ORDER BY tuple() AS
             SELECT
                 key,
                 now() as consume_ts,
@@ -4187,7 +4196,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             ],
             "expected": {
                 "raw_message": "050102696405496E743634000000000000000007626C6F636B4E6F06537472696E67034241440476616C3106537472696E6702414D0476616C3207466C6F617433320000003F0476616C330555496E743801",
-                "error": "Cannot convert: String to UInt16",
+                "error": "Cannot parse string 'BAD' as UInt16",
             },
             "printable": False,
         },
@@ -4267,12 +4276,12 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             {create_query};
 
             DROP TABLE IF EXISTS test.kafka_data_{format_name}_mv;
-            CREATE MATERIALIZED VIEW test.kafka_data_{format_name}_mv Engine=Log AS
+            CREATE MATERIALIZED VIEW test.kafka_data_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name}
                 WHERE length(_error) = 0;
 
             DROP TABLE IF EXISTS test.kafka_errors_{format_name}_mv;
-            CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv Engine=Log AS
+            CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
             """
@@ -4796,7 +4805,7 @@ def test_max_rows_per_message(kafka_cluster, create_query_generator):
             DROP TABLE IF EXISTS test.kafka;
             {create_query};
 
-            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                 SELECT key, value FROM test.kafka;
         """
         )
@@ -4875,7 +4884,7 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
 
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
 
                 INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
@@ -4931,11 +4940,11 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
 
         data = []
         for message in messages:
-            splitted = message.split("\n")
-            assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
-            assert splitted[1] == ""
-            assert splitted[-1] == ""
-            data += [line.split() for line in splitted[2:-1]]
+            split = message.split("\n")
+            assert split[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+            assert split[1] == ""
+            assert split[-1] == ""
+            data += [line.split() for line in split[2:-1]]
 
         assert data == [
             ["0", "0"],
@@ -4982,7 +4991,7 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
 
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
 
                 INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
@@ -5267,7 +5276,7 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     while True:
         result_rdkafka_stat = instance.query(
             """
-            SELECT table, JSONExtractString(rdkafka_stat, 'type')
+            SELECT table, JSONExtractString(rdkafka_stat, 'type') AS value
             FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
             """
         )
@@ -5280,8 +5289,8 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
         result_rdkafka_stat
         == """Row 1:
 ──────
-table:                                   kafka
-JSONExtractString(rdkafka_stat, 'type'): consumer
+table: kafka
+value: consumer
 """
     )
 
@@ -5362,7 +5371,7 @@ def test_formats_errors(kafka_cluster):
                             input_format_with_names_use_header=0,
                             format_schema='key_value_message:Message';
 
-                CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
             """
             )

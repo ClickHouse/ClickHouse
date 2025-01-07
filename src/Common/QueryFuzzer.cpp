@@ -45,6 +45,7 @@
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/SipHash.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -132,7 +133,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
     if (type == Field::Types::String)
     {
-        auto & str = field.get<std::string>();
+        auto & str = field.safeGet<std::string>();
         UInt64 action = fuzz_rand() % 10;
         switch (action)
         {
@@ -158,7 +159,7 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (type == Field::Types::Array)
     {
-        auto & arr = field.get<Array>();
+        auto & arr = field.safeGet<Array>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
@@ -193,7 +194,7 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (type == Field::Types::Tuple)
     {
-        auto & arr = field.get<Tuple>();
+        auto & arr = field.safeGet<Tuple>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
@@ -760,35 +761,35 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
     {
         return kind;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::ParsedAST;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::AnalyzedSyntax;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryTree;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPlan;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPipeline;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryEstimates;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::TableOverride;
     }
-    else if (fuzz_rand() % 11 == 0)
+    if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::CurrentTransaction;
     }
@@ -922,17 +923,17 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     auto type = l->value.getType();
     if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
     {
-        String value = l->value.get<String>();
+        String value = l->value.safeGet<String>();
         child = makeASTFunction(
             "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.get<UInt64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.safeGet<UInt64>()));
     }
     else if (type == Field::Types::Which::Int64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.get<Int64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.safeGet<Int64>()));
     }
     else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
     {
@@ -940,22 +941,22 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
         if (decimal == 0)
             child = makeASTFunction(
                 "toDecimal32",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 9)));
         else if (decimal == 1)
             child = makeASTFunction(
                 "toDecimal64",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 18)));
         else if (decimal == 2)
             child = makeASTFunction(
                 "toDecimal128",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
         else
             child = makeASTFunction(
                 "toDecimal256",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
     }
 
@@ -1005,7 +1006,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
     for (auto & child : expr_list.children)
     {
-        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
+        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
         {
             if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
@@ -1287,9 +1288,9 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
     if (table_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
         const auto iter = std::next(table_like.begin(), fuzz_rand() % table_like.size());
-        const auto ast_del = *iter;
-        table_like.erase(iter);
+        const auto & ast_del = *iter;
         table_like_map.erase(ast_del.first);
+        table_like.erase(iter);
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -1308,9 +1309,9 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
     if (column_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
         const auto iter = std::next(column_like.begin(), fuzz_rand() % column_like.size());
-        const auto ast_del = *iter;
-        column_like.erase(iter);
+        const auto & ast_del = *iter;
         column_like_map.erase(ast_del.first);
+        column_like.erase(iter);
     }
 
     const auto name = ast->formatForErrorMessage();
