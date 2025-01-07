@@ -45,6 +45,10 @@ class Runner:
             INSTANCE_TYPE="",
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
+            PR_BODY="",
+            USER_LOGIN="",
+            FORK_NAME="",
+            PR_LABELS=[],
         ).dump()
         workflow_config = RunConfig(
             name=workflow.name,
