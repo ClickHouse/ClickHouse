@@ -1,4 +1,5 @@
 #include <memory>
+#include <mutex>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -245,6 +246,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
+        static std::mutex initialize_mutex;
+        std::lock_guard lock(initialize_mutex);
+
         createIterator(nullptr);
 
         Pipes pipes;
@@ -381,7 +385,6 @@ public:
                         break;
                     }
                 }
-                configuration->setPaths(paths);
             }
             if (!positional_delete_sources.empty())
             {
@@ -410,6 +413,7 @@ public:
             processors.emplace_back(processor);
 
         pipeline.init(std::move(pipe));
+        configuration->setPaths(std::move(paths));
     }
 
 private:
