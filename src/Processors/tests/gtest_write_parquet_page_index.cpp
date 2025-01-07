@@ -217,6 +217,7 @@ TEST(Parquet, WriteParquetPageIndexParrelelPlainEnconding)
 
     std::vector<std::vector<String>> values;
     std::vector<String> col;
+    col.reserve(100000);
     for (size_t i = 0; i < 100000; i++)
     {
         col.push_back(std::to_string(i));
@@ -293,6 +294,7 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
 
     std::vector<std::vector<UInt64>> values;
     std::vector<UInt64> col;
+    col.reserve(1000);
     for (size_t i = 0; i < 1000; i++)
     {
         col.push_back(i % 10);

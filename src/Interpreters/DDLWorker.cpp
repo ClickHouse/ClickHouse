@@ -990,7 +990,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
                 /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
                 chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
-                rm_entry_res = zookeeper->tryRemove(node_path);
+                rm_entry_res = zookeeper->tryRemove(node_path);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
                 chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
@@ -1054,12 +1054,12 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 }
 
 
-String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info, QueryStatusPtr process_list_element)
+String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info)
 {
     String node_path;
     if (retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info};
         retries_ctl.retryLoop([&]{
             node_path = enqueueQueryAttempt(entry);
         });

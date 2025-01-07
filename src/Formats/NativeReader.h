@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/PODArray.h>

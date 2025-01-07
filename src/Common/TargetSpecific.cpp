@@ -6,7 +6,7 @@
 namespace DB
 {
 
-UInt32 getSupportedArchs()
+static UInt32 getSupportedArchs()
 {
     UInt32 result = 0;
     if (CPU::CPUFlagsCache::have_SSE42)

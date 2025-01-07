@@ -385,7 +385,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
     bool can_be_directory = true;
 
-    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
+    if (path.contains(PartitionedSink::PARTITION_ID_WILDCARD))
     {
         paths.push_back(path);
     }
@@ -1159,7 +1159,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
     {
@@ -1866,7 +1866,7 @@ private:
         write_buf.reset();
     }
 
-    void cancelBuffers()
+    void cancelBuffers() noexcept
     {
         if (writer)
             writer->cancel();
@@ -1976,7 +1976,7 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         flags |= O_TRUNC;
 
-    bool has_wildcards = path_for_partitioned_write.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = path_for_partitioned_write.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
@@ -2032,10 +2032,10 @@ SinkToStoragePtr StorageFile::write(
             else
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
-                    "Cannot append data in format {} to file, because this format doesn't support appends."
-                    " You can allow to create a new file "
-                    "on each insert by enabling setting engine_file_allow_create_multiple_files",
-                    format_name);
+                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                    " You can configure ClickHouse to create a new file "
+                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                    path, format_name);
         }
     }
 
@@ -2113,6 +2113,11 @@ void StorageFile::truncate(
     }
 }
 
+void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
+        args[0] = std::make_shared<ASTLiteral>(format_name);
+}
 
 void registerStorageFile(StorageFactory & factory)
 {
@@ -2120,6 +2125,7 @@ void registerStorageFile(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::FILE,
+        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(

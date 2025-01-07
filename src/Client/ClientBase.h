@@ -3,6 +3,7 @@
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
@@ -279,6 +280,9 @@ protected:
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
 
+    int stdin_fd;
+    int stdout_fd;
+    int stderr_fd;
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
@@ -289,6 +293,7 @@ protected:
     String default_output_format; /// Query results output format.
     CompressionMethod default_output_compression_method = CompressionMethod::None;
     String default_input_format; /// Tables' format for clickhouse-local.
+    CompressionMethod default_input_compression_method = CompressionMethod::None;
 
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
@@ -313,9 +318,9 @@ protected:
     ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
-    ReadBufferFromFileDescriptor std_in;
+    std::unique_ptr<ReadBuffer> std_in;
     /// Console output.
-    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> std_out;
+    std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.

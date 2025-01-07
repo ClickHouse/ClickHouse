@@ -1,5 +1,5 @@
 #include "ZooKeeper.h"
-#include "Coordination/KeeperFeatureFlags.h"
+#include "Common/ZooKeeper/KeeperFeatureFlags.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
@@ -341,7 +341,10 @@ Coordination::Error ZooKeeper::tryGetChildren(
     const EventPtr & watch,
     Coordination::ListRequestType list_request_type)
 {
-    return tryGetChildrenWatch(path, res, stat,
+    return tryGetChildrenWatch(
+        path,
+        res,
+        stat,
         watch ? std::make_shared<Coordination::WatchCallback>(callbackForEvent(watch)) : Coordination::WatchCallbackPtr{},
         list_request_type);
 }
@@ -975,11 +978,14 @@ void ZooKeeper::removeRecursive(const std::string & path, uint32_t remove_nodes_
 
 Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit)
 {
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+    const auto fallback_method = [&]
     {
         tryRemoveChildrenRecursive(path);
         return tryRemove(path);
-    }
+    };
+
+    if (!isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+        return fallback_method();
 
     auto promise = std::make_shared<std::promise<Coordination::RemoveRecursiveResponse>>();
     auto future = promise->get_future();
@@ -998,6 +1004,10 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
     }
 
     auto response = future.get();
+
+    if (response.error == Coordination::Error::ZNOTEMPTY) /// limit was too low, try without RemoveRecursive request
+        return fallback_method();
+
     return response.error;
 }
 

@@ -260,12 +260,6 @@ bool StorageInMemoryMetadata::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
-bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
-{
-    bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
-    return hasRowsTTL() && !has_any_other_ttl;
-}
-
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
@@ -461,6 +455,16 @@ Block StorageInMemoryMetadata::getSampleBlock() const
     return res;
 }
 
+Block StorageInMemoryMetadata::getSampleBlockWithSubcolumns() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
 const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
 {
     return partition_key;
@@ -510,6 +514,13 @@ Names StorageInMemoryMetadata::getSortingKeyColumns() const
 {
     if (hasSortingKey())
         return sorting_key.column_names;
+    return {};
+}
+
+std::vector<bool> StorageInMemoryMetadata::getSortingKeyReverseFlags() const
+{
+    if (hasSortingKey())
+        return sorting_key.reverse_flags;
     return {};
 }
 

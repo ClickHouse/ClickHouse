@@ -6,6 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MarkCache.h>
 #include <Storages/ColumnsDescription.h>
@@ -467,6 +468,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     {
         ISerialization::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+        serialize_settings.use_v1_object_and_dynamic_serialization = settings.use_v1_object_and_dynamic_serialization;
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serialization->serializeBinaryBulkStatePrefix(column, serialize_settings, it->second);
     }
