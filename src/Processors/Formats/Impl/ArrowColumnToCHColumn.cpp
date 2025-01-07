@@ -512,8 +512,9 @@ static ColumnPtr readOffsetsFromFixedArrowListColumn(const std::shared_ptr<arrow
 {
     auto offsets_column = ColumnUInt64::create();
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
-    offsets_data.reserve(arrow_column->length());
-    for (int64_t i = 0; i < arrow_column->length(); ++i)
+    size_t size = arrow_column->length();
+    offsets_data.reserve(size);
+    for (int64_t i = 0; i < size; ++i)
         offsets_data.emplace_back((i + 1) * length);
     return offsets_column;
 }
@@ -935,18 +936,22 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nested_type_hint = array_type_hint->getNestedType();
             }
 
-            bool is_nested_nullable_column = [&] {
+            bool is_nested_nullable_column = [&]
+            {
                 switch (list_type)
                 {
-                    case ListType::LargeList: {
+                    case ListType::LargeList:
+                    {
                         auto * arrow_large_list_type = assert_cast<arrow::LargeListType *>(arrow_column->type().get());
                         return arrow_large_list_type->value_field()->nullable();
                     }
-                    case ListType::FixedSizeList: {
+                    case ListType::FixedSizeList:
+                    {
                         auto * arrow_fixed_size_list_type = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get());
                         return arrow_fixed_size_list_type->value_field()->nullable();
                     }
-                    case ListType::List: {
+                    case ListType::List:
+                    {
                         auto * arrow_list_type = assert_cast<arrow::ListType *>(arrow_column->type().get());
                         return arrow_list_type->value_field()->nullable();
                     }
@@ -982,7 +987,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 {
                     case ListType::LargeList:
                         return readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column);
-                    case ListType::FixedSizeList: {
+                    case ListType::FixedSizeList:
+                    {
                         auto fixed_length = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get())->list_size();
                         return readOffsetsFromFixedArrowListColumn(arrow_column, fixed_length);
                     }
