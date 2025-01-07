@@ -310,7 +310,7 @@ class Result(MetaClasses.Serializable):
 
         # Set log file path if logging is enabled
         log_file = (
-            f"{Settings.TEMP_DIR}/{Utils.normalize_string(name)}.log"
+            f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
             if with_log
             else None
         )
@@ -545,7 +545,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: Result file [{file}] was not found")
+                result.set_info(f"WARNING: File [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False
@@ -602,7 +602,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "/tmp/praktika/gtest.json"
+    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
 
     @classmethod
     def from_gtest(cls):

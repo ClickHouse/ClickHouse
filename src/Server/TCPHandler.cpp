@@ -1069,6 +1069,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
         auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+
+        sendLogs(state);
+        sendInsertProfileEvents(state);
+
         if (result_chunk)
         {
             auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
@@ -2633,9 +2637,9 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
 {
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
-    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        return Poco::Net::SocketAddress(forwarded_address);
+    auto forwarded_address = client_info.getLastForwardedFor();
+    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
+        return *forwarded_address;
     return socket().peerAddress();
 }
 
