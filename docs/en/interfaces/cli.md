@@ -113,7 +113,7 @@ $ clickhouse-client "SELECT sum(number) FROM numbers(10)"
 45
 ```
 
-You can also use the `--query` comamnd-line option:
+You can also use the `--query` command-line option:
 
 ```bash
 $ clickhouse-client --query "SELECT uniq(number) FROM numbers(10)"
@@ -169,7 +169,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 ## Notes
 
-In interactive mode, the default ouput format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
+In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
 
 In batch mode, the default data [format](formats.md) is `TabSeparated`. You can set the format in the `FORMAT` clause of the query.
 
@@ -214,7 +214,7 @@ In the query, place the values that you want to fill using command-line paramete
 {<name>:<data type>}
 ```
 
-- `name` — Placeholder identifier. The corresponsing command-line option is `--param_<name> = value`.
+- `name` — Placeholder identifier. The corresponding command-line option is `--param_<name> = value`.
 - `data type` — [Data type](../sql-reference/data-types/index.md) of the parameter. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use other [integer](../sql-reference/data-types/int-uint.md) types). It is also possible to pass the table name, database name, and column names as parameters, in that case you would need to use `Identifier` as the data type.
 
 ### Examples {#cli-queries-with-parameters-examples}
