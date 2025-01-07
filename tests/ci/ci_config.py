@@ -374,7 +374,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
         ),
         JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
+            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=1
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
