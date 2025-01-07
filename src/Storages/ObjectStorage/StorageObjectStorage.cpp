@@ -308,7 +308,7 @@ public:
                         max_parsing_threads,
                         need_only_count,
                         false);
-                    source->setKeyCondition(filter_actions_dag, context);
+                    source->setKeyCondition(filter_actions_dag->clone(), context);
                     sources.emplace_back(std::move(source));
                     configuration->setPaths(paths);
                     continue;
@@ -330,7 +330,7 @@ public:
                             max_parsing_threads,
                             need_only_count,
                             false);
-                        source->setKeyCondition(filter_actions_dag, context);
+                        source->setKeyCondition(filter_actions_dag->clone(), context);
                         sources.emplace_back(std::move(source));
                         break;
                     }
