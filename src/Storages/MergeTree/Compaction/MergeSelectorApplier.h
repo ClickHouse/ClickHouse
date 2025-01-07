@@ -34,8 +34,7 @@ public:
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
-        time_t current_time,
-        const LoggerPtr & log) const;
+        time_t current_time) const;
 };
 
 }

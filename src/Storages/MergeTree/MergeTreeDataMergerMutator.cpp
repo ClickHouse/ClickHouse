@@ -14,6 +14,8 @@ namespace ProfileEvents
     extern const Event MergerMutatorPrepareRangesForMergeElapsedMicroseconds;
     extern const Event MergerMutatorRangesForMergeCount;
     extern const Event MergerMutatorPartsInRangesForMergeCount;
+    extern const Event MergerMutatorSelectPartsForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorSelectRangePartsCount;
 }
 
 namespace DB
@@ -247,6 +249,39 @@ std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
     return range;
 }
 
+std::optional<MergeSelectorChoice> chooseMergeFrom(
+    const MergeSelectorApplier & selector,
+    const PartsRanges & ranges,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettingsPtr & data_settings,
+    const PartitionIdToTTLs & next_delete_times,
+    const PartitionIdToTTLs & next_recompress_times,
+    bool can_use_ttl_merges,
+    time_t current_time,
+    const LoggerPtr & log)
+{
+    Stopwatch select_parts_from_ranges_timer;
+
+    auto choice = selector.chooseMergeFrom(
+        ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times,
+        can_use_ttl_merges, current_time);
+
+    if (choice.has_value())
+    {
+        LOG_INFO(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms",
+            choice->range.size(), choice->range.front().name, choice->range.back().name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+
+        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
+        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
+    }
+
+    return choice;
+}
+
 }
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
@@ -303,15 +338,10 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
         assert(!ranges_in_partition.empty());
         assert(!ranges_in_partition.front().empty());
 
-        auto merge_choice = selector.chooseMergeFrom(
-            ranges_in_partition,
-            metadata_snapshot,
-            settings,
-            next_delete_ttl_merge_times_by_partition,
-            next_recompress_ttl_merge_times_by_partition,
-            can_use_ttl_merges,
-            current_time,
-            log);
+        auto merge_choice = chooseMergeFrom(
+            selector,
+            ranges_in_partition, metadata_snapshot, settings, next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
+            can_use_ttl_merges, current_time, log);
 
         const String & partition_id = ranges_in_partition.front().front().part_info.partition_id;
 
@@ -365,15 +395,10 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         });
     }
 
-    auto merge_choice = selector.chooseMergeFrom(
-        ranges,
-        metadata_snapshot,
-        settings,
-        next_delete_ttl_merge_times_by_partition,
-        next_recompress_ttl_merge_times_by_partition,
-        can_use_ttl_merges,
-        current_time,
-        log);
+    auto merge_choice = chooseMergeFrom(
+        selector,
+        ranges, metadata_snapshot, settings, next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
+        can_use_ttl_merges, current_time, log);
 
     if (merge_choice.has_value())
     {

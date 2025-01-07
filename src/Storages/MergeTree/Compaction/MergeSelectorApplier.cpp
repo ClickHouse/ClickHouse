@@ -5,12 +5,6 @@
 
 #include <Common/logger_useful.h>
 
-namespace ProfileEvents
-{
-    extern const Event MergerMutatorSelectPartsForMergeElapsedMicroseconds;
-    extern const Event MergerMutatorSelectRangePartsCount;
-}
-
 namespace DB
 {
 
@@ -125,58 +119,25 @@ std::optional<MergeSelectorChoice> tryChooseRegularMerge(
     return std::nullopt;
 }
 
-std::optional<MergeSelectorChoice> chooseMergeFromImpl(
-    const MergeSelectorApplier & applier,
+}
+
+std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
     const PartsRanges & ranges,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
-    time_t current_time)
+    time_t current_time) const
 {
-    if (metadata_snapshot->hasAnyTTL() && applier.merge_with_ttl_allowed && can_use_ttl_merges)
-        if (auto choice = tryChooseTTLMerge(applier, ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
+    if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
+        if (auto choice = tryChooseTTLMerge(*this, ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
             return choice;
 
-    if (auto choice = tryChooseRegularMerge(applier, ranges, data_settings))
+    if (auto choice = tryChooseRegularMerge(*this, ranges, data_settings))
         return choice;
 
     return std::nullopt;
-}
-
-}
-
-std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
-        const PartsRanges & ranges,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeSettingsPtr & data_settings,
-        const PartitionIdToTTLs & next_delete_times,
-        const PartitionIdToTTLs & next_recompress_times,
-        bool can_use_ttl_merges,
-        time_t current_time,
-        const LoggerPtr & log) const
-{
-    Stopwatch select_parts_from_ranges_timer;
-
-    auto choice = chooseMergeFromImpl(
-        *this, ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times,
-        can_use_ttl_merges, current_time);
-
-    if (choice.has_value())
-    {
-        LOG_INFO(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms",
-            choice->range.size(), choice->range.front().name, choice->range.back().name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
-
-        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
-        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
-    }
-
-    return choice;
 }
 
 }
