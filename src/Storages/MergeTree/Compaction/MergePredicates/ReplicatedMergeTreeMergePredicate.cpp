@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 replicated_max_mutations_in_one_entry;
