@@ -294,7 +294,7 @@ struct integer<Bits, Signed>::_impl
     }
 
     template <typename T>
-    __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
+    constexpr static auto NO_SANITIZE_UNDEFINED to_Integral(T f) noexcept
     {
         /// NOTE: this can be called with DB::Decimal, and in this case, result
         /// will be wrong
@@ -1389,7 +1389,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-constexpr integer<Bits, Signed>::operator double() const noexcept
+constexpr NO_SANITIZE_UNDEFINED integer<Bits, Signed>::operator double() const noexcept
 {
     return static_cast<double>(static_cast<long double>(*this));
 }
