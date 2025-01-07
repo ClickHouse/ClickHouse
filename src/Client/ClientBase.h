@@ -202,7 +202,7 @@ private:
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    String prompt() const;
+    String getPrompt() const;
 
     void resetOutput();
 
@@ -255,6 +255,8 @@ protected:
 
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
+
+    String appendSmileyIfNeeded(const String & prompt);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -345,7 +347,7 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
-    String prompt_by_server_display_name;
+    String prompt;
     String server_display_name;
 
     ProgressIndication progress_indication;
