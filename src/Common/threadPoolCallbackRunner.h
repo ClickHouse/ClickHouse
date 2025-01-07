@@ -109,12 +109,17 @@ class ThreadPoolCallbackRunnerLocal final
     template <typename Function, typename FunctionResult>
     static void executeCallback(std::promise<FunctionResult> & promise, Function & callback)
     {
+        /// Release callback before setting value to the promise to avoid
+        /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
-            promise.set_value(callback());
+            FunctionResult res = callback();
+            callback = {};
+            promise.set_value(std::move(res));
         }
         catch (...)
         {
+            callback = {};
             promise.set_exception(std::current_exception());
         }
     }
@@ -123,13 +128,17 @@ class ThreadPoolCallbackRunnerLocal final
     template <typename Function>
     static void executeCallback(std::promise<void> & promise, Function & callback)
     {
+        /// Release callback before setting value to the promise to avoid
+        /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
             callback();
+            callback = {};
             promise.set_value();
         }
         catch (...)
         {
+            callback = {};
             promise.set_exception(std::current_exception());
         }
     }
@@ -175,19 +184,15 @@ public:
 
             SCOPE_EXIT_SAFE(
             {
-                {
-                    /// Release all captured resources before detaching thread group
-                    /// Releasing has to use proper memory tracker which has been set here before callback
-
-                    [[maybe_unused]] auto tmp = std::move(my_callback);
-                }
+                /// Release all captured resources before detaching thread group
+                /// Releasing has to use proper memory tracker which has been set here before callback
+                my_callback = {};
 
                 if (thread_group)
                     CurrentThread::detachFromGroupIfNotDetached();
             });
 
             setThreadName(my_thread_name.data());
-
             executeCallback(*promise, my_callback);
         };
 
