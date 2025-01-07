@@ -532,8 +532,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         /// Try to add "implicit" minmax index for new column
-        if ((isNumber(column.type) && metadata.settings_changes && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
-         || (isString(column.type) && metadata.settings_changes && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+        if (metadata.settings_changes
+            && ((isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+                || (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
         {
             bool minmax_index_exists = false;
             for (const auto & index: metadata.secondary_indices)
@@ -695,8 +696,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
+            && metadata.settings_changes
             && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
-             || metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+                || metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
         }
@@ -962,7 +964,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         for (auto & index : metadata.secondary_indices)
         {
-            if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name
+                && metadata.settings_changes
+                && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
+                    ||  metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
             {
                 auto index_type = makeASTFunction("minmax");
                 index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
