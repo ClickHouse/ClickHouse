@@ -421,6 +421,10 @@ QueryLogElement logQueryStart(
 
     bool log_queries = settings[Setting::log_queries] && !internal;
 
+    auto query_log = context->getQueryLog();
+    if (!query_log)
+        return elem;
+
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
@@ -451,9 +455,38 @@ QueryLogElement logQueryStart(
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (auto query_log = context->getQueryLog())
-                query_log->add(elem);
+            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
+                    " (the setting was changed for the query).");
+
+            query_log->add(elem);
         }
+        else if (elem.type < settings[Setting::log_queries_min_type])
+        {
+            if (settings[Setting::log_queries_min_type].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query start record to 'system.query_log' because the query type is smaller than setting `log_queries_min_type`"
+                    " (the setting was changed for the query).");
+        }
+        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        {
+            if (settings[Setting::log_queries_min_query_duration_ms].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query start record to 'system.query_log' since setting `log_queries_min_query_duration_ms` > 0"
+                    " (the setting was changed for the query).");
+        }
+    }
+    else if (!internal && !settings[Setting::log_queries])
+    {
+        if (settings[Setting::log_queries].changed)
+            LOG_TRACE(
+                getLogger("executeQuery"),
+                "Not adding query to 'system.query_log' since setting `log_queries` is false"
+                " (the setting was changed for the query).");
     }
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
@@ -734,10 +767,44 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
-        && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-        if (auto query_log = context->getQueryLog())
+    if (auto query_log = context->getQueryLog())
+    {
+        if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
+            && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        {
+            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
+                    " (the setting was changed for the query).");
+
             query_log->add(elem);
+        }
+        else if (!settings[Setting::log_queries])
+        {
+            if (settings[Setting::log_queries].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query to 'system.query_log' since setting `log_queries` is false"
+                    " (the setting was changed for the query).");
+        }
+        else if (elem.type < settings[Setting::log_queries_min_type])
+        {
+            if (settings[Setting::log_queries_min_type].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query to 'system.query_log' since the query type is smaller than setting `log_queries_min_type`"
+                    " (the setting was changed for the query).");
+        }
+        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        {
+            if (settings[Setting::log_queries_min_query_duration_ms].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query to 'system.query_log' since setting `log_queries_min_query_duration_ms` > 0 and the query failed before start"
+                    " (the setting was changed for the query).");
+        }
+    }
 
     if (query_span)
     {
@@ -1603,8 +1670,8 @@ void executeQuery(
 
     /// Set the result details in case of any exception raised during query execution
     SCOPE_EXIT({
-        if (set_result_details == nullptr)
-            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        if (!set_result_details)
             return;
 
         try
@@ -1639,9 +1706,10 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
+                    {
                         // it will throw std::bad_function_call
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details(result_details);
                     });
 
@@ -1649,7 +1717,7 @@ void executeQuery(
                     {
                         /// reset set_result_details func to avoid calling in SCOPE_EXIT()
                         auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details_copy(result_details);
                     }
                 }

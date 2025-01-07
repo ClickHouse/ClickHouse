@@ -282,7 +282,8 @@ CREATE TABLE system.formats
     `is_input` UInt8,
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
-    `supports_parallel_formatting` UInt8
+    `supports_parallel_formatting` UInt8,
+    `is_tty_friendly` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -415,7 +416,8 @@ CREATE TABLE system.mutations
     `is_killed` UInt8,
     `latest_failed_part` String,
     `latest_fail_time` DateTime,
-    `latest_fail_reason` String
+    `latest_fail_reason` String,
+    `latest_fail_error_code_name` String
 )
 ENGINE = SystemMutations
 COMMENT 'Contains a list of mutations and their progress. Each mutation command is represented by a single row.'

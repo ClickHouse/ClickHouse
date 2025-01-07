@@ -76,6 +76,15 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
+void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
+{
+    impl->writeChangedBinary(out);
+}
+void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
+{
+    impl->readBinary(in);
+}
+
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 }

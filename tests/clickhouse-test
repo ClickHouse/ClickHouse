@@ -786,6 +786,25 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
+def randomize_external_sort_group_by():
+    if random.choice(["Bytes", "Ratio"]) == "Bytes":
+        generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
+        return {
+            "max_bytes_before_external_sort": generator,
+            "max_bytes_before_external_group_by": generator,
+            "max_bytes_ratio_before_external_sort": lambda: 0,
+            "max_bytes_ratio_before_external_group_by": lambda: 0,
+        }
+
+    generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
+    return {
+        "max_bytes_before_external_sort": lambda: 0,
+        "max_bytes_before_external_group_by": lambda: 0,
+        "max_bytes_ratio_before_external_sort": lambda: round(generator(), 2),
+        "max_bytes_ratio_before_external_group_by": lambda: round(generator(), 2),
+    }
+
+
 # To keep dependency list as short as possible, tzdata is not used here (to
 # avoid try/except block for import)
 def get_localzone():
@@ -870,12 +889,6 @@ class SettingsRandomizer:
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
-        "max_bytes_before_external_sort": threshold_generator(
-            0.3, 0.5, 0, 10 * 1024 * 1024 * 1024
-        ),
-        "max_bytes_before_external_group_by": threshold_generator(
-            0.3, 0.5, 0, 10 * 1024 * 1024 * 1024
-        ),
         "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
         "min_compress_block_size": lambda: random.randint(1, 1048576 * 3),
         "max_compress_block_size": lambda: random.randint(1, 1048576 * 3),
@@ -926,6 +939,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
+        **randomize_external_sort_group_by(),
     }
 
     @staticmethod
@@ -2693,16 +2707,17 @@ def do_run_tests(
             sys.stdout.flush()
             # Periodically check the server for hangs
             # and stop all processes in this case
-            try:
-                clickhouse_execute(
-                    args,
-                    query="SELECT 1 /*hung check*/",
-                    max_http_retries=20,
-                    timeout=10,
-                )
-            except Exception as e:
-                print(f"Hung check failed: {str(e)}")
-                server_died.set()
+            if args.hung_check:
+                try:
+                    clickhouse_execute(
+                        args,
+                        query="SELECT 1 /*hung check*/",
+                        max_http_retries=20,
+                        timeout=10,
+                    )
+                except Exception as e:
+                    print(f"Hung check failed: {str(e)}")
+                    server_died.set()
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
