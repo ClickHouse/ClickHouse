@@ -31,7 +31,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include "Parsers/queryToString.h"
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
@@ -176,8 +175,8 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
-/// This is an attempt to convert fiters (pushed down from the plan optimizations) from ActionsDAG back to AST.
-/// It shoud not be needed after we send a full plan for distributed queries.
+/// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
+/// It should not be needed after we send a full plan for distributed queries.
 static ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
@@ -465,7 +464,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             connections.emplace_back(std::move(try_result.entry));
 
         /// For the lazy case we are ignoring external tables.
-        /// This is becasue the set could be build before the lambda call.
+        /// This is because the set could be build before the lambda call.
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
