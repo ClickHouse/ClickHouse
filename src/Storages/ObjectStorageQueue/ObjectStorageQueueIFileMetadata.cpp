@@ -304,11 +304,14 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         return;
     }
 
-    auto exception = zkutil::KeeperMultiException(code, requests, responses);
+    const auto failed_path = responses[0]->error != Coordination::Error::ZOK
+        ? requests[0]->getPath()
+        : requests[1]->getPath();
+
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "Failed to reset processing for file {}: (code: {}, path: {})",
-        path, code, exception.getPathForFirstFailedOp());
+        path, code, failed_path);
 }
 
 void ObjectStorageQueueIFileMetadata::setProcessed()

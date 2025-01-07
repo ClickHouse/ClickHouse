@@ -568,6 +568,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             progress->processed_files += 1;
         }
 
+        chassert(file_metadata);
         auto file_status = file_metadata->getFileStatus();
         const auto & path = file_metadata->getPath();
 
@@ -681,7 +682,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected state of file: {}", file_metadata->getPath());
+                        "Unexpected state {} of file {} while insert succeeded",
+                        file_state, file_metadata->getPath());
                 }
 
                 file_metadata->setFailed(exception_message, /* reduce_retry_count */false);
