@@ -2418,26 +2418,23 @@ public:
                     else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         auto scale = right.getScale();
-                        auto multiplier = static_cast<LeftFieldType>(DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale));
-                        auto * from_type = arguments[0].value->getType();
-                        auto * from_value = arguments[0].value;
+                        auto multipler = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
-                            result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, multiplier));
+                            /// left type is integer and right type is decimal
+                            auto * from_type = arguments[0].value->getType();
+                            auto * from_value = arguments[0].value;
+                            result
+                                = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multipler)));
+                            result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                         }
                         else
                         {
-                            llvm::Value * m = nullptr;
-                            if constexpr (std::is_integral_v<LeftFieldType>)
-                                m = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(multiplier), std::is_signed_v<LeftFieldType>);
-                            else
-                            {
-                                llvm::APInt v(from_type->getIntegerBitWidth(), multiplier.items);
-                                m = llvm::ConstantInt::get(from_type, v);
-                            }
-                            result = builder.CreateMul(from_value, m);
+                            /// left type is integer and right type is decimal
+                            auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
+                            auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multipler));
+                            result = builder.CreateMul(from_value, multiplier_value);
                         }
-                        result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                         return true;
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
@@ -3681,26 +3678,22 @@ public:
                     else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         auto scale = right.getScale();
-                        auto multiplier = static_cast<LeftFieldType>(DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale));
-                        auto * from_type = toNativeType(builder, left);
-                        auto * from_value = input_value;
+                        auto multipler = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
-                            result_value = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, multiplier));
+                            /// left type is integer and right type is decimal
+                            auto * from_type = toNativeType(builder, left);
+                            result_value
+                                = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multipler)));
+                            result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                         }
                         else
                         {
-                            llvm::Value * m = nullptr;
-                            if constexpr (std::is_integral_v<LeftFieldType>)
-                                m = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(multiplier), std::is_signed_v<LeftFieldType>);
-                            else
-                            {
-                                llvm::APInt v(from_type->getIntegerBitWidth(), multiplier.items);
-                                m = llvm::ConstantInt::get(from_type, v);
-                            }
-                            result_value = builder.CreateMul(from_value, m);
+                            /// left type is integer and right type is decimal
+                            auto * from_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
+                            auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multipler));
+                            result_value = builder.CreateMul(from_value, multiplier_value);
                         }
-                        result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                         return true;
                     }
                     else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)

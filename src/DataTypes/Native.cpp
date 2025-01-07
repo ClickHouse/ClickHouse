@@ -241,6 +241,11 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
 #undef GET_NUMERIC_CONSTANT
 }
 
+llvm::Constant * getNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const Field & field)
+{
+    ColumnPtr column = column_type->createColumnConst(1, field);
+    return getColumnNativeValue(builder, column_type, *column, 0);
+}
 }
 
 #endif

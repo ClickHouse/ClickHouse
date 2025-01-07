@@ -536,7 +536,7 @@ llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & fro
     if (value->getType()->isIntegerTy())
         return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
     else if (value->getType()->isFloatingPointTy())
-        return b.CreateSelect(b.CreateFCmpONE(value, zero), ternary_true, ternary_false);
+        return b.CreateSelect(b.CreateFCmpUNE(value, zero), ternary_true, ternary_false);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
 }

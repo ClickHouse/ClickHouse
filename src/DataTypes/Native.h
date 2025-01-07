@@ -122,6 +122,9 @@ static inline llvm::Value * nativeCast(llvm::IRBuilderBase & b, llvm::Value * va
 /// Get column value for specified index as LLVM constant
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index);
 
+/// Get value for specified field as LLVM constant
+llvm::Constant * getNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const Field & field);
+
 }
 
 #endif
