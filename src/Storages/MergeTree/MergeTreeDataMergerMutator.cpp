@@ -10,6 +10,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event MergerMutatorsGetPartsForMergeElapsedMicroseconds;
     extern const Event MergerMutatorPrepareRangesForMergeElapsedMicroseconds;
     extern const Event MergerMutatorRangesForMergeCount;
     extern const Event MergerMutatorPartsInRangesForMergeCount;
@@ -57,35 +58,11 @@ size_t calculatePartsCount(const PartsRanges & ranges)
     return count;
 }
 
-PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredicate & can_merge, LogSeriesLimiter & log)
+PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr & merge_predicate, LogSeriesLimiter & log)
 {
     const auto & build_next_range = [&](PartsRange::iterator & current_it)
     {
-        PartsRange mergeable_range;
-
-        /// Find beginning of next range. It should be a part that can be merged with itself.
-        /// Parts can be merged with themselves for TTL needs for example.
-        /// So we have to check if this part is currently being inserted with quorum and so on and so forth.
-        /// Obviously we have to check it manually only for the first part
-        /// of each range because it will be automatically checked for a pair of parts.
-        while (current_it != range.end())
-        {
-            PartProperties & current_part = *current_it++;
-
-            if (auto result = can_merge(nullptr, &current_part))
-            {
-                mergeable_range.push_back(std::move(current_part));
-                break;
-            }
-            else
-            {
-                LOG_TRACE(log, "Merge preconditions failed for part {}. Reason: {}", current_part.name, result.error().text);
-            }
-        }
-
-        /// All parts can't participate in merges
-        if (mergeable_range.empty())
-            return mergeable_range;
+        PartsRange mergeable_range = {*current_it++};
 
         while (current_it != range.end())
         {
@@ -93,7 +70,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
             PartProperties & current_part = *current_it;
 
             /// If we cannot merge with previous part we need to close this range.
-            if (auto result = can_merge(&prev_part, &current_part); !result.has_value())
+            if (auto result = merge_predicate->canMergeParts(prev_part, current_part); !result.has_value())
             {
                 LOG_TRACE(log, "Can't merge parts {} and {}. Reason: {}", prev_part.name, current_part.name, result.error().text);
                 return mergeable_range;
@@ -121,7 +98,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
     return mergeable_ranges;
 }
 
-PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge, const LoggerPtr & log)
+PartsRanges splitByMergePredicate(PartsRanges && ranges, const MergePredicatePtr & merge_predicate, const LoggerPtr & log)
 {
     Stopwatch ranges_for_merge_timer;
     LogSeriesLimiter predicate_split_phase_log(log, 1, /*interval_s_=*/60 * 30);
@@ -129,7 +106,7 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
     PartsRanges mergeable_ranges;
     for (auto && range : ranges)
     {
-        auto split_range_by_predicate = splitByMergePredicate(std::move(range), can_merge, predicate_split_phase_log);
+        auto split_range_by_predicate = splitByMergePredicate(std::move(range), merge_predicate, predicate_split_phase_log);
         insertAtEnd(mergeable_ranges, std::move(split_range_by_predicate));
     }
 
@@ -138,19 +115,18 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
     ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
 
-    return mergeable_ranges;
+    return checkRanges(std::move(mergeable_ranges));
 }
 
-std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
+std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const MergePredicatePtr & merge_predicate)
 {
-    const PartProperties * prev_part = nullptr;
-
-    for (const auto & part : range)
+    for (size_t i = 1; i < range.size(); ++i)
     {
-        if (auto can_merge_result = can_merge(prev_part, &part); !can_merge_result.has_value())
-            return std::unexpected(std::move(can_merge_result.error()));
+        const auto & prev_part = range[i - 1];
+        const auto & current_part = range[i];
 
-        prev_part = &part;
+        if (auto can_merge_result = merge_predicate->canMergeParts(prev_part, current_part); !can_merge_result)
+            return can_merge_result;
     }
 
     return {};
@@ -241,6 +217,36 @@ String getBestPartitionToOptimizeEntire(
     return best_partition_it->first;
 }
 
+PartsRanges grabAllPossibleRanges(
+    const PartsCollectorPtr & parts_collector,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time,
+    const std::optional<PartitionIdsHint> & partitions_hint)
+{
+    Stopwatch get_data_parts_for_merge_timer;
+
+    auto ranges = parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
+
+    return checkRanges(std::move(ranges));
+}
+
+std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
+    const PartsCollectorPtr & parts_collector,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time,
+    const std::string & partition_id)
+{
+    Stopwatch get_data_parts_for_merge_timer;
+
+    auto range = parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
+
+    return range;
+}
+
 }
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
@@ -270,7 +276,7 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice &
 
 PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const PartsCollectorPtr & parts_collector,
-    const AllowedMergingPredicate & can_merge,
+    const MergePredicatePtr & merge_predicate,
     const MergeSelectorApplier & selector) const
 {
     const auto context = data.getContext();
@@ -280,11 +286,11 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
 
-    auto ranges = checkRanges(parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, /*partitions_hint=*/std::nullopt));
+    auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, /*partitions_hint=*/std::nullopt);
     if (ranges.empty())
         return {};
 
-    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge, log));
+    ranges = splitByMergePredicate(std::move(ranges), merge_predicate, log);
     if (ranges.empty())
         return {};
 
@@ -330,7 +336,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
 std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectPartsToMerge(
     const PartsCollectorPtr & parts_collector,
-    const AllowedMergingPredicate & can_merge,
+    const MergePredicatePtr & merge_predicate,
     const MergeSelectorApplier & selector,
     const std::optional<PartitionIdsHint> & partitions_hint)
 {
@@ -341,7 +347,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
 
-    auto ranges = checkRanges(parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint));
+    auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint);
     if (ranges.empty())
     {
         return std::unexpected(SelectMergeFailure{
@@ -350,7 +356,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         });
     }
 
-    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge, log));
+    ranges = splitByMergePredicate(std::move(ranges), merge_predicate, log);
     if (ranges.empty())
     {
         return std::unexpected(SelectMergeFailure{
@@ -382,7 +388,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         return selectAllPartsToMergeWithinPartition(
             metadata_snapshot,
             parts_collector,
-            can_merge,
+            merge_predicate,
             /*partition_id=*/best,
             /*final=*/true,
             /*optimize_skip_merged_partitions=*/true);
@@ -397,7 +403,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
 std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartsCollectorPtr & parts_collector,
-    const AllowedMergingPredicate & can_merge,
+    const MergePredicatePtr & merge_predicate,
     const String & partition_id,
     bool final,
     bool optimize_skip_merged_partitions)
@@ -406,7 +412,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     const time_t current_time = std::time(nullptr);
     const auto storage_policy = data.getStoragePolicy();
 
-    auto collect_result = parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
+    auto collect_result = grabAllPartsInsidePartition(parts_collector, metadata_snapshot, storage_policy, current_time, partition_id);
     if (!collect_result)
     {
         return std::unexpected(SelectMergeFailure{
@@ -449,7 +455,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         }
     }
 
-    if (auto result = canMergeAllParts(parts, can_merge); !result.has_value())
+    if (auto result = canMergeAllParts(parts, merge_predicate); !result.has_value())
     {
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,

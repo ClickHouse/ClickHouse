@@ -35,6 +35,8 @@
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <fmt/core.h>
@@ -1005,43 +1007,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions)
 {
-    const auto can_merge = [this, &lock](const PartProperties * left, const PartProperties * right) -> std::expected<void, PreformattedMessage>
-    {
-        if (!left)
-        {
-            /// This predicate is checked for the first part of each range.
-
-            if (currently_merging_mutating_parts.contains(right->part_info))
-                return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", right->name));
-
-            return {};
-        }
-
-        assert(left && right);
-
-        if (left->part_info.partition_id != right->part_info.partition_id)
-            return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
-
-        for (const PartProperties * part : {left, right})
-            if (currently_merging_mutating_parts.contains(part->part_info))
-                return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
-
-        if (getCurrentMutationVersion(left->part_info, lock) != getCurrentMutationVersion(right->part_info, lock))
-            return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left->name, right->name));
-
-        uint32_t max_possible_level = getMaxLevelInBetween(*left, *right);
-        if (max_possible_level > std::max(left->part_info.level, right->part_info.level))
-            return std::unexpected(PreformattedMessage::create(
-                    "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have",
-                    left->name, right->name, max_possible_level));
-
-        if (left->projection_names != right->projection_names)
-            return std::unexpected(PreformattedMessage::create(
-                    "Parts have different projection sets: {{}} in {} and {{}} in {}",
-                    fmt::join(left->projection_names, ", "), left->name, fmt::join(right->projection_names, ", "), right->name));
-
-        return {};
-    };
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
+    auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
@@ -1085,7 +1052,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 .explanation = std::move(check_memory_result.error()),
             });
 
-        auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, txn);
         UInt64 max_source_parts_size = CompactionStatistics::getMaxSourcePartsSizeForMerge(*this);
         bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < (*getSettings())[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
 
@@ -1099,7 +1065,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
-            can_merge,
+            merge_predicate,
             MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
             /*partitions_hint=*/std::nullopt);
 
@@ -1108,8 +1074,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, txn);
-
         while (true)
         {
             auto timeout_ms = (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds();
@@ -1139,7 +1103,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
                 metadata_snapshot,
                 parts_collector,
-                can_merge,
+                merge_predicate,
                 partition_id,
                 final,
                 optimize_skip_merged_partitions);

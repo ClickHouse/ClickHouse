@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
@@ -25,8 +26,6 @@ struct SelectMergeFailure
     PreformattedMessage explanation = {};
 };
 
-using AllowedMergingPredicate = std::function<std::expected<void, PreformattedMessage>(const PartProperties *, const PartProperties *)>;
-
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
  */
@@ -42,7 +41,7 @@ public:
       */
     PartitionIdsHint getPartitionsThatMayBeMerged(
         const PartsCollectorPtr & parts_collector,
-        const AllowedMergingPredicate & can_merge,
+        const MergePredicatePtr & merge_predicate,
         const MergeSelectorApplier & selector) const;
 
     /** Selects which parts to merge. Uses a lot of heuristics.
@@ -54,7 +53,7 @@ public:
       */
     std::expected<MergeSelectorChoice, SelectMergeFailure> selectPartsToMerge(
         const PartsCollectorPtr & parts_collector,
-        const AllowedMergingPredicate & can_merge,
+        const MergePredicatePtr & merge_predicate,
         const MergeSelectorApplier & selector,
         const std::optional<PartitionIdsHint> & partitions_hint);
 
@@ -66,7 +65,7 @@ public:
     std::expected<MergeSelectorChoice, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartsCollectorPtr & parts_collector,
-        const AllowedMergingPredicate & can_merge,
+        const MergePredicatePtr & merge_predicate,
         const String & partition_id,
         bool final,
         bool optimize_skip_merged_partitions);

@@ -201,6 +201,7 @@ private:
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
     friend struct CurrentlyMergingPartsTagger;
+    friend class MergeTreeMergePredicate;
 
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,

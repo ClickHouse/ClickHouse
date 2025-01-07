@@ -51,6 +51,8 @@
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/ReplicatedMergeTreePartsCollector.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -4032,7 +4034,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot assign new merges", replica_path);
         }
 
-        std::optional<ReplicatedMergeTreeMergePredicate> merge_pred;
+        std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> merge_predicate;
 
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
@@ -4062,7 +4064,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         UInt64 max_source_parts_size_for_merge = CompactionStatistics::getMaxSourcePartsSizeForMerge(
             *this, (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue], merges_and_mutations_sum);
         UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
-        auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
 
         bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
             getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
@@ -4075,23 +4076,24 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
+            auto local_merge_pred = std::make_shared<ReplicatedMergeTreeLocalMergePredicate>(queue);
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
-                parts_collector,
-                LocalMergePredicate(queue),
+                std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
+                local_merge_pred,
                 MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
             else
-                merge_pred.emplace(queue.getMergePredicate(zookeeper, partitions_to_merge_in));
+                merge_predicate = queue.getMergePredicate(zookeeper, partitions_to_merge_in);
         }
 
         PreformattedMessage out_reason;
         if (can_assign_merge)
         {
             auto select_merge_result = merger_mutator.selectPartsToMerge(
-                parts_collector,
-                merge_pred.value(),
+                std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
+                merge_predicate,
                 MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
                 partitions_to_merge_in);
 
@@ -4117,7 +4119,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     deduplicate_by_columns,
                     /*cleanup*/ false,
                     nullptr,
-                    merge_pred->getVersion(),
+                    merge_predicate->getVersion(),
                     future_merged_part->merge_type);
 
                 if (create_result == CreateMergeEntryResult::Ok)
@@ -4138,8 +4140,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         if (queue.countMutations() > 0)
         {
             /// We don't need the list of committing blocks to choose a part to mutate
-            if (!merge_pred)
-                merge_pred.emplace(queue.getMergePredicate(zookeeper, PartitionIdsHint{}));
+            if (!merge_predicate)
+                merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{});
 
             /// Choose a part to mutate.
             DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
@@ -4148,7 +4150,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                     continue;
 
-                std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred->getDesiredMutationVersion(part);
+                std::optional<std::pair<Int64, int>> desired_mutation_version = merge_predicate->getDesiredMutationVersion(part);
                 if (!desired_mutation_version)
                     continue;
 
@@ -4157,7 +4159,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     future_merged_part->uuid,
                     desired_mutation_version->first,
                     desired_mutation_version->second,
-                    merge_pred->getVersion());
+                    merge_predicate->getVersion());
 
                 if (create_result == CreateMergeEntryResult::Ok)
                     return AttemptStatus::EntryCreated;
@@ -4504,8 +4506,9 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ///
             /// Because of version check this method will never create FETCH if drop part exists
 
-            ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
-            if (merge_pred.isGoingToBeDropped(broken_part_info))
+            /// FIXME: We can simply pull queue here instead of full predicate.
+            auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
+            if (merge_predicate->isGoingToBeDropped(broken_part_info))
             {
                 LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it", part_name);
                 outdate_broken_part();
@@ -4513,7 +4516,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             }
 
             /// Check that our version of log (and queue) is the most fresh. Otherwise don't create new entry fetch entry.
-            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
+            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_predicate->getVersion()));
         }
 
         LogEntryPtr log_entry = std::make_shared<LogEntry>();
@@ -6124,7 +6127,6 @@ bool StorageReplicatedMergeTree::optimize(
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
     auto try_assign_merge = [&](const String & partition_id) -> bool
@@ -6148,7 +6150,9 @@ bool StorageReplicatedMergeTree::optimize(
                     handle_noop("Cannot select parts for optimization: there are no parts in partition {}", partition_id);
                 partition_ids_hint.insert(partition_id);
             }
-            ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
+
+            auto merge_predicate = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
+            auto parts_collector = std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate);
 
             const auto select_merge = [&]() -> std::expected<MergeSelectorChoice, SelectMergeFailure>
             {
@@ -6156,7 +6160,7 @@ bool StorageReplicatedMergeTree::optimize(
                 {
                     return merger_mutator.selectPartsToMerge(
                         parts_collector,
-                        can_merge,
+                        merge_predicate,
                         MergeSelectorApplier{
                             .max_total_size_to_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
                             .merge_with_ttl_allowed = false,
@@ -6169,7 +6173,7 @@ bool StorageReplicatedMergeTree::optimize(
                     return merger_mutator.selectAllPartsToMergeWithinPartition(
                         metadata_snapshot,
                         parts_collector,
-                        can_merge,
+                        merge_predicate,
                         partition_id,
                         final,
                         query_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]);
@@ -6229,7 +6233,7 @@ bool StorageReplicatedMergeTree::optimize(
                 deduplicate_by_columns,
                 cleanup,
                 &merge_entry,
-                can_merge.getVersion(),
+                merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);
 
             if (create_result == CreateMergeEntryResult::MissingPart)
@@ -8987,7 +8991,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (part->uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);
 
-    ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
+    auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
 
     /// The following block is pretty much copy & paste from StorageReplicatedMergeTree::dropPart to avoid conflicts while this is WIP.
     /// Extract it to a common method and re-use it before merging.
@@ -9000,7 +9004,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         }
 
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
-        if (auto result = merge_pred.canMergeSinglePart(part->name, part->info, part->uuid); !result.has_value())
+        if (auto result = merge_predicate->canUsePartInMerges(part); !result.has_value())
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", result.error().text);
     }
 
@@ -9038,7 +9042,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     part_move_entry.to_shard = to;
 
     Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", merge_pred.getVersion())); /// Make sure no new events were added to the log.
+    ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", merge_predicate->getVersion())); /// Make sure no new events were added to the log.
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
     ops.emplace_back(zkutil::makeSetRequest(to + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
     ops.emplace_back(zkutil::makeCreateRequest(
@@ -9238,7 +9242,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         if (shutdown_called || partial_shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Cannot drop part because shutdown called");
 
-        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
+        auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
 
         auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
 
@@ -9249,7 +9253,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
-        if (merge_pred.isGoingToBeDropped(part->info))
+        if (merge_predicate->isGoingToBeDropped(part->info))
         {
             if (throw_if_noop)
                 throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Already has DROP RANGE for part {} in queue.", part_name);
@@ -9257,10 +9261,9 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
-        /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
-        /// finished the merge.
+        /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already finished the merge.
         PreformattedMessage out_reason;
-        if (auto result = merge_pred.canMergeSinglePart(part->name, part->info, part->uuid); !result.has_value())
+        if (auto result = merge_predicate->canUsePartInMerges(part); !result.has_value())
         {
             if (throw_if_noop)
                 throw Exception(result.error(), ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
@@ -9270,7 +9273,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
             return false;
         }
 
-        if (merge_pred.partParticipatesInReplaceRange(part, out_reason))
+        if (merge_predicate->partParticipatesInReplaceRange(part, out_reason))
         {
             if (throw_if_noop)
                 throw Exception(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
@@ -9309,7 +9312,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         entry.detach = detach;
         entry.create_time = time(nullptr);
 
-        ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion())); /// Make sure no new events were added to the log.
+        ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_predicate->getVersion())); /// Make sure no new events were added to the log.
         ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
         /// Just update version, because merges assignment relies on it
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
@@ -10574,15 +10577,15 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             /// We can enqueue part for check from DataPartExchange or SelectProcessor
             /// and it's hard to synchronize it with ReplicatedMergeTreeQueue and PartCheckThread...
             /// But at least we can ignore parts that are definitely not needed according to virtual parts and drop ranges.
-            auto pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{new_part_info.partition_id});
-            String covering_virtual = pred.getCoveringVirtualPart(lost_part_name);
+            auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{new_part_info.partition_id});
+            String covering_virtual = merge_predicate->getCoveringVirtualPart(lost_part_name);
             if (covering_virtual.empty())
             {
                 LOG_WARNING(log, "Will not create empty part instead of lost {}, because there's no covering part in replication queue", lost_part_name);
                 return false;
             }
             MergeTreePartInfo drop_info;
-            if (pred.isGoingToBeDropped(MergeTreePartInfo::fromPartName(lost_part_name, format_version), &drop_info))
+            if (merge_predicate->isGoingToBeDropped(MergeTreePartInfo::fromPartName(lost_part_name, format_version), &drop_info))
             {
                 LOG_WARNING(log, "Will not create empty part instead of lost {}, "
                                  "because it's going to be removed (by range {})",
@@ -10595,7 +10598,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             auto replicas_path = fs::path(zookeeper_path) / "replicas";
             Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
 
-            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", pred.getVersion()));
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", merge_predicate->getVersion()));
 
             /// In rare cases new replica can appear during check
             ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
