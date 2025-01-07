@@ -60,7 +60,7 @@ void registerTableFunctionFileCluster(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
             .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-            .categories{"File"}},
+            .category{""}},
         .allow_readonly = false});
 }
 
