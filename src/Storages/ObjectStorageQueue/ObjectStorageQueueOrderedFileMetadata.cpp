@@ -250,28 +250,29 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
         {
             Coordination::Requests requests;
-            requests.push_back(zkutil::makeGetRequest(processed_node_path));
-            requests.push_back(zkutil::makeGetRequest(failed_node_path));
+            std::vector<std::string> paths{processed_node_path, failed_node_path};
+            auto responses = zk_client->tryGet(paths);
 
-            Coordination::Responses responses;
-            const auto code = zk_client->tryMulti(requests, responses);
+            auto check_code = [this](auto code)
+            {
+                if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+                    throw zkutil::KeeperException::fromPath(code, path);
+            };
+            check_code(responses[0].error);
+            check_code(responses[1].error);
 
-            if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
-                throw zkutil::KeeperException::fromPath(code, path);
-
-            if (responses[1]->error == Coordination::Error::ZOK)
+            if (responses[1].error == Coordination::Error::ZOK)
             {
                 LOG_TEST(log, "File {} is Failed", path);
                 return {false, FileStatus::State::Failed};
             }
 
-            if (responses[0]->error == Coordination::Error::ZOK)
+            if (responses[0].error == Coordination::Error::ZOK)
             {
-                const auto * get_response = dynamic_cast<const Coordination::GetResponse *>(responses[0].get());
-                if (!get_response->data.empty())
+                if (!responses[0].data.empty())
                 {
-                    processed_node.emplace(NodeMetadata::fromString(get_response->data));
-                    processed_node_stat = get_response->stat;
+                    processed_node.emplace(NodeMetadata::fromString(responses[0].data));
+                    processed_node_stat = responses[0].stat;
 
                     LOG_TEST(log, "Current max processed file {} from path: {}",
                              processed_node->file_path, processed_node_path);

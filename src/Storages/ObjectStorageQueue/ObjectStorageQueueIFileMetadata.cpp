@@ -231,7 +231,7 @@ bool ObjectStorageQueueIFileMetadata::setProcessing()
             && file_status->retries >= max_loading_retries))
     {
         LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, file_status->state.load(), file_status->retries, max_loading_retries);
+                 path, state, file_status->retries, max_loading_retries);
         return false;
     }
 
@@ -276,10 +276,6 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
             node_metadata.toString());
     }
 
-    static constexpr size_t check_processing_id_path_idx = 0;
-    static constexpr size_t remove_processing_id_path_idx = 1;
-    static constexpr size_t remove_processing_path_idx = 2;
-
     Coordination::Requests requests;
     requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
@@ -290,47 +286,29 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     if (code == Coordination::Error::ZOK)
         return;
 
-    auto is_request_failed = [&](size_t idx)
-    {
-        chassert(idx < responses.size());
-        return responses[idx]->error != Coordination::Error::ZOK;
-    };
-
-    bool unexpected_error = false;
-    std::string failure_reason;
-
     if (Coordination::isHardwareError(code))
     {
-        failure_reason = "Lost connection to keeper";
+        LOG_TRACE(log, "Keeper session expired, processing will be automatically reset");
+        return;
     }
-    else if (is_request_failed(check_processing_id_path_idx))
+
+    if (responses[0]->error == Coordination::Error::ZBADVERSION)
     {
-        /// This is normal in case of expired session with keeper.
-        failure_reason = "Version of processing id node changed";
-    }
-    else if (is_request_failed(remove_processing_id_path_idx))
-    {
-        /// Remove processing_id node should not actually fail
-        /// because we just checked in a previous keeper request that it exists and has a certain version.
-        unexpected_error = true;
-        failure_reason = "Failed to remove processing id path";
-    }
-    else if (is_request_failed(remove_processing_path_idx))
-    {
-        /// This is normal in case of expired session with keeper as this node is ephemeral.
-        failure_reason = "Failed to remove processing path";
-    }
-    else
-    {
-        /// Unreachable branch.
+        LOG_WARNING(
+            log, "Processing node no longer exists ({}) "
+            "while setting file as non-retriable failed. "
+            "This could be as a result of expired keeper session. "
+            "Cannot set file as failed, will retry.",
+            processing_node_path);
         chassert(false);
-        unexpected_error = true;
+        return;
     }
 
-    if (unexpected_error)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
-
-    LOG_TRACE(log, "Cannot reset processing for {}. Code: {}. Reason: {}", path, code, failure_reason);
+    auto exception = zkutil::KeeperMultiException(code, requests, responses);
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to reset processing for file {}: (code: {}, path: {})",
+        path, code, exception.getPathForFirstFailedOp());
 }
 
 void ObjectStorageQueueIFileMetadata::setProcessed()
