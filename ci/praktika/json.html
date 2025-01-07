@@ -54,6 +54,8 @@
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
+            overflow-y: auto;
+            margin-bottom: 40px;
         }
 
         #status-container a {
@@ -63,9 +65,16 @@
             cursor: pointer;
             display: inline-block;
             margin-top: 5px;
-            margin-left: 20px;
+            margin-left: 10px;
             padding: 2px 0;
-            font-size: 0.8em;
+            font-size: 0.7em;
+            font-family: 'Roboto Condensed', sans-serif;
+            font-stretch: ultra-condensed;
+
+            max-width: 270px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         #status-container a:hover {

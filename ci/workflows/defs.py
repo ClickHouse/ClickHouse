@@ -135,12 +135,18 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/integration-helper",
-    #     path="./docker/test/integration/runner",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
+    Docker.Config(
+        name="clickhouse/integration-helper",
+        path="./docker/test/integration/runner",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/kerberized-hadoop",
+        path="./docker/test/integration/kerberized_hadoop",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=[],
+    ),
     # Docker.Config(
     #     name="clickhouse/kerberos-kdc",
     #     path="./docker/test/integration/kerberos_kdc",
