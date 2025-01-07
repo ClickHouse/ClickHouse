@@ -103,6 +103,7 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
+    void processTextAsSingleQuery(const String & full_query);
 
 protected:
     void runInteractive();
@@ -119,6 +120,11 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
+    virtual bool buzzHouse()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+    }
+
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -126,7 +132,6 @@ protected:
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    void processTextAsSingleQuery(const String & full_query);
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
@@ -378,6 +383,10 @@ protected:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
+
+    //Options for BuzzHouse
+    String buzz_house_options_path;
+    bool buzz_house = false;
 
     struct
     {
