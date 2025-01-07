@@ -1825,7 +1825,7 @@ try
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
             auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
-                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num,
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
             LOG_INFO(log, "ConcurrencyControl limit is set to {}",
                 concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
