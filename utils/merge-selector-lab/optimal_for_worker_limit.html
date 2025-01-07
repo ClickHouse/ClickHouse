@@ -28,6 +28,10 @@
                         <label for="maxSourceParts">Max parts to merge:</label>
                         <input type="number" class="form-control form-control-sm" id="maxSourceParts" value="100">
                     </div>
+                    <div class="form-group col-md-4">
+                        <label for="maxPartSize">Average final part size:</label>
+                        <input type="text" class="form-control form-control-sm" id="maxPartSize" placeholder="Unlimited">
+                    </div>
                     <div class="form-group col-md-8">
                         <label for="layerBases">Bases (number of parts to merge on every level):</label>
                         <input type="text" class="form-control form-control-sm" id="layerBases" value="[3,3,3,3,3]">
@@ -92,27 +96,43 @@
             import { gradientDescent } from './gradientDescent.js';
             import { delayMs } from './util.js';
 
-            function readPartSize() {
-                const sizeInput = document.getElementById('insertPartSize').value.trim().toUpperCase();
-                let value;
+            function parseHumanReadableSize(str) {
+                const sizeInput = str.trim().toUpperCase();
                 if (sizeInput.endsWith('KB')) {
-                    value = parseFloat(sizeInput) * 1024;
+                    return parseFloat(sizeInput) * 1024;
                 } else if (sizeInput.endsWith('MB')) {
-                    value = parseFloat(sizeInput) * 1024 * 1024;
+                    return parseFloat(sizeInput) * 1024 * 1024;
+                } else if (sizeInput.endsWith('GB')) {
+                    return parseFloat(sizeInput) * 1024 * 1024 * 1024;
+                } else if (sizeInput.endsWith('TB')) {
+                    return parseFloat(sizeInput) * 1024 * 1024 * 1024 * 1024;
+                } else if (sizeInput.endsWith('PB')) {
+                    return parseFloat(sizeInput) * 1024 * 1024 * 1024 * 1024 * 1024;
                 } else {
-                    value = parseInt(sizeInput);
+                    return parseInt(sizeInput);
                 }
-                return value;
+            }
+
+            function readPartSize() {
+                return parseHumanReadableSize(document.getElementById('insertPartSize').value);
+            }
+
+            function readMaxPartSize() {
+                const str = document.getElementById('maxPartSize').value;
+                return str ? parseHumanReadableSize(str) : null; // No limit
             }
 
             function readParams() {
-                return {
+                let params = {
                     insertPartSize: readPartSize(),
                     layerBases: JSON.parse(document.getElementById('layerBases').value),
                     parts: parseInt(document.getElementById('parts').value),
                     workers: parseInt(document.getElementById('poolSize').value),
                     maxSourceParts: parseInt(document.getElementById('maxSourceParts').value),
+                    maxPartSize: readMaxPartSize(),
                 };
+                console.log("PARAMS", params);
+                return params;
             }
 
             document.getElementById('solveButton').addEventListener('click', async () => {
@@ -120,15 +140,22 @@
                 solveButton.textContent = '⏳';
                 solveButton.disabled = true;
                 await delayMs(32);
-                const {insertPartSize, parts, workers, layerBases, maxSourceParts} = readParams();
+                const {insertPartSize, parts, workers, layerBases, maxSourceParts, maxPartSize} = readParams();
 
-                const n = parts;
+                // We pretend that we merge initial parts that all have 1-byte size
+                const finalSize =
+                    (maxPartSize == null ?
+                    parts : // Max part size is unlimited - we merge all parts into one big part
+                    maxPartSize / insertPartSize);
+
+                const x_sum = Math.log(finalSize);
+                console.log("x_sum", x_sum);
                 const N = workers;
-                const yBar = Math.log(n / N);
+                const yBar = x_sum - Math.log(N);
                 const xMax = Math.log(maxSourceParts);
 
                 const mt0 = new MergeTree();
-                const realB = mt0.mergeDuration(insertPartSize * n, n);
+                const realB = mt0.mergeDuration(insertPartSize * parts, parts);
                 const B = 1;
 
                 const sumVectors = (vectors) => vectors.reduce((acc, vec) => acc.map((val, index) => val + vec[index]), new Array(vectors[0].length).fill(0));
@@ -167,8 +194,8 @@
                 let xopt = [];
 
                 d3.select('#options-table tbody').html('');
-                for (let L = 1; L <= 1.1 * Math.log(n); L++) {
-                    let x = gradientDescent(grad_F, L, n, xMax, eta);
+                for (let L = 1; L <= 1.1 * x_sum; L++) {
+                    let x = gradientDescent(grad_F, L, x_sum, xMax, eta);
                     let Fx = F(x);
                     const bases = x.map(xi => Math.exp(xi));
                     const basesStr = '[' + bases.map(base => base.toFixed(2)).join(', ') + ']';

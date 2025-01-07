@@ -1,18 +1,15 @@
-export function gradientDescent(gradF, L, n, xMax, eta, maxIterations = 100000, tolerance = 1e-8) {
-    // Initialize variables
-    const log_n = Math.log(n);
-
+export function gradientDescent(gradF, L, x_sum, xMax, eta, maxIterations = 100000, tolerance = 1e-8) {
     function projection(x_input) {
         // Project onto the feasible set:
-        // 1) sum(x) = ln(n)
+        // 1) sum(x) = x_sum # equals ln(n) if part size is unlimited
         // 2) all x[i] >= 0
         // 3) all x[i] <= xMax
 
         if (L == 1)
-            return [log_n]; // The only feasible point
+            return [x_sum]; // The only feasible point
 
-        // Project onto `sum(x) = ln(n)` plane (1)
-        let delta = (x_input.reduce((a, xi) => a + xi, 0) - log_n) / L;
+        // Project onto `sum(x) = x_sum` plane (1)
+        let delta = (x_input.reduce((a, xi) => a + xi, 0) - x_sum) / L;
         let x = x_input.map((xi) => xi - delta);
 
         // Take (2) and (3) into account, while staying in plane (1)
@@ -34,7 +31,7 @@ export function gradientDescent(gradF, L, n, xMax, eta, maxIterations = 100000, 
     }
 
     // let x = Array(L).fill(log_n / L); // Start with an equal distribution
-    let x = projection(Array(L).fill(1).map((xi) => Math.random() * log_n));
+    let x = projection(Array(L).fill(1).map((xi) => Math.random() * x_sum));
 
     let iteration = 0;
     while (iteration < maxIterations) {
