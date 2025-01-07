@@ -346,7 +346,10 @@ void ObjectStorageQueueIFileMetadata::setFailedNonRetriable()
     }
 
     if (Coordination::isHardwareError(code))
-        throw zkutil::KeeperMultiException(code, requests, responses);
+    {
+        LOG_WARNING(log, "Cannot set file {} as Failed, because keeper session expired. Will retry", path);
+        return;
+    }
 
     if (responses[1]->error == Coordination::Error::ZNONODE)
     {
@@ -434,7 +437,10 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
         return;
 
     if (Coordination::isHardwareError(code))
-        throw zkutil::KeeperMultiException(code, requests, responses);
+    {
+        LOG_WARNING(log, "Cannot set file {} as Failed, because keeper session expired. Will retry", path);
+        return;
+    }
 
     if (responses[1]->error == Coordination::Error::ZNONODE)
     {
