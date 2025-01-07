@@ -9,10 +9,16 @@ sidebar_label: Comparison
 Below comparison functions return `0` or `1` with type [UInt8](/docs/en/sql-reference/data-types/int-uint).
 
 The following types can be compared with each other:
-- numbers
+- numbers and decimals
 - strings and fixed strings
 - dates
 - dates with times
+- tuples
+
+:::note
+- Comparison of numbers and strings are possible.
+- Comparison of strings with date and dates with times is possible.
+:::
 
 :::note
 - Strings are compared byte-by-byte. Note that this may lead to unexpected results if one of the strings contains UTF-8 encoded multi-byte characters.
