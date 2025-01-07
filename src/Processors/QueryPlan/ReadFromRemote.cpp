@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -22,6 +23,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
@@ -33,6 +37,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <fmt/format.h>
@@ -173,7 +178,9 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
 static ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & input_to_projection)
+    const std::unordered_map<std::string, QueryTreeNodePtr> & input_to_projection,
+    Tables * external_tables,
+    const ContextPtr & context)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -195,6 +202,18 @@ static ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
+        if (WhichDataType(node->result_type).isFunction())
+        {
+            node_to_ast[node] = nullptr;
+            continue;
+        }
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && typeid_cast<const FunctionCapture *>(node->function_base.get()))
+        {
+            node_to_ast[node] = nullptr;
+            continue;
+        }
 
         if (WhichDataType(node->result_type).isSet())
         {
@@ -255,7 +274,45 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 arguments.push_back(std::move(ast));
         }
 
-        bool is_function_and = node->function_base->getName() == "and";
+        auto func_name = node->function_base->getName();
+
+        if (isNameOfGlobalInFunction(func_name) && external_tables)
+        {
+            const auto * second_arg = node->children.at(1);
+            auto maybe_set = second_arg->column;
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
+                maybe_set = col_const->getDataColumnPtr();
+
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            {
+                auto future_set = col_set->getData();
+                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                {
+                    const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+
+                    auto & external_table = (*external_tables)[temporary_table_name];
+                    if (!external_table)
+                    {
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
+                        NamesAndTypesList columns = header.getNamesAndTypesList();
+
+                        auto external_storage_holder = TemporaryTableHolder(
+                            context,
+                            ColumnsDescription{columns},
+                            ConstraintsDescription{},
+                            nullptr /*query*/,
+                            true /*create_for_global_subquery*/);
+
+                        external_table = external_storage_holder.getTable();
+                        set_from_subquery->setExternalTable(external_table);
+                    }
+
+                    node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
+                }
+            }
+        }
+
+        bool is_function_and = func_name == "and";
         if (!has_all_args && !is_function_and)
             continue;
 
@@ -274,7 +331,8 @@ static ASTPtr tryBuildAdditionalFilterAST(
 }
 
 static void addFilters(
-    const ContextPtr & context,
+    Tables * external_tables,
+    const ContextMutablePtr & context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
@@ -297,7 +355,7 @@ static void addFilters(
     for (const auto & col : query_node->getProjectionColumns())
         projection_names.insert(col.name);
 
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, input_to_projection);
+    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, input_to_projection, external_tables, context);
     if (!predicate)
         return;
 
@@ -392,7 +450,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             connections.emplace_back(std::move(try_result.entry));
 
         if (pushed_down_filters)
-            addFilters(my_context, query, query_tree, planner_context, *pushed_down_filters);
+            addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
         String query_string = formattedAST(query);
 
         my_scalars["_shard_num"] = Block{
@@ -511,7 +569,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         //     std::cerr << filter_actions_dag->dumpDAG() << std::endl;
 
         if (filter_actions_dag)
-            addFilters(context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
         const String query_string = formattedAST(shard.query);
 

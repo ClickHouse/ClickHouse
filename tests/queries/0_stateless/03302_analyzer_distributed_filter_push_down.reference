@@ -82,6 +82,11 @@ Union
                 Condition: (x in [42, 42])
                 Parts: 1/1
                 Granules: 1/123
+============ lambdas
+41	41
+41	41
+20	20
+20	20
 ============ #69472
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> sum(__table1.y) UInt64 : 0
@@ -270,6 +275,214 @@ Positions: 1 0
                     Condition: (x in [42, 42])
                     Parts: 1/1
                     Granules: 1/123
+============ in / global in
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Union
+        Expression (Before GROUP BY)
+          Expression
+            ReadFromMergeTree (default.tab0)
+            Indexes:
+              PrimaryKey
+                Keys: 
+                  x
+                Condition: (x in 1-element set)
+                Parts: 1/1
+                Granules: 1/123
+        Expression (Before GROUP BY)
+          Filter (( + Change column names to column identifiers))
+            ReadFromRemote (Read from remote replica)
+              CreatingSets (Create sets before main query execution)
+                Expression ((Project names + Projection))
+                  Expression
+                    ReadFromMergeTree (default.tab0)
+                    Indexes:
+                      PrimaryKey
+                        Keys: 
+                          x
+                        Condition: (x in 1-element set)
+                        Parts: 1/1
+                        Granules: 1/123
+42
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromRemote (Read from remote replica)
+            CreatingSets (Create sets before main query execution)
+              Expression ((Project names + Projection))
+                Filter ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.tab0)
+                  Indexes:
+                    PrimaryKey
+                      Keys: 
+                        x
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+  CreatingSet (Create set for subquery)
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+      ReadFromSystemNumbers
+42
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        Filter ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromMergeTree (default.tab0)
+          Indexes:
+            PrimaryKey
+              Keys: 
+                x
+              Condition: (x in 1-element set)
+              Parts: 1/1
+              Granules: 1/123
+84
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression (Before GROUP BY)
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromRemote (Read from remote replica)
+            CreatingSets (Create sets before main query execution)
+              Expression ((Project names + Projection))
+                Filter ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.tab0)
+                  Indexes:
+                    PrimaryKey
+                      Keys: 
+                        x
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+            CreatingSets (Create sets before main query execution)
+              Expression ((Project names + Projection))
+                Filter ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.tab0)
+                  Indexes:
+                    PrimaryKey
+                      Keys: 
+                        x
+                      Condition: (x in 1-element set)
+                      Parts: 1/1
+                      Granules: 1/123
+  CreatingSet (Create set for subquery)
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+      ReadFromSystemNumbers
+84
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Union
+        Expression (Before GROUP BY)
+          Filter ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromMergeTree (default.tab0)
+            Indexes:
+              PrimaryKey
+                Keys: 
+                  x
+                Condition: (x in 1-element set)
+                Parts: 1/1
+                Granules: 1/123
+        Expression (Before GROUP BY)
+          Filter (( + Change column names to column identifiers))
+            ReadFromRemote (Read from remote replica)
+              CreatingSets (Create sets before main query execution)
+                Expression ((Project names + Projection))
+                  Filter ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (default.tab0)
+                    Indexes:
+                      PrimaryKey
+                        Keys: 
+                          x
+                        Condition: (x in 1-element set)
+                        Parts: 1/1
+                        Granules: 1/123
+126
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Union
+        Expression (Before GROUP BY)
+          Filter ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromMergeTree (default.tab0)
+            Indexes:
+              PrimaryKey
+                Keys: 
+                  x
+                Condition: (x in 1-element set)
+                Parts: 1/1
+                Granules: 1/123
+        Expression (Before GROUP BY)
+          Filter (( + Change column names to column identifiers))
+            ReadFromRemote (Read from remote replica)
+              CreatingSets (Create sets before main query execution)
+                Expression ((Project names + Projection))
+                  Filter ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (default.tab0)
+                    Indexes:
+                      PrimaryKey
+                        Keys: 
+                          x
+                        Condition: (x in 1-element set)
+                        Parts: 1/1
+                        Granules: 1/123
+              CreatingSets (Create sets before main query execution)
+                Expression ((Project names + Projection))
+                  Filter ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (default.tab0)
+                    Indexes:
+                      PrimaryKey
+                        Keys: 
+                          x
+                        Condition: (x in 1-element set)
+                        Parts: 1/1
+                        Granules: 1/123
+126
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Union
+        Expression (Before GROUP BY)
+          Filter ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromMergeTree (default.tab0)
+            Indexes:
+              PrimaryKey
+                Condition: true
+                Parts: 1/1
+                Granules: 123/123
+        Expression (Before GROUP BY)
+          Filter (( + Change column names to column identifiers))
+            ReadFromRemote (Read from remote replica)
+              CreatingSets (Create sets before main query execution)
+                Expression ((Project names + Projection))
+                  Filter ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (default.tab0)
+                    Indexes:
+                      PrimaryKey
+                        Condition: true
+                        Parts: 1/1
+                        Granules: 123/123
+                CreatingSet (Create set for subquery)
+                  Expression ((Project names + (Projection + Change column names to column identifiers)))
+                    ReadFromSystemNumbers
+              CreatingSets (Create sets before main query execution)
+                Expression ((Project names + Projection))
+                  Filter ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (default.tab0)
+                    Indexes:
+                      PrimaryKey
+                        Condition: true
+                        Parts: 1/1
+                        Granules: 123/123
+                CreatingSet (Create set for subquery)
+                  Expression ((Project names + (Projection + Change column names to column identifiers)))
+                    ReadFromSystemNumbers
+  CreatingSet (Create set for subquery)
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+      ReadFromSystemNumbers
 ============ #65638
 CreatingSets (Create sets before main query execution)
   Union
