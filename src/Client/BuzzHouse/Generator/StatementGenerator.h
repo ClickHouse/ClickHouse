@@ -125,7 +125,7 @@ private:
     void generatingPeerQuery(const bool value) { peer_query = value; }
 
     template <typename T>
-    void setMergeTableParamter(RandomGenerator & rg, const char initial);
+    void setMergeTableParamter(RandomGenerator & rg, char initial);
 
     template <typename T>
     const std::map<uint32_t, T> & getNextCollection() const
