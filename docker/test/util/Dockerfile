@@ -19,6 +19,7 @@ RUN apt-get update \
         gnupg \
         iputils-ping \
         lsb-release \
+        xxd \
         wget \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
