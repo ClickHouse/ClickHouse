@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET allow_experimental_analyzer = 1;
+
 SYSTEM DROP QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
