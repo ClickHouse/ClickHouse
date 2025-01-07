@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -30,7 +29,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     if (context)
         return true;
 
-    SharedContextHolder shared_context = Context::createShared();
+    static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 

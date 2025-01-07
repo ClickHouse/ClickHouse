@@ -12,7 +12,7 @@ opts=(
     --join_algorithm='parallel_hash'
 )
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
   CREATE TABLE t1(a UInt32, b UInt32) ENGINE=MergeTree ORDER BY ();
   INSERT INTO t1 SELECT number, number FROM numbers_mt(1e6);
 
@@ -20,7 +20,9 @@ $CLICKHOUSE_CLIENT -nq "
   INSERT INTO t2 SELECT number, number FROM numbers_mt(1e6);
 "
 
+# list of query_id-s that expected to be executed without preallocation
 queries_without_preallocation=()
+# list of query_id-s that expected to be executed with preallocation
 queries_with_preallocation=()
 
 run_new_query() {
@@ -51,6 +53,9 @@ $CLICKHOUSE_CLIENT "${opts[@]}" --query_id="$query_id" -q "SELECT * FROM t1 AS x
 # now t1 is the right table
 run_new_query "SELECT * FROM t2 AS x INNER JOIN t1 AS y ON x.a = y.a"
 
+run_new_query "SELECT * FROM t1 AS x INNER JOIN t2 AS y ON x.a = y.a WHERE a < 200_000"
+run_new_query "SELECT * FROM t1 AS x INNER JOIN t2 AS y ON x.a = y.a WHERE a >= 200_000"
+
 ##################################
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
@@ -58,7 +63,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 for i in "${!queries_without_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_without_preallocation[$i]}" -q "
     -- the old analyzer is not supported
-    SELECT sum(if(getSetting('allow_experimental_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0, 1))
+    SELECT sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0, 1))
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "
@@ -67,7 +72,7 @@ done
 for i in "${!queries_with_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_with_preallocation[$i]}" -q "
     -- the old analyzer is not supported
-    SELECT sum(if(getSetting('allow_experimental_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0, 1))
+    SELECT sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0, 1))
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "

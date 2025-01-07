@@ -18,10 +18,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
-
-#include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 
@@ -208,6 +205,12 @@ Block executePipeline(QueryPipeline && pipeline)
 template <typename T>
 void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, const Block & block, const std::string & name)
 {
+    if (expected.empty())
+    {
+        ASSERT_TRUE(block.columns() == 0);
+        return;
+    }
+
     const auto * actual = typeid_cast<const ColumnVector<T> *>(block.getByName(name).column.get());
     ASSERT_TRUE(actual) << "unexpected column type: " << block.getByName(name).column->dumpStructure() << "expected: " << typeid(ColumnVector<T>).name();
 
@@ -230,6 +233,12 @@ void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, 
 template <typename T>
 void assertColumnEq(const IColumn & expected, const Block & block, const std::string & name)
 {
+    if (expected.empty())
+    {
+        ASSERT_TRUE(block.columns() == 0);
+        return;
+    }
+
     const ColumnPtr & actual = block.getByName(name).column;
     ASSERT_TRUE(checkColumn<T>(*actual));
     ASSERT_TRUE(checkColumn<T>(expected));

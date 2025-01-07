@@ -1,25 +1,26 @@
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_rewrite_aggregate_function_with_if;
+}
 
 namespace
 {
@@ -32,7 +33,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_rewrite_aggregate_function_with_if)
+        if (!getSettings()[Setting::optimize_rewrite_aggregate_function_with_if])
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -60,7 +61,7 @@ public:
         {
             const auto & second_const_value = second_const_node->getValue();
             if (second_const_value.isNull()
-                || (lower_name == "sum" && isInt64OrUInt64FieldType(second_const_value.getType()) && second_const_value.get<UInt64>() == 0
+                || (lower_name == "sum" && isInt64OrUInt64FieldType(second_const_value.getType()) && second_const_value.safeGet<UInt64>() == 0
                     && !if_node->getResultType()->isNullable()))
             {
                 /// avg(if(cond, a, null)) -> avgIf(a::ResultTypeIf, cond)
@@ -89,7 +90,7 @@ public:
         {
             const auto & first_const_value = first_const_node->getValue();
             if (first_const_value.isNull()
-                || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.get<UInt64>() == 0
+                || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.safeGet<UInt64>() == 0
                     && !if_node->getResultType()->isNullable()))
             {
                 /// avg(if(cond, null, a) -> avgIf(a::ResultTypeIf, !cond))

@@ -58,7 +58,7 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
-    bool collectCandidatesForEviction(
+    CollectStatus collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,
@@ -72,7 +72,12 @@ public:
 
     bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
 
+    FileCachePriorityPtr copy() const { return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, probationary_queue.state, protected_queue.state); }
+
 private:
+    using LRUIterator = LRUFileCachePriority::LRUIterator;
+    using LRUQueue = std::list<Entry>;
+
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;

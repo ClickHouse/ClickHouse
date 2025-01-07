@@ -1,5 +1,6 @@
 #pragma once
-#include <IO/WriteHelpers.h>
+
+#include <base/types.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ enum class KeeperApiVersion : uint8_t
     WITH_FILTERED_LIST,
     WITH_MULTI_READ,
     WITH_CHECK_NOT_EXISTS,
+    WITH_REMOVE_RECURSIVE,
 };
 
 const String keeper_system_path = "/keeper";

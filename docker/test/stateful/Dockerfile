@@ -10,7 +10,3 @@ RUN apt-get update -y \
         npm \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-COPY create.sql /
-COPY run.sh /
-CMD ["/bin/bash", "/run.sh"]

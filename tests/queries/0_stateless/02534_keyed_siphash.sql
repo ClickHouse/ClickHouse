@@ -263,10 +263,10 @@ select sipHash128Keyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5, 6, 7, 8,
 select sipHash128Keyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62)) == sipHash128(char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62));
 select sipHash128Keyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63)) == sipHash128(char(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63));
 
-select sipHash64Keyed((0, 0), '1'); -- { serverError NOT_IMPLEMENTED }
-select sipHash128Keyed((0, 0), '1'); -- { serverError NOT_IMPLEMENTED }
-select sipHash64Keyed(toUInt64(0), '1'); -- { serverError NOT_IMPLEMENTED }
-select sipHash128Keyed(toUInt64(0), '1'); -- { serverError NOT_IMPLEMENTED }
+select sipHash64Keyed((0, 0), '1'); -- { serverError BAD_ARGUMENTS }
+select sipHash128Keyed((0, 0), '1'); -- { serverError BAD_ARGUMENTS }
+select sipHash64Keyed(toUInt64(0), '1'); -- { serverError BAD_ARGUMENTS }
+select sipHash128Keyed(toUInt64(0), '1'); -- { serverError BAD_ARGUMENTS }
 
 select hex(sipHash64());
 SELECT hex(sipHash128());
@@ -339,9 +339,20 @@ SELECT 'Check bug found fuzzing';
 SELECT [(255, 1048575)], sipHash128ReferenceKeyed((toUInt64(2147483646), toUInt64(9223372036854775807)), ([(NULL, 100), (NULL, NULL), (1024, 10)], toUInt64(2), toUInt64(1024)), ''), hex(sipHash128ReferenceKeyed((-9223372036854775807, 1.), '-1', NULL)), ('', toUInt64(65535), [(9223372036854775807, 9223372036854775806)], toUInt64(65536)), arrayJoin((NULL, 65537, 255), [(NULL, NULL)]) GROUP BY tupleElement((NULL, NULL, NULL, -1), toUInt64(2), 2) = NULL;  -- { serverError NOT_IMPLEMENTED }
 SELECT hex(sipHash128ReferenceKeyed((0::UInt64, 0::UInt64), ([1, 1])));
 
-SELECT 'Check bug 2 found fuzzing';
+SELECT 'Test arrays and maps';
 DROP TABLE IF EXISTS sipHashKeyed_keys;
 CREATE TABLE sipHashKeyed_keys (`a` Map(String, String)) ENGINE = Memory;
 INSERT INTO sipHashKeyed_keys FORMAT VALUES ({'a':'b', 'c':'d'}), ({'e':'f', 'g':'h'});
 SELECT hex(sipHash128ReferenceKeyed((0::UInt64, materialize(0::UInt64)), a)) FROM sipHashKeyed_keys ORDER BY a;
 DROP TABLE sipHashKeyed_keys;
+
+SELECT 'Test empty arrays and maps';
+SELECT sipHash64Keyed((1::UInt64, 2::UInt64), []);
+SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), []));
+SELECT sipHash64Keyed((1::UInt64, 2::UInt64), mapFromArrays([], []));
+SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), mapFromArrays([], [])));
+SELECT 'Test maps with arrays as keys';
+SELECT sipHash64Keyed((1::UInt64, 2::UInt64), map([0], 1, [2], 3));
+SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), map([0], 1, [2], 3)));
+SELECT sipHash64Keyed((materialize(1::UInt64), 2::UInt64), map([0], 1, [2], 3)) FROM numbers(2);
+SELECT hex(sipHash128Keyed((materialize(1::UInt64), 2::UInt64), map([0], 1, [2], 3))) FROM numbers(2);

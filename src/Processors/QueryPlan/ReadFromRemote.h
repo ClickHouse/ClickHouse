@@ -40,7 +40,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enforceSorting(SortDescription output_sort_description);
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+
+    void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
 private:
@@ -58,8 +60,9 @@ private:
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
-    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
 };
 
 
@@ -70,6 +73,7 @@ public:
         ASTPtr query_ast_,
         ClusterPtr cluster_,
         const StorageID & storage_id_,
+        ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
@@ -77,17 +81,23 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         LoggerPtr log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
+        std::vector<ConnectionPoolPtr> pools_to_use,
+        std::optional<size_t> exclude_pool_index_ = std::nullopt,
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enforceSorting(SortDescription output_sort_description);
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+
+    void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
 private:
-    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
+    Pipes addPipes(ASTPtr ast, const Header & out_header);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
@@ -100,6 +110,9 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    std::optional<size_t> exclude_pool_index;
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 };
 
 }

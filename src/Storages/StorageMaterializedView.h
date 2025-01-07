@@ -2,10 +2,11 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Common/CurrentThread.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
-
-#include <Storages/MaterializedView/RefreshTask_fwd.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 
 namespace DB
 {
@@ -106,8 +107,8 @@ private:
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
-    RefreshTaskHolder refresher;
-    bool refresh_on_start = false;
+    OwnedRefreshTask refresher;
+    bool refresh_coordinated = false;
 
     bool has_inner_table = false;
 
@@ -119,12 +120,16 @@ private:
 
     void checkStatementCanBeForwarded() const;
 
-    /// Prepare to refresh a refreshable materialized view: create query context, create temporary
-    /// table, form the insert-select query.
-    std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
-    StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
+    ContextMutablePtr createRefreshContext() const;
+    /// Prepare to refresh a refreshable materialized view: create temporary table (if needed) and
+    /// form the insert-select query.
+    /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
+    /// must drop the temp table before rethrowing.
+    std::tuple<std::shared_ptr<ASTInsertQuery>, std::unique_ptr<CurrentThread::QueryScope>>
+    prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
+    std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
+    void dropTempTable(StorageID table, ContextMutablePtr refresh_context);
 
-    void setTargetTableId(StorageID id);
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
 

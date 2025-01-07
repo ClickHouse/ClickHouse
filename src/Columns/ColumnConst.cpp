@@ -75,7 +75,7 @@ void ColumnConst::expand(const Filter & mask, bool inverted)
 
     if (bytes_count < s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
-    else if (bytes_count > s)
+    if (bytes_count > s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
     s = mask.size();

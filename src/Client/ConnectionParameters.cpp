@@ -25,7 +25,8 @@ namespace ErrorCodes
 namespace
 {
 
-bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host)
+bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host,
+                            const std::optional<UInt16> & connection_port = std::nullopt)
 {
     if (config.getBool("secure", false))
         return true;
@@ -33,8 +34,13 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     if (config.getBool("no-secure", false))
         return false;
 
-    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
-    return is_clickhouse_cloud;
+    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com"))
+        return true;
+
+    if (connection_port && connection_port.value() == DBMS_DEFAULT_SECURE_PORT)
+        return true;
+
+    return false;
 }
 
 }
@@ -45,7 +51,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     : host(connection_host)
     , port(connection_port.value_or(getPortFromConfig(config, connection_host)))
 {
-    security = enableSecureConnection(config, connection_host) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    security = enableSecureConnection(config, connection_host, connection_port) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
     default_database = config.getString("database", "");
 
@@ -106,6 +112,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 password = result;
         }
     }
+
+    proto_send_chunked = config.getString("proto_caps.send", "notchunked");
+    proto_recv_chunked = config.getString("proto_caps.recv", "notchunked");
 
     quota_key = config.getString("quota_key", "");
 

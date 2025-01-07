@@ -3,7 +3,7 @@
 SET allow_experimental_object_type = 1;
 DROP TABLE IF EXISTS t_json_array;
 
-CREATE TABLE t_json_array (id UInt32, arr Array(JSON)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_json_array (id UInt32, arr Array(Object('json'))) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_json_array FORMAT JSONEachRow {"id": 1, "arr": [{"k1": 1, "k2": {"k3": 2, "k4": 3}}, {"k1": 2, "k2": {"k5": "foo"}}]}
 
@@ -30,8 +30,8 @@ SELECT toTypeName(arrayJoin(arrayJoin(arr.k1))) AS arr FROM t_json_array LIMIT 1
 
 DROP TABLE t_json_array;
 
-SELECT * FROM values('arr Array(JSON)', '[\'{"x" : 1}\']') FORMAT JSONEachRow;
-SELECT * FROM values('arr Map(String, JSON)', '{\'x\' : \'{"y" : 1}\', \'t\' : \'{"y" : 2}\'}') FORMAT JSONEachRow;
-SELECT * FROM values('arr Tuple(Int32, JSON)', '(1, \'{"y" : 1}\')', '(2, \'{"y" : 2}\')') FORMAT JSONEachRow;
+SELECT * FROM values('arr Array(Object(''json''))', '[\'{"x" : 1}\']') FORMAT JSONEachRow;
+SELECT * FROM values('arr Map(String, Object(''json''))', '{\'x\' : \'{"y" : 1}\', \'t\' : \'{"y" : 2}\'}') FORMAT JSONEachRow;
+SELECT * FROM values('arr Tuple(Int32, Object(''json''))', '(1, \'{"y" : 1}\')', '(2, \'{"y" : 2}\')') FORMAT JSONEachRow;
 SELECT * FROM format(JSONEachRow, '{"arr" : [{"x" : "aaa", "y" : [1,2,3]}]}') FORMAT JSONEachRow;
-SELECT * FROM values('arr Array(JSON)', '[\'{"x" : 1}\']') FORMAT JSONEachRow;
+SELECT * FROM values('arr Array(Object(''json''))', '[\'{"x" : 1}\']') FORMAT JSONEachRow;

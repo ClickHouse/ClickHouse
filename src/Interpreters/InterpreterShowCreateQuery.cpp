@@ -12,9 +12,14 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+}
 
 namespace ErrorCodes
 {
@@ -88,7 +93,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
                         "Unable to show the create query of {}. Maybe it was created by the system.",
                         show_query->getTable());
 
-    if (!getContext()->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+    if (!getContext()->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.uuid = UUIDHelpers::Nil;
@@ -97,7 +102,12 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     }
 
     MutableColumnPtr column = ColumnString::create();
-    column->insert(format({.ctx = getContext(), .query = *create_query, .one_line = false}));
+    column->insert(format(
+    {
+        .ctx = getContext(),
+        .query = *create_query,
+        .one_line = false
+    }));
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
         std::move(column),

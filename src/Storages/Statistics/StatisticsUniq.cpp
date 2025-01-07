@@ -11,8 +11,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type)
-    : IStatistics(stat_)
+StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+    : IStatistics(description)
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
@@ -26,7 +26,7 @@ StatisticsUniq::~StatisticsUniq()
     collector->destroy(data);
 }
 
-void StatisticsUniq::update(const ColumnPtr & column)
+void StatisticsUniq::build(const ColumnPtr & column)
 {
     /// TODO(hanfei): For low cardinality, it's very slow to convert to full column. We can read the dictionary directly.
     /// Here we intend to avoid crash in CI.
@@ -52,17 +52,17 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber())
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    return std::make_shared<StatisticsUniq>(stat, data_type);
+    return std::make_shared<StatisticsUniq>(description, data_type);
 }
 
 }

@@ -19,11 +19,11 @@ namespace Poco {
 namespace Net {
 
 
-HTTPServerSession::HTTPServerSession(const StreamSocket& socket, HTTPServerParams::Ptr pParams):
-	HTTPSession(socket, pParams->getKeepAlive()),
-	_firstRequest(true),
-	_keepAliveTimeout(pParams->getKeepAliveTimeout()),
-	_maxKeepAliveRequests(pParams->getMaxKeepAliveRequests())
+HTTPServerSession::HTTPServerSession(const StreamSocket & socket, HTTPServerParams::Ptr pParams)
+    : HTTPSession(socket, pParams->getKeepAlive())
+    , _firstRequest(true)
+    , _keepAliveTimeout(pParams->getKeepAliveTimeout())
+    , _maxKeepAliveRequests(pParams->getMaxKeepAliveRequests())
 {
 	setTimeout(pParams->getTimeout());
 }
@@ -50,13 +50,14 @@ bool HTTPServerSession::hasMoreRequests()
 		--_maxKeepAliveRequests;
 		return socket().poll(getTimeout(), Socket::SELECT_READ);
 	}
-	else if (_maxKeepAliveRequests != 0 && getKeepAlive())
+	else if (canKeepAlive())
 	{
-		if (_maxKeepAliveRequests > 0) 
-			--_maxKeepAliveRequests;
-		return buffered() > 0 || socket().poll(_keepAliveTimeout, Socket::SELECT_READ);
-	}
-	else return false;
+        if (_maxKeepAliveRequests > 0)
+            --_maxKeepAliveRequests;
+        return buffered() > 0 || socket().poll(_keepAliveTimeout, Socket::SELECT_READ);
+    }
+	else
+		return false;
 }
 
 

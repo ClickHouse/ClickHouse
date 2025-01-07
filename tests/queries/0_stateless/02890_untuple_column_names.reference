@@ -1,16 +1,16 @@
 -- tuple element alias
 Row 1:
 ──────
-tupleElement(CAST(tuple(1), 'Tuple(a Int)'), 1):      1
-tupleElement(CAST(tuple('s'), 'Tuple(a String)'), 1): s
+tupleElement⋯ Int)'), 1): 1
+tupleElement⋯ring)'), 1): s
 Row 1:
 ──────
-tupleElement(CAST((1), 'Tuple(a Int)'), 'a'):      1
-tupleElement(CAST(('s'), 'Tuple(a String)'), 'a'): s
+tupleElement⋯nt)'), 'a'): 1
+tupleElement⋯ng)'), 'a'): s
 Row 1:
 ──────
-tupleElement(CAST((1), 'Tuple(a Int)'), 'a'): 1
-tupleElement(CAST((1), 'Tuple(a Int)'), 'a'): 1
+tupleElement⋯nt)'), 'a'): 1
+tupleElement⋯nt)'), 'a'): 1
 -- tuple element alias + untuple() alias
 Row 1:
 ──────
@@ -40,16 +40,16 @@ x.1: 1
 -- no aliases
 Row 1:
 ──────
-tupleElement(CAST(tuple(1), 'Tuple(Int)'), 1):      1
-tupleElement(CAST(tuple('s'), 'Tuple(String)'), 1): s
+tupleElement⋯(Int)'), 1): 1
+tupleElement⋯ring)'), 1): s
 Row 1:
 ──────
-tupleElement(CAST((1), 'Tuple(Int)'), '1'):      1
-tupleElement(CAST(('s'), 'Tuple(String)'), '1'): s
+tupleElement⋯nt)'), '1'): 1
+tupleElement⋯ng)'), '1'): s
 Row 1:
 ──────
-tupleElement(CAST((1), 'Tuple(Int)'), '1'): 1
-tupleElement(CAST((1), 'Tuple(Int)'), '1'): 1
+tupleElement⋯nt)'), '1'): 1
+tupleElement⋯nt)'), '1'): 1
 -- tuple() loses the column names (would be good to fix, see #36773)
 Row 1:
 ──────
@@ -57,7 +57,7 @@ t.1: 1
 Row 1:
 ──────
 t.1: 1
--- tuple() with enable_named_columns_in_function_tuple = 1 and allow_experimental_analyzer = 1 keeps the column names
+-- tuple() with enable_named_columns_in_function_tuple = 1 and enable_analyzer = 1 keeps the column names
 Row 1:
 ──────
 t.a: 1

@@ -36,6 +36,7 @@ struct AnalysisTableExpressionData
     std::string database_name;
     std::string table_name;
     bool should_qualify_columns = true;
+    bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns

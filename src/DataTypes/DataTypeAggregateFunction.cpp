@@ -33,6 +33,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
+                            const Array & parameters_, std::optional<size_t> version_)
+    : function(std::move(function_))
+    , argument_types(argument_types_)
+    , parameters(parameters_)
+    , version(version_)
+{
+}
+
 String DataTypeAggregateFunction::getFunctionName() const
 {
     return function->getName();
@@ -119,7 +129,7 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = AggregateFunctionStateData();
-    field.get<AggregateFunctionStateData &>().name = getName();
+    field.safeGet<AggregateFunctionStateData &>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -128,7 +138,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData &>().data);
         function->serialize(place, buffer_from_field, version);
     }
     catch (...)

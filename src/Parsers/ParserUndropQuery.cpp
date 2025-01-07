@@ -41,7 +41,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
         ASTPtr ast_uuid;
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
     }
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
@@ -74,8 +74,7 @@ bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (s_undrop.ignore(pos, expected))
         return parseUndropQuery(pos, node, expected);
-    else
-        return false;
+    return false;
 }
 
 }

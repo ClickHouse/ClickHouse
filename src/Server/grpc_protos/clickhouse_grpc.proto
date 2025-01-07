@@ -180,6 +180,8 @@ message Stats {
    uint64 allocated_bytes = 3;
    bool applied_limit = 4;
    uint64 rows_before_limit = 5;
+   bool applied_aggregation = 6;
+   uint64 rows_before_aggregation = 7;
 }
 
 message Exception {

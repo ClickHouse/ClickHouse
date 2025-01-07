@@ -5,5 +5,13 @@
         <access_key_id>minio</access_key_id>
         <secret_access_key>minio123</secret_access_key>
     </s3>
+    <azure>
+        <account_name>devstoreaccount1</account_name>
+        <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+    </azure>
+    <hdfs>
+    </hdfs>
+    <local>
+    </local>
   </named_collections>
 </clickhouse>
