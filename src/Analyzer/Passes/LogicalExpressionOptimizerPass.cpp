@@ -960,17 +960,17 @@ private:
         if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
             return;
 
-        enum OperatorType
+        enum CompareType
         {
+            less = 0,
             lessOrEquals,
-            less,
             equals
         };
 
         /// Step 1: identify constants, and store comparing pairs in hash
         QueryTreeNodes constants;
         /// Record a>b, a>=b, a==b pairs
-        using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, OperatorType>>;
+        using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, CompareType>>;
         std::unordered_map<QueryTreeNodePtr, QueryTreeNodeWithEquals> greater_pairs;
 
         for (const auto & argument : function_node.getArguments())
@@ -990,31 +990,44 @@ private:
             {
                 if (rhs->as<ConstantNode>())
                     constants.push_back(rhs);
-                greater_pairs[rhs].push_back({lhs, OperatorType::less});
+                greater_pairs[rhs].push_back({lhs, CompareType::less});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
                     constants.push_back(lhs);
-                greater_pairs[lhs].push_back({rhs, OperatorType::less});
+                greater_pairs[lhs].push_back({rhs, CompareType::less});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
                     constants.push_back(rhs);
-                greater_pairs[rhs].push_back({lhs, OperatorType::lessOrEquals});
+                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
                     constants.push_back(lhs);
-                greater_pairs[lhs].push_back({rhs, OperatorType::lessOrEquals});
+                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals});
             }
             else if (function_name == "equals")
             {
-                /// bidirection, needs to record visited
-                greater_pairs[lhs].push_back({rhs, OperatorType::equals});
-                greater_pairs[rhs].push_back({lhs, OperatorType::equals});
+                if (rhs->as<ConstantNode>())
+                {
+                    constants.push_back(rhs);
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals});
+                }
+                else if (lhs->as<ConstantNode>())
+                {
+                    constants.push_back(lhs);
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals});
+                }
+                else
+                {
+                    /// Bidirection, needs to record visited
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals});
+                }
             }
         }
 
@@ -1022,22 +1035,24 @@ private:
         std::unordered_set<QueryTreeNodePtr> equal_set;
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(QueryTreeNodePtr, const ConstantNode *, bool)> findPairs
-            = [&](QueryTreeNodePtr current, const ConstantNode * constant, bool equal_transfer)
+        std::function<void(QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
+            = [&](QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
         {
             if (auto it = greater_pairs.find(current); it != greater_pairs.end())
             {
                 for (const auto & left : it->second)
                 {
-                    if (left.second == OperatorType::equals && equal_set.contains(left.first))
+                    if (left.second == CompareType::equals && equal_set.contains(left.first))
                         continue;
+
                     equal_set.insert(left.first);
+                    CompareType compare_type = std::min(type, left.second);
 
                     /// Non-sense to have both sides as constant
                     if (constant && !left.first->as<ConstantNode>())
                     {
-                        const auto * compare_function_name = equal_transfer && left.second!=OperatorType::less ?
-                            "lessOrEquals" : "less";
+                        const auto * compare_function_name = compare_type == CompareType::less ? "less" :
+                            (compare_type == CompareType::equals ? "equals" : "lessOrEquals");
                         const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
                         and_node->getArguments().getNodes().push_back(left.first->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
@@ -1045,14 +1060,13 @@ private:
                         function_node.getArguments().getNodes().push_back(and_node);
                     }
 
-                    findPairs(left.first, constant ? constant : current->as<ConstantNode>(),
-                        equal_transfer ? left.second!=OperatorType::less : false);
+                    findPairs(left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
                 }
             }
         };
 
         for (const auto & constant : constants)
-            findPairs(constant, nullptr, true);
+            findPairs(constant, nullptr, CompareType::equals);
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
