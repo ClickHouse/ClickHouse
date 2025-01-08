@@ -1,3 +1,9 @@
+
+set compile_expressions = 1;
+set min_count_to_compile_expression = 0;
+set compile_aggregate_expressions = 1;
+set min_count_to_compile_aggregate_expression = 0;
+
 DROP TABLE IF EXISTS testNullableStates;
 DROP TABLE IF EXISTS testNullableStatesAgg;
 
