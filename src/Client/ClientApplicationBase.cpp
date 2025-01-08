@@ -150,61 +150,57 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
-        ("help", "Print usage summary and exit; combine with --verbose to display all options")
-        ("verbose", "Increase output verbosity")
-        ("version,V", "Print version and exit")
-        ("version-clean", "Print version in machine-readable format and exit")
+        ("help", "print usage summary, combine with --verbose to display all options")
+        ("verbose", "print query and other debugging info")
+        ("version,V", "print version information and exit")
+        ("version-clean", "print version in machine-readable format and exit")
 
-        ("config-file,C", po::value<std::string>(), "Path to config file")
+        ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("proto_caps", po::value<std::string>(), "Enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
+        ("proto_caps", po::value<std::string>(), "enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
 
         ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple comma-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "Obsolete, does nothing")
-        ("multiline,m", "If specified, allow multi-line queries (Enter does not send the query)")
-        ("database,d", po::value<std::string>(), "Database")
+        ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
+        ("database,d", po::value<std::string>(), "database")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
-        ("query_id", po::value<std::string>(), "Query ID")
+        ("query_id", po::value<std::string>(), "query_id")
 
-        ("history_file", po::value<std::string>(), "Path to a file containing command history")
-        ("history_max_entries", po::value<UInt32>()->default_value(1000000), "Maximum number of entries in the history file")
+        ("history_file", po::value<std::string>(), "path to history file")
 
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
-
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
-        ("progress-table", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print a progress table with changing metrics during query execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
+        ("progress-table", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print a progress table with changing metrics during query execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off.")
         ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
-        ("disable_suggestion,A", "Disable loading suggestions. Note that suggestions are loaded asynchronously through a second connection to ClickHouse server. Recommended when pasting queries with TAB characters.") /// Shorthand -A like in MySQL client
-        ("wait_for_suggestions_to_load", "Load suggestion data synchonously")
-        ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch")
+        ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+        ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
+        ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+        ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
 
-        ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
-        ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
+        ("echo", "in batch mode, print query before execution")
 
-        ("echo", "In batch mode, print query before execution")
+        ("log-level", po::value<std::string>(), "log level")
+        ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
-        ("log-level", po::value<std::string>(), "Log level")
-        ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
+        ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
 
-        ("format,f", po::value<std::string>(), "Default output format (and input format for clickhouse-local)")
-        ("output-format", po::value<std::string>(), "Default output format (this option has preference over --format)")
-        ("vertical,E", "Vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+        ("format,f", po::value<std::string>(), "default output format (and input format for clickhouse-local)")
+        ("output-format", po::value<std::string>(), "default output format (this option has preference over --format)")
 
-        ("highlight", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode")
+        ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+        ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
 
-        ("ignore-error", "Do not stop processing after an error occurred")
-        ("stacktrace", "Print stack traces of exceptions")
-        ("hardware-utilization", "Print hardware utilization information in progress bar")
+        ("ignore-error", "do not stop processing when an error occurs")
+        ("stacktrace", "print stack traces of exceptions")
+        ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
-        ("processed-rows", "Print the number of locally processed rows")
+        ("processed-rows", "print the number of locally processed rows")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
-        ("prompt", po::value<std::string>(), "Custom prompt string")
-
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
@@ -354,14 +350,10 @@ void ClientApplicationBase::init(int argc, char ** argv)
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
-    if (options.count("history_max_entries"))
-        getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.count("interactive"))
         getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
-    if (options.count("prompt"))
-        getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
@@ -426,7 +418,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
         UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
 
         total_memory_tracker.setHardLimit(max_client_memory_usage_int);
-        total_memory_tracker.setDescription("Global");
+        total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
 

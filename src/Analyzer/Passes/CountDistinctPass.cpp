@@ -44,7 +44,7 @@ public:
 
         /// Check that query has only single table expression
         auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
-        if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
+        if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
         /// Check that query has only single node in projection

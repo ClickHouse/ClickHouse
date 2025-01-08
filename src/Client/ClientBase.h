@@ -3,14 +3,6 @@
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBuffer.h>
-#include <Common/DNSResolver.h>
-#include <Common/InterruptListener.h>
-#include <Common/ProgressIndication.h>
-#include <Common/QueryFuzzer.h>
-#include <Common/ShellCommand.h>
-#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -19,7 +11,12 @@
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/Application.h>
-
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
@@ -103,7 +100,6 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
-    void processTextAsSingleQuery(const String & full_query);
 
 protected:
     void runInteractive();
@@ -120,11 +116,6 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
-    virtual bool buzzHouse()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
-    }
-
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -132,6 +123,7 @@ protected:
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
+    void processTextAsSingleQuery(const String & full_query);
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
@@ -207,7 +199,7 @@ private:
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    String getPrompt() const;
+    String prompt() const;
 
     void resetOutput();
 
@@ -261,8 +253,6 @@ protected:
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
 
-    String appendSmileyIfNeeded(const String & prompt);
-
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
     SharedContextHolder shared_context;
@@ -287,9 +277,6 @@ protected:
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
 
-    int stdin_fd;
-    int stdout_fd;
-    int stderr_fd;
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
@@ -300,7 +287,6 @@ protected:
     String default_output_format; /// Query results output format.
     CompressionMethod default_output_compression_method = CompressionMethod::None;
     String default_input_format; /// Tables' format for clickhouse-local.
-    CompressionMethod default_input_compression_method = CompressionMethod::None;
 
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
@@ -325,9 +311,9 @@ protected:
     ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
-    std::unique_ptr<ReadBuffer> std_in;
+    ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
+    WriteBufferFromFileDescriptor std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -346,13 +332,12 @@ protected:
 
     String home_path;
     String history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
     UInt64 server_revision = 0;
     String server_version;
-    String prompt;
+    String prompt_by_server_display_name;
     String server_display_name;
 
     ProgressIndication progress_indication;
@@ -384,10 +369,6 @@ protected:
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
-    //Options for BuzzHouse
-    String buzz_house_options_path;
-    bool buzz_house = false;
-
     struct
     {
         bool print = false;
@@ -416,6 +397,9 @@ protected:
     std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
+    int in_fd = STDIN_FILENO;
+    int out_fd = STDOUT_FILENO;
+    int err_fd = STDERR_FILENO;
     std::istream & input_stream;
     std::ostream & output_stream;
     std::ostream & error_stream;

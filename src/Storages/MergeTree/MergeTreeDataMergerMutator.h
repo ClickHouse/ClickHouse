@@ -112,7 +112,6 @@ public:
     String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info, size_t max_total_size_to_merge = 0) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    /// The result is limited by top_number_of_partitions_to_consider_for_merge
     PartitionIdsHint getPartitionsThatMayBeMerged(
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge_callback,

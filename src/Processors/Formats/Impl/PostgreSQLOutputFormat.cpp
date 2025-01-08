@@ -56,7 +56,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
     }
 }
 
-void PostgreSQLOutputFormat::flushImpl()
+void PostgreSQLOutputFormat::flush()
 {
     message_transport.flush();
 }
@@ -68,7 +68,5 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, sample, settings); });
-    factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
 }
-
 }

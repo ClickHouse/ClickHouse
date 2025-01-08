@@ -6,8 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "
-SET allow_experimental_prql_dialect = 1;
-
 CREATE TEMPORARY TABLE IF NOT EXISTS aboba
 (
     user_id UInt32,

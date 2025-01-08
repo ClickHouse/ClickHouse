@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -115,14 +113,6 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
-}
-
-std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
-{
-    if (isNullAt(n))
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
-
-    return getNestedColumn().getValueNameAndType(n);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
@@ -310,23 +300,6 @@ void ColumnNullable::popBack(size_t n)
 {
     getNestedColumn().popBack(n);
     getNullMapColumn().popBack(n);
-}
-
-ColumnCheckpointPtr ColumnNullable::getCheckpoint() const
-{
-    return std::make_shared<ColumnCheckpointWithNested>(size(), nested_column->getCheckpoint());
-}
-
-void ColumnNullable::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    nested_column->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
-void ColumnNullable::rollback(const ColumnCheckpoint & checkpoint)
-{
-    getNullMapData().resize_assume_reserved(checkpoint.size);
-    nested_column->rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
 }
 
 ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
@@ -552,8 +525,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
         return;
 
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
-    EqualRanges new_ranges;
-    EqualRanges null_ranges;
+    EqualRanges new_ranges, null_ranges;
 
     bool reverse = direction == IColumn::PermutationSortDirection::Descending;
     const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
@@ -784,10 +756,10 @@ void ColumnNullable::protect()
     getNullMapColumn().protect();
 }
 
-ColumnPtr ColumnNullable::compress(bool force_compression) const
+ColumnPtr ColumnNullable::compress() const
 {
-    ColumnPtr nested_compressed = nested_column->compress(force_compression);
-    ColumnPtr null_map_compressed = null_map->compress(force_compression);
+    ColumnPtr nested_compressed = nested_column->compress();
+    ColumnPtr null_map_compressed = null_map->compress();
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 

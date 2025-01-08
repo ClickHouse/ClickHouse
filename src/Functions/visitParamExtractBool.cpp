@@ -49,7 +49,7 @@ SELECT simpleJSONExtractBool(json, 'foo') FROM jsons ORDER BY json;)",
 1
 0
 0)"}},
-        .category{"JSON"}});
+        .categories{"JSON"}});
     factory.registerAlias("visitParamExtractBool", "simpleJSONExtractBool");
 }
 

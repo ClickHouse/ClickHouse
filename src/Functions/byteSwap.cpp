@@ -100,7 +100,7 @@ One use-case of this function is reversing IPv4s:
                 {"32-bit", "SELECT byteSwap(3351772109)", "3455829959"},
                 {"64-bit", "SELECT byteSwap(123294967295)", "18439412204227788800"},
             },
-            .category{"Arithmetic"}},
+            .categories{"Mathematical", "Arithmetic"}},
         FunctionFactory::Case::Insensitive);
 }
 

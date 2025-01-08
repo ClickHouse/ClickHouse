@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/StorageExternalDistributed.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>

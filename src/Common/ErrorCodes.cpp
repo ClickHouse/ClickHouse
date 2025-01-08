@@ -615,7 +615,6 @@
     M(735, QUERY_WAS_CANCELLED_BY_CLIENT) \
     M(736, ICEBERG_CATALOG_ERROR) \
     M(737, GOOGLE_CLOUD_ERROR) \
-    M(738, PART_IS_LOCKED) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -653,7 +652,7 @@ namespace ErrorCodes
             APPLY_FOR_ERROR_CODES(M)
 #undef M
         }
-    } static error_codes_names;
+    } error_codes_names;
 
     std::string_view getName(ErrorCode error_code)
     {

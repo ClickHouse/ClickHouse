@@ -24,7 +24,7 @@
 1
 --Check that a query_metric_log_interval=0 disables the collection
 1
---Check that a query which execution time is less than query_metric_log_interval is never collected
+-Check that a query which execution time is less than query_metric_log_interval is never collected
 1
 --Check that there is a final event when queries finish
 1

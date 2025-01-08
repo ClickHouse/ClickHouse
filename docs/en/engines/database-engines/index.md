@@ -17,6 +17,8 @@ Here is a complete list of available database engines. Follow the links for more
 
 - [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
 
+- [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
+
 - [MySQL](../../engines/database-engines/mysql.md)
 
 - [PostgreSQL](../../engines/database-engines/postgresql.md)

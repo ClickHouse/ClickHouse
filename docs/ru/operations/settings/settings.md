@@ -3212,7 +3212,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md).
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -4215,9 +4215,3 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
 ```
-
-## push_external_roles_in_interserver_queries
-
-Позволяет передавать роли пользователя от инициатора запроса другим нодам при выполнении запроса.
-
-Значение по умолчанию: `true`.

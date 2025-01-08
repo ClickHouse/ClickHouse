@@ -23,7 +23,6 @@ public:
 protected:
     void consume(Chunk chunk) override;
     void writeSuffix() override;
-    void resetFormatterImpl() override;
 
     void writeChunk(Chunk & chunk);
     void writeColumn(const IColumn & column, const ISerialization & serialization);

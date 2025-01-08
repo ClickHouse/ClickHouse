@@ -7,7 +7,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
     if (parent_node->children.empty())
         return 0;

@@ -8,7 +8,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
     if (parent_node->children.size() != 1)
         return 0;

@@ -29,7 +29,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     if (context)
         return true;
 
-    static SharedContextHolder shared_context = Context::createShared();
+    SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 

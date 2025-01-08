@@ -12,7 +12,6 @@
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
-#include <base/scope_guard.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -95,7 +94,7 @@ namespace ErrorCodes
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
+IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::StorageConnectionsCreated,
@@ -111,7 +110,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForStorageConnectionPoo
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
+IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::DiskConnectionsCreated,
@@ -127,7 +126,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
+IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 {
     return IHTTPConnectionPoolForEndpoint::Metrics{
         .created = ProfileEvents::HTTPConnectionsCreated,
@@ -143,7 +142,7 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForHTTPConnectionPool()
 }
 
 
-static IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConnectionGroupType type)
+IHTTPConnectionPoolForEndpoint::Metrics getConnectionPoolMetrics(HTTPConnectionGroupType type)
 {
     switch (type)
     {
@@ -780,7 +779,7 @@ struct Hasher
     }
 };
 
-static IExtendedPool::Ptr
+IExtendedPool::Ptr
 createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, bool secure, ProxyConfiguration proxy_configuration)
 {
     if (secure)

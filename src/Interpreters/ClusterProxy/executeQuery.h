@@ -87,7 +87,7 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree);
+    QueryPlanStepPtr read_from_merge_tree = nullptr);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
