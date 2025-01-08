@@ -442,7 +442,7 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
     if (!specific_info.partition_names_and_types.empty())
     {
         ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings::fromContext(getContext()));
+            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings(getContext()));
         const KeyCondition partition_key_condition(
             filter_dag, getContext(), specific_info.partition_names_and_types.getNames(), partition_minmax_idx_expr);
         for (size_t j = 0; j < specific_info.ranges.size(); ++j)
