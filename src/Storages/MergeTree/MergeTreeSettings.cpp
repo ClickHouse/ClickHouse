@@ -221,6 +221,8 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, "Disable FETCH PARTITION query for zero copy replication.", 0) \
     DECLARE(Bool, enable_block_number_column, false, "Enable persisting column _block_number for each row.", 0) ALIAS(allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, "Enable persisting column _block_offset for each row.", 0) \
+    DECLARE(Bool, add_minmax_index_for_numeric_columns, false, "Automatically create min-max indices for columns of numeric type", 0) \
+    DECLARE(Bool, add_minmax_index_for_string_columns, false, "Automatically create min-max indices for columns of string type", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", EXPERIMENTAL) \
@@ -285,7 +287,7 @@ namespace ErrorCodes
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(MACRO) \
-    MACRO(index_granularity)
+    MACRO(index_granularity)                           \
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
     MERGE_TREE_SETTINGS(M, ALIAS)             \
@@ -774,7 +776,8 @@ std::string_view MergeTreeSettings::resolveName(std::string_view name)
 
 bool MergeTreeSettings::isReadonlySetting(const String & name)
 {
-    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts";
+    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts"
+           || name == "add_minmax_index_for_numeric_columns" || name == "add_minmax_index_for_string_columns";
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
