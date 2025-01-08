@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, zookeeper, no-shared-merge-tree
-# no-shared-merge-tree: depend on specific paths created by replicated tables
+# Tags: no-replicated-database, zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

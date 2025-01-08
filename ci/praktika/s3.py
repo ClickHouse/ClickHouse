@@ -132,7 +132,7 @@ class S3:
         if recursive:
             cmd += " --recursive"
         if include_pattern:
-            cmd += f' --exclude "*" --include "{include_pattern}"'
+            cmd += f" --include {include_pattern}"
         res = cls.run_command_with_retries(cmd)
         return res
 

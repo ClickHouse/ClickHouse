@@ -6,14 +6,19 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     #    Besides that, the implementation looks like a poor man's MSAN specific to libcxx. Since CI tests MSAN
     #    anyways, we can keep the debug mode disabled.
 
+    # Libcxx also provides extra assertions:
+    # --> https://releases.llvm.org/15.0.0/projects/libcxx/docs/UsingLibcxx.html#assertions-mode
+    # These look orthogonal to the debug mode but the debug mode enables them implicitly:
+    # --> https://github.com/llvm/llvm-project/blob/release/15.x/libcxx/include/__assert#L29
+    # They are cheap and straightforward, so enable them in debug builds:
+    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_ENABLE_ASSERTIONS=1")
+
+    # TODO Once we upgrade to LLVM 18+, reconsider all of the above as they introduced "hardening modes":
     # https://libcxx.llvm.org/Hardening.html
-    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE")
 endif ()
 
-disable_dummy_launchers_if_needed()
 add_subdirectory(contrib/libcxxabi-cmake)
 add_subdirectory(contrib/libcxx-cmake)
-enable_dummy_launchers_if_needed()
 
 # Exception handling library is embedded into libcxxabi.
 

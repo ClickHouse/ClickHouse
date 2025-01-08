@@ -179,8 +179,7 @@ class Runner:
                     RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
             docker = docker or f"{docker_name}:{docker_tag}"
-            current_dir = os.getcwd()
-            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
+            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='{Settings.DOCKER_WD}:{Settings.DOCKER_WD}/ci' --volume ./:{Settings.DOCKER_WD} --volume {Settings.TEMP_DIR}:{Settings.TEMP_DIR} --workdir={Settings.DOCKER_WD} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -211,10 +210,12 @@ class Runner:
                         info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
             result.dump()
 
         return exit_code
@@ -267,9 +268,6 @@ class Runner:
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
         result.update_duration().dump()
-
-        if result.is_error():
-            result.set_files([Settings.RUN_LOG])
 
         if run_exit_code == 0:
             providing_artifacts = []

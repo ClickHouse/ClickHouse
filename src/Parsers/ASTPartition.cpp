@@ -65,7 +65,7 @@ void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 {
     if (value)
     {
-        value->format(ostr, settings, state, frame);
+        value->formatImpl(ostr, settings, state, frame);
     }
     else if (all)
     {
@@ -74,7 +74,7 @@ void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     else
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
-        id->format(ostr, settings, state, frame);
+        id->formatImpl(ostr, settings, state, frame);
     }
 }
 }

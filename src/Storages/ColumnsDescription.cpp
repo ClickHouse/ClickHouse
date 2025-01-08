@@ -123,7 +123,7 @@ String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true, false);
-    ast.format(buf, settings, state, IAST::FormatStateStacked());
+    ast.formatImpl(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
 

@@ -40,6 +40,7 @@
             <handler>
                 <type>predefined_query_handler</type>
                 <user>with_password</user>
+                <password>password</password>
                 <query>SELECT currentUser()</query>
             </handler>
         </rule>
@@ -48,7 +49,8 @@
             <url>/test_predefined_handler_auth_with_password_fail</url>
             <handler>
                 <type>predefined_query_handler</type>
-                <user>incorrect_user</user>
+                <user>with_password</user>
+                <!-- No password - authentication should fail -->
                 <query>SELECT currentUser()</query>
             </handler>
         </rule>

@@ -399,13 +399,10 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
-    String compression = "auto";
     if (!getClientConfiguration().has("table-file") || getClientConfiguration().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        if (default_input_compression_method != CompressionMethod::None)
-            compression = toContentEncodingName(default_input_compression_method);
     }
     else
     {
@@ -421,8 +418,8 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
-                       table_name, table_structure, data_format, table_file, compression);
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
+                       table_name, table_structure, data_format, table_file);
 }
 
 
@@ -501,7 +498,7 @@ void LocalServer::connect()
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
-        in = std_in.get();
+        in = &std_in;
     }
     else
     {
@@ -601,7 +598,7 @@ try
     if (!initial_query.empty())
         processQueryText(initial_query);
 
-#if USE_FUZZING_MODE
+#if defined(FUZZING_MODE)
     runLibFuzzer();
 #else
     if (is_interactive && !delayed_interactive)
@@ -875,12 +872,7 @@ void LocalServer::processConfig()
     }
 
     server_display_name = getClientConfiguration().getString("display_name", "");
-
-    if (getClientConfiguration().has("prompt"))
-        prompt = getClientConfiguration().getString("prompt");
-    else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
-        prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
-    prompt = appendSmileyIfNeeded(prompt);
+    prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
 }
 
 

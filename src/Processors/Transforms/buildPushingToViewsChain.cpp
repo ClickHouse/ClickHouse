@@ -479,7 +479,7 @@ Chain buildPushingToViewsChain(
     std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
     const Block & live_view_header
-)
+ )
 {
     checkStackSize();
     Chain result_chain;
@@ -1005,7 +1005,8 @@ void FinalizingViewsTransform::work()
 
             LOG_TRACE(
                 getLogger("PushingToViews"),
-                "Pushing from {} to {} took {} ms.",
+                "Pushing ({}) from {} to {} took {} ms.",
+                views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
                 view.runtime_stats->elapsed_ms);

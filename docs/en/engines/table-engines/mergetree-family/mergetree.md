@@ -4,9 +4,6 @@ sidebar_position: 11
 sidebar_label:  MergeTree
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MergeTree
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
@@ -967,10 +964,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_sample_factor` — Sample factor (from the query).
 - `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
 
-## Column Statistics {#column-statistics}
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+## Column Statistics (Experimental) {#column-statistics}
 
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 

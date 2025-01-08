@@ -109,19 +109,19 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(Provides direct access to the 'data' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesData", "SELECT * from timeSeriesData('mydb', 'time_series_table');", ""}},
-            .category{""}}
+            .categories{"Time Series"}}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'tags' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesTags", "SELECT * from timeSeriesTags('mydb', 'time_series_table');", ""}},
-            .category{""}}
+            .categories{"Time Series"}}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
-            .category{""}}
+            .categories{"Time Series"}}
         });
 }
 

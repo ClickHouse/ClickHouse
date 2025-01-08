@@ -218,7 +218,7 @@ Result:
 └─────────┘
 ```
 )",
-        .category{"Time Series"}});
+        .categories{"Time series analysis"}});
 }
 }
 #endif

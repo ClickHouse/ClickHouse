@@ -129,7 +129,6 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
-add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -170,14 +169,6 @@ add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
     add_headers_and_sources(dbms Storages/Hive)
-endif()
-
-if (ENABLE_BUZZHOUSE)
-    add_subdirectory(Client/BuzzHouse/Proto)
-
-    add_headers_and_sources(dbms Client/BuzzHouse/AST)
-    add_headers_and_sources(dbms Client/BuzzHouse/Generator)
-    add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
 if (OS_LINUX)
@@ -647,10 +638,6 @@ endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
-endif()
-
-if (ENABLE_BUZZHOUSE)
-    dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
 
 if (ENABLE_TESTS)

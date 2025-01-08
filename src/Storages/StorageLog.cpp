@@ -1154,8 +1154,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true,
-        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .supports_settings = true
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

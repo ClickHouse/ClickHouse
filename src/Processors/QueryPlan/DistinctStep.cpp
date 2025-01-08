@@ -13,13 +13,6 @@
 namespace DB
 {
 
-namespace QueryPlanSerializationSetting
-{
-    extern const QueryPlanSerializationSettingsOverflowMode distinct_overflow_mode;
-    extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_distinct;
-    extern const QueryPlanSerializationSettingsUInt64 max_rows_in_distinct;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -181,9 +174,9 @@ void DistinctStep::updateOutputHeader()
 
 void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
-    settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
-    settings[QueryPlanSerializationSetting::distinct_overflow_mode] = set_size_limits.overflow_mode;
+    settings.max_rows_in_distinct = set_size_limits.max_rows;
+    settings.max_bytes_in_distinct = set_size_limits.max_bytes;
+    settings.distinct_overflow_mode = set_size_limits.overflow_mode;
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
@@ -208,9 +201,9 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx,
         readStringBinary(column_names[i], ctx.in);
 
     SizeLimits size_limits;
-    size_limits.max_rows = ctx.settings[QueryPlanSerializationSetting::max_rows_in_distinct];
-    size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
-    size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
+    size_limits.max_rows = ctx.settings.max_rows_in_distinct;
+    size_limits.max_bytes = ctx.settings.max_bytes_in_distinct;
+    size_limits.overflow_mode = ctx.settings.distinct_overflow_mode;
 
     return std::make_unique<DistinctStep>(
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);

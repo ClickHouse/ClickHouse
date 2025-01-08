@@ -84,6 +84,8 @@ public:
     bool checkForSuffix() override;
     bool checkForEndOfRow() override;
 
+    bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
+
 private:
     template <bool is_header>
     std::vector<String> readRowImpl();

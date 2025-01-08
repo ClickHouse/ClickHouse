@@ -45,13 +45,11 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include "config.h"
-
 #ifndef NDEBUG
     #include <Processors/Transforms/CheckSortedTransform.h>
 #endif
 
-#if CLICKHOUSE_CLOUD
+#ifdef CLICKHOUSE_CLOUD
     #include <Interpreters/Cache/FileCacheFactory.h>
     #include <Disks/ObjectStorages/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
@@ -1141,9 +1139,9 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
         }
     }
 
-    QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
-    auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
+    auto pipeline_settings = BuildQueryPipelineSettings::fromContext(global_ctx->context);
     pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc)};
@@ -1943,9 +1941,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         addCreatingSetsStep(merge_parts_query_plan, std::move(subqueries), global_ctx->context);
 
     {
-        QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
-        auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
+        auto pipeline_settings = BuildQueryPipelineSettings::fromContext(global_ctx->context);
         pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
+        auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
         // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.

@@ -4,7 +4,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <exception>
 #include <future>
 
 namespace DB
@@ -74,7 +73,7 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, c
 /// When creating a runner on stack, you MUST make sure that it's created (and destroyed) before local objects captured by task lambda.
 
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
-class ThreadPoolCallbackRunnerLocal final
+class ThreadPoolCallbackRunnerLocal
 {
     PoolT & pool;
     std::string thread_name;
@@ -105,35 +104,6 @@ class ThreadPoolCallbackRunnerLocal final
         }
     }
 
-    /// Set promise result for non-void callbacks
-    template <typename Function, typename FunctionResult>
-    static void executeCallback(std::promise<FunctionResult> & promise, Function & callback)
-    {
-        try
-        {
-            promise.set_value(callback());
-        }
-        catch (...)
-        {
-            promise.set_exception(std::current_exception());
-        }
-    }
-
-    /// Set promise result for void callbacks
-    template <typename Function>
-    static void executeCallback(std::promise<void> & promise, Function & callback)
-    {
-        try
-        {
-            callback();
-            promise.set_value();
-        }
-        catch (...)
-        {
-            promise.set_exception(std::current_exception());
-        }
-    }
-
 public:
     ThreadPoolCallbackRunnerLocal(PoolT & pool_, const std::string & thread_name_)
         : pool(pool_)
@@ -149,11 +119,10 @@ public:
 
     void operator() (Callback && callback, Priority priority = {})
     {
-        auto promise = std::make_shared<std::promise<Result>>();
         auto & task = tasks.emplace_back(std::make_shared<Task>());
-        task->future = promise->get_future();
 
-        auto task_func = [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = std::make_shared<std::packaged_task<Result()>>(
+        [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
@@ -188,20 +157,14 @@ public:
 
             setThreadName(my_thread_name.data());
 
-            executeCallback(*promise, my_callback);
-        };
+            return my_callback();
+        });
 
-        try
-        {
-            /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
-            /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-            pool.scheduleOrThrowOnError(std::move(task_func), priority);
-        }
-        catch (...)
-        {
-            promise->set_exception(std::current_exception());
-            throw;
-        }
+        task->future = task_func->get_future();
+
+        /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
+        /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
+        pool.scheduleOrThrowOnError([my_task = std::move(task_func)]{ (*my_task)(); }, priority);
     }
 
     void waitForAllToFinish()
@@ -220,14 +183,8 @@ public:
     void waitForAllToFinishAndRethrowFirstError()
     {
         waitForAllToFinish();
-
         for (auto & task : tasks)
-        {
-            /// task->future may be invalid if waitForAllToFinishAndRethrowFirstError() is called multiple times
-            /// and previous call has already rethrown the exception and has not cleared tasks.
-            if (task->future.valid())
-                task->future.get();
-        }
+            task->future.get();
 
         tasks.clear();
     }

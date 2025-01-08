@@ -26,25 +26,22 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
-    names_and_paddings.resize(columns);
-    is_number.resize(columns);
-
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        auto [name_cut, width] = truncateName(name,
-          format_settings.pretty.max_column_name_width_cut_to,
-          format_settings.pretty.max_column_name_width_min_chars_to_cut,
-          format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
+        name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+        max_name_width = std::max(name_widths[i], max_name_width);
+    }
 
-        name_widths[i] = width;
-        max_name_width = std::max(width, max_name_width);
-        if (color)
-            names_and_paddings[i] = "\033[1m" + name_cut + ":\033[0m ";
-        else
-            names_and_paddings[i] = name_cut + ": ";
+    names_and_paddings.resize(columns);
+    is_number.resize(columns);
+    for (size_t i = 0; i < columns; ++i)
+    {
+        WriteBufferFromString buf(names_and_paddings[i]);
+        writeString(sample.getByPosition(i).name, buf);
+        writeCString(": ", buf);
     }
 
     for (size_t i = 0; i < columns; ++i)
@@ -71,10 +68,7 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
-    /// If we need highlighting.
-    if (color
-        && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
-            || format_settings.pretty.highlight_trailing_spaces))
+    if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
     {
         String serialized_value;
         {
@@ -83,13 +77,7 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         }
 
         /// Highlight groups of thousands.
-        if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
-            serialized_value = highlightDigitGroups(serialized_value);
-
-        /// Highlight trailing spaces.
-        if (format_settings.pretty.highlight_trailing_spaces)
-            serialized_value = highlightTrailingSpaces(serialized_value);
-
+        serialized_value = highlightDigitGroups(serialized_value);
         out.write(serialized_value.data(), serialized_value.size());
     }
     else

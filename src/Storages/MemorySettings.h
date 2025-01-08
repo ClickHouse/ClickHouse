@@ -39,8 +39,6 @@ struct MemorySettings
     void sanityCheck() const;
     void applyChanges(const SettingsChanges & changes);
 
-    static bool hasBuiltin(std::string_view name);
-
 private:
     std::unique_ptr<MemorySettingsImpl> impl;
 };

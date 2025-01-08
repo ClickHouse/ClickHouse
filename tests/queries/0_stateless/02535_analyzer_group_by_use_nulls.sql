@@ -82,7 +82,7 @@ GROUP BY
         (number % 2)
     )
 ORDER BY 1, tuple(val)
-SETTINGS group_by_use_nulls = 1, max_bytes_before_external_sort=10, max_bytes_ratio_before_external_sort=0;
+SETTINGS group_by_use_nulls = 1, max_bytes_before_external_sort=10;
 
 CREATE TABLE test
 ENGINE = ReplacingMergeTree

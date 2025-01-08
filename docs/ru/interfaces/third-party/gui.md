@@ -277,7 +277,7 @@ SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) д�
 
 ### CKMAN {#ckman}
 
-[CKMAN](https://www.github.com/housepower/ckman) — инструмент управления и мониторинга кластеров ClickHouse!
+[CKMAN] (https://www.github.com/housepower/ckman) — инструмент управления и мониторинга кластеров ClickHouse!
 
 Основные возможности:
 

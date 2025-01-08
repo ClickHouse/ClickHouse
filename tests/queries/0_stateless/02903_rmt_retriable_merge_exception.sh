@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-shared-merge-tree
+# Tags: no-ordinary-database
 # Tag no-ordinary-database: requires UUID
-# Tag no-shared-merge-tree -- unrelated test
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

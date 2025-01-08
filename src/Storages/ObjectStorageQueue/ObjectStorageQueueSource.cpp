@@ -404,7 +404,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     std::shared_ptr<FileIterator> file_iterator_,
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
-    ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
     const CommitSettings & commit_settings_,
@@ -424,7 +423,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , file_iterator(file_iterator_)
     , configuration(configuration_)
     , object_storage(object_storage_)
-    , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
     , commit_settings(commit_settings_)
@@ -510,7 +508,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             reader->cancel();
 
-            if (file_status->processed_rows)
+            if (processed_rows_from_file)
             {
                 try
                 {
@@ -531,14 +529,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             LOG_TEST(log, "Shutdown called");
 
-            if (file_status->processed_rows == 0)
+            if (processed_rows_from_file == 0)
                 break;
 
             if (table_is_being_dropped)
             {
                 LOG_DEBUG(
                     log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
-                    file_status->processed_rows, path);
+                    processed_rows_from_file, path);
 
                 try
                 {
@@ -556,7 +554,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
                      "Will process the file fully and then shutdown",
-                     path, file_status->processed_rows);
+                     path, processed_rows_from_file);
         }
 
         try
@@ -569,8 +567,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
 
                 file_status->processed_rows += chunk.getNumRows();
-                progress->processed_rows += chunk.getNumRows();
-                progress->processed_bytes += chunk.bytes();
+                processed_rows_from_file += chunk.getNumRows();
+                total_processed_rows += chunk.getNumRows();
+                total_processed_bytes += chunk.bytes();
 
                 VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                     chunk, read_from_format_info.requested_virtual_columns,
@@ -590,7 +589,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             failed_during_read_files.push_back(file_metadata);
             file_status->onFailed(getCurrentExceptionMessage(true));
 
-            if (file_status->processed_rows == 0)
+            if (processed_rows_from_file == 0)
             {
                 if (file_status->retries < file_metadata->getMaxTries())
                     file_iterator->returnForRetry(reader.getObjectInfo());
@@ -608,42 +607,47 @@ Chunk ObjectStorageQueueSource::generateImpl()
         file_status.reset();
         reader = {};
 
+        processed_rows_from_file = 0;
         processed_files.push_back(file_metadata);
-        progress->processed_files += 1;
 
         if (commit_settings.max_processed_files_before_commit
-            && progress->processed_files == commit_settings.max_processed_files_before_commit)
+            && processed_files.size() == commit_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
 
         if (commit_settings.max_processed_rows_before_commit
-            && progress->processed_rows == commit_settings.max_processed_rows_before_commit)
+            && total_processed_rows == commit_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-
-        if (commit_settings.max_processed_bytes_before_commit
-            && progress->processed_bytes == commit_settings.max_processed_bytes_before_commit)
+        if (commit_settings.max_processed_bytes_before_commit && total_processed_bytes == commit_settings.max_processed_bytes_before_commit)
         {
-            LOG_TRACE(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+            LOG_TRACE(
+                log,
+                "Number of max processed bytes before commit reached "
+                "(rows: {}, bytes: {}, files: {})",
+                total_processed_rows,
+                total_processed_bytes,
+                processed_files.size());
             break;
         }
-
         if (commit_settings.max_processing_time_sec_before_commit
-            && progress->elapsed_time.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
+            && total_stopwatch.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
         {
-            LOG_TRACE(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+            LOG_TRACE(
+                log,
+                "Max processing time before commit reached "
+                "(rows: {}, bytes: {}, files: {})",
+                total_processed_rows,
+                total_processed_bytes,
+                processed_files.size());
             break;
         }
     }
