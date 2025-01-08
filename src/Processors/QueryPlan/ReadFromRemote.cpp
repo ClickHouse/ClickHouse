@@ -160,7 +160,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
     if (stage == QueryProcessingStage::Complete)
     {
-        add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
+        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
+            add_totals = ast_select->group_by_with_totals;
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -233,6 +234,14 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
 }
 
+ASTSelectQuery & getSelectQuery(ASTPtr ast)
+{
+    if (const auto * explain = ast->as<ASTExplainQuery>())
+        ast = explain->getExplainedQuery();
+
+    return ast->as<ASTSelectQuery &>();
+}
+
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
@@ -242,7 +251,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
-        add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
+        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
+            add_totals = ast_select->group_by_with_totals;
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -273,7 +283,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
-            auto & select_query = query->as<ASTSelectQuery &>();
+            auto & select_query = getSelectQuery(query);
             auto shard_filter = shard.shard_filter_generator(i + 1);
             if (shard_filter)
             {

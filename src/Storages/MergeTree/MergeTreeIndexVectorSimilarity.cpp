@@ -19,6 +19,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <ranges>
+
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;
@@ -89,17 +91,9 @@ String joinByComma(const T & t)
     }
     else if constexpr (is_unordered_map<T>)
     {
-        String joined_keys;
-        for (const auto & [k, _] : t)
-        {
-            if (!joined_keys.empty())
-                joined_keys += ", ";
-            joined_keys += k;
-        }
-        return joined_keys;
+        auto keys = std::views::keys(t);
+        return fmt::format("{}", fmt::join(keys, ", "));
     }
-    /// TODO once our libcxx is recent enough, replace above by
-    ///      return fmt::format("{}", fmt::join(std::views::keys(t)), ", "));
     std::unreachable();
 }
 

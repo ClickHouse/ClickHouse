@@ -29,8 +29,6 @@ node_snapshot = cluster.add_instance(
     with_hdfs=True,
 )
 
-from kazoo.client import KazooClient, KazooState
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -43,11 +41,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def stop_zk(zk):
@@ -97,7 +91,11 @@ def setup_storage(cluster, node, storage_config, cleanup_disks):
         storage_config,
     )
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
+    # complete readiness checks that the sessions can be established,
+    # but it creates sesssion for this, which will create one more record in log,
+    # but this test is very strict on number of entries in the log,
+    # so let's avoid this extra check and rely on retry policy
+    keeper_utils.wait_until_connected(cluster, node, wait_complete_readiness=False)
 
 
 def setup_local_storage(cluster, node):
@@ -150,6 +148,11 @@ def test_logs_with_disks(started_cluster):
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
+        node_logs.wait_for_log_line(
+            "Removed changelog changelog_25_27.bin because of compaction",
+            look_behind_lines=1000,
+        )
+
         stop_zk(node_zk)
 
         previous_log_files = get_local_logs(node_logs)
@@ -161,6 +164,11 @@ def test_logs_with_disks(started_cluster):
             "<latest_log_storage_disk>log_local<\\/latest_log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
             cleanup_disks=False,
+        )
+
+        node_logs.wait_for_log_line(
+            "KeeperLogStore: Continue to write into changelog_34_36.bin",
+            look_behind_lines=1000,
         )
 
         # all but the latest log should be on S3
