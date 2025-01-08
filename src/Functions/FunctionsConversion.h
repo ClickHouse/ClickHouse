@@ -2418,21 +2418,21 @@ public:
                     else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         auto scale = right.getScale();
-                        auto multipler = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
+                        auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
                             /// left type is integer and right type is decimal
                             auto * from_type = arguments[0].value->getType();
                             auto * from_value = arguments[0].value;
                             result
-                                = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multipler)));
+                                = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
                             result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                         }
                         else
                         {
                             /// left type is integer and right type is decimal
                             auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
-                            auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multipler));
+                            auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multiplier));
                             result = builder.CreateMul(from_value, multiplier_value);
                         }
                         return true;
@@ -3678,20 +3678,20 @@ public:
                     else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         auto scale = right.getScale();
-                        auto multipler = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
+                        auto multiplier = DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
                             /// left type is integer and right type is decimal
                             auto * from_type = toNativeType(builder, left);
                             result_value
-                                = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multipler)));
+                                = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<LeftFieldType>(multiplier)));
                             result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                         }
                         else
                         {
                             /// left type is integer and right type is decimal
                             auto * from_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
-                            auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multipler));
+                            auto * multiplier_value = getNativeValue(builder, right.getPtr(), RightFieldType(multiplier));
                             result_value = builder.CreateMul(from_value, multiplier_value);
                         }
                         return true;
