@@ -14,7 +14,8 @@ void registerAllMergeSelector(MergeSelectorFactory & factory)
 
 PartsRange AllMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t /*max_total_size_to_merge*/) const
+    size_t max_total_size_to_merge,
+    RangeFilter range_filter) const
 {
     size_t min_partition_size = 0;
     PartsRanges::const_iterator best_partition;
@@ -22,6 +23,9 @@ PartsRange AllMergeSelector::select(
     for (auto it = parts_ranges.begin(); it != parts_ranges.end(); ++it)
     {
         if (it->size() <= 1)
+            continue;
+
+        if (range_filter && !range_filter(*it))
             continue;
 
         size_t sum_size = 0;
@@ -35,8 +39,9 @@ PartsRange AllMergeSelector::select(
         }
     }
 
-    if (min_partition_size)
+    if (min_partition_size && min_partition_size <= max_total_size_to_merge)
         return *best_partition;
+
     return {};
 }
 

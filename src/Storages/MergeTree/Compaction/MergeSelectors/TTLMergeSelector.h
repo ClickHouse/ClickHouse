@@ -20,7 +20,8 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge) const override;
+        size_t max_total_size_to_merge,
+        RangeFilter range_filter) const override;
 
 protected:
     /// Get TTL value for part, may depend on child type and some settings in constructor.

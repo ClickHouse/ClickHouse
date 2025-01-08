@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <set>
+#include <span>
 
 namespace DB
 {
@@ -44,6 +45,7 @@ struct PartProperties
 
 using PartsRange = std::vector<PartProperties>;
 using PartsRanges = std::vector<PartsRange>;
+using PartsRangeView = std::span<const PartProperties>;
 
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,

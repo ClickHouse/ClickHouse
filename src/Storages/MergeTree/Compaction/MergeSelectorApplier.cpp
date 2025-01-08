@@ -47,7 +47,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
         TTLPartDeleteMergeSelector drop_ttl_selector(next_delete_times, current_time);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
-        if (auto parts = drop_ttl_selector.select(ranges, max_size); !parts.empty())
+        if (auto parts = drop_ttl_selector.select(ranges, max_size, applier.range_filter); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
     }
 
@@ -56,7 +56,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
     {
         TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, current_time);
 
-        if (auto parts = delete_ttl_selector.select(ranges, applier.max_total_size_to_merge); !parts.empty())
+        if (auto parts = delete_ttl_selector.select(ranges, applier.max_total_size_to_merge, applier.range_filter); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
     }
 
@@ -65,7 +65,7 @@ std::optional<MergeSelectorChoice> tryChooseTTLMerge(
     {
         TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, current_time);
 
-        if (auto parts = recompress_ttl_selector.select(ranges, applier.max_total_size_to_merge); !parts.empty())
+        if (auto parts = recompress_ttl_selector.select(ranges, applier.max_total_size_to_merge, applier.range_filter); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLRecompress};
     }
 
@@ -107,7 +107,7 @@ std::optional<MergeSelectorChoice> tryChooseRegularMerge(
         merge_settings = simple_merge_settings;
     }
 
-    auto parts = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ranges, applier.max_total_size_to_merge);
+    auto parts = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ranges, applier.max_total_size_to_merge, applier.range_filter);
 
     /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
     if (parts.size() == 1)

@@ -93,7 +93,7 @@ ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_,
 {
 }
 
-PartsRange ITTLMergeSelector::select(const PartsRanges & parts_ranges, size_t max_total_size_to_merge) const
+PartsRange ITTLMergeSelector::select(const PartsRanges & parts_ranges, size_t max_total_size_to_merge, RangeFilter range_filter) const
 {
     auto position = findCenter(parts_ranges);
     if (!position.has_value())
@@ -113,6 +113,9 @@ PartsRange ITTLMergeSelector::select(const PartsRanges & parts_ranges, size_t ma
 
     PartsIterator left = findLeftRangeBorder(center, range->begin(), usable_memory);
     PartsIterator right = findRightRangeBorder(std::next(center), range->end(), usable_memory);
+
+    if (range_filter && !range_filter({left, right}))
+        return {};
 
     return PartsRange(left, right);
 }

@@ -7,8 +7,6 @@
 
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <Common/Logger.h>
-
 #include <optional>
 
 namespace DB
@@ -26,6 +24,7 @@ public:
     const size_t max_total_size_to_merge = 0;
     const bool merge_with_ttl_allowed = false;
     const bool aggressive = false;
+    const IMergeSelector::RangeFilter range_filter = nullptr;
 
     std::optional<MergeSelectorChoice> chooseMergeFrom(
         const PartsRanges & ranges,

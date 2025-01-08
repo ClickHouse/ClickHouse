@@ -21,12 +21,15 @@ namespace DB
 class IMergeSelector
 {
 public:
+    using RangeFilter = std::function<bool(PartsRangeView)>;
+
     /** Function could be called at any frequency and it must decide, should you do any merge at all.
       * If better not to do any merge, it returns empty result.
       */
     virtual PartsRange select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge) const = 0;
+        size_t max_total_size_to_merge,
+        RangeFilter range_filter) const = 0;
 
     virtual ~IMergeSelector() = default;
 };

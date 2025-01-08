@@ -18,7 +18,8 @@ void registerTrivialMergeSelector(MergeSelectorFactory & factory)
 
 PartsRange TrivialMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge) const
+    size_t max_total_size_to_merge,
+    RangeFilter range_filter) const
 {
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)
@@ -54,9 +55,12 @@ PartsRange TrivialMergeSelector::select(
             for (size_t i = left; i < right; ++i)
                 total_size += partition[i].size;
 
-            if (!max_total_size_to_merge || total_size <= max_total_size_to_merge)
+            const auto range_begin = partition.begin() + left;
+            const auto range_end = partition.begin() + right;
+
+            if (range_filter && range_filter({range_begin, range_end}) && (!max_total_size_to_merge || total_size <= max_total_size_to_merge))
             {
-                candidates.emplace_back(partition.data() + left, partition.data() + right);
+                candidates.emplace_back(range_begin, range_end);
                 if (candidates.size() == settings.num_ranges_to_choose)
                     break;
             }
