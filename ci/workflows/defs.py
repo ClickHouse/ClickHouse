@@ -214,11 +214,6 @@ DOCKERS = [
 #     "name": "clickhouse/kerberos-kdc",
 #     "dependent": []
 # },
-# "docker/test/integration/kerberized_hadoop": {
-#     "only_amd64": true,
-#     "name": "clickhouse/kerberized-hadoop",
-#     "dependent": []
-# },
 # "docker/test/sqlancer": {
 #     "name": "clickhouse/sqlancer-test",
 #     "dependent": []
