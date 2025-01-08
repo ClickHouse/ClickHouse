@@ -668,9 +668,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         processed_files.size(),
         insert_succeeded ? "Processed" : "Failed");
 
+    const bool use_buckets_for_processing = files_metadata->useBucketsForProcessing();
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
-    const bool use_buckets_for_processing = processed_files.front().metadata->useBucketsForProcessing();
 
+    /// If we use buckets for processing (only in Ordered mode)
+    /// - collect a map: bucket_id -> max_processed_path.
     if (insert_succeeded && use_buckets_for_processing)
     {
         for (size_t i = 0; i < processed_files.size(); ++i)
@@ -697,6 +699,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             {
                 if (insert_succeeded)
                 {
+                    /// If we use buckets for processing, we need to commit as Processed
+                    /// only one max_processed_file per each bucket,
+                    /// for all other files we only remove Processing nodes.
                     if (!use_buckets_for_processing
                         || last_processed_file_idx_per_bucket[file_metadata->getBucket()] == i)
                     {
@@ -752,8 +757,6 @@ void ObjectStorageQueueSource::finalizeCommit(bool insert_succeeded, const std::
     if (processed_files.empty())
         return;
 
-    LOG_TEST(log, "Having {} files to commit (insert {}succeeded)", processed_files.size(), insert_succeeded ? "" : "hasn't ");
-
     for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
         switch (file_state)
@@ -800,6 +803,9 @@ void ObjectStorageQueueSource::finalizeCommit(bool insert_succeeded, const std::
 
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 {
+    /// This method is only used for SELECT query, not for streaming to materialized views.
+    /// Which is defined by passing a flag commit_once_processed.
+
     Coordination::Requests requests;
     StoredObjects successful_objects;
     prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);

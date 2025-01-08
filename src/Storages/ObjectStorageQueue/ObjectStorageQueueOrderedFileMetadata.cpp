@@ -32,9 +32,14 @@ namespace
         return zk_path / "processed";
     }
 
+    bool useBucketsForProcessing(size_t buckets_num)
+    {
+        return buckets_num > 1;
+    }
+
     std::string getProcessedPath(const std::filesystem::path & zk_path, const std::string & path, size_t buckets_num)
     {
-        if (buckets_num > 1)
+        if (useBucketsForProcessing(buckets_num))
             return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num));
         return getProcessedPathWithoutBucket(zk_path);
     }
@@ -131,9 +136,14 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
 {
 }
 
+bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
+{
+    return DB::useBucketsForProcessing(buckets_num);
+}
+
 std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(size_t buckets_num)
 {
-    if (buckets_num > 1)
+    if (DB::useBucketsForProcessing(buckets_num))
     {
         std::vector<std::string> paths{"buckets", "failed", "processing"};
         for (size_t i = 0; i < buckets_num; ++i)
@@ -383,7 +393,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr & zk_client)
 {
-    if (buckets_num > 1)
+    if (useBucketsForProcessing())
     {
         for (size_t i = 0; i < buckets_num; ++i)
         {

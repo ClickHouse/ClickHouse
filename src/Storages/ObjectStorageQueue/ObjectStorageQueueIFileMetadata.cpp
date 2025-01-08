@@ -354,7 +354,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
 
     if (!reduce_retry_count)
     {
-        resetProcessing();
+        prepareResetProcessingRequests(requests);
         return;
     }
 
@@ -407,8 +407,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
     if (!retriable)
     {
-        /// Check Processing node id.
-        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
+        /// Check Processing node id and remove processing_node_id node.
+        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Created Failed node.
@@ -441,8 +441,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
     if (node_metadata.retries >= max_loading_retries)
     {
-        /// Check Processing node id.
-        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
+        /// Check Processing node id and remove processing_node_id node.
+        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Remove /failed/node_hash.retriable node.
@@ -452,7 +452,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     }
     else
     {
-        /// Check Processing node id.
+        /// Check Processing node id (without removing, because processing retries are not over).
         requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));

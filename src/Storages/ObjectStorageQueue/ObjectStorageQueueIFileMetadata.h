@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// A base class to work with single file's metadata in keeper.
+/// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
 {

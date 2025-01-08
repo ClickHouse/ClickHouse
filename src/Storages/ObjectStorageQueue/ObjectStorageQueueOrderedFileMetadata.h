@@ -35,7 +35,7 @@ public:
     struct BucketHolder;
     using BucketHolderPtr = std::shared_ptr<BucketHolder>;
 
-    bool useBucketsForProcessing() const override { return buckets_num > 1; }
+    bool useBucketsForProcessing() const override;
     size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
 
     static BucketHolderPtr tryAcquireBucket(

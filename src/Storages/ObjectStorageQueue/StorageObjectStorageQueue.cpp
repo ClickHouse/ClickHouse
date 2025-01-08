@@ -570,12 +570,12 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            commit(/* success */false, sources, getCurrentExceptionMessage(true));
+            commit(/* insert_succeeded */false, sources, getCurrentExceptionMessage(true));
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        commit(/* success */true, sources);
+        commit(/* insert_succeeded */true, sources);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
@@ -584,14 +584,14 @@ bool StorageObjectStorageQueue::streamToViews()
 }
 
 void StorageObjectStorageQueue::commit(
-    bool success,
+    bool insert_succeeded,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     const std::string & exception_message) const
 {
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, success, successful_objects, exception_message);
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
 
     if (requests.empty())
     {
@@ -615,7 +615,7 @@ void StorageObjectStorageQueue::commit(
         throw zkutil::KeeperMultiException(code, requests, responses);
 
     for (auto & source : sources)
-        source->finalizeCommit(success, exception_message);
+        source->finalizeCommit(insert_succeeded, exception_message);
 
     LOG_TRACE(
         log, "Successfully committed {} requests for {} sources",

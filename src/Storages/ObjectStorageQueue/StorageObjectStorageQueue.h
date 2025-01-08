@@ -100,10 +100,12 @@ private:
     void startup() override;
     void shutdown(bool is_drop) override;
     void drop() override;
+
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
+
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
@@ -116,11 +118,17 @@ private:
         ContextPtr local_context,
         bool commit_once_processed);
 
+    /// Get number of dependent materialized views.
     size_t getDependencies() const;
-    bool streamToViews();
+    /// A background thread function,
+    /// executing the whole process of reading from object storage
+    /// and pushing result to dependent tables.
     void threadFunc();
+    /// A subset of logic executed by threadFunc.
+    bool streamToViews();
+    /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
-        bool success,
+        bool insert_succeeded,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
         const std::string & exception_message = {}) const;
 };

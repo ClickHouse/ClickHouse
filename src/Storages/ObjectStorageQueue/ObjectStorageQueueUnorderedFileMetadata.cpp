@@ -109,7 +109,6 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coord
 {
     if (processing_id_version.has_value())
     {
-        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
     }
