@@ -265,19 +265,10 @@ private:
     int generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     int generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     int generateAlterTable(RandomGenerator & rg, AlterTable * at);
-    int generateSettingValues(
-        RandomGenerator & rg,
-        const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        SettingValues * vals);
-    int generateSettingValues(
-        RandomGenerator & rg,
-        const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        size_t nvalues,
-        SettingValues * vals);
-    int generateSettingList(
-        RandomGenerator & rg,
-        const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-        SettingList * sl);
+    int generateSettingValues(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, SettingValues * vals);
+    int
+    generateSettingValues(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, size_t nvalues, SettingValues * vals);
+    int generateSettingList(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, SettingList * sl);
     int generateAttach(RandomGenerator & rg, Attach * att);
     int generateDetach(RandomGenerator & rg, Detach * det);
     int generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);

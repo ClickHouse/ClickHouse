@@ -14,10 +14,7 @@ int StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) c
 }
 
 int StatementGenerator::generateSettingValues(
-    RandomGenerator & rg,
-    const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-    const size_t nvalues,
-    SettingValues * vals)
+    RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, const size_t nvalues, SettingValues * vals)
 {
     for (size_t i = 0; i < nvalues; i++)
     {
@@ -28,17 +25,13 @@ int StatementGenerator::generateSettingValues(
     return 0;
 }
 
-int StatementGenerator::generateSettingValues(
-    RandomGenerator & rg,
-    const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
-    SettingValues * vals)
+int StatementGenerator::generateSettingValues(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, SettingValues * vals)
 {
     return generateSettingValues(
         rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 20) + 1)), vals);
 }
 
-int StatementGenerator::generateSettingList(
-    RandomGenerator & rg, const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings, SettingList * sl)
+int StatementGenerator::generateSettingList(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, SettingList * sl)
 {
     const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 7) + 1));
 
@@ -2762,6 +2755,14 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
     }
     return generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
 }
+
+struct TestSetting
+{
+    const std::string tsetting;
+    const std::set<std::string> options;
+
+    TestSetting(const std::string & sett, const std::set<std::string> & noptions) : tsetting(sett), options(noptions) { }
+};
 
 static const std::vector<TestSetting> explain_settings{//QUERY TREE
                                                        TestSetting("run_passes", {"0", "1"}),

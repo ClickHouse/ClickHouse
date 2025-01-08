@@ -15,14 +15,6 @@
 namespace BuzzHouse
 {
 
-struct TestSetting
-{
-    const std::string tsetting;
-    const std::set<std::string> options;
-
-    TestSetting(const std::string & sett, const std::set<std::string> & noptions) : tsetting(sett), options(noptions) { }
-};
-
 const constexpr int seconds_per_day = 60 * 60 * 24;
 
 const constexpr char hex_digits[] = "0123456789abcdef";
