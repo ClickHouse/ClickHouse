@@ -791,6 +791,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
+            // Can't materialize a column in the sort key
+            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
+            }
+
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
@@ -1347,12 +1354,10 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
-    QueryPlanOptimizationSettings do_not_optimize_plan;
-    do_not_optimize_plan.optimize_plan = false;
+    QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
+    do_not_optimize_plan_settings.optimize_plan = false;
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(
-        do_not_optimize_plan,
-        BuildQueryPipelineSettings::fromContext(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
 
     pipeline.addSimpleTransform([&](const Block & header)
     {

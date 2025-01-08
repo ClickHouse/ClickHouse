@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Formats/FormatSettings.h>
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
 
@@ -9,6 +8,7 @@ namespace DB
 {
 class Context;
 class Block;
+struct FormatSettings;
 
 /// Extracts information about where the format schema file is from passed context and keep it.
 class FormatSchemaInfo
