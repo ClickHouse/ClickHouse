@@ -1,4 +1,4 @@
-#include <Common/WRS_algorithm.h>
+#include <Common/WeightedRandomSampling.h>
 
 #include <gtest/gtest.h>
 
