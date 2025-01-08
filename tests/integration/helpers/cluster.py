@@ -3230,7 +3230,7 @@ class ClickHouseCluster:
 
         if self.up_called:
             # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
-            with open(self.docker_logs_path, "w+", errors='replace') as f:
+            with open(self.docker_logs_path, "w+", errors="replace") as f:
                 try:
                     subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         self.base_cmd + ["logs"], stdout=f
