@@ -172,6 +172,14 @@ if (TARGET ch_contrib::hivemetastore)
     add_headers_and_sources(dbms Storages/Hive)
 endif()
 
+if (ENABLE_BUZZHOUSE)
+    add_subdirectory(Client/BuzzHouse/Proto)
+
+    add_headers_and_sources(dbms Client/BuzzHouse/AST)
+    add_headers_and_sources(dbms Client/BuzzHouse/Generator)
+    add_headers_and_sources(dbms Client/BuzzHouse/Utils)
+endif()
+
 if (OS_LINUX)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
@@ -431,6 +439,10 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
+
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
         PUBLIC
@@ -635,6 +647,10 @@ endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+endif()
+
+if (ENABLE_BUZZHOUSE)
+    dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
 
 if (ENABLE_TESTS)
