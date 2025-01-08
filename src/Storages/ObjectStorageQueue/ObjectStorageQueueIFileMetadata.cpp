@@ -425,9 +425,9 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     auto zk_client = getZooKeeper();
 
     /// Extract the number of already done retries from node_hash.retriable node if it exists.
-    Coordination::Stat stat;
+    Coordination::Stat retriable_failed_node_stat;
     std::string res;
-    bool has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &stat);
+    bool has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
     if (has_failed_before)
         file_status->retries = node_metadata.retries = NodeMetadata::fromString(res).retries + 1;
     else
@@ -446,7 +446,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Remove /failed/node_hash.retriable node.
-        requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, stat.version));
+        requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_failed_node_stat.version));
         /// Create a persistent node /failed/node_hash.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
     }
@@ -469,7 +469,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
             /// Update retries count.
             requests.push_back(
                 zkutil::makeSetRequest(
-                    retrieable_failed_node_path, node_metadata.toString(), stat.version));
+                    retrieable_failed_node_path, node_metadata.toString(), retriable_failed_node_stat.version));
         }
     }
 }
