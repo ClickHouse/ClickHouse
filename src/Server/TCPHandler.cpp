@@ -2251,7 +2251,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            getFormatSettings(state.query_context),
+            getFormatSettings(query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
