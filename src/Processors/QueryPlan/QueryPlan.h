@@ -45,6 +45,27 @@ struct QueryPlanAndSets;
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
+class SettingsChanges;
+
+/// Options from EXPLAIN PLAN query.
+struct ExplainPlanOptions
+{
+    /// Add output header to step.
+    bool header = false;
+    /// Add description of step.
+    bool description = true;
+    /// Add detailed information about step actions.
+    bool actions = false;
+    /// Add information about indexes actions.
+    bool indexes = false;
+    /// Add information about sorting
+    bool sorting = false;
+    /// Show remote plans for distributed query.
+    bool distributed = false;
+
+    SettingsChanges toSettingsChanges() const;
+};
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
@@ -75,20 +96,6 @@ public:
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
         bool do_optimize=true);
-
-    struct ExplainPlanOptions
-    {
-        /// Add output header to step.
-        bool header = false;
-        /// Add description of step.
-        bool description = true;
-        /// Add detailed information about step actions.
-        bool actions = false;
-        /// Add information about indexes actions.
-        bool indexes = false;
-        /// Add information about sorting
-        bool sorting = false;
-    };
 
     struct ExplainPipelineOptions
     {

@@ -75,6 +75,7 @@ def get_run_command(
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         f"{ci_logs_args}"
+        "--tmpfs /tmp/clickhouse "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "
@@ -161,9 +162,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     if check_name.startswith("amd_") or check_name.startswith("arm_"):
         # this is praktika based CI
         print("Copy input *.deb artifacts")
-        assert Shell.check(
-            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
-        )
+        assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
         docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
