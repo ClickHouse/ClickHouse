@@ -6015,6 +6015,12 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine Iceberg
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+Enable Kusto Query Language (KQL) - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+Enable PRQL - an alternative to SQL.
+)", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
