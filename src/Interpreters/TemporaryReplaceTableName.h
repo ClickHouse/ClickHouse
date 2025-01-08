@@ -1,7 +1,8 @@
 #pragma once
 
-#include <optional>
 #include <base/types.h>
+
+#include <optional>
 
 namespace DB
 {
