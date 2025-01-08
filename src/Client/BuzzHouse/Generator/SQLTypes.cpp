@@ -568,15 +568,6 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     return res;
 }
 
-SQLType *
-StatementGenerator::generateArraytype(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
-{
-    this->depth++;
-    SQLType * k = this->randomNextType(rg, allowed_types, col_counter, tp);
-    this->depth--;
-    return new ArrayType(k);
-}
-
 SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 60;
@@ -617,9 +608,12 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
     {
         //array
-        const uint32_t nallowed
-            = this->next_type_mask & ~(allow_nested | ((allowed_types & allow_nullable_inside_array) ? 0 : allow_nullable));
-        return generateArraytype(rg, nallowed, col_counter, tp ? tp->mutable_array() : nullptr);
+        TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
+
+        this->depth++;
+        SQLType * k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
+        this->depth--;
+        return new ArrayType(k);
     }
     else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
     {
