@@ -1323,7 +1323,7 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     else if (dynamic_cast<DynamicType *>(tp))
     {
         uint32_t col_counter = 0;
-        SQLType * next = randomNextType(rg, fc.type_mask ~(allow_dynamic), col_counter, nullptr);
+        SQLType * next = randomNextType(rg, fc.type_mask & ~(allow_dynamic), col_counter, nullptr);
 
         strAppendAnyValueInternal(rg, ret, next);
         if (rg.nextMediumNumber() < 4)
