@@ -19,7 +19,7 @@ class DistributedMergePredicate : public IMergePredicate
     std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
-            return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previouse virtual parts", name));
+            return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
 
         if (committing_blocks_ptr && !committing_blocks_ptr->contains(info.partition_id))
             return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.partition_id));
