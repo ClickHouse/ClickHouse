@@ -19,6 +19,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i % 3 == 2 and not upgrade_check:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
+        client_options.append("enable_deflate_qpl_codec=1")
         client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
