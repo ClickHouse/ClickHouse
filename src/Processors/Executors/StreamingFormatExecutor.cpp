@@ -15,6 +15,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     const Block & header_,
     InputFormatPtr format_,
     ErrorCallback on_error_,
+    size_t estimated_rows_,
     SimpleTransformPtr adding_defaults_transform_)
     : header(header_)
     , format(std::move(format_))
@@ -28,6 +29,10 @@ StreamingFormatExecutor::StreamingFormatExecutor(
 
     for (size_t i = 0; i < result_columns.size(); ++i)
         checkpoints[i] = result_columns[i]->getCheckpoint();
+
+    if (estimated_rows_)
+        for (auto & column : result_columns)
+            column->reserve(estimated_rows_);
 }
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
@@ -119,6 +124,11 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk)
         result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
 
     return chunk_rows;
+}
+
+size_t StreamingFormatExecutor::conjectureRows(size_t buffer_size, size_t max_rows, size_t row_size)
+{
+    return std::min(buffer_size / row_size, max_rows);
 }
 
 }

@@ -25,6 +25,7 @@ public:
         const Block & header_,
         InputFormatPtr format_,
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
+        size_t estimated_rows_ = 0,
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
@@ -41,6 +42,17 @@ public:
 
     /// Sets query parameters for input format if applicable.
     void setQueryParameters(const NameToNameMap & parameters);
+
+    /// Determines a conservative estimate of the average row size (64 bytes)
+    /// assuming rows are generally larger than this value.
+    static const size_t AVG_ROW_SIZE_FOR_PREALLOCATE_PREDICTION = 64;
+
+    /// Vague estimate number of rows based on buffer size.
+    /// Helps guide preallocation to minimize reallocations
+    static size_t conjectureRows(
+        size_t buffer_size,
+        size_t max_rows = std::numeric_limits<uint64_t>::max(),
+        size_t row_size = AVG_ROW_SIZE_FOR_PREALLOCATE_PREDICTION);
 
 private:
     const Block header;
