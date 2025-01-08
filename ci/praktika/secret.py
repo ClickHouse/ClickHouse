@@ -1,7 +1,7 @@
 import dataclasses
 import os
 
-from praktika.utils import Shell
+from .utils import Shell
 
 
 class Secret:

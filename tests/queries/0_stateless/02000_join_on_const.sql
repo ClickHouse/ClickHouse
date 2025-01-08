@@ -63,7 +63,6 @@ SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 2 SETTINGS enable_analyzer = 
 
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 != 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND NULL; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 'aaa'; -- { serverError INVALID_JOIN_ON_EXPRESSION,ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * FROM t1 JOIN t2 ON 'aaa'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
@@ -73,20 +72,20 @@ SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 0; --
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 SETTINGS enable_analyzer = 1;
 
 -- { echoOn }
-SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 1 ORDER BY 2, 1 SETTINGS enable_analyzer = 1;
 
-SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS enable_analyzer = 1;
-SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 1 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2 SETTINGS enable_analyzer = 1;
+SELECT * FROM t1 FULL JOIN t2 ON t1.id = t2.id AND 1 = 2 ORDER BY 2, 1 SETTINGS enable_analyzer = 1;
 
 SELECT * FROM (SELECT 1 as a) as t1 INNER JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 SELECT * FROM (SELECT 1 as a) as t1 LEFT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 SELECT * FROM (SELECT 1 as a) as t1 RIGHT JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
-SELECT * FROM (SELECT 1 as a) as t1 FULL JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 FULL JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL ORDER BY 2;
 SELECT * FROM (SELECT 1 as a) as t1 SEMI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
-SELECT * FROM (SELECT 1 as a) as t1 ANTI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
+SELECT * FROM (SELECT 1 as a) as t1 ANTI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL ORDER BY 2;
 
 -- { echoOff }
 

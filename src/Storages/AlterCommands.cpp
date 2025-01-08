@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
 #include <ranges>
@@ -837,6 +838,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_SETTING)
     {
+        if (!metadata.settings_changes)
+        {
+            auto changes = std::make_shared<ASTSetQuery>();
+            changes->is_standalone = false;
+            metadata.settings_changes = std::move(changes);
+        }
+
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
@@ -851,6 +859,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RESET_SETTING)
     {
+        if (!metadata.settings_changes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
+
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
@@ -858,9 +869,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())
+            {
                 settings_from_storage.erase(it);
-
-            /// Intentionally ignore if there is no such setting name
+            }
+            else
+            {
+                /// Intentionally ignore if there is no such setting name
+                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+            }
         }
     }
     else if (type == RENAME_COLUMN)
@@ -1333,7 +1349,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
-    NameSet modified_columns, renamed_columns;
+    NameSet modified_columns;
+    NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -1450,9 +1467,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
                 bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-                bool old_type_has_deprecated_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
-                if (new_type_has_deprecated_object || old_type_has_deprecated_object)
+                if (new_type_has_deprecated_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
@@ -1545,7 +1561,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
         }
-        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
+        else if (command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");

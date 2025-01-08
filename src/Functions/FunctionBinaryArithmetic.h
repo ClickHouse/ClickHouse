@@ -41,6 +41,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context.h>
@@ -54,6 +55,8 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+
+#include <absl/container/inlined_vector.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -231,6 +234,27 @@ public:
 namespace impl_
 {
 
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
 /** Arithmetic operations: +, -, *, /, %,
   * intDiv (integer division)
   * Bitwise operations: |, &, ^, ~.
@@ -392,7 +416,7 @@ private:
 
         const size_t b_repeated_size = N + 15;
 
-        UInt8 b_repeated[b_repeated_size];
+        absl::InlinedVector<UInt8, 64> b_repeated(b_repeated_size);
 
         for (size_t i = 0; i < b_repeated_size; ++i)
             b_repeated[i] = b[i % N];
@@ -1166,7 +1190,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1180,7 +1204,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1188,7 +1212,7 @@ class FunctionBinaryArithmetic : public IFunction
     {
         auto function = function_builder->build(arguments);
 
-        return function->execute(arguments, result_type, input_rows_count);
+        return function->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeArraysImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -1323,7 +1347,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     template <typename T, typename ResultDataType>
@@ -2225,7 +2249,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.

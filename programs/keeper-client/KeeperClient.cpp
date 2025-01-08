@@ -34,6 +34,7 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 
     out.write(command.data(), command.size());
     out.next();
+    out.finalize();
 
     String result;
     readStringUntilEOF(result, in);

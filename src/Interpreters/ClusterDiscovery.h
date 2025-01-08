@@ -67,6 +67,7 @@ private:
     struct ClusterInfo
     {
         const String name;
+        const String zk_name;
         const String zk_root;
         NodesInfo nodes_info;
 
@@ -88,6 +89,7 @@ private:
         String cluster_secret;
 
         ClusterInfo(const String & name_,
+                    const String & zk_name_,
                     const String & zk_root_,
                     const String & host_name,
                     const String & username_,
@@ -99,6 +101,7 @@ private:
                     bool observer_mode,
                     bool invisible)
             : name(name_)
+            , zk_name(zk_name_)
             , zk_root(zk_root_)
             , current_node(host_name + ":" + toString(port), secure, shard_id)
             , current_node_is_observer(observer_mode)

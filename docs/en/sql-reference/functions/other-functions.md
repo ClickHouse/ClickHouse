@@ -4,6 +4,8 @@ sidebar_position: 140
 sidebar_label: Other
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # Other Functions
 
 ## hostName
@@ -938,6 +940,10 @@ formatReadableSize(x)
 ```
 Alias: `FORMAT_BYTES`.
 
+:::note
+This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values
+:::
+
 **Example**
 
 Query:
@@ -969,6 +975,10 @@ Given a number, this function returns a rounded number with suffix (thousand, mi
 formatReadableQuantity(x)
 ```
 
+:::note
+This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values
+:::
+
 **Example**
 
 Query:
@@ -999,6 +1009,10 @@ Given a time interval (delta) in seconds, this function returns a time delta wit
 ```sql
 formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 ```
+
+:::note
+This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values
+:::
 
 **Arguments**
 
@@ -1065,7 +1079,7 @@ The inverse operations of this function are [formatReadableSize](#formatreadable
 **Syntax**
 
 ```sql
-formatReadableSize(x)
+parseReadableSize(x)
 ```
 
 **Arguments**
@@ -1213,7 +1227,7 @@ SELECT parseTimeDelta('1yr2mo')
 
 ## least
 
-Returns the smaller value of a and b.
+Returns the smallest arguments of one or more input arguments. `NULL` arguments are ignored.
 
 **Syntax**
 
@@ -1221,15 +1235,23 @@ Returns the smaller value of a and b.
 least(a, b)
 ```
 
+:::note
+Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+:::
+
 ## greatest
 
-Returns the larger value of a and b.
+Returns the largest arguments of one or more input arguments. `NULL` arguments are ignored.
 
 **Syntax**
 
 ```sql
 greatest(a, b)
 ```
+
+:::note
+Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+:::
 
 ## uptime
 
@@ -4167,11 +4189,12 @@ Result:
 
 ## transactionID
 
+<ExperimentalBadge/>
+
 Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
-
 ```
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
@@ -4214,6 +4237,8 @@ Result:
 ```
 
 ## transactionLatestSnapshot
+
+<ExperimentalBadge/>
 
 Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
@@ -4258,6 +4283,8 @@ Result:
 ```
 
 ## transactionOldestSnapshot
+
+<ExperimentalBadge/>
 
 Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
@@ -4423,4 +4450,38 @@ Result:
 ┌─globalVariable('max_allowed_packet')─┐
 │                             67108864 │
 └──────────────────────────────────────┘
+```
+
+## getMaxTableNameLengthForDatabase
+
+Returns the maximum table name length in a specified database.
+
+**Syntax**
+
+```sql
+getMaxTableNameLengthForDatabase(database_name)
+```
+
+**Arguments**
+
+- `database_name` — The name of the specified database. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the length of the maximum table name.
+
+**Example**
+
+Query:
+
+```sql
+SELECT getMaxTableNameLengthForDatabase('default');
+```
+
+Result:
+
+```response
+┌─getMaxTableNameLengthForDatabase('default')─┐
+│                                         206 │
+└─────────────────────────────────────────────┘
 ```

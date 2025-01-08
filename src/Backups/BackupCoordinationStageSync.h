@@ -98,6 +98,7 @@ private:
 
     /// Lets other hosts know that the current host has encountered an error.
     bool setError(const Exception & exception, bool throw_if_error);
+    [[noreturn]] void rethrowSetError() const;
     void createErrorNode(const Exception & exception, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserializes an error stored in the error node.
@@ -197,6 +198,9 @@ private:
     };
 
     /// Information about all the host participating in the current BACKUP or RESTORE operation.
+    /// This information is read from ZooKeeper.
+    /// To simplify the programming logic `state` can only be updated AFTER changing corresponding nodes in ZooKeeper
+    /// (for example, first we create the 'error' node, and only after that we set or read from ZK the `state.host_with_error` field).
     struct State
     {
         std::map<String /* host */, HostInfo> hosts; /// std::map because we need to compare states
@@ -204,7 +208,9 @@ private:
 
         bool operator ==(const State & other) const;
         bool operator !=(const State & other) const;
+
         void merge(const State & other);
+        void addErrorInfo(std::exception_ptr exception, const String & host);
     };
 
     State state TSA_GUARDED_BY(mutex);
@@ -214,7 +220,7 @@ private:
     bool should_stop_watching_thread TSA_GUARDED_BY(mutex) = false;
 
     bool query_is_sent_to_other_hosts TSA_GUARDED_BY(mutex) = false;
-    bool tried_to_finish TSA_GUARDED_BY(mutex) = false;
+    bool tried_to_finish[2] TSA_GUARDED_BY(mutex) = {false, false};
     bool tried_to_set_error TSA_GUARDED_BY(mutex) = false;
 
     mutable std::mutex mutex;

@@ -52,30 +52,58 @@ class Job:
             self,
             parameter: Optional[List[Any]] = None,
             runs_on: Optional[List[List[str]]] = None,
+            provides: Optional[List[List[str]]] = None,
+            requires: Optional[List[List[str]]] = None,
             timeout: Optional[List[int]] = None,
         ):
             assert (
                 parameter or runs_on
             ), "Either :parameter or :runs_on must be non empty list for parametrisation"
+            if runs_on:
+                assert isinstance(runs_on, list) and isinstance(runs_on[0], list)
             if not parameter:
                 parameter = [None] * len(runs_on)
             if not runs_on:
                 runs_on = [None] * len(parameter)
             if not timeout:
                 timeout = [None] * len(parameter)
+            if not provides:
+                provides = [None] * len(parameter)
+            if not requires:
+                requires = [None] * len(parameter)
             assert (
-                len(parameter) == len(runs_on) == len(timeout)
-            ), "Parametrization lists must be of the same size"
+                len(parameter)
+                == len(runs_on)
+                == len(timeout)
+                == len(provides)
+                == len(requires)
+            ), f"Parametrization lists must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
 
             res = []
-            for parameter_, runs_on_, timeout_ in zip(parameter, runs_on, timeout):
+            for parameter_, runs_on_, timeout_, provides_, requires_ in zip(
+                parameter, runs_on, timeout, provides, requires
+            ):
                 obj = copy.deepcopy(self)
+                assert (
+                    not obj.provides
+                ), "Job.Config.provides must be empty for parametrized jobs"
                 if parameter_:
                     obj.parameter = parameter_
+                    obj.command = obj.command.format(PARAMETER=parameter_)
                 if runs_on_:
                     obj.runs_on = runs_on_
                 if timeout_:
                     obj.timeout = timeout_
+                if provides_:
+                    assert (
+                        not obj.provides
+                    ), "Job.Config.provides must be empty for parametrized jobs"
+                    obj.provides = provides_
+                if requires_:
+                    assert (
+                        not obj.requires
+                    ), "Job.Config.requires and parametrize(requires=...) are both set"
+                    obj.requires = requires_
                 obj.name = obj.get_job_name_with_parameter()
                 res.append(obj)
             return res
@@ -84,13 +112,16 @@ class Job:
             name, parameter, runs_on = self.name, self.parameter, self.runs_on
             res = name
             name_params = []
-            if isinstance(parameter, list) or isinstance(parameter, dict):
-                name_params.append(json.dumps(parameter))
-            elif parameter is not None:
-                name_params.append(parameter)
-            if runs_on:
+            if parameter:
+                if isinstance(parameter, list) or isinstance(parameter, dict):
+                    name_params.append(json.dumps(parameter))
+                else:
+                    name_params.append(parameter)
+            elif runs_on:
                 assert isinstance(runs_on, list)
                 name_params.append(json.dumps(runs_on))
+            else:
+                assert False
             if name_params:
                 name_params = [str(param) for param in name_params]
                 res += f" ({', '.join(name_params)})"
@@ -100,3 +131,10 @@ class Job:
 
         def __repr__(self):
             return self.name
+
+        def copy(self):
+            """
+            To create an instant copy of a job config used in multiple workflows
+            :return: Job.Config
+            """
+            return copy.deepcopy(self)

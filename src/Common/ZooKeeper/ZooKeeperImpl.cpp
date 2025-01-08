@@ -306,6 +306,14 @@ void ZooKeeper::flushWriteBuffer()
     out->next();
 }
 
+void ZooKeeper::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+         compressed_out->cancel();
+    if (out)
+        out->cancel();
+}
+
 ReadBuffer & ZooKeeper::getReadBuffer()
 {
     if (compressed_in)
@@ -548,6 +556,7 @@ void ZooKeeper::connect(
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
+                cancelWriteBuffer();
             }
         }
 
@@ -1086,6 +1095,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
         /// Set expired flag after we sent close event
         expire_session_if_not_expired();
+
+        cancelWriteBuffer();
 
         try
         {

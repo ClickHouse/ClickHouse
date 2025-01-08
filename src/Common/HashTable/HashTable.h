@@ -172,7 +172,7 @@ struct HashTableCell
     const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
-    static const Key & getKey(const value_type & value) { return value; }
+    static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
@@ -371,7 +371,7 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }

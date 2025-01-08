@@ -74,6 +74,7 @@ elseif (ARCH_AARCH64)
         #          introduced as optional, either in v8.2 [7] or in v8.4 [8].
         # rcpc:    Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
         #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton >=2, Azure and GCP instances.
+        # bf16:    Bfloat16, a half-precision floating point format developed by Google Brain. Optional in v8.2, mandatory in v8.6.
         #
         # [1]  https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2]  https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
