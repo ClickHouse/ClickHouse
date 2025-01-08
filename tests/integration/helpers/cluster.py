@@ -44,7 +44,6 @@ try:
     )
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
-    from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
@@ -569,16 +568,6 @@ class ClickHouseCluster:
         self.azurite_container = "azurite-container"
         self.blob_service_client = None
         self._azurite_port = 0
-
-        # available when with_kerberized_hdfs == True
-        self.hdfs_kerberized_host = "kerberizedhdfs1"
-        self.hdfs_kerberized_ip = None
-        self.hdfs_kerberized_name_port = 50070
-        self.hdfs_kerberized_data_port = 1006
-        self.hdfs_kerberized_dir = p.abspath(
-            p.join(self.instances_dir, "kerberized_hdfs")
-        )
-        self.hdfs_kerberized_logs_dir = os.path.join(self.hdfs_kerberized_dir, "logs")
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
@@ -1581,7 +1570,6 @@ class ClickHouseCluster:
         with_postgresql_java_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
-        with_hdfs=False,
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
@@ -2411,41 +2399,6 @@ class ClickHouseCluster:
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
 
-    def make_hdfs_api(self, timeout=180, kerberized=False):
-        if kerberized:
-            keytab = p.abspath(
-                p.join(self.instances["node1"].path, "secrets/clickhouse.keytab")
-            )
-            krb_conf = p.abspath(
-                p.join(self.instances["node1"].path, "secrets/krb_long.conf")
-            )
-            self.hdfs_kerberized_ip = self.get_instance_ip(self.hdfs_kerberized_host)
-            kdc_ip = self.get_instance_ip("hdfskerberos")
-
-            self.hdfs_api = HDFSApi(
-                user="root",
-                timeout=timeout,
-                kerberized=True,
-                principal="root@TEST.CLICKHOUSE.TECH",
-                keytab=keytab,
-                krb_conf=krb_conf,
-                host=self.hdfs_kerberized_host,
-                protocol="http",
-                proxy_port=self.hdfs_kerberized_name_port,
-                data_port=self.hdfs_kerberized_data_port,
-                hdfs_ip=self.hdfs_kerberized_ip,
-                kdc_ip=kdc_ip,
-            )
-        else:
-            self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
-            self.hdfs_api = HDFSApi(
-                user="root",
-                host=self.hdfs_host,
-                data_port=self.hdfs_data_port,
-                proxy_port=self.hdfs_name_port,
-                hdfs_ip=self.hdfs_ip,
-            )
-
     def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=50):
         retries = 0
         while True:
@@ -2478,24 +2431,6 @@ class ClickHouseCluster:
                     raise Exception("Kerberos KDC is not available")
                 logging.debug("Waiting for Kerberos KDC to start up")
                 time.sleep(1)
-
-    def wait_hdfs_to_start(self, timeout=300, check_marker=False):
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
-                logging.debug("Connected to HDFS and SafeMode disabled! ")
-                if check_marker:
-                    self.hdfs_api.read_data("/preparations_done_marker")
-
-                return
-            except Exception as ex:
-                logging.exception(
-                    "Can't connect to HDFS or preparations are not done yet " + str(ex)
-                )
-                time.sleep(1)
-
-        raise Exception("Can't wait HDFS to start")
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(

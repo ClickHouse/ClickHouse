@@ -18,7 +18,6 @@ node_logs = cluster.add_instance(
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
 
 node_snapshot = cluster.add_instance(
@@ -26,7 +25,6 @@ node_snapshot = cluster.add_instance(
     main_configs=["configs/enable_keeper_snapshot.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
 
 
@@ -131,12 +129,6 @@ def get_local_logs(node):
 
 def get_local_snapshots(node):
     return get_local_files("/var/lib/clickhouse/coordination/snapshots", node)
-
-
-def test_supported_disk_types(started_cluster):
-    node_logs.stop_clickhouse()
-    node_logs.start_clickhouse()
-    node_logs.contains_in_log("Disk type 'hdfs' is not supported for Keeper")
 
 
 def test_logs_with_disks(started_cluster):
