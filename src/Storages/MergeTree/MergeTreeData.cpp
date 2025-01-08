@@ -6234,10 +6234,22 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
 
 PartitionIds MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
 {
-    PartitionIds partition_ids;
-    for (const auto & ast : asts)
-        partition_ids.insert(getPartitionIDFromQuery(ast, local_context));
-    return partition_ids;
+    if (auto num_asts = asts.size(); num_asts < 3)
+    {
+        PartitionIds partition_ids;
+        for (const auto & ast : asts)
+            partition_ids.insert(getPartitionIDFromQuery(ast, local_context));
+        return partition_ids;
+    }
+    else
+    {   /// add all elements all together to avoid moves inside plain_set
+        std::vector<String> area;
+        area.reserve(num_asts);
+        for (const auto & ast : asts)
+            area.push_back(getPartitionIDFromQuery(ast, local_context));
+
+        return PartitionIds(area.begin(), area.end());
+    }
 }
 
 PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
@@ -6265,17 +6277,17 @@ PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
 PartitionIds MergeTreeData::getAllPartitionIds() const
 {
     auto lock = lockParts();
-    PartitionIds res;
+    std::vector<std::string> area;
     std::string_view prev_id;
     for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
         if (prev_id == part->info.partition_id)
             continue;
 
-        res.insert(part->info.partition_id);
+        area.push_back(part->info.partition_id);
         prev_id = part->info.partition_id;
     }
-    return res;
+    return PartitionIds(area.begin(), area.end());
 }
 
 
