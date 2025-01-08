@@ -36,14 +36,14 @@ namespace wide
 
 constexpr bool supportsBitInt256()
 {
-#if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
+#if defined(__x86_64__)
     return true;
 #else
     return false;
 #endif
 }
 
-#if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
+#if defined(__x86_64__)
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wbit-int-extension"
 using BitInt256 = signed _BitInt(256);
