@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 #include <Disks/WriteMode.h>
+#include "IO/ReadSettings.h"
 
 using DB::DiskPtr, DB::MetadataStoragePtr;
 
@@ -47,16 +48,18 @@ public:
     void writeToFileBase(const String& path, const String& text) const {
         std::unique_ptr<DB::WriteBuffer> out = base->writeFile(path);
         writeString(text, *out);
+        out->finalize();
     }
 
     void writeToFileOver(const String& path, const String& text, bool append) const {
         std::unique_ptr<DB::WriteBuffer> out = over->writeFile(path, DB::DBMS_DEFAULT_BUFFER_SIZE, append ? DB::WriteMode::Append : DB::WriteMode::Rewrite);
         writeString(text, *out);
+        out->finalize();
     }
 
     String readFromFileOver(const String& path) const {
         String result;
-        std::unique_ptr<DB::ReadBuffer> in = over->readFile(path);
+        std::unique_ptr<DB::ReadBuffer> in = over->readFile(path, DB::ReadSettings{});
         readString(result, *in);
         return result;
     }
@@ -65,16 +68,24 @@ public:
 TEST_F(OverlayTest, createRemoveFile)
 {
     base->createFile("file.txt");
-    EXPECT_EQ(over->exists("file.txt"), true);
+    EXPECT_EQ(over->existsFile("file.txt"), true);
+    EXPECT_EQ(over->existsFileOrDirectory("file.txt"), true);
+    EXPECT_EQ(over->existsDirectory("file.txt"), false);
 
     over->removeFile("file.txt");
-    EXPECT_EQ(over->exists("file.txt"), false);
+    EXPECT_EQ(over->existsFile("file.txt"), false);
+    EXPECT_EQ(over->existsFileOrDirectory("file.txt"), false);
+    EXPECT_EQ(over->existsDirectory("file.txt"), false);
 
     over->createFile("file.txt");
-    EXPECT_EQ(over->exists("file.txt"), true);
+    EXPECT_EQ(over->existsFile("file.txt"), true);
+    EXPECT_EQ(over->existsFileOrDirectory("file.txt"), true);
+    EXPECT_EQ(over->existsDirectory("file.txt"), false);
 
     over->removeFile("file.txt");
-    EXPECT_EQ(over->exists("file.txt"), false);
+    EXPECT_EQ(over->existsFile("file.txt"), false);
+    EXPECT_EQ(over->existsFileOrDirectory("file.txt"), false);
+    EXPECT_EQ(over->existsDirectory("file.txt"), false);
 }
 
 TEST_F(OverlayTest, listFiles)
@@ -84,13 +95,16 @@ TEST_F(OverlayTest, listFiles)
     
     over->createFile("folder/file2.txt");
 
-    std::vector<String> paths, corr({"file1.txt", "file2.txt"});
+    std::vector<String> paths;
+    std::vector<String> corr({"file1.txt", "file2.txt"});
     over->listFiles("folder", paths);
 
     std::sort(paths.begin(), paths.end());
     EXPECT_EQ(paths, corr);
 
-    over->writeFile("folder/file1.txt", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append);
+    auto buf = over->writeFile("folder/file1.txt", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append);
+    writeString("", *buf);
+    buf->finalize();
     over->listFiles("folder", paths);
 
     std::sort(paths.begin(), paths.end());
@@ -102,7 +116,8 @@ TEST_F(OverlayTest, moveFile)
     base->createFile("file1.txt");
     over->moveFile("file1.txt", "file2.txt");
 
-    std::vector<String> paths, corr({"file2.txt"});
+    std::vector<String> paths;
+    std::vector<String> corr({"file2.txt"});
     over->listFiles("", paths);
 
     std::sort(paths.begin(), paths.end());
@@ -124,7 +139,8 @@ TEST_F(OverlayTest, directoryIterator)
 
     over->createFile("folder/file1.txt");
 
-    std::vector<String> paths, corr({"folder/file1.txt", "folder/file2.txt", "folder/folder/"});
+    std::vector<String> paths;
+    std::vector<String> corr({"folder/file1.txt", "folder/file2.txt", "folder/folder/"});
 
     for (auto iter = over->iterateDirectory("folder"); iter->isValid(); iter->next()) {
         paths.push_back(iter->path());
@@ -146,7 +162,8 @@ TEST_F(OverlayTest, moveDirectory)
 
     over->moveDirectory("folder1", "folder2/folder1");
 
-    std::vector<String> paths, corr({"file1.txt", "file2.txt", "inner"});
+    std::vector<String> paths;
+    std::vector<String> corr({"file1.txt", "file2.txt", "inner"});
     over->listFiles("folder2/folder1", paths);
     std::sort(paths.begin(), paths.end());
     EXPECT_EQ(paths, corr);
@@ -155,7 +172,7 @@ TEST_F(OverlayTest, moveDirectory)
     over->listFiles("folder2/folder1/inner", paths);
     EXPECT_EQ(paths, corr);
 
-    EXPECT_TRUE(!over->exists("folder1"));
+    EXPECT_FALSE(over->existsDirectory("folder1"));
 }
 
 TEST_F(OverlayTest, readFileBaseEmpty) {
@@ -198,7 +215,8 @@ TEST_F(OverlayTest, moveDeleteReadListFile) {
 
     writeToFileOver("file1.txt", "more data", false);
 
-    std::vector<String> paths, corr({"file1.txt", "folder2"});
+    std::vector<String> paths;
+    std::vector<String> corr({"file1.txt", "folder2"});
     over->listFiles("", paths);
 
     std::sort(paths.begin(), paths.end());
@@ -224,10 +242,10 @@ TEST_F(OverlayTest, copy) {
 
     writeToFileOver("file.txt", " more data", true);
 
-    over->copyFile("file.txt", *over, "file1.txt");
+    over->copyFile("file.txt", *over, "file1.txt", DB::ReadSettings{});
 
     EXPECT_EQ(readFromFileOver("file1.txt"), "test data more data");
 
-    over->copyFile("file2.txt", *over, "file3.txt");
+    over->copyFile("file2.txt", *over, "file3.txt", DB::ReadSettings{});
     EXPECT_EQ(readFromFileOver("file3.txt"), "other data");
 }
