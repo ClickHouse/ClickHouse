@@ -29,8 +29,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     TransactionID tid,
+    size_t part_uncompressed_bytes,
     bool reset_columns_,
-    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
@@ -38,6 +38,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
     , write_settings(write_settings_)
 {
+    /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
+    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
+    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
@@ -45,6 +50,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
+        save_primary_index_in_memory,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
@@ -81,6 +87,13 @@ void MergedBlockOutputStream::write(const Block & block)
     writeImpl(block, nullptr);
 }
 
+void MergedBlockOutputStream::cancel() noexcept
+{
+    if (writer)
+        writer->cancel();
+}
+
+
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
@@ -106,6 +119,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
+    void cancel() noexcept;
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
@@ -114,6 +128,14 @@ void MergedBlockOutputStream::Finalizer::finish()
     impl.reset();
     if (to_finish)
         to_finish->finish();
+}
+
+void MergedBlockOutputStream::Finalizer::cancel() noexcept
+{
+    std::unique_ptr<Impl> to_cancel = std::move(impl);
+    impl.reset();
+    if (to_cancel)
+        to_cancel->cancel();
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()
@@ -145,21 +167,24 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
+void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept
+{
+    writer.cancel();
+
+    for (auto & file : written_files)
+    {
+        file->cancel();
+    }
+}
+
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
 {
-    try
-    {
-        if (impl)
-            finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (impl)
+        cancel();
 }
 
 
@@ -167,16 +192,18 @@ void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
+    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_samples).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
@@ -211,24 +238,35 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
-    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     if (new_part->isStoredOnDisk())
-       finalizer->written_files = finalizePartOnDisk(new_part, checksums);
+       written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    new_part->setIndex(writer->releaseIndexColumns());
+
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(writer->getColumnsSample());
+
+    auto columns_sample = writer->getColumnsSample();
+    if (additional_columns_samples)
+    {
+       for (const auto & column : *additional_columns_samples)
+            columns_sample.insert(column);
+    }
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(columns_sample);
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
     {
         if (auto new_index_granularity = new_part->index_granularity->optimize())
             new_part->index_granularity = std::move(new_index_granularity);
     }
+
+    /// It's important to set index after index granularity.
+    if (auto computed_index = writer->releaseIndexColumns())
+        new_part->setIndex(std::move(*computed_index));
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
@@ -238,6 +276,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
 
+    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    finalizer->written_files = std::move(written_files);
     return Finalizer(std::move(finalizer));
 }
 

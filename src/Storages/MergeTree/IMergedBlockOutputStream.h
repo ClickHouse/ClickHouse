@@ -28,6 +28,7 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
+    virtual void cancel() noexcept = 0;
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
@@ -36,7 +37,7 @@ public:
 
     PlainMarksByName releaseCachedMarks()
     {
-        return writer->releaseCachedMarks();
+        return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
     }
 
     size_t getNumberOfOpenStreams() const
@@ -45,7 +46,6 @@ public:
     }
 
 protected:
-
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(

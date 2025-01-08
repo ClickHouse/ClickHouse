@@ -1,10 +1,11 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Common/RadixSort.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
 #include <Core/Joins.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/RadixSort.h>
 
 
 namespace DB

@@ -154,6 +154,7 @@ void writeColumnSingleGranule(
     serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
     serialize_settings.use_compact_variant_discriminators_serialization = settings.use_compact_variant_discriminators_serialization;
+    serialize_settings.use_v1_object_and_dynamic_serialization = settings.use_v1_object_and_dynamic_serialization;
     serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
@@ -469,5 +470,31 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
     finishSkipIndicesSerialization(sync);
     finishStatisticsSerialization(sync);
 }
+
+void MergeTreeDataPartWriterCompact::cancel() noexcept
+{
+    for (const auto & [_, stream] : streams_by_codec)
+    {
+        stream->hashing_buf.cancel();
+        stream->compressed_buf.cancel();
+    }
+
+    plain_hashing.cancel();
+
+    plain_file->cancel();
+
+    if (marks_source_hashing)
+        marks_source_hashing->cancel();
+
+    if (marks_compressor)
+        marks_compressor->cancel();
+
+    marks_file_hashing->cancel();
+
+    marks_file->cancel();
+
+    Base::cancel();
+}
+
 
 }
