@@ -1398,8 +1398,7 @@ private:
 
     void prepare()
     {
-        if (ctx->new_data_part->isStoredOnDisk())
-            ctx->new_data_part->getDataPartStorage().createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -2126,8 +2125,7 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
 
-    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    if (!isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
