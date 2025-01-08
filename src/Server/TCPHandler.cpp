@@ -13,6 +13,7 @@
 #include <Core/ServerSettings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -2250,7 +2251,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
+            getFormatSettings(query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
