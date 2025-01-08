@@ -1190,8 +1190,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             buf[buf_size] = *it;
             ++buf_size;
+            pure_integer &= *it >= '0' && *it <= '9';
         }
-        pure_integer &= *it >= '0' && *it <= '9';
         if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
         {
             expected.add(pos, "number");
