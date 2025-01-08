@@ -146,18 +146,17 @@ public:
     /// `success` defines whether insertion was successful or not.
     void prepareCommitRequests(
         Coordination::Requests & requests,
-        bool success,
+        bool insert_succeeded,
+        StoredObjects & successful_files,
         const std::string & exception_message = {});
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool success, const std::string & exception_message = {});
+    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
     void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
-    /// Apply after processing action, such as file removal.
-    void applyAfterProcessingAction();
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -187,12 +186,17 @@ private:
     {
         Processing,
         ErrorOnRead,
+        Cancelled,
         Processed,
     };
     struct ProcessedFile
     {
+        explicit ProcessedFile(FileMetadataPtr metadata_)
+            : state(FileState::Processing), metadata(metadata_) {}
+
         FileState state;
         FileMetadataPtr metadata;
+        std::string exception_during_read;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

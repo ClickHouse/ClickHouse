@@ -589,8 +589,9 @@ void StorageObjectStorageQueue::commit(
     const std::string & exception_message) const
 {
     Coordination::Requests requests;
+    StoredObjects successful_objects;
     for (auto & source : sources)
-        source->prepareCommitRequests(requests, success, exception_message);
+        source->prepareCommitRequests(requests, success, successful_objects, exception_message);
 
     if (requests.empty())
     {
@@ -598,8 +599,17 @@ void StorageObjectStorageQueue::commit(
         return;
     }
 
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    {
+        /// We do need to apply after-processing action before committing requests to keeper.
+        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
+        object_storage->removeObjectsIfExist(successful_objects);
+    }
+
     auto zk_client = getZooKeeper();
     Coordination::Responses responses;
+
     auto code = zk_client->tryMulti(requests, responses);
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperMultiException(code, requests, responses);

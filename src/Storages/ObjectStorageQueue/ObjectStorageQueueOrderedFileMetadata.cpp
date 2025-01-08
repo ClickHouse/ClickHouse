@@ -245,17 +245,64 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     while (true)
     {
-        NodeMetadata processed_node;
+        std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
-        bool has_processed_node = getMaxProcessedFile(processed_node, &processed_node_stat, zk_client);
-        if (has_processed_node)
+        if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
         {
-            LOG_TEST(log, "Current max processed file {} from path: {}",
-                        processed_node.file_path, processed_node_path);
+            Coordination::Requests requests;
+            std::vector<std::string> paths{processed_node_path, failed_node_path};
+            auto responses = zk_client->tryGet(paths);
 
-            if (!processed_node.file_path.empty() && path <= processed_node.file_path)
+            auto check_code = [this](auto code)
             {
-                return {false, FileStatus::State::Processed};
+                if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+                    throw zkutil::KeeperException::fromPath(code, path);
+            };
+            check_code(responses[0].error);
+            check_code(responses[1].error);
+
+            if (responses[1].error == Coordination::Error::ZOK)
+            {
+                LOG_TEST(log, "File {} is Failed", path);
+                return {false, FileStatus::State::Failed};
+            }
+
+            if (responses[0].error == Coordination::Error::ZOK)
+            {
+                if (!responses[0].data.empty())
+                {
+                    processed_node.emplace(NodeMetadata::fromString(responses[0].data));
+                    processed_node_stat = responses[0].stat;
+
+                    LOG_TEST(log, "Current max processed file {} from path: {}",
+                             processed_node->file_path, processed_node_path);
+
+                    if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                    {
+                        return {false, FileStatus::State::Processed};
+                    }
+                }
+            }
+        }
+        else
+        {
+            NodeMetadata node_metadata;
+            if (getMaxProcessedFile(node_metadata, &processed_node_stat, zk_client))
+            {
+                if (zk_client->exists(failed_node_path))
+                {
+                    LOG_TEST(log, "File {} is Failed", path);
+                    return {false, FileStatus::State::Failed};
+                }
+
+                processed_node.emplace(node_metadata);
+                LOG_TEST(log, "Current max processed file {} from path: {}",
+                         processed_node->file_path, processed_node_path);
+
+                if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                {
+                    return {false, FileStatus::State::Processed};
+                }
             }
         }
 
@@ -290,7 +337,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         /// so may be remove creation and check for processing_node_id if bucket_info is set?
 
         auto check_max_processed_path = requests.size();
-        if (has_processed_node)
+        if (processed_node.has_value())
             requests.push_back(zkutil::makeCheckRequest(processed_node_path, processed_node_stat.version));
         else
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
