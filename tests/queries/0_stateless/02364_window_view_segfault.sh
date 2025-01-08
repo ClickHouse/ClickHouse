@@ -6,10 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 opts=(
-    "--enable_analyzer=0"
+    "--allow_experimental_analyzer=0"
 )
 
-${CLICKHOUSE_CLIENT} "${opts[@]}" --multiline --query """
+${CLICKHOUSE_CLIENT} "${opts[@]}" --multiquery --multiline --query """
 DROP TABLE IF EXISTS mt ON CLUSTER test_shard_localhost;
 DROP TABLE IF EXISTS wv ON CLUSTER test_shard_localhost;
 CREATE TABLE mt ON CLUSTER test_shard_localhost (a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();

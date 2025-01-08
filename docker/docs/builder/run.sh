@@ -13,9 +13,8 @@ else
 fi
 
 # The repo is usually mounted to /ClickHouse
-LANGUAGES=$(grep -o "'[/][a-z][a-z]'" /opt/clickhouse-docs/docusaurus.config.js | sort -u | sed "s/'\/\([a-z][a-z]\)'/\1/")
 
-for lang in $LANGUAGES
+for lang in en ru zh
 do
   if [ -d "/ClickHouse/docs/${lang}" ]; then
     cp -rf "/ClickHouse/docs/${lang}" "/opt/clickhouse-docs/docs/"
@@ -27,6 +26,7 @@ sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js
 
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
   export CI=true
+  yarn install
   exec yarn build "$@"
 fi
 

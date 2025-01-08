@@ -50,7 +50,7 @@ namespace detail
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
-enum class ReservoirSamplerDeterministicOnEmpty : uint8_t
+enum class ReservoirSamplerDeterministicOnEmpty
 {
     THROW,
     RETURN_NAN_OR_ZERO,
@@ -161,7 +161,8 @@ public:
         readBinaryLittleEndian(total_values, buf);
 
         /// Compatibility with old versions.
-        size = std::min(size, total_values);
+        if (size > total_values)
+            size = total_values;
 
         static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
         if (unlikely(size > MAX_RESERVOIR_SIZE))
@@ -190,11 +191,7 @@ public:
             /// TODO: After implementation of "versioning aggregate function state",
             /// change the serialization format.
             Element elem;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunknown-warning-option"  /// Remove after clang20
-#pragma clang diagnostic ignored "-Wnontrivial-memcall"
             memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
-#pragma clang diagnostic pop
             elem = samples[i];
 
             DB::transformEndianness<std::endian::little>(elem);
@@ -275,7 +272,8 @@ private:
     {
         if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");
-        return NanLikeValueConstructor<ResultType, is_floating_point<ResultType>>::getValue();
+        else
+            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }
 };
 

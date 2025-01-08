@@ -1,5 +1,4 @@
 #include <Common/SipHash.h>
-#include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
@@ -13,10 +12,12 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
@@ -34,15 +35,6 @@ constexpr auto * storage_uuid_column_name = "storage_uuid";
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-}
-
-StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
-    : query_id(context->getCurrentQueryId()), lock_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout]), next_row(0), rows(0)
-{
-}
 
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
@@ -99,7 +91,7 @@ StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, boo
     return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
 }
 
-StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context)
+StoragesInfoStream::StoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context)
     : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -132,7 +124,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
         /// Filter block_to_filter with column 'database'.
         if (filter_by_database)
-            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_by_database), context), block_to_filter);
+            VirtualColumnUtils::filterBlockWithDAG(filter_by_database, block_to_filter, context);
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
@@ -146,8 +138,8 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
             for (size_t i = 0; i < rows; ++i)
             {
-                String database_name = (*database_column_for_filter)[i].safeGet<String>();
-                const DatabasePtr & database = databases.at(database_name);
+                String database_name = (*database_column_for_filter)[i].get<String>();
+                const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -167,6 +159,13 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                         storage_uuid = hash.get128();
                     }
 
+#if USE_MYSQL
+                    if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
+                    {
+                        auto nested = proxy->getNested();
+                        storage.swap(nested);
+                    }
+#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
@@ -205,7 +204,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
         if (filter_by_other_columns)
-            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_by_other_columns), context), block_to_filter);
+            VirtualColumnUtils::filterBlockWithDAG(filter_by_other_columns, block_to_filter, context);
         rows = block_to_filter.rows();
     }
 
@@ -237,8 +236,8 @@ protected:
     std::shared_ptr<StorageSystemPartsBase> storage;
     std::vector<UInt8> columns_mask;
     const bool has_state_column;
-    std::optional<ActionsDAG> filter_by_database;
-    std::optional<ActionsDAG> filter_by_other_columns;
+    ActionsDAGPtr filter_by_database;
+    ActionsDAGPtr filter_by_other_columns;
 };
 
 ReadFromSystemPartsBase::ReadFromSystemPartsBase(
@@ -251,7 +250,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     std::vector<UInt8> columns_mask_,
     bool has_state_column_)
     : SourceStepWithFilter(
-        std::move(sample_block),
+        DataStream{.header = std::move(sample_block)},
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -264,8 +263,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
 
 void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
     {
         const auto * predicate = filter_actions_dag->getOutputs().at(0);
@@ -319,8 +317,8 @@ void StorageSystemPartsBase::read(
 
 void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
-    auto header = getOutputHeader();
+    auto stream = storage->getStoragesInfoStream(filter_by_database, filter_by_other_columns, context);
+    auto header = getOutputStream().header;
 
     MutableColumns res_columns = header.cloneEmptyColumns();
 
@@ -363,10 +361,4 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
     setVirtuals(std::move(virtuals));
 }
 
-bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
-{
-    info.table_lock = info.storage->tryLockForShare(query_id, lock_timeout);
-    // nullptr means table was dropped while acquiring the lock
-    return info.table_lock != nullptr;
-}
 }

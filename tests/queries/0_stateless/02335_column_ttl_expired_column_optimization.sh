@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 data_path="$CLICKHOUSE_TMP/local"
 
-$CLICKHOUSE_LOCAL --path "$data_path" -m -q "
+$CLICKHOUSE_LOCAL --path "$data_path" -nm -q "
     create table ttl_02335 (
         date Date,
         key Int,

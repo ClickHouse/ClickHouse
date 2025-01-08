@@ -36,9 +36,7 @@ public:
         ThrottlerPtr throttler_ = {},
         mode_t mode = 0666,
         char * existing_memory = nullptr,
-        size_t alignment = 0,
-        bool use_adaptive_buffer_size_ = false,
-        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
+        size_t alignment = 0);
 
     /// Use pre-opened file descriptor.
     explicit WriteBufferFromFile(
@@ -47,9 +45,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         ThrottlerPtr throttler_ = {},
         char * existing_memory = nullptr,
-        size_t alignment = 0,
-        bool use_adaptive_buffer_size_ = false,
-        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
+        size_t alignment = 0);
 
     ~WriteBufferFromFile() override;
 

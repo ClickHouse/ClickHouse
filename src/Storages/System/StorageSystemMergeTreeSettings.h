@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 

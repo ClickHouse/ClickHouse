@@ -1,7 +1,6 @@
 import logging
-from multiprocessing.dummy import Pool
-
 import pytest
+from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn
@@ -267,7 +266,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"'
             in str(error)
         )
 
@@ -447,6 +446,89 @@ def test_concurrent_queries(started_cluster):
 
     node1.query("DROP TABLE test.test_table;")
     node1.query("DROP TABLE test.stat;")
+
+
+def test_postgres_distributed(started_cluster):
+    cursor0 = started_cluster.postgres_conn.cursor()
+    cursor1 = started_cluster.postgres2_conn.cursor()
+    cursor2 = started_cluster.postgres3_conn.cursor()
+    cursor3 = started_cluster.postgres4_conn.cursor()
+    cursors = [cursor0, cursor1, cursor2, cursor3]
+
+    for i in range(4):
+        cursors[i].execute("DROP TABLE IF EXISTS test_replicas")
+        cursors[i].execute("CREATE TABLE test_replicas (id Integer, name Text)")
+        cursors[i].execute(
+            f"""INSERT INTO test_replicas select i, 'host{i+1}' from generate_series(0, 99) as t(i);"""
+        )
+
+    # test multiple ports parsing
+    result = node2.query(
+        """SELECT DISTINCT(name) FROM postgresql('postgres{1|2|3}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+    assert result == "host1\n" or result == "host2\n" or result == "host3\n"
+    result = node2.query(
+        """SELECT DISTINCT(name) FROM postgresql('postgres2:5431|postgres3:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+    assert result == "host3\n" or result == "host2\n"
+
+    # Create storage with with 3 replicas
+    node2.query("DROP TABLE IF EXISTS test_replicas")
+    node2.query(
+        """
+        CREATE TABLE test_replicas
+        (id UInt32, name String)
+        ENGINE = PostgreSQL('postgres{2|3|4}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+
+    # Check all replicas are traversed
+    query = "SELECT name FROM ("
+    for i in range(3):
+        query += "SELECT name FROM test_replicas UNION DISTINCT "
+    query += "SELECT name FROM test_replicas) ORDER BY name"
+    result = node2.query(query)
+    assert result == "host2\nhost3\nhost4\n"
+
+    # Create storage with with two two shards, each has 2 replicas
+    node2.query("DROP TABLE IF EXISTS test_shards")
+
+    node2.query(
+        """
+        CREATE TABLE test_shards
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('PostgreSQL', 'postgres{1|2}:5432,postgres{3|4}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); """
+    )
+
+    # Check only one replica in each shard is used
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    assert result == "host1\nhost3\n"
+
+    node2.query(
+        """
+        CREATE TABLE test_shards2
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('PostgreSQL', postgres4, addresses_expr='postgres{1|2}:5432,postgres{3|4}:5432'); """
+    )
+
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards2 ORDER BY name")
+    assert result == "host1\nhost3\n"
+
+    # Check all replicas are traversed
+    query = "SELECT name FROM ("
+    for i in range(3):
+        query += "SELECT name FROM test_shards UNION DISTINCT "
+    query += "SELECT name FROM test_shards) ORDER BY name"
+    result = node2.query(query)
+    assert result == "host1\nhost2\nhost3\nhost4\n"
+
+    # Disconnect postgres1
+    started_cluster.pause_container("postgres1")
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    started_cluster.unpause_container("postgres1")
+    assert result == "host2\nhost4\n" or result == "host3\nhost4\n"
+    node2.query("DROP TABLE test_shards2")
+    node2.query("DROP TABLE test_shards")
+    node2.query("DROP TABLE test_replicas")
 
 
 def test_datetime_with_timezone(started_cluster):
@@ -755,65 +837,6 @@ def test_literal_escaping(started_cluster):
     node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
     cursor.execute(f"DROP TABLE escaping")
     node1.query("DROP TABLE default.escaping")
-
-
-def test_filter_pushdown(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("CREATE SCHEMA test_filter_pushdown")
-    cursor.execute(
-        "CREATE TABLE test_filter_pushdown.test_table (id integer, value integer)"
-    )
-    cursor.execute(
-        "INSERT INTO test_filter_pushdown.test_table VALUES (1, 10), (1, 110), (2, 0), (3, 33), (4, 0)"
-    )
-
-    node1.query("DROP TABLE IF EXISTS test_filter_pushdown_pg_table")
-    node1.query(
-        """
-        CREATE TABLE test_filter_pushdown_pg_table (id UInt32, value UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_table', 'postgres', 'mysecretpassword', 'test_filter_pushdown');
-    """
-    )
-
-    node1.query("DROP TABLE IF EXISTS test_filter_pushdown_local_table")
-    node1.query(
-        """
-        CREATE TABLE test_filter_pushdown_local_table (id UInt32, value UInt32) ENGINE Memory AS SELECT * FROM test_filter_pushdown_pg_table
-    """
-    )
-
-    node1.query("DROP TABLE IF EXISTS ch_table")
-    node1.query(
-        "CREATE TABLE ch_table (id UInt32, pg_id UInt32) ENGINE MergeTree ORDER BY id"
-    )
-    node1.query("INSERT INTO ch_table VALUES (1, 1), (2, 2), (3, 1), (4, 2), (5, 999)")
-
-    def compare_results(query, **kwargs):
-        result1 = node1.query(
-            query.format(pg_table="test_filter_pushdown_pg_table", **kwargs)
-        )
-        result2 = node1.query(
-            query.format(pg_table="test_filter_pushdown_local_table", **kwargs)
-        )
-        assert result1 == result2
-
-    for kind in ["INNER", "LEFT", "RIGHT", "FULL", "ANY LEFT", "SEMI RIGHT"]:
-        for value in [0, 10]:
-            compare_results(
-                "SELECT * FROM ch_table {kind} JOIN {pg_table} as p ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
-                kind=kind,
-                value=value,
-            )
-
-            compare_results(
-                "SELECT * FROM {pg_table} as p {kind} JOIN ch_table ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
-                kind=kind,
-                value=value,
-            )
-
-    cursor.execute("DROP SCHEMA test_filter_pushdown CASCADE")
-    node1.query("DROP TABLE test_filter_pushdown_local_table")
-    node1.query("DROP TABLE test_filter_pushdown_pg_table")
 
 
 def test_fixed_string_type(started_cluster):

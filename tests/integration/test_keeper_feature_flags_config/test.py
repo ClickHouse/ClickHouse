@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
-import os
-
 import pytest
-from kazoo.client import KazooClient, KazooState
-
-import helpers.keeper_utils as keeper_utils
+import os
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
+from kazoo.client import KazooClient, KazooState
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)

@@ -1,6 +1,5 @@
--- Tags: long, replica, no-replicated-database, no-shared-merge-tree
+-- Tags: long, replica, no-replicated-database
 -- Tag no-replicated-database: Old syntax is not allowed
--- no-shared-merge-tree: implemented replacement
 
 SET replication_alter_partitions_sync = 2;
 

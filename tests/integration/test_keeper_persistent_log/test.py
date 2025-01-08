@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-import os
+import pytest
+from helpers.cluster import ClickHouseCluster
 import random
 import string
+import os
 import time
-
-import pytest
 from kazoo.client import KazooClient, KazooState
 
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

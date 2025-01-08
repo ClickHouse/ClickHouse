@@ -1,10 +1,10 @@
-import functools
-
 import pytest
 
-from helpers.cluster import ClickHouseCluster
-
+import functools
 from .common import check_on_cluster
+
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -20,7 +20,7 @@ shard_configs = {
 nodes = {
     node_name: cluster.add_instance(
         node_name,
-        main_configs=[shard_config, "config/config_discovery_path.xml"],
+        main_configs=[shard_config],
         stay_alive=True,
         with_zookeeper=True,
     )
@@ -119,6 +119,3 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     check_nodes_count(
         [nodes["node1"], nodes["node2"]], 2, cluster_name="two_shards", retries=1
     )
-
-    # cleanup
-    nodes["node0"].query("DROP TABLE tbl ON CLUSTER 'test_auto_cluster' SYNC")

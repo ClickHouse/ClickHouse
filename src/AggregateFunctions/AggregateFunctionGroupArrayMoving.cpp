@@ -19,7 +19,7 @@
 
 #include <type_traits>
 
-constexpr size_t AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE = 0xFFFFFF;
+#define AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE 0xFFFFFF
 
 
 namespace DB
@@ -38,7 +38,7 @@ template <typename T>
 struct MovingData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
+    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
 
     using Accumulator = T;
 
@@ -65,7 +65,8 @@ struct MovingSumData : public MovingData<T>
     {
         if (idx < window_size)
             return this->value[idx];
-        return this->value[idx] - this->value[idx - window_size];
+        else
+            return this->value[idx] - this->value[idx - window_size];
     }
 };
 
@@ -78,7 +79,8 @@ struct MovingAvgData : public MovingData<T>
     {
         if (idx < window_size)
             return this->value[idx] / T(window_size);
-        return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
+        else
+            return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
     }
 };
 
@@ -267,12 +269,12 @@ AggregateFunctionPtr createAggregateFunctionMoving(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
-            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
 
         limit_size = true;
-        max_elems = parameters[0].safeGet<UInt64>();
+        max_elems = parameters[0].get<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -283,12 +285,16 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     {
         if (isDecimal(argument_type))
             return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type);
-        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
+        else
+            return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
     }
-
-    if (isDecimal(argument_type))
-        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
-    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
+    else
+    {
+        if (isDecimal(argument_type))
+            return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
+        else
+            return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
+    }
 }
 
 }

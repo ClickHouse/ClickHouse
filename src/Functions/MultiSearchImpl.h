@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template <typename Name, typename Impl>
@@ -33,29 +33,29 @@ struct MultiSearchImpl
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
-        bool /*reject_expensive_hyperscan_regexps*/,
-        size_t input_rows_count)
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
                 name, needles_arr.size(), std::to_string(std::numeric_limits<UInt8>::max()));
 
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.safeGet<String>());
+            needles.emplace_back(needle.get<String>());
 
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
 
-        res.resize(input_rows_count);
+        const size_t haystack_size = haystack_offsets.size();
+        res.resize(haystack_size);
 
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
             size_t prev_haystack_offset = 0;
-            for (size_t j = 0; j < input_rows_count; ++j)
+            for (size_t j = 0; j < haystack_size; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
@@ -79,24 +79,26 @@ struct MultiSearchImpl
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
         size_t /*max_hyperscan_regexp_total_length*/,
-        bool /*reject_expensive_hyperscan_regexps*/,
-        size_t input_rows_count)
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
-        res.resize(input_rows_count);
+        const size_t haystack_size = haystack_offsets.size();
+        res.resize(haystack_size);
 
         size_t prev_haystack_offset = 0;
         size_t prev_needles_offset = 0;
 
-        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
+        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
 
         std::vector<std::string_view> needles;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             needles.reserve(needles_offsets[i] - prev_needles_offset);
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+            {
+                needles.emplace_back(needles_data_string->getDataAt(j).toView());
+            }
 
             const auto * const haystack = &haystack_data[prev_haystack_offset];
             const size_t haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;

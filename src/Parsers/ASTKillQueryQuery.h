@@ -9,7 +9,7 @@ namespace DB
 class ASTKillQueryQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class Type : uint8_t
+    enum class Type
     {
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION
@@ -36,7 +36,7 @@ public:
 
     String getID(char) const override;
 
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override
     {

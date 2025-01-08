@@ -26,12 +26,8 @@ public:
     void transform(Chunk & chunk) override
     {
         size_t num_rows = chunk.getNumRows();
+        const auto * select_final_indices_info = typeid_cast<const ChunkSelectFinalIndices *>(chunk.getChunkInfo().get());
 
-        auto select_all_rows_info = chunk.getChunkInfos().extract<ChunkSelectFinalAllRows>();
-        if (select_all_rows_info)
-            return;
-
-        auto select_final_indices_info = chunk.getChunkInfos().extract<ChunkSelectFinalIndices>();
         if (!select_final_indices_info || !select_final_indices_info->select_final_indices)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk passed to SelectByIndicesTransform without indices column");
 
@@ -45,6 +41,7 @@ public:
 
             chunk.setColumns(std::move(columns), index_column->size());
         }
+        chunk.setChunkInfo(nullptr);
     }
 };
 

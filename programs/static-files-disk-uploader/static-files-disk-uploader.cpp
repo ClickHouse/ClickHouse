@@ -4,7 +4,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
@@ -13,7 +12,6 @@
 
 #include <boost/program_options.hpp>
 #include <filesystem>
-#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -33,7 +31,7 @@ namespace ErrorCodes
  * If test-mode option is added, files will be put by given url via PUT request.
  */
 
-static void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
+void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
     RE2::FullMatch(file_path.string(), EXTRACT_PATH_PATTERN, &remote_path);
@@ -78,7 +76,7 @@ static void processFile(const fs::path & file_path, const fs::path & dst_path, b
 }
 
 
-static void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
+void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
 {
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 
@@ -113,11 +111,13 @@ static void processTableFiles(const fs::path & data_path, fs::path dst_path, boo
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
+                auto files_root = dst_path / prefix;
                 directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
             }
             else
             {
                 dst_path = fs::canonical(dst_path);
+                auto files_root = dst_path / prefix;
                 fs::create_directories(dst_path / directory_prefix);
                 directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
             }

@@ -1,7 +1,4 @@
--- Tags: no-object-storage
-
--- Specific value doesn't matter, we just need it to be fixed, because it is a part of `EXPLAIN PIPELINE` output.
-SET max_threads = 8;
+-- Tags: no-s3-storage
 
 DROP TABLE IF EXISTS test_grouping_sets_predicate;
 
@@ -63,7 +60,7 @@ FROM
                 (day_))
     ) AS t
 )
-WHERE type_1 = 'all' settings enable_analyzer=0;
+WHERE type_1 = 'all' settings allow_experimental_analyzer=0;
 
 -- Query plan with analyzer has less Filter steps (which is more optimal)
 EXPLAIN PIPELINE
@@ -86,7 +83,7 @@ FROM
                 (day_))
     ) AS t
 )
-WHERE type_1 = 'all' settings enable_analyzer=1;
+WHERE type_1 = 'all' settings allow_experimental_analyzer=1;
 
 SELECT '';
 SELECT '---Result---';
@@ -132,7 +129,7 @@ FROM
                 (day_))
     ) AS t
 )
-WHERE day_ = '2023-01-05' settings enable_analyzer=0;
+WHERE day_ = '2023-01-05' settings allow_experimental_analyzer=0;
 
 -- Query plan with analyzer has less Filter steps (which is more optimal)
 EXPLAIN PIPELINE
@@ -154,6 +151,6 @@ FROM
                 (day_))
     ) AS t
 )
-WHERE day_ = '2023-01-05' settings enable_analyzer=1;
+WHERE day_ = '2023-01-05' settings allow_experimental_analyzer=1;
 
 DROP TABLE test_grouping_sets_predicate;

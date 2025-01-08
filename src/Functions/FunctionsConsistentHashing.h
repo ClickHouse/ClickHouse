@@ -59,16 +59,10 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeNumber<ResultType>>();
-    }
-
     bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {1};
@@ -78,7 +72,9 @@ public:
     {
         if (isColumnConst(*arguments[1].column))
             return executeConstBuckets(arguments);
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant", getName());
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant",
+                getName());
     }
 
 private:
@@ -87,7 +83,7 @@ private:
     using BucketsType = typename Impl::BucketsType;
 
     template <typename T>
-    BucketsType checkBucketsRange(T buckets) const
+    inline BucketsType checkBucketsRange(T buckets) const
     {
         if (unlikely(buckets <= 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be positive number", getName());
@@ -105,9 +101,9 @@ private:
         BucketsType num_buckets;
 
         if (buckets_field.getType() == Field::Types::Int64)
-            num_buckets = checkBucketsRange(buckets_field.safeGet<Int64>());
+            num_buckets = checkBucketsRange(buckets_field.get<Int64>());
         else if (buckets_field.getType() == Field::Types::UInt64)
-            num_buckets = checkBucketsRange(buckets_field.safeGet<UInt64>());
+            num_buckets = checkBucketsRange(buckets_field.get<UInt64>());
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of the second argument of function {}",

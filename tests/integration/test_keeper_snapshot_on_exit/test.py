@@ -1,9 +1,7 @@
-import os
-
 import pytest
-
-import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+import os
+from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -18,7 +16,11 @@ node2 = cluster.add_instance(
 
 
 def get_fake_zk(node, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 @pytest.fixture(scope="module")

@@ -77,7 +77,7 @@ ReadBufferFromFile::~ReadBufferFromFile()
     if (fd < 0)
         return;
 
-    [[maybe_unused]] int err = ::close(fd);
+    int err = ::close(fd);
     chassert(!err || errno == EINTR);
 }
 
@@ -88,10 +88,7 @@ void ReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-    {
-        fd = -1;
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
-    }
 
     fd = -1;
     metric_increment.destroy();

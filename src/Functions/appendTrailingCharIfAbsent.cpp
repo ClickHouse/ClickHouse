@@ -54,15 +54,10 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto & column = arguments[0].column;
         const auto & column_char = arguments[1].column;
@@ -85,13 +80,14 @@ private:
             auto & dst_data = col_res->getChars();
             auto & dst_offsets = col_res->getOffsets();
 
-            dst_data.resize(src_data.size() + input_rows_count);
-            dst_offsets.resize(input_rows_count);
+            const auto size = src_offsets.size();
+            dst_data.resize(src_data.size() + size);
+            dst_offsets.resize(size);
 
             ColumnString::Offset src_offset{};
             ColumnString::Offset dst_offset{};
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (const auto i : collections::range(0, size))
             {
                 const auto src_length = src_offsets[i] - src_offset;
                 memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);
@@ -111,8 +107,9 @@ private:
             dst_data.resize_assume_reserved(dst_offset);
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 

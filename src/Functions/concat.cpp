@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -17,7 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 using namespace GatherUtils;
@@ -47,27 +46,18 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() == 1)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} should not be 1", getName());
+        if (arguments.size() < 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
+                getName(),
+                arguments.size());
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (arguments.empty())
-        {
-            auto res_data = ColumnString::create();
-            res_data->insertDefault();
-            return ColumnConst::create(std::move(res_data), input_rows_count);
-        }
-        if (arguments.size() == 1)
-            return arguments[0].column;
         /// Format function is not proven to be faster for two arguments.
         /// Actually there is overhead of 2 to 5 extra instructions for each string for checking empty strings in FormatImpl.
         /// Though, benchmarks are really close, for most examples we saw executeBinary is slightly faster (0-3%).
@@ -219,11 +209,11 @@ public:
     {
         if (arguments.size() == 1)
             return FunctionFactory::instance().getImpl("toString", context)->build(arguments);
-        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
+        if (std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
-        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
+        if (std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
             return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
-        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
+        if (std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionConcat::create(context),
@@ -231,14 +221,16 @@ public:
             return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// We always return Strings from concat, even if arguments were fixed strings.
-        return std::make_shared<DataTypeString>();
-    }
+        if (arguments.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
+                getName(),
+                arguments.size());
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
+        /// We always return Strings from concat, even if arguments were fixed strings.
         return std::make_shared<DataTypeString>();
     }
 
@@ -250,7 +242,7 @@ private:
 
 REGISTER_FUNCTION(Concat)
 {
-    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<ConcatOverloadResolver>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

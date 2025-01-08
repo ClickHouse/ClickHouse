@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// What to do if the limit is exceeded.
-enum class OverflowMode : uint8_t
+enum class OverflowMode
 {
     THROW     = 0,    /// Throw exception.
     BREAK     = 1,    /// Abort query execution, return what is.
@@ -17,9 +17,6 @@ enum class OverflowMode : uint8_t
       */
     ANY       = 2,
 };
-
-class WriteBuffer;
-class ReadBuffer;
 
 
 struct SizeLimits
@@ -41,9 +38,6 @@ struct SizeLimits
     bool softCheck(UInt64 rows, UInt64 bytes) const;
 
     bool hasLimits() const { return max_rows || max_bytes; }
-
-    void serialize(WriteBuffer & out) const;
-    void deserialize(ReadBuffer & in);
 };
 
 }

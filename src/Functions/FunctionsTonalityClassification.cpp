@@ -2,7 +2,7 @@
 
 #if USE_NLP
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
@@ -18,7 +18,7 @@ namespace DB
   */
 struct FunctionDetectTonalityImpl
 {
-    static Float32 detectTonality(
+    static ALWAYS_INLINE inline Float32 detectTonality(
         const UInt8 * str,
         const size_t str_len,
         const FrequencyHolder::Map & emotional_dict)
@@ -56,19 +56,20 @@ struct FunctionDetectTonalityImpl
         /// Convert values -12..6 to -1..1
         if (weight > 0)
             return static_cast<Float32>(weight / count_words / 6);
-        return static_cast<Float32>(weight / count_words / 12);
+        else
+            return static_cast<Float32>(weight / count_words / 12);
     }
 
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
         const auto & emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
 
+        size_t size = offsets.size();
         size_t prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             res[i] = detectTonality(data.data() + prev_offset, offsets[i] - 1 - prev_offset, emotional_dict);
             prev_offset = offsets[i];

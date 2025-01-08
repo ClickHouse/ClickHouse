@@ -40,7 +40,7 @@ SELECT simpleJSONExtractFloat(json, 'foo') FROM jsons ORDER BY json;)",
 0
 -3.4
 5)"}},
-        .category{"JSON"}});
+        .categories{"JSON"}});
     factory.registerAlias("visitParamExtractFloat", "simpleJSONExtractFloat");
 }
 

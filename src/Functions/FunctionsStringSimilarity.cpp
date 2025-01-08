@@ -90,7 +90,7 @@ struct NgramDistanceImpl
         ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
     }
 
-    static size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
+    static ALWAYS_INLINE size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
     {
         /// Offset before which we copy some data.
         constexpr size_t padding_offset = default_padding - N + 1;
@@ -120,7 +120,7 @@ struct NgramDistanceImpl
         return default_padding;
     }
 
-    static size_t readUTF8CodePoints(CodePoint * code_points, const char *& pos, const char * end)
+    static ALWAYS_INLINE size_t readUTF8CodePoints(CodePoint * code_points, const char *& pos, const char * end)
     {
         /// The same copying as described in the function above.
         memcpy(code_points, code_points + default_padding - N + 1, roundUpToPowerOfTwoOrZero(N - 1) * sizeof(CodePoint));
@@ -195,7 +195,7 @@ struct NgramDistanceImpl
     }
 
     template <bool save_ngrams>
-    static inline size_t calculateNeedleStats(
+    static ALWAYS_INLINE inline size_t calculateNeedleStats(
         const char * data,
         const size_t size,
         NgramCount * ngram_stats,
@@ -228,7 +228,7 @@ struct NgramDistanceImpl
     }
 
     template <bool reuse_stats>
-    static inline UInt64 calculateHaystackStatsAndMetric(
+    static ALWAYS_INLINE inline UInt64 calculateHaystackStatsAndMetric(
         const char * data,
         const size_t size,
         NgramCount * ngram_stats,
@@ -275,7 +275,7 @@ struct NgramDistanceImpl
     }
 
     template <class Callback, class... Args>
-    static auto dispatchSearcher(Callback callback, Args &&... args)
+    static inline auto dispatchSearcher(Callback callback, Args &&... args)
     {
         if constexpr (!UTF8)
             return callback(std::forward<Args>(args)..., readASCIICodePoints, calculateASCIIHash);
@@ -318,9 +318,9 @@ struct NgramDistanceImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
+        const size_t haystack_offsets_size = haystack_offsets.size();
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
@@ -331,7 +331,7 @@ struct NgramDistanceImpl
         std::unique_ptr<UInt16[]> needle_ngram_storage(new UInt16[max_string_size]);
         std::unique_ptr<UInt16[]> haystack_ngram_storage(new UInt16[max_string_size]);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
             const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -391,13 +391,12 @@ struct NgramDistanceImpl
         std::string haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
         /// For symmetric version it is better to use vector_constant
         if constexpr (symmetric)
         {
-            vectorConstant(needle_data, needle_offsets, std::move(haystack), res, input_rows_count);
+            vectorConstant(needle_data, needle_offsets, std::move(haystack), res);
         }
         else
         {
@@ -405,6 +404,7 @@ struct NgramDistanceImpl
             haystack.resize(haystack_size + default_padding);
 
             /// For logic explanation see vector_vector function.
+            const size_t needle_offsets_size = needle_offsets.size();
             size_t prev_offset = 0;
 
             std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}};
@@ -412,7 +412,7 @@ struct NgramDistanceImpl
             std::unique_ptr<UInt16[]> needle_ngram_storage(new UInt16[max_string_size]);
             std::unique_ptr<UInt16[]> haystack_ngram_storage(new UInt16[max_string_size]);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < needle_offsets_size; ++i)
             {
                 const char * needle = reinterpret_cast<const char *>(&needle_data[prev_offset]);
                 const size_t needle_size = needle_offsets[i] - prev_offset - 1;
@@ -456,8 +456,7 @@ struct NgramDistanceImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         std::string needle,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
         /// zeroing our map
         std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}};
@@ -473,7 +472,7 @@ struct NgramDistanceImpl
 
         size_t distance = needle_stats_size;
         size_t prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * haystack = &data[prev_offset];
             const size_t haystack_size = offsets[i] - prev_offset - 1;

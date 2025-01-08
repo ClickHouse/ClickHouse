@@ -17,7 +17,6 @@
 #include "Poco/Net/StreamSocketImpl.h"
 #include "Poco/NumberFormatter.h"
 #include "Poco/Timestamp.h"
-#include "Poco/ErrorHandler.h"
 #include <string.h> // FD_SET needs memset on some platforms, so we can't use <cstring>
 
 
@@ -63,7 +62,7 @@ bool checkIsBrokenTimeout()
 
 SocketImpl::SocketImpl():
 	_sockfd(POCO_INVALID_SOCKET),
-	_blocking(true),
+	_blocking(true), 
 	_isBrokenTimeout(checkIsBrokenTimeout())
 {
 }
@@ -82,7 +81,7 @@ SocketImpl::~SocketImpl()
 	close();
 }
 
-
+	
 SocketImpl* SocketImpl::acceptConnection(SocketAddress& clientAddr)
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -118,7 +117,7 @@ void SocketImpl::connect(const SocketAddress& address)
 		rc = ::connect(_sockfd, address.addr(), address.length());
 	}
 	while (rc != 0 && lastError() == POCO_EINTR);
-	if (rc != 0)
+	if (rc != 0) 
 	{
 		int err = lastError();
 		error(err, address.toString());
@@ -205,7 +204,7 @@ void SocketImpl::bind6(const SocketAddress& address, bool reuseAddress, bool reu
 #if defined(POCO_HAVE_IPv6)
 	if (address.family() != SocketAddress::IPv6)
 		throw Poco::InvalidArgumentException("SocketAddress must be an IPv6 address");
-
+		
 	if (_sockfd == POCO_INVALID_SOCKET)
 	{
 		init(address.af());
@@ -226,11 +225,11 @@ void SocketImpl::bind6(const SocketAddress& address, bool reuseAddress, bool reu
 #endif
 }
 
-
+	
 void SocketImpl::listen(int backlog)
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
-
+	
 	int rc = ::listen(_sockfd, backlog);
 	if (rc != 0) error();
 }
@@ -254,7 +253,7 @@ void SocketImpl::shutdownReceive()
 	if (rc != 0) error();
 }
 
-
+	
 void SocketImpl::shutdownSend()
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -263,7 +262,7 @@ void SocketImpl::shutdownSend()
 	if (rc != 0) error();
 }
 
-
+	
 void SocketImpl::shutdown()
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -318,7 +317,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 				throw TimeoutException();
 		}
 	}
-
+	
 	int rc;
 	do
 	{
@@ -326,7 +325,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, flags);
 	}
 	while (blocking && rc < 0 && lastError() == POCO_EINTR);
-	if (rc < 0)
+	if (rc < 0) 
 	{
 		int err = lastError();
 		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
@@ -364,7 +363,7 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 				throw TimeoutException();
 		}
 	}
-
+	
 	sockaddr_storage abuffer;
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&abuffer);
 	poco_socklen_t saLen = sizeof(abuffer);
@@ -451,7 +450,7 @@ bool SocketImpl::pollImpl(Poco::Timespan& remainingTime, int mode)
 	}
 	while (rc < 0 && lastError() == POCO_EINTR);
 	if (rc < 0) error();
-	return rc > 0;
+	return rc > 0; 
 
 #else
 
@@ -494,7 +493,7 @@ bool SocketImpl::pollImpl(Poco::Timespan& remainingTime, int mode)
 	}
 	while (rc < 0 && errorCode == POCO_EINTR);
 	if (rc < 0) error(errorCode);
-	return rc > 0;
+	return rc > 0; 
 
 #endif // POCO_HAVE_FD_POLL
 }
@@ -504,13 +503,13 @@ bool SocketImpl::poll(const Poco::Timespan& timeout, int mode)
 	Poco::Timespan remainingTime(timeout);
 	return pollImpl(remainingTime, mode);
 }
-
+	
 void SocketImpl::setSendBufferSize(int size)
 {
 	setOption(SOL_SOCKET, SO_SNDBUF, size);
 }
 
-
+	
 int SocketImpl::getSendBufferSize()
 {
 	int result;
@@ -524,7 +523,7 @@ void SocketImpl::setReceiveBufferSize(int size)
 	setOption(SOL_SOCKET, SO_RCVBUF, size);
 }
 
-
+	
 int SocketImpl::getReceiveBufferSize()
 {
 	int result;
@@ -570,7 +569,7 @@ Poco::Timespan SocketImpl::getReceiveTimeout()
 	return result;
 }
 
-
+	
 SocketAddress SocketImpl::address()
 {
 	if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
@@ -581,7 +580,7 @@ SocketAddress SocketImpl::address()
 	int rc = ::getsockname(_sockfd, pSA, &saLen);
 	if (rc == 0)
 		return SocketAddress(pSA, saLen);
-	else
+	else 
 		error();
 	return SocketAddress();
 }

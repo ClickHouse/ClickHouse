@@ -13,6 +13,8 @@
 #include <tuple>
 #include <limits>
 
+#include <boost/math/special_functions/fpclassify.hpp>
+
 // NOLINTBEGIN(*)
 
 /// Use same extended double for all platforms
@@ -20,7 +22,6 @@
 #define CONSTEXPR_FROM_DOUBLE constexpr
 using FromDoubleIntermediateType = long double;
 #else
-#include <boost/math/special_functions/fpclassify.hpp>
 #include <boost/multiprecision/cpp_bin_float.hpp>
 /// `wide_integer_from_builtin` can't be constexpr with non-literal `cpp_bin_float_double_extended`
 #define CONSTEXPR_FROM_DOUBLE
@@ -85,6 +86,7 @@ public:
     static constexpr bool has_infinity = false;
     static constexpr bool has_quiet_NaN = false;
     static constexpr bool has_signaling_NaN = true;
+    static constexpr std::float_denorm_style has_denorm = std::denorm_absent;
     static constexpr bool has_denorm_loss = false;
     static constexpr std::float_round_style round_style = std::round_toward_zero;
     static constexpr bool is_iec559 = false;
@@ -307,13 +309,6 @@ struct integer<Bits, Signed>::_impl
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
         static_assert(std::is_same_v<T, double> || std::is_same_v<T, FromDoubleIntermediateType>);
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
-#if (LDBL_MANT_DIG == 64)
-        if (!std::isfinite(t))
-        {
-            self = 0;
-            return;
-        }
-#else
         if constexpr (std::is_same_v<T, double>)
         {
             if (!std::isfinite(t))
@@ -330,13 +325,12 @@ struct integer<Bits, Signed>::_impl
                 return;
             }
         }
-#endif
 
         const T alpha = t / static_cast<T>(max_int);
 
         /** Here we have to use strict comparison.
           * The max_int is 2^64 - 1.
-          * When cast to a floating point type, it will be rounded to the closest representable number,
+          * When casted to floating point type, it will be rounded to the closest representable number,
           * which is 2^64.
           * But 2^64 is not representable in uint64_t,
           * so the maximum representable number will be strictly less.
@@ -1245,8 +1239,7 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T>
-requires(std::is_arithmetic_v<T>)
+template <class T, class>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
     static_assert(std::numeric_limits<T>::is_integer);
