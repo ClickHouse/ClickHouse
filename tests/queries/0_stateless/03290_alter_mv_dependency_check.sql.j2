@@ -1,0 +1,38 @@
+{% macro show_dependencies(msg="''") %}
+    select '<<<', {{msg}};
+    select dependencies_table, substr(name,1,10) from system.tables where database=currentDatabase() order by name;
+{% endmacro %}
+
+
+drop table if exists a;
+drop table if exists b;
+drop view if exists mv1;
+drop view if exists mv2;
+create table a (x UInt32, v String) engine=Memory;
+create table b (x UInt32, v String) engine=Log;
+create table c (x UInt32, v String) engine=MergeTree ORDER BY x;
+create materialized view mv1 engine=TinyLog as with subquery as (select * from a) select * from subquery;
+create materialized view mv2 to b as select * from a;
+create materialized view mv3 engine=Memory as select * from mv2;
+{{ show_dependencies("'initial'") }}
+
+rename table mv2 to new_mv2;
+{{ show_dependencies("'rename mv2'") }}
+
+rename table mv3 to new_mv2; -- {serverError TABLE_ALREADY_EXISTS}
+{{ show_dependencies("'no change'") }}
+
+rename table b to new_b;
+rename table a to new_a;
+{{ show_dependencies("'rename a and b'") }}
+
+rename table new_b to b;
+rename table new_a to a;
+rename table new_mv2 to mv2;
+{{ show_dependencies("'back'") }}
+
+alter table mv2 modify query select * from c;
+{{ show_dependencies("'alter mv2'") }}
+
+drop table mv1;
+{{ show_dependencies("'drop mv1'") }}

@@ -624,9 +624,9 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
-    const auto & old_select = old_metadata.getSelectQuery();
+    // const auto & old_select = old_metadata.getSelectQuery();
 
-    DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+    // DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
     new_metadata.setSelectQuery(new_select);
 
@@ -734,9 +734,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         assert(inner_table_id.database_name == old_table_id.database_name);
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
-    const auto & select_query = metadata_snapshot->getSelectQuery();
-    /// TODO: Actually, we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+    // const auto & select_query = metadata_snapshot->getSelectQuery();
+    // /// TODO: Actually, we don't need to update dependency if MV has UUID, but then db and table name will be outdated
+    // DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 
     if (refresher)
         refresher->rename(new_table_id, getTargetTableId());

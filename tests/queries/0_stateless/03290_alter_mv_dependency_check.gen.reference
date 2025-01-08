@@ -1,0 +1,61 @@
+<<<	initial
+[]	.inner_id.
+[]	.inner_id.
+['mv2','mv1']	a
+[]	b
+[]	c
+[]	mv1
+['mv3']	mv2
+[]	mv3
+<<<	rename mv2
+[]	.inner_id.
+[]	.inner_id.
+['new_mv2','mv1']	a
+[]	b
+[]	c
+[]	mv1
+[]	mv3
+[]	new_mv2
+<<<	no change
+[]	.inner_id.
+[]	.inner_id.
+['new_mv2','mv1']	a
+[]	b
+[]	c
+[]	mv1
+[]	mv3
+[]	new_mv2
+<<<	rename a and b
+[]	.inner_id.
+[]	.inner_id.
+[]	c
+[]	mv1
+[]	mv3
+[]	new_a
+[]	new_b
+[]	new_mv2
+<<<	back
+[]	.inner_id.
+[]	.inner_id.
+['mv2','mv1']	a
+[]	b
+[]	c
+[]	mv1
+['mv3']	mv2
+[]	mv3
+<<<	alter mv2
+[]	.inner_id.
+[]	.inner_id.
+['mv1']	a
+[]	b
+['mv2']	c
+[]	mv1
+['mv3']	mv2
+[]	mv3
+<<<	drop mv1
+[]	.inner_id.
+[]	a
+[]	b
+['mv2']	c
+['mv3']	mv2
+[]	mv3
