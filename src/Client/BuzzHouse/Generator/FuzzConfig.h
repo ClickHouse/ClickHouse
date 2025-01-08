@@ -34,6 +34,8 @@ using JSONParserImpl = DB::DummyJSONParser;
 namespace BuzzHouse
 {
 
+using JSONObjectType = JSONParserImpl::Element;
+
 class ServerCredentials
 {
 public:
@@ -75,45 +77,27 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::string database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
+    std::map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
+        {"hostname", [&](const JSONObjectType & value) { hostname = std::string(value.getString()); }},
+        {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
+        {"unix_socket", [&](const JSONObjectType & value) { unix_socket = std::string(value.getString()); }},
+        {"user", [&](const JSONObjectType & value) { user = std::string(value.getString()); }},
+        {"password", [&](const JSONObjectType & value) { password = std::string(value.getString()); }},
+        {"database", [&](const JSONObjectType & value) { database = std::string(value.getString()); }},
+        {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(std::string(value.getString())); }}};
+
     for (const auto [key, value] : jobj.getObject())
     {
-        if (key == "hostname")
+        const std::string & nkey = std::string(key);
+
+        if (config_entries.find(nkey) == config_entries.end())
         {
-            hostname = std::string(value.getString());
+            throw std::runtime_error("Unknown Server option: " + nkey);
         }
-        else if (key == "port")
-        {
-            port = static_cast<uint32_t>(value.getUInt64());
-        }
-        else if (key == "mysql_port")
-        {
-            mysql_port = static_cast<uint32_t>(value.getUInt64());
-        }
-        else if (key == "unix_socket")
-        {
-            unix_socket = std::string(value.getString());
-        }
-        else if (key == "user")
-        {
-            user = std::string(value.getString());
-        }
-        else if (key == "password")
-        {
-            password = std::string(value.getString());
-        }
-        else if (key == "database")
-        {
-            database = std::string(value.getString());
-        }
-        else if (key == "query_log_file")
-        {
-            query_log_file = std::filesystem::path(std::string(value.getString()));
-        }
-        else
-        {
-            throw std::runtime_error("Unknown option: " + std::string(key));
-        }
+        config_entries.at(nkey)(value);
     }
+
     return std::optional<ServerCredentials>(
         ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, query_log_file));
 }
@@ -141,7 +125,7 @@ public:
     FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), log(getLogger("BuzzHouse"))
     {
         JSONParserImpl parser;
-        JSONParserImpl::Element object;
+        JSONObjectType object;
         std::ifstream inputFile(path);
         std::string fileContent;
 
@@ -159,113 +143,50 @@ public:
         {
             throw std::runtime_error("Parsed JSON value is not an object");
         }
+
+        std::map<std::string, std::function<void(const JSONObjectType &)>> config_entries
+            = {{"db_file_path",
+                [&](const JSONObjectType & value)
+                {
+                    db_file_path = std::filesystem::path(std::string(value.getString()));
+                    fuzz_out = db_file_path / "fuzz.data";
+                }},
+               {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(std::string(value.getString())); }},
+               {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
+               {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
+               {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
+               {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
+               {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
+               {"max_depth",
+                [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+               {"max_width",
+                [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+               {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
+               {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
+               {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
+               {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
+               {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
+               {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
+               {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
+               {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
+               {"clickhouse",
+                [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
+               {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
+               {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
+               {"sqlite", [&](const JSONObjectType & value) { sqlite_server = loadServerCredentials(value, "sqlite", 0); }},
+               {"mongodb", [&](const JSONObjectType & value) { mongodb_server = loadServerCredentials(value, "mongodb", 27017); }},
+               {"redis", [&](const JSONObjectType & value) { redis_server = loadServerCredentials(value, "redis", 6379); }},
+               {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }}};
+
         for (const auto [key, value] : object.getObject())
         {
-            if (key == "db_file_path")
+            const std::string & nkey = std::string(key);
+
+            if (config_entries.find(nkey) == config_entries.end())
             {
-                db_file_path = std::filesystem::path(std::string(value.getString()));
-                fuzz_out = db_file_path / "fuzz.data";
+                throw std::runtime_error("Unknown BuzzHouse option: " + nkey);
             }
-            else if (key == "log_path")
-            {
-                log_path = std::filesystem::path(std::string(value.getString()));
-            }
-            else if (key == "read_log")
-            {
-                read_log = value.getBool();
-            }
-            else if (key == "seed")
-            {
-                seed = value.getUInt64();
-            }
-            else if (key == "min_insert_rows")
-            {
-                min_insert_rows = std::max(UINT64_C(1), value.getUInt64());
-            }
-            else if (key == "max_insert_rows")
-            {
-                max_insert_rows = std::max(UINT64_C(1), value.getUInt64());
-            }
-            else if (key == "min_nested_rows")
-            {
-                min_nested_rows = value.getUInt64();
-            }
-            else if (key == "max_nested_rows")
-            {
-                max_nested_rows = value.getUInt64();
-            }
-            else if (key == "max_depth")
-            {
-                max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64()));
-            }
-            else if (key == "max_width")
-            {
-                max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64()));
-            }
-            else if (key == "max_databases")
-            {
-                max_databases = static_cast<uint32_t>(value.getUInt64());
-            }
-            else if (key == "max_functions")
-            {
-                max_functions = static_cast<uint32_t>(value.getUInt64());
-            }
-            else if (key == "max_tables")
-            {
-                max_tables = static_cast<uint32_t>(value.getUInt64());
-            }
-            else if (key == "max_views")
-            {
-                max_views = static_cast<uint32_t>(value.getUInt64());
-            }
-            else if (key == "time_to_run")
-            {
-                time_to_run = static_cast<uint32_t>(value.getUInt64());
-            }
-            else if (key == "fuzz_floating_points")
-            {
-                fuzz_floating_points = value.getBool();
-            }
-            else if (key == "test_with_fill")
-            {
-                test_with_fill = value.getBool();
-            }
-            else if (key == "use_dump_table_oracle")
-            {
-                use_dump_table_oracle = value.getBool();
-            }
-            else if (key == "clickhouse")
-            {
-                clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005);
-            }
-            else if (key == "mysql")
-            {
-                mysql_server = loadServerCredentials(value, "mysql", 3306, 3306);
-            }
-            else if (key == "postgresql")
-            {
-                postgresql_server = loadServerCredentials(value, "postgresql", 5432);
-            }
-            else if (key == "sqlite")
-            {
-                sqlite_server = loadServerCredentials(value, "sqlite", 0);
-            }
-            else if (key == "mongodb")
-            {
-                mongodb_server = loadServerCredentials(value, "mongodb", 27017);
-            }
-            else if (key == "redis")
-            {
-                redis_server = loadServerCredentials(value, "redis", 6379);
-            }
-            else if (key == "minio")
-            {
-                minio_server = loadServerCredentials(value, "minio", 9000);
-            }
-            else
-            {
-                throw std::runtime_error("Unknown option: " + std::string(key));
-            }
+            config_entries.at(nkey)(value);
         }
         if (min_insert_rows > max_insert_rows)
         {
