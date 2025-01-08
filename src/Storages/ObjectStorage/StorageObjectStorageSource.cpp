@@ -318,10 +318,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     bool read_all_columns)
 {
     static std::mutex initialize_mutex;
-    std::lock_guard lock(initialize_mutex);
 
     ObjectInfoPtr object_info;
-    auto query_settings = configuration->getQuerySettings(context_);
+    StorageObjectStorage::QuerySettings query_settings;
+    {
+        std::lock_guard lock(initialize_mutex);
+        query_settings = configuration->getQuerySettings(context_);
+    }
 
     do
     {
@@ -347,6 +350,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         if (!schema_cache)
             return std::nullopt;
+
+        std::lock_guard lock(initialize_mutex);
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
@@ -379,6 +384,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
+        std::lock_guard lock(initialize_mutex);
+
         CompressionMethod compression_method;
         if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
