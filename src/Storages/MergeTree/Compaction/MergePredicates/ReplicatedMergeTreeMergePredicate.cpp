@@ -40,7 +40,9 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::
     if (inprogress_quorum_part_ptr && *inprogress_quorum_part_ptr == part->name)
         return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
 
-    return {};
+    /// FIXME: remove lock here
+    std::lock_guard lock(queue.state_mutex);
+    return MergeCore::canUsePartInMerges(part->name, part->info);
 }
 
 ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)

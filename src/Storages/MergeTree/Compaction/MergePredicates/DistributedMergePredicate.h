@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
+#include <base/defines.h>
+
 namespace DB
 {
 
@@ -14,6 +16,17 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
 {
+    std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
+    {
+        if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
+            return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previouse virtual parts", name));
+
+        if (committing_blocks_ptr && !committing_blocks_ptr->contains(info.partition_id))
+            return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.partition_id));
+
+        return {};
+    }
+
 public:
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
     {
@@ -50,23 +63,18 @@ public:
         /// (only then we can merge them without mutating the left part), we first check committing_blocks
         /// and then check that these two parts have the same mutation version according to queue.mutations_by_partition.
 
+        chassert(left.name != right.name);
+        chassert(checkCanMergePartsPreconditions(left.name, left.part_info) && checkCanMergePartsPreconditions(right.name, right.part_info));
+
         if (left.part_info.partition_id != right.part_info.partition_id)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
-        for (const PartProperties & part : {left, right})
-            if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(part.part_info).empty())
-                return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", part.name));
-
-        const std::string & partition_id = left.part_info.partition_id;
         int64_t left_max_block = left.part_info.max_block;
         int64_t right_min_block = right.part_info.min_block;
         chassert(left_max_block < right_min_block);
 
         if (committing_blocks_ptr && left_max_block + 1 < right_min_block)
         {
-            if (!committing_blocks_ptr->contains(partition_id))
-                return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", partition_id));
-
             auto committing_blocks_ptrin_partition = committing_blocks_ptr->find(left.part_info.partition_id);
             if (committing_blocks_ptrin_partition != committing_blocks_ptr->end())
             {
@@ -78,29 +86,20 @@ public:
             }
         }
 
-        if (virtual_parts_ptr)
+        if (virtual_parts_ptr && left_max_block + 1 < right_min_block)
         {
-            /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
-            /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-            for (const PartProperties & part : {left, right})
-                if (String containing_part = virtual_parts_ptr->getContainingPart(part.part_info); containing_part != part.name)
-                    return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", part.name, containing_part));
+            /// Fake part which will appear as merge result
+            MergeTreePartInfo gap_part_info(
+                left.part_info.partition_id, left_max_block + 1, right_min_block - 1,
+                MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
-            if (left_max_block + 1 < right_min_block)
-            {
-                /// Fake part which will appear as merge result
-                MergeTreePartInfo gap_part_info(
-                    left.part_info.partition_id, left_max_block + 1, right_min_block - 1,
-                    MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
-
-                /// We don't select parts if any smaller part covered by our merge must exist after
-                /// processing replication log up to log_pointer.
-                Strings covered = virtual_parts_ptr->getPartsCoveredBy(gap_part_info);
-                if (!covered.empty())
-                    return std::unexpected(PreformattedMessage::create(
-                                "There are {} parts (from {} to {}) that are still not present or being processed by other background process on this replica between {} and {}",
-                                covered.size(), covered.front(), covered.back(), left.name, right.name));
-            }
+            /// We don't select parts if any smaller part covered by our merge must exist after
+            /// processing replication log up to log_pointer.
+            Strings covered = virtual_parts_ptr->getPartsCoveredBy(gap_part_info);
+            if (!covered.empty())
+                return std::unexpected(PreformattedMessage::create(
+                            "There are {} parts (from {} to {}) that are still not present or being processed by other background process on this replica between {} and {}",
+                            covered.size(), covered.front(), covered.back(), left.name, right.name));
         }
 
         if (mutations_state_ptr)
@@ -121,6 +120,19 @@ public:
             return std::unexpected(PreformattedMessage::create(
                     "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
                     fmt::join(left.projection_names, ", "), left.name, fmt::join(right.projection_names, ", "), right.name));
+
+        return {};
+    }
+
+    std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
+    {
+        if (auto result = checkCanMergePartsPreconditions(name, info); !result)
+            return result;
+
+        /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+        /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+        if (String containing_part = virtual_parts_ptr->getContainingPart(info); containing_part != name)
+            return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", name, containing_part));
 
         return {};
     }
