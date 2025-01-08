@@ -7,6 +7,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -225,9 +226,12 @@ bool ObjectStorageQueueIFileMetadata::setProcessing()
     auto state = file_status->state.load();
     if (state == FileStatus::State::Processing
         || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed && file_status->retries >= max_loading_retries))
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries))
     {
-        LOG_TEST(log, "File {} has non-processable state `{}`", path, file_status->state.load());
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                 path, state, file_status->retries, max_loading_retries);
         return false;
     }
 
@@ -260,13 +264,54 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     if (state != FileStatus::State::Processing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
 
-    resetProcessingImpl();
-    file_status->reset();
-}
+    SCOPE_EXIT({
+        file_status->reset();
+    });
 
-void ObjectStorageQueueIFileMetadata::resetProcessingImpl()
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "resetProcessingImpl is not implemented");
+    if (!processing_id_version.has_value())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No processing id version set, but state is `Processing` ({})",
+            node_metadata.toString());
+    }
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+    Coordination::Responses responses;
+    const auto zk_client = getZooKeeper();
+    const auto code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    if (Coordination::isHardwareError(code))
+    {
+        LOG_TRACE(log, "Keeper session expired, processing will be automatically reset");
+        return;
+    }
+
+    if (responses[0]->error == Coordination::Error::ZBADVERSION)
+    {
+        LOG_WARNING(
+            log, "Processing node no longer exists ({}) "
+            "while setting file as non-retriable failed. "
+            "This could be as a result of expired keeper session. "
+            "Cannot set file as failed, will retry.",
+            processing_node_path);
+        chassert(false);
+        return;
+    }
+
+    const auto failed_path = responses[0]->error != Coordination::Error::ZOK
+        ? requests[0]->getPath()
+        : requests[1]->getPath();
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to reset processing for file {}: (code: {}, path: {})",
+        path, code, failed_path);
 }
 
 void ObjectStorageQueueIFileMetadata::setProcessed()
@@ -292,15 +337,12 @@ void ObjectStorageQueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
-void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status)
+void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_message, bool reduce_retry_count)
 {
     LOG_TRACE(log, "Setting file {} as failed (path: {}, reduce retry count: {}, exception: {})",
               path, failed_node_path, reduce_retry_count, exception_message);
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
-    if (overwrite_status || file_status->state != FileStatus::State::Failed)
-        file_status->onFailed(exception_message);
-
     node_metadata.last_exception = exception_message;
 
     if (reduce_retry_count)
@@ -322,6 +364,12 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_me
             throw;
         }
     }
+    else
+    {
+        resetProcessing();
+    }
+
+    file_status->onFailed(exception_message);
 
     processing_id.reset();
     processing_id_version.reset();
@@ -340,7 +388,7 @@ void ObjectStorageQueueIFileMetadata::setFailedNonRetriable()
     const auto code = zk_client->tryMulti(requests, responses);
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TRACE(log, "File `{}` failed to process and will not be retried. ", path);
+        LOG_TRACE(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
         return;
     }
 
