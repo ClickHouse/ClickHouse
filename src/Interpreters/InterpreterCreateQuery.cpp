@@ -2049,7 +2049,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
     {
         const String name_hash = getHexUIntLowercase(sipHash64(create.getDatabase() + create.getTable()));
-        const String random_suffix = [&](){
+        const String random_suffix = [&]()
+        {
             if (auto txn = current_context->getZooKeeperMetadataTransaction())
             {
                 /// Avoid different table name on database replicas
