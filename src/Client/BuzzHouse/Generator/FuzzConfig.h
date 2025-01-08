@@ -34,6 +34,33 @@ using JSONParserImpl = DB::DummyJSONParser;
 namespace BuzzHouse
 {
 
+const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), allow_int8 = (1 << 2), allow_int64 = (1 << 3),
+                         allow_int128 = (1 << 4), allow_floating_points = (1 << 5), allow_dates = (1 << 6), allow_date32 = (1 << 7),
+                         allow_datetimes = (1 << 8), allow_datetime64 = (1 << 9), allow_strings = (1 << 10), allow_decimals = (1 << 11),
+                         allow_uuid = (1 << 12), allow_enum = (1 << 13), allow_dynamic = (1 << 14), allow_JSON = (1 << 15),
+                         allow_nullable = (1 << 16), allow_low_cardinality = (1 << 17), allow_array = (1 << 18), allow_map = (1 << 19),
+                         allow_tuple = (1 << 20), allow_variant = (1 << 21), allow_nested = (1 << 22), allow_ipv4 = (1 << 23),
+                         allow_ipv6 = (1 << 24), allow_geo = (1 << 25), set_any_datetime_precision = (1 << 26);
+
+static inline std::vector<std::string> splitString(const std::string & input, const char delimiter)
+{
+    std::vector<std::string> result;
+    const char * str = input.c_str();
+
+    do
+    {
+        const char * begin = str;
+
+        while (*str && *str != delimiter)
+        {
+            str++;
+        }
+        result.push_back(std::string(begin, str));
+    } while (*str++);
+
+    return result;
+}
+
 using JSONObjectType = JSONParserImpl::Element;
 
 class ServerCredentials
@@ -178,7 +205,52 @@ public:
                {"sqlite", [&](const JSONObjectType & value) { sqlite_server = loadServerCredentials(value, "sqlite", 0); }},
                {"mongodb", [&](const JSONObjectType & value) { mongodb_server = loadServerCredentials(value, "mongodb", 27017); }},
                {"redis", [&](const JSONObjectType & value) { redis_server = loadServerCredentials(value, "redis", 6379); }},
-               {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }}};
+               {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
+               {"disabled_types",
+                [&](const JSONObjectType & value)
+                {
+                    std::string input = std::string(value.getString());
+                    std::transform(input.begin(), input.end(), input.begin(), ::tolower);
+                    const auto & split = splitString(input, ',');
+
+                    std::map<std::string, uint32_t> type_entries
+                        = {{"bool", allow_bool},
+                           {"uint", allow_unsigned_int},
+                           {"int8", allow_int8},
+                           {"int64", allow_int64},
+                           {"int128", allow_int128},
+                           {"float", allow_floating_points},
+                           {"date", allow_dates},
+                           {"date32", allow_date32},
+                           {"datetime", allow_datetimes},
+                           {"datetime64", allow_datetime64},
+                           {"string", allow_strings},
+                           {"decimal", allow_decimals},
+                           {"uuid", allow_uuid},
+                           {"enum", allow_enum},
+                           {"uuid", allow_uuid},
+                           {"dynamic", allow_dynamic},
+                           {"json", allow_JSON},
+                           {"nullable", allow_nullable},
+                           {"lcard", allow_low_cardinality},
+                           {"array", allow_array},
+                           {"map", allow_map},
+                           {"tuple", allow_tuple},
+                           {"variant", allow_variant},
+                           {"nested", allow_nested},
+                           {"ipv4", allow_ipv4},
+                           {"ipv6", allow_ipv6},
+                           {"geo", allow_geo}};
+
+                    for (const auto & entry : split)
+                    {
+                        if (type_entries.find(entry) == type_entries.end())
+                        {
+                            throw std::runtime_error("Unknown type optiom: " + entry);
+                        }
+                        type_mask &= (~type_entries.at(entry));
+                    }
+                }}};
 
         for (const auto [key, value] : object.getObject())
         {
