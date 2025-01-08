@@ -104,6 +104,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -927,12 +929,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
+            if (!settings[Setting::allow_experimental_kusto_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
             ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
+            if (!settings[Setting::allow_experimental_prql_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
@@ -1670,8 +1676,8 @@ void executeQuery(
 
     /// Set the result details in case of any exception raised during query execution
     SCOPE_EXIT({
-        if (set_result_details == nullptr)
-            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        if (!set_result_details)
             return;
 
         try
@@ -1706,9 +1712,10 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
+                    {
                         // it will throw std::bad_function_call
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details(result_details);
                     });
 
@@ -1716,7 +1723,7 @@ void executeQuery(
                     {
                         /// reset set_result_details func to avoid calling in SCOPE_EXIT()
                         auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details_copy(result_details);
                     }
                 }

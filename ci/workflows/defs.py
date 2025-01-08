@@ -1,5 +1,7 @@
 from praktika import Artifact, Docker, Job, Secret
-from praktika.settings import Settings
+from praktika.utils import Utils
+
+TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == SettingsTEMP_DIR
 
 
 class RunnerLabels:
@@ -14,8 +16,8 @@ class RunnerLabels:
 
 
 class CIFiles:
-    UNIT_TESTS_RESULTS = "/tmp/praktika/output/unit_tests_result.json"
-    UNIT_TESTS_BIN = "/tmp/praktika/build/src/unit_tests_dbms"
+    UNIT_TESTS_RESULTS = f"{TEMP_DIR}/unit_tests_result.json"
+    UNIT_TESTS_BIN = f"{TEMP_DIR}/build/src/unit_tests_dbms"
 
 
 BASE_BRANCH = "master"
@@ -259,6 +261,7 @@ class JobNames:
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
     CLICKBENCH = "ClickBench"
+    DOCKER_SERVER = "Docker server"
 
 
 class ToolSet:
@@ -313,7 +316,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -330,7 +333,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
+        path=f"{TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
     ).parametrize(
         names=[
             ArtifactNames.CH_ODBC_B_AMD_DEBUG,
@@ -343,23 +346,10 @@ ARTIFACTS = [
             ArtifactNames.CH_ODBC_B_ARM_ASAN,
         ]
     ),
-    # *Artifact.Config(
-    #     name="...",
-    #     type=Artifact.Type.S3,
-    #     path=f"{Settings.TEMP_DIR}/build/src/unit_tests_dbms",
-    # ).parametrize(
-    #     names=[
-    #         ArtifactNames.UNITTEST_AMD_BINARY,
-    #         ArtifactNames.UNITTEST_AMD_ASAN,
-    #         ArtifactNames.UNITTEST_AMD_TSAN,
-    #         ArtifactNames.UNITTEST_AMD_MSAN,
-    #         ArtifactNames.UNITTEST_AMD_UBSAN,
-    #     ]
-    # ),
     *Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_DEBUG,
@@ -372,22 +362,22 @@ ARTIFACTS = [
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_ASAN,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ),
     *Artifact.Config(
         name="",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
+        path=f"{TEMP_DIR}/perf_wd/*.html",
     ).parametrize(
         names=[
             ArtifactNames.PERF_REPORTS_AMD_1_3,
@@ -775,4 +765,29 @@ class Jobs:
             [ArtifactNames.CH_AMD_RELEASE],
             [ArtifactNames.CH_ARM_RELEASE],
         ],
+    )
+    # docker_job = Job.Config(
+    #     name=JobNames.DOCKER_SERVER,
+    #     runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+    #     command="python3 ./ci/jobs/docker_server_job.py --from-binary",
+    #     digest_config=Job.CacheDigestConfig(
+    #         include_paths=[
+    #             "./ci/jobs/docker_server_from_binary.py",
+    #             "./ci/docker/clickhouse-server",
+    #         ],
+    #     ),
+    #     requires=[ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ARM_RELEASE],
+    # )
+    docker_job = Job.Config(
+        name=JobNames.DOCKER_SERVER,
+        # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
+        runs_on=[RunnerLabels.STYLE_CHECK_AMD],
+        command="python3 ./ci/jobs/docker_server_job.py --from-deb",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docker_server_job.py",
+                "./ci/docker/clickhouse-server",
+            ],
+        ),
+        requires=[ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.DEB_ARM_RELEASE],
     )
