@@ -67,8 +67,8 @@ private:
     void addImpl(size_t amount, size_t & count_value, double & tokens_value);
 
     size_t count{0};
-    mutable size_t max_speed{0}; /// in tokens per second.
-    mutable size_t max_burst{0}; /// in tokens.
+    size_t max_speed{0}; /// in tokens per second.
+    size_t max_burst{0}; /// in tokens.
     const UInt64 limit{0}; /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     std::mutex mutex;

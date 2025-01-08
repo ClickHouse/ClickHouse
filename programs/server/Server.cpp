@@ -1821,11 +1821,12 @@ try
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            global_context->setRemoteReadThrottler(new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server]);
-            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server]);
+            size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
+            size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
 
-            global_context->setRemoteWriteThrottler(new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server]);
-            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server]);
+            global_context->reloadRemoteThrottlerConfig(read_bandwidth,write_bandwidth);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", read_bandwidth);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", write_bandwidth);
 
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);

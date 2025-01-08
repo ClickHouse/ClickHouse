@@ -389,6 +389,15 @@ def test_read_throttling_reload():
     _, took = elapsed(node.query, f"select * from data")
     assert_took(took, 3)
 
+    # update bandwidth back to 0
+    node_update_config(
+        "server", "max_remote_read_network_bandwidth_for_server", "0", False
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    _, took = elapsed(node.query, f"select * from data")
+    assert took < 1
+
 
 @pytest.mark.parametrize(
     "policy,mode,setting,value,should_take",
@@ -472,6 +481,15 @@ def test_write_throttling_reload():
     # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
     assert_took(took, 3)
+
+    # update bandwidth back to 0
+    node_update_config(
+        "server", "max_remote_write_network_bandwidth_for_server", "0", False
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
+    assert took < 1
 
 
 def test_max_mutations_bandwidth_for_server():
