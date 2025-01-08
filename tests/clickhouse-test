@@ -207,8 +207,6 @@ class SharedEngineReplacer:
             (
                 self.replace_replicated
                 or self.replace_non_replicated
-                or self.args.replace_mt_with_rmt
-                or self.args.replace_log_with_mt
             )
             and "shared_merge_tree" not in self.file_name
         ) or self.cloud
@@ -306,18 +304,6 @@ class SharedEngineReplacer:
                 if self.cloud and line.startswith("-- { echo"):
                     self.replace_replicated = True
                     self.replace_non_replicated = True
-
-                if args.replace_log_with_mt:
-                    line = self._replace_data_engines(line, replace_engine="MergeTree")
-
-                if args.replace_mt_with_rmt:
-                    line = self._replace_non_replicated(
-                        line,
-                        reference_file,
-                        use_random_path=False,
-                        add_path=False,
-                        replace_with="Replicated",
-                    )
 
                 if (
                     self._is_select_line(line)
@@ -3764,18 +3750,6 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
-    )
-    parser.add_argument(
-        "--replace-mt-with-rmt",
-        action="store_true",
-        default=os.environ.get("REPLACE_MT_WITH_RMT", False),
-        help="Replace ordinary MergeTree engine with ReplicatedMergeTree",
-    )
-    parser.add_argument(
-        "--replace-log-with-mt",
-        action="store_true",
-        default=os.environ.get("REPLACE_LOG_WITH_MT", False),
-        help="Replace Log, TinyLog and Memory engine with MergeTree",
     )
     parser.add_argument(
         "--parallel-replicas",
