@@ -118,7 +118,6 @@ private:
     bool set_totals = false;
 };
 
-
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
 {
 public:

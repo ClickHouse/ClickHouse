@@ -326,8 +326,6 @@ struct LockedKey : private boost::noncopyable
         bool can_be_broken = false,
         bool invalidate_queue_entry = true);
 
-    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
-
     bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;

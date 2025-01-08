@@ -184,6 +184,9 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
 
+    /// Block with ordinary + materialized columns + subcolumns.
+    Block getSampleBlockWithSubcolumns() const;
+
     /// Block with ordinary + ephemeral.
     Block getSampleBlockInsertable() const;
 

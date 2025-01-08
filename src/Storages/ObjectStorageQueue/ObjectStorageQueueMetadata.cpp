@@ -18,7 +18,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
-#include <numeric>
 
 
 namespace ProfileEvents
@@ -35,11 +34,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsBool cloud_mode;
+    extern const SettingsBool s3queue_migrate_old_metadata_to_buckets;
 }
 
 namespace ObjectStorageQueueSetting
@@ -119,16 +120,20 @@ private:
 };
 
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
+    ObjectStorageType storage_type_,
     const fs::path & zookeeper_path_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
-    size_t cleanup_interval_max_ms_)
+    size_t cleanup_interval_max_ms_,
+    size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
+    , storage_type(storage_type_)
     , mode(table_metadata.getMode())
     , zookeeper_path(zookeeper_path_)
-    , buckets_num(getBucketsNum(table_metadata_))
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
+    , keeper_multiread_batch_size(keeper_multiread_batch_size_)
+    , buckets_num(getBucketsNum(table_metadata_))
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
@@ -220,7 +225,7 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
+void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
 {
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
@@ -307,6 +312,40 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
             }
             new_table_metadata.tracked_files_ttl_sec = value;
         }
+        else if (change.name == "buckets")
+        {
+            if (mode != ObjectStorageQueueMode::ORDERED)
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `buckets` setting is allowed only for Ordered mode");
+            }
+
+            if (!context->getSettingsRef()[Setting::s3queue_migrate_old_metadata_to_buckets])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `buckets` setting is allowed only for migration of old metadata structure. "
+                    "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1");
+            }
+
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.buckets == value)
+            {
+                LOG_TRACE(log, "Setting `buckets` already equals {}. "
+                        "Will do nothing", value);
+                continue;
+            }
+            if (table_metadata.buckets != 0)
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "It is not allowed to modify `buckets` settings "
+                    "when it is already set to a non-zero value");
+            }
+            migrateToBucketsInKeeper(value);
+            new_table_metadata.buckets = value;
+        }
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
@@ -320,6 +359,14 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
     zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
     table_metadata.syncChangeableSettings(new_table_metadata);
+}
+
+void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
+{
+    chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
+    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value);
+    buckets_num = value;
+    table_metadata.buckets = value;
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
@@ -361,7 +408,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     {
         if (zookeeper->exists(table_metadata_path))
         {
-            const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata");
+            const auto metadata_str = zookeeper->get(table_metadata_path);
             const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
 
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
@@ -658,9 +705,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
-        {
             LOG_TEST(log, "Path {} does not exist", zookeeper_failed_path.string());
-        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
     }
@@ -700,21 +745,35 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     /// Ordered in ascending order of timestamps.
     std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
 
+    std::vector<std::string> paths;
     auto fetch_nodes = [&](const Strings & nodes, const fs::path & base_path)
     {
+        auto get_paths = [&]
+        {
+            auto response = zk_client->tryGet(paths);
+
+            for (size_t i = 0; i < response.size(); ++i)
+            {
+                if (response[i].error == Coordination::Error::ZNONODE)
+                {
+                    LOG_ERROR(log, "Failed to fetch node metadata {}", paths[i]);
+                    continue;
+                }
+
+                chassert(response[i].error == Coordination::Error::ZOK);
+                sorted_nodes.emplace(paths[i], ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[i].data));
+                LOG_TEST(log, "Fetched metadata for node {}", paths[i]);
+            }
+            paths.clear();
+        };
+
         for (const auto & node : nodes)
         {
-            const std::string path = base_path / node;
+            paths.push_back(base_path / node);
             try
             {
-                std::string metadata_str;
-                if (zk_client->tryGet(path, metadata_str))
-                {
-                    sorted_nodes.emplace(path, ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(metadata_str));
-                    LOG_TEST(log, "Fetched metadata for node {}", path);
-                }
-                else
-                    LOG_ERROR(log, "Failed to fetch node metadata {}", path);
+                if (paths.size() == keeper_multiread_batch_size)
+                    get_paths();
             }
             catch (const zkutil::KeeperException & e)
             {
@@ -728,6 +787,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                 throw;
             }
         }
+
+        if (!paths.empty())
+            get_paths();
     };
 
     fetch_nodes(processed_nodes, zookeeper_processed_path);
@@ -744,7 +806,56 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
              table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
 
+    static constexpr size_t keeper_multi_batch_size = 100;
+    Coordination::Requests remove_requests;
+    Coordination::Responses remove_responses;
+    remove_requests.reserve(keeper_multi_batch_size);
+    remove_responses.reserve(keeper_multi_batch_size);
+
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - table_metadata.tracked_files_limit : 0;
+
+    const auto remove_nodes = [&](bool node_limit)
+    {
+        code = zk_client->tryMulti(remove_requests, remove_responses);
+
+        if (code == Coordination::Error::ZOK)
+        {
+            if (node_limit)
+                nodes_to_remove -= remove_requests.size();
+        }
+        else
+        {
+            for (size_t i = 0; i < remove_requests.size(); ++i)
+            {
+                if (remove_responses[i]->error == Coordination::Error::ZOK)
+                {
+                    if (node_limit)
+                        --nodes_to_remove;
+                }
+                else if (remove_responses[i]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
+                {
+                    /// requests with ZRUNTIMEINCONSISTENCY were not processed because the multi request was aborted before
+                    /// so we try removing it again without multi requests
+                    code = zk_client->tryRemove(remove_requests[i]->getPath());
+                    if (code == Coordination::Error::ZOK)
+                    {
+                        if (node_limit)
+                            --nodes_to_remove;
+                    }
+                    else
+                    {
+                        LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", remove_requests[i]->getPath(), code);
+                    }
+                }
+                else
+                {
+                    LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", remove_requests[i]->getPath(), remove_responses[i]->error);
+                }
+            }
+        }
+        remove_requests.clear();
+    };
+
     for (const auto & node : sorted_nodes)
     {
         if (nodes_to_remove)
@@ -753,12 +864,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                      node.metadata.file_path, node.zk_path);
 
             local_file_statuses->remove(node.metadata.file_path, /* if_exists */true);
-
-            code = zk_client->tryRemove(node.zk_path);
-            if (code == Coordination::Error::ZOK)
-                --nodes_to_remove;
-            else
-                LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", node.zk_path, code);
+            remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
+            /// we either reach max multi batch size OR we already added maximum amount of nodes we want to delete based on the node limit
+            if (remove_requests.size() == keeper_multi_batch_size || remove_requests.size() == nodes_to_remove)
+                remove_nodes(/*node_limit=*/true);
         }
         else if (check_nodes_ttl)
         {
@@ -769,10 +878,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                         node.metadata.file_path, node.zk_path);
 
                 local_file_statuses->remove(node.metadata.file_path, /* if_exists */true);
-
-                code = zk_client->tryRemove(node.zk_path);
-                if (code != Coordination::Error::ZOK)
-                    LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", node.zk_path, code);
+                remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
+                if (remove_requests.size() == keeper_multi_batch_size)
+                    remove_nodes(/*node_limit=*/false);
             }
             else if (!nodes_to_remove)
             {
@@ -788,6 +896,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             break;
         }
     }
+
+    if (!remove_requests.empty())
+        remove_nodes(/*node_limit=*/false);
 
     LOG_TRACE(log, "Node limits check finished");
 }

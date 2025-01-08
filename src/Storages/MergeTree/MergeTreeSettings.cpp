@@ -202,7 +202,6 @@ namespace ErrorCodes
     DECLARE(String, storage_policy, "default", "Name of storage disk policy", 0) \
     DECLARE(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
     DECLARE(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", 0) \
     DECLARE(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm.", 0) \
     DECLARE(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited. This setting is the default that can be overridden by the query-level setting with the same name.", 0) \
@@ -221,6 +220,8 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, "Disable FETCH PARTITION query for zero copy replication.", 0) \
     DECLARE(Bool, enable_block_number_column, false, "Enable persisting column _block_number for each row.", 0) ALIAS(allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, "Enable persisting column _block_offset for each row.", 0) \
+    DECLARE(Bool, add_minmax_index_for_numeric_columns, false, "Automatically create min-max indices for columns of numeric type", 0) \
+    DECLARE(Bool, add_minmax_index_for_string_columns, false, "Automatically create min-max indices for columns of string type", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", EXPERIMENTAL) \
@@ -231,6 +232,7 @@ namespace ErrorCodes
     DECLARE(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", EXPERIMENTAL) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, "Force read-through filesystem cache for merges", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
@@ -284,7 +286,7 @@ namespace ErrorCodes
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(MACRO) \
-    MACRO(index_granularity)
+    MACRO(index_granularity)                           \
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
     MERGE_TREE_SETTINGS(M, ALIAS)             \
@@ -773,7 +775,8 @@ std::string_view MergeTreeSettings::resolveName(std::string_view name)
 
 bool MergeTreeSettings::isReadonlySetting(const String & name)
 {
-    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts";
+    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts"
+           || name == "add_minmax_index_for_numeric_columns" || name == "add_minmax_index_for_string_columns";
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)
