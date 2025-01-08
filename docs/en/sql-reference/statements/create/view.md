@@ -7,7 +7,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/docs/en/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 

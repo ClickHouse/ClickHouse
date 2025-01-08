@@ -6,13 +6,13 @@ sidebar_label: IP Addresses
 
 # Functions for Working with IPv4 and IPv6 Addresses
 
-## IPv4NumToString
+## IPv4NumToString {#IPv4NumToString}
 
 Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
 
 Alias: `INET_NTOA`.
 
-## IPv4StringToNum
+## IPv4StringToNum {#IPv4StringToNum}
 
 The reverse function of [IPv4NumToString](#IPv4NumToString). If the IPv4 address has an invalid format, it throws exception.
 

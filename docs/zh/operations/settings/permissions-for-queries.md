@@ -45,7 +45,7 @@ ClickHouse中的查询可以分为几种类型:
 
 允许或拒绝 [DDL](https://zh.wikipedia.org/zh-cn/数据定义语言) 查询。
 
-从 [上文](#permissions_for_queries) 查看查询是如何被划分为多种类型的。
+从 [上文](/docs/zh/operations/settings/permissions-for-queries) 查看查询是如何被划分为多种类型的。
 
 可能的值:
 
