@@ -389,6 +389,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return processors;
         });
 
+        pipeline.resize(params.max_threads, /* force = */ true);
+
         aggregating = collector.detachProcessors(0);
         return;
     }
@@ -733,9 +735,6 @@ void AggregatingStep::serialize(Serialization & ctx) const
     if (!sort_description_for_merging.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep optimized for in-order is not supported.");
 
-    if (!grouping_sets_params.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep with grouping sets is not supported.");
-
     if (explicit_sorting_required_for_aggregation_in_order)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep explicit_sorting_required_for_aggregation_in_order is not supported.");
 
@@ -770,6 +769,18 @@ void AggregatingStep::serialize(Serialization & ctx) const
     for (const auto & key : params.keys)
         writeStringBinary(key, ctx.out);
 
+    if (!grouping_sets_params.empty())
+    {
+        writeVarUInt(grouping_sets_params.size(), ctx.out);
+        for (const auto & grouping_set : grouping_sets_params)
+        {
+            /// Only used keys are needed.
+            writeVarUInt(grouping_set.used_keys.size(), ctx.out);
+            for (const auto & used_key : grouping_set.used_keys)
+                writeStringBinary(used_key, ctx.out);
+        }
+    }
+
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
@@ -790,14 +801,36 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
 
-    if (has_grouping_sets)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep with grouping sets is not supported.");
-
     UInt64 num_keys;
     readVarUInt(num_keys, ctx.in);
     Names keys(num_keys);
     for (auto & key : keys)
         readStringBinary(key, ctx.in);
+
+    GroupingSetsParamsList grouping_sets_params;
+    if (has_grouping_sets)
+    {
+        UInt64 num_groups;
+        readVarUInt(num_groups, ctx.in);
+        for (size_t group_num = 0; group_num < num_groups; ++group_num)
+        {
+            auto & grouping_set = grouping_sets_params.emplace_back();
+            UInt64 num_used_keys;
+            readVarUInt(num_used_keys, ctx.in);
+            grouping_set.used_keys.resize(num_used_keys);
+            NameSet used_keys_set;
+            for (auto & used_key : grouping_set.used_keys)
+            {
+                readStringBinary(used_key, ctx.in);
+                used_keys_set.insert(used_key);
+            }
+            if (num_keys > num_used_keys)
+                grouping_set.missing_keys.reserve(num_keys - num_used_keys);
+            for (const auto & key : keys)
+                if (!used_keys_set.contains(key))
+                    grouping_set.missing_keys.push_back(key);
+        }
+    }
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in);
@@ -837,7 +870,6 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
     };
 
     SortDescription sort_description_for_merging;
-    GroupingSetsParamsList grouping_sets_params;
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

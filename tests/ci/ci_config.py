@@ -75,6 +75,7 @@ class CI:
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
                 BuildNames.PACKAGE_ASAN,
+                BuildNames.BINARY_TIDY,
                 JobNames.STYLE_CHECK,
                 JobNames.BUILD_CHECK,
                 JobNames.UNIT_TEST_ASAN,
@@ -493,6 +494,21 @@ class CI:
             required_builds=[BuildNames.PACKAGE_TSAN],
         ),
         JobNames.AST_FUZZER_TEST_UBSAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_UBSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_DEBUG: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG],
+        ),
+        JobNames.BUZZHOUSE_TEST_ASAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ASAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_MSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_MSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_TSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_TSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_UBSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(

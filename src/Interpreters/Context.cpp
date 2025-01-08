@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include "Common/ISlotControl.h"
 #include <Common/AsyncLoader.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
@@ -22,6 +23,7 @@
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/isLocalAddress.h>
+#include <Common/ConcurrencyControl.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -413,6 +415,8 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
+    UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -1889,6 +1893,36 @@ void Context::setMutationWorkload(const String & value)
     shared->mutation_workload = value;
 }
 
+UInt64 Context::getConcurrentThreadsSoftLimitNum() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_soft_limit_num;
+}
+
+UInt64 Context::getConcurrentThreadsSoftLimitRatioToCores() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_soft_limit_ratio_to_cores;
+}
+
+UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
+{
+    std::lock_guard lock(shared->mutex);
+    SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
+    if (num > 0 && num < concurrent_threads_soft_limit)
+        concurrent_threads_soft_limit = num;
+    if (ratio_to_cores > 0)
+    {
+        auto value = ratio_to_cores * getNumberOfCPUCoresToUse();
+        if (value > 0 && value < concurrent_threads_soft_limit)
+            concurrent_threads_soft_limit = value;
+    }
+    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+    shared->concurrent_threads_soft_limit_num = num;
+    shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
+    return concurrent_threads_soft_limit;
+}
+
 
 Scalars Context::getScalars() const
 {
@@ -3146,6 +3180,16 @@ void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
+}
+
+BackupsInMemoryHolder & Context::getBackupsInMemory()
+{
+    return backups_in_memory;
+}
+
+const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+{
+    return backups_in_memory;
 }
 
 
