@@ -153,6 +153,7 @@ public:
                 }},
                {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(std::string(value.getString())); }},
                {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
+               {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
                {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
                {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
                {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
