@@ -73,6 +73,10 @@
 02781_data_skipping_index_merge_tree_min_for_seek
     max bytes: 1.00 B, current bytes: 60.00 B
 02950_part_offset_as_primary_key
+    max rows: 3.00, current rows: 4.00
+01480_binary_operator_monotonicity
+00955_test_final_mark_use
+01624_soft_constraints
 
     ORDER BY ALL is missing for multiple queries
 00326_long_function_multi_if
@@ -100,6 +104,35 @@
 03045_unknown_identifier_alias_substitution
 02561_temporary_table_sessions
 
+    https://github.com/ClickHouse/ClickHouse/issues/74324
+    MULTIPLE_EXPRESSIONS_FOR_ALIAS
+03171_function_to_subcolumns_fuzzer
+00597_push_down_predicate_long
+02559_multiple_read_steps_in_prewhere
+
+    https://github.com/ClickHouse/ClickHouse/issues/74329
+    Column with Array type is not represented by ColumnArray column
+02834_array_exists_segfault
+
+    https://github.com/ClickHouse/ClickHouse/issues/74335
+    Bad get: has Decimal32, requested Decimal128
+00502_sum_map
+
+    https://github.com/ClickHouse/ClickHouse/issues/74337
+    Duplicates on JOIN + CROSS JOIN
+01852_multiple_joins_with_union_join
+
+    https://github.com/ClickHouse/ClickHouse/issues/74341
+    Duplicates on RIGHT JOIN with Values table
+03006_join_on_inequal_expression_3.gen
+
+    optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
+02317_distinct_in_order_optimization
+
+    https://github.com/ClickHouse/ClickHouse/issues/74343
+    Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
+03240_insert_select_named_tuple
+
 
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
@@ -115,6 +148,9 @@
 01418_query_scope_constants_and_remote
 01758_optimize_skip_unused_shards_once
 03164_parallel_replicas_range_filter_min_max
+01245_limit_infinite_sources
+01812_optimize_skip_unused_shards_single_node
+01913_exact_rows_before_limit_full
 
     Transactions
 02421_truncate_isolation_no_merges
@@ -123,10 +159,13 @@
     query: select 'commit', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
 01173_transaction_control_queries
 01171_mv_select_insert_isolation_long
+02345_implicit_transaction
 
     Storage Join/Set
-    Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (version 25.1.1.1927 (official build)) (from [::1]:37472) (comment: 01594_storage_join_uuid.sql) (in query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
+    Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
 01594_storage_join_uuid
+    Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
+02498_storage_join_key_positions
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
     Method read is not supported by storage Set
@@ -180,18 +219,18 @@
 01681_bloom_filter_nullable_column
 
 
-    exclude tag? Tags: shard
-01812_optimize_skip_unused_shards_single_node
-
-
     Setting offset=5 not work
 01892_setting_limit_offset_distributed
 
     minor: not logged ProfileEvents['SleepFunctionCalls']
 01947_mv_subquery
 
-    minor: query is formatted in system.query_log
+    minor: formatted query in system.query_log
 02751_query_log_test_partitions
+
+    minor: distributed
+02517_wrong_total_structure_crash
+02985_shard_query_start_time
 
     ## From cloud/private
 
@@ -372,9 +411,9 @@
 03266_lowcardinality_string_monotonicity
 03273_group_by_in_order_still_used_when_group_by_key_doesnt_match_order_by_key
 03273_primary_index_cache
-03276_subcolumns_in_skipping_indexes
+03276_subcolumns_in_skipping_indexes.gen
 03277_prewarm_cache_2
-03278_json_subcolumns_in_skipping_indexes
+03278_json_subcolumns_in_skipping_indexes.gen
 00443_preferred_block_size_bytes
 00933_test_fix_extra_seek_on_compressed_cache
 01508_partition_pruning_long_1
@@ -405,6 +444,10 @@
 03279_join_choose_build_table
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
+03165_string_functions_with_token_text_indexes
+02944_variant_as_common_type
+02862_sorted_distinct_sparse_fix
+02417_load_marks_async
 
 
     https://github.com/ClickHouse/clickhouse-private/issues/14887

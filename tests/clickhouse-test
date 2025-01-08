@@ -102,7 +102,6 @@ class SharedEngineReplacer:
 
     OLD_SYNTAX_OR_ARGUMENTS_RE = r"Tree\(.*[0-9]+.*\)"
 
-    # TODO Clusters to replace with current database cluster
     CLUSTER_KEYWORDS = [
         "test_shard_localhost",
         "test_shard_localhost_secure",
@@ -3272,7 +3271,7 @@ def main(args):
 
     if args.parallel_replicas is True:
         skip_list_parallel_replicas = try_get_skip_list(
-            base_dir, "../parallel_replicas_skip.txt"
+            base_dir, "../parallel_replicas_blacklist.txt"
         )
         skip_list.extend(skip_list_parallel_replicas)
 
