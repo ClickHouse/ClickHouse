@@ -619,6 +619,8 @@ try
                 else
                     flags |= O_CREAT;
 
+                chassert(out_file_buf.get() == nullptr);
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
@@ -693,6 +695,10 @@ Do you want to output it anyway? [y/N] )", current_format)))
 }
 catch (...)
 {
+    if (out_file_buf)
+        out_file_buf->cancel();
+    out_file_buf.reset();
+
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
@@ -931,6 +937,21 @@ void ClientBase::initKeystrokeInterceptor()
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
     }
 }
+
+
+String ClientBase::appendSmileyIfNeeded(const String & prompt_)
+{
+    static constexpr String smiley = ":) ";
+
+    if (prompt_.empty())
+        return smiley;
+
+    if (prompt_.ends_with(smiley))
+        return prompt_;
+
+    return prompt_ + " " + smiley;
+}
+
 
 void ClientBase::updateSuggest(const ASTPtr & ast)
 {
@@ -1509,6 +1530,7 @@ void ClientBase::resetOutput()
             have_error = true;
         }
     }
+
     output_format.reset();
 
     logs_out_stream.reset();
@@ -2343,6 +2365,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    assert(!buzz_house);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2580,6 +2603,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
+    assert(!buzz_house);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -2603,9 +2627,9 @@ bool ClientBase::processQueryText(const String & text)
 }
 
 
-String ClientBase::prompt() const
+String ClientBase::getPrompt() const
 {
-    return prompt_by_server_display_name;
+    return prompt;
 }
 
 
@@ -2810,7 +2834,7 @@ void ClientBase::runInteractive()
             lr.enableBracketedPaste();
             SCOPE_EXIT({ lr.disableBracketedPaste(); });
 
-            input = lr.readLine(prompt(), ":-] ");
+            input = lr.readLine(getPrompt(), ":-] ");
         }
 
         if (input.empty())
@@ -2892,7 +2916,7 @@ void ClientBase::runInteractive()
     if (isNewYearMode())
         output_stream << "Happy new year." << std::endl;
     else if (isChineseNewYearMode(local_tz))
-        output_stream << "Happy Chinese new year. 春节快乐!" << std::endl;
+        output_stream << "Happy Chinese new year. 春节快乐!" << fmt::format(" {}年快乐.", getChineseZodiac()) << std::endl;
     else
         output_stream << "Bye." << std::endl;
 }
@@ -2914,7 +2938,7 @@ void ClientBase::runNonInteractive()
     if (delayed_interactive)
         initQueryIdFormats();
 
-    if (!queries_files.empty())
+    if (!buzz_house && !queries_files.empty())
     {
         for (const auto & queries_file : queries_files)
         {
@@ -2929,7 +2953,12 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    if (!queries.empty())
+    if (buzz_house)
+    {
+        if (!buzzHouse())
+            return;
+    }
+    else if (!buzz_house && !queries.empty())
     {
         for (const auto & query : queries)
         {
@@ -2960,7 +2989,7 @@ void ClientBase::runNonInteractive()
 }
 
 
-#if defined(FUZZING_MODE)
+#if USE_FUZZING_MODE
 extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
 ClientBase * app;
 
