@@ -19,7 +19,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
-    extern const SettingsBool optimize_use_projections;
     extern const SettingsBool force_optimize_projection;
 }
 }
@@ -192,10 +191,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (candidate.sum_marks > ordinary_reading_marks)
             continue;
 
-        /// Both optimize_use_projections and force_optimize_projection are true, consider projection when equal cost.
-        if (candidate.sum_marks == ordinary_reading_marks
-            && (!context->getSettingsRef()[Setting::optimize_use_projections]
-                || !context->getSettingsRef()[Setting::force_optimize_projection]))
+        /// When force_optimize_projection are true, consider projection when equal cost.
+        if (candidate.sum_marks == ordinary_reading_marks && !context->getSettingsRef()[Setting::force_optimize_projection])
             continue;
 
         if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
