@@ -1231,7 +1231,6 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
-
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
@@ -1689,9 +1688,7 @@ class ClickHouseCluster:
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
-            with_secrets=with_secrets
-            or with_kerberos_kdc
-            or with_kerberized_kafka,
+            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
