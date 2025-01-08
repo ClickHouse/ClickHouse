@@ -1,3 +1,4 @@
+#include "SQLTypes.h"
 #include <cstdint>
 #include <sys/types.h>
 
@@ -524,7 +525,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                     }
                 }
                 desc += " ";
-                SQLType * jtp = randomNextType(rg, ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
+                SQLType * jtp = randomNextType(rg, fc.type_mask & ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
                 jtp->typeName(desc, false);
                 subcols.push_back(JSubType(npath, jtp));
             }
@@ -1322,7 +1323,7 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     else if (dynamic_cast<DynamicType *>(tp))
     {
         uint32_t col_counter = 0;
-        SQLType * next = randomNextType(rg, allow_nullable | allow_JSON, col_counter, nullptr);
+        SQLType * next = randomNextType(rg, fc.type_mask ~(allow_dynamic), col_counter, nullptr);
 
         strAppendAnyValueInternal(rg, ret, next);
         if (rg.nextMediumNumber() < 4)

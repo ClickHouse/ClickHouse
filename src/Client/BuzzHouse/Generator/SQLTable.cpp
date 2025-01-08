@@ -974,7 +974,7 @@ int StatementGenerator::addTableColumn(
     SQLColumn col;
     SQLType * tp = nullptr;
     auto & to_add = staged ? t.staged_cols : t.cols;
-    uint32_t possible_types = std::numeric_limits<uint32_t>::max();
+    uint32_t possible_types = fc.type_mask;
 
     if (t.isMySQLEngine() || t.hasMySQLPeer())
     {

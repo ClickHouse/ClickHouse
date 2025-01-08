@@ -86,14 +86,14 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
             if (tpn)
             {
                 uint32_t col_counter = 0;
-                SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, tpn->mutable_type());
+                SQLType * tp = randomNextType(rg, fc.type_mask & ~(allow_nested), col_counter, tpn->mutable_type());
                 delete tp;
             }
         }
         if (rg.nextMediumNumber() < nested_prob)
         {
             uint32_t col_counter = 0;
-            SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
+            SQLType * tp = randomNextType(rg, fc.type_mask & ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             delete tp;
         }
         if (nsuboption < 6)
@@ -843,7 +843,7 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
         this->depth++;
-        SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, casexpr->mutable_type_name()->mutable_type());
+        SQLType * tp = randomNextType(rg, fc.type_mask & ~(allow_nested), col_counter, casexpr->mutable_type_name()->mutable_type());
         delete tp;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;
