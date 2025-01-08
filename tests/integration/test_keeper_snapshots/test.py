@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
-import os
+import pytest
+from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
-
-import pytest
+import os
 from kazoo.client import KazooClient
 
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -191,9 +190,8 @@ def test_invalid_snapshot(started_cluster):
             ]
         )
         node.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
-        assert node.contains_in_log("Failure to load from latest snapshot with index")
         assert node.contains_in_log(
-            "Manual intervention is necessary for recovery. Problematic snapshot can be removed but it will lead to data loss"
+            "Aborting because of failure to load from latest snapshot with index"
         )
 
         node.stop_clickhouse()

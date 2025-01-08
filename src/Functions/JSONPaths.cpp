@@ -396,7 +396,7 @@ SELECT json, JSONAllPaths(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
 └──────────────────────────────────────┴────────────────────┘
 )"}}},
-        .category{"JSON"},
+        .categories{"JSON"},
     });
 
     factory.registerFunction<FunctionJSONPaths<JSONAllPathsWithTypesImpl>>(FunctionDocumentation{
@@ -419,7 +419,7 @@ SELECT json, JSONAllPathsWithTypes(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
 └──────────────────────────────────────┴───────────────────────────────────────────┘
 )"}}},
-        .category{"JSON"},
+        .categories{"JSON"},
     });
 
     factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsImpl>>(FunctionDocumentation{
@@ -442,7 +442,7 @@ SELECT json, JSONDynamicPaths(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
 └──────────────────────────────────────┴────────────────────────┘
 )"}}},
-        .category{"JSON"},
+        .categories{"JSON"},
     });
 
     factory.registerFunction<FunctionJSONPaths<JSONDynamicPathsWithTypesImpl>>(FunctionDocumentation{
@@ -465,7 +465,7 @@ SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
 └──────────────────────────────────────┴─────────────────────────────────┘
 )"}}},
-        .category{"JSON"},
+        .categories{"JSON"},
     });
 
     factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsImpl>>(FunctionDocumentation{
@@ -488,7 +488,7 @@ SELECT json, JSONSharedDataPaths(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
 └──────────────────────────────────────┴───────────────────────────┘
 )"}}},
-        .category{"JSON"},
+        .categories{"JSON"},
     });
 
     factory.registerFunction<FunctionJSONPaths<JSONSharedDataPathsWithTypesImpl>>(FunctionDocumentation{
@@ -511,7 +511,7 @@ SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
 └──────────────────────────────────────┴─────────────────────────────────┘
 )"}}},
-        .category{"JSON"},
+        .categories{"JSON"},
     });
 }
 

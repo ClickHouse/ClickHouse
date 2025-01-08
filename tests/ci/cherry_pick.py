@@ -34,12 +34,11 @@ from typing import List, Optional
 
 import __main__
 
-from ci_buddy import CIBuddy
-from ci_config import Labels
-from env_helper import IS_CI, TEMP_PATH
+from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from ci_config import Labels
 from ssh import SSHKey
 
 
@@ -98,7 +97,7 @@ close it.
         self.pr = pr
         self.repo = repo
 
-        self.cherrypick_branch = f"cherrypick/{name}/{pr.number}"
+        self.cherrypick_branch = f"cherrypick/{name}/{pr.merge_commit_sha}"
         self.backport_branch = f"backport/{name}/{pr.number}"
         self.cherrypick_pr = None  # type: Optional[PullRequest]
         self.backport_pr = None  # type: Optional[PullRequest]
@@ -418,13 +417,15 @@ class Backport:
                 f"v{branch}-must-backport" for branch in self.release_branches
             ]
         else:
+            fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
+            fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
                 (
                     f"v{branch}-must-backport"
                     if self._repo_name == "ClickHouse/ClickHouse"
                     else f"v{branch.replace('release/','')}-must-backport"
                 )
-                for branch in self.release_branches
+                for branch in fetch_release_branches
             ]
 
             logging.info("Fetching from %s", self._fetch_from)
@@ -654,14 +655,6 @@ def main():
     bp.process_backports()
     if bp.error is not None:
         logging.error("Finished successfully, but errors occurred!")
-        if IS_CI:
-            ci_buddy = CIBuddy()
-            ci_buddy.post_job_error(
-                f"The cherry-pick finished with errors: {bp.error}",
-                with_instance_info=True,
-                with_wf_link=True,
-                critical=True,
-            )
         raise bp.error
 
 

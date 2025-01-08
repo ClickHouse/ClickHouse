@@ -105,8 +105,12 @@ public:
         {
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(),
+                getName());
     }
 
 private:
@@ -247,6 +251,6 @@ Result:
 │ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
 └──────────────────────────────────────┘
 ```)",
-        .category{"Time Series"}});
+        .categories{"Time series analysis"}});
 }
 }

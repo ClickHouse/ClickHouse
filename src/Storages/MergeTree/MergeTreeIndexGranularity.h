@@ -1,94 +1,102 @@
 #pragma once
-#include <optional>
+#include <vector>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
 {
 
-/// Class that contains information about index granularity in rows of IMergeTreeDataPart
+/// Class contains information about index granularity in rows of IMergeTreeDataPart
+/// Inside it contains vector of partial sums of rows after mark:
+/// |-----|---|----|----|
+/// |  5  | 8 | 12 | 16 |
+/// If user doesn't specify setting adaptive_index_granularity_bytes for MergeTree* table
+/// all values in inner vector would have constant stride (default 8192).
 class MergeTreeIndexGranularity
 {
+private:
+    std::vector<size_t> marks_rows_partial_sums;
+    bool initialized = false;
+
 public:
     MergeTreeIndexGranularity() = default;
-    virtual ~MergeTreeIndexGranularity() = default;
+    explicit MergeTreeIndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_);
 
-    /// Returns granularity if it is constant for whole part (except last granule).
-    virtual std::optional<size_t> getConstantGranularity() const = 0;
-    /// Return count of rows between marks
-    virtual size_t getRowsCountInRange(size_t begin, size_t end) const = 0;
     /// Return count of rows between marks
     size_t getRowsCountInRange(const MarkRange & range) const;
+    /// Return count of rows between marks
+    size_t getRowsCountInRange(size_t begin, size_t end) const;
     /// Return sum of rows between all ranges
     size_t getRowsCountInRanges(const MarkRanges & ranges) const;
 
-    /// Return number of marks, starting from `from_marks` that contain `number_of_rows`
-    virtual size_t countMarksForRows(size_t from_mark, size_t number_of_rows) const = 0;
-
-    /// Return number of rows, starting from `from_mark`, that contains amount of `number_of_rows`
-    /// and possible some offset_in_rows from `from_mark`
+    /// Return amount of marks that contains amount of `number_of_rows` starting from
+    /// `from_mark` and possible some offset_in_rows from `from_mark`
     ///                                     1    2  <- answer
     /// |-----|---------------------------|----|----|
     ///       ^------------------------^-----------^
     ////  from_mark  offset_in_rows    number_of_rows
-    virtual size_t countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows) const = 0;
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
 
     /// Total marks
-    virtual size_t getMarksCount() const = 0;
+    size_t getMarksCount() const;
     /// Total rows
-    virtual size_t getTotalRows() const = 0;
+    size_t getTotalRows() const;
 
     /// Total number marks without final mark if it exists
-    size_t getMarksCountWithoutFinal() const;
+    size_t getMarksCountWithoutFinal() const { return getMarksCount() - hasFinalMark(); }
 
     /// Rows after mark to next mark
-    virtual size_t getMarkRows(size_t mark_index) const = 0;
+    size_t getMarkRows(size_t mark_index) const;
 
     /// Return amount of rows before mark
     size_t getMarkStartingRow(size_t mark_index) const;
 
     /// Amount of rows after last mark
-    size_t getLastMarkRows() const;
+    size_t getLastMarkRows() const
+    {
+        size_t last = marks_rows_partial_sums.size() - 1;
+        return getMarkRows(last);
+    }
 
-    /// Amount of rows after last non-final mark
-    size_t getLastNonFinalMarkRows() const;
+    size_t getLastNonFinalMarkRows() const
+    {
+        size_t last_mark_rows = getLastMarkRows();
+        if (last_mark_rows != 0)
+            return last_mark_rows;
+        return getMarkRows(marks_rows_partial_sums.size() - 2);
+    }
 
-    virtual bool hasFinalMark() const = 0;
-    bool empty() const { return getMarksCount() == 0; }
+    bool hasFinalMark() const
+    {
+        return getLastMarkRows() == 0;
+    }
 
-    /// Add new mark with rows_count.
-    virtual void appendMark(size_t rows_count) = 0;
+    bool empty() const
+    {
+        return marks_rows_partial_sums.empty();
+    }
 
-    /// Sets last mark equal to rows_count.
-    virtual void adjustLastMark(size_t rows_count) = 0;
+    bool isInitialized() const
+    {
+        return initialized;
+    }
+
+    void setInitialized()
+    {
+        initialized = true;
+    }
+    /// Add new mark with rows_count
+    void appendMark(size_t rows_count);
+
+    /// Extends last mark by rows_count.
     void addRowsToLastMark(size_t rows_count);
 
-    virtual uint64_t getBytesSize() const = 0;
-    virtual uint64_t getBytesAllocated() const = 0;
+    /// Drops last mark if any exists.
+    void popMark();
 
-    /// Possibly optimizes values in memory (for example, to constant value).
-    /// Returns new optimized index granularity structure or nullptr if no optimization is not applicable.
-    virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() = 0;
-    virtual std::string describe() const = 0;
+    /// Add `size` of marks with `fixed_granularity` rows
+    void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
+
+    std::string describe() const;
 };
-
-using MergeTreeIndexGranularityPtr = std::shared_ptr<MergeTreeIndexGranularity>;
-
-size_t computeIndexGranularity(
-    size_t rows,
-    size_t bytes_uncompressed,
-    size_t index_granularity_bytes,
-    size_t fixed_index_granularity_rows,
-    bool blocks_are_granules,
-    bool can_use_adaptive_index_granularity);
-
-struct MergeTreeSettings;
-struct MergeTreeIndexGranularityInfo;
-
-MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
-    size_t rows,
-    size_t bytes_uncompressed,
-    const MergeTreeSettings & settings,
-    const MergeTreeIndexGranularityInfo & info,
-    bool blocks_are_granules);
 
 }

@@ -49,7 +49,7 @@ Default value: 8192.
 
 Maximum size of data granules in bytes.
 
-Default value: 10485760 (ca. 10 MiB).
+Default value: 10Mb.
 
 To restrict the granule size only by number of rows, set to 0 (not recommended).
 
@@ -77,16 +77,6 @@ If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads
 If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 
 Default value: `10 * 1024 * 1024 * 1024` bytes.
-
-## ttl_only_drop_parts
-
-Controls whether data parts are fully dropped in MergeTree tables when all rows in that part have expired according to their `TTL` settings.
-
-When `ttl_only_drop_parts` is disabled (by default), only the rows that have expired based on their TTL settings are removed.
-
-When `ttl_only_drop_parts` is enabled, the entire part is dropped if all rows in that part have expired according to their `TTL` settings.
-
-Default value: 0.
 
 ## merge_with_ttl_timeout
 
@@ -1051,112 +1041,3 @@ Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
 This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
-
-## lightweight_mutation_projection_mode
-
-By default, lightweight delete `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. So the default value would be `throw`.
-However, this option can change the behavior. With the value either `drop` or `rebuild`, deletes will work with projections. `drop` would delete the projection so it might be fast in the current query as projection gets deleted but slow in future queries as no projection attached.
-`rebuild` would rebuild the projection which might affect the performance of the current query, but might speedup for future queries. A good thing is that these options would only work in the part level,
-which means projections in the part that don't get touched would stay intact instead of triggering any action like drop or rebuild.
-
-Possible values:
-
-- throw, drop, rebuild
-
-Default value: throw
-
-## deduplicate_merge_projection_mode
-
-Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
-It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members. Similar to the option `lightweight_mutation_projection_mode`, it is also part level.
-
-Possible values:
-
-- ignore, throw, drop, rebuild
-
-Default value: throw
-
-## min_free_disk_bytes_to_perform_insert
-
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the insert is not executed. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) number of bytes is specified
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 0 bytes.
-
-Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## min_free_disk_ratio_to_perform_insert
-
-The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) ratio is specified
-
-Possible values:
-
-- Float, 0.0 - 1.0
-
-Default value: 0.0
-
-Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## allow_experimental_reverse_key
-
-Enables support for descending sort order in MergeTree sorting keys. This setting is particularly useful for time series analysis and Top-N queries, allowing data to be stored in reverse chronological order to optimize query performance.
-
-With `allow_experimental_reverse_key` enabled, you can define descending sort orders within the `ORDER BY` clause of a MergeTree table. This enables the use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder` for descending queries.
-
-**Example**
-
-```sql
-CREATE TABLE example
-(
-    time DateTime,
-    key Int32,
-    value String
-) ENGINE = MergeTree
-ORDER BY (time DESC, key)  -- Descending order on 'time' field
-SETTINGS allow_experimental_reverse_key = 1;
-
-SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-```
-
-By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-**Default Value:** false
-
-## cache_populated_by_fetch
-
-:::note
-This setting applies only to ClickHouse Cloud.
-:::
-
-When `cache_populated_by_fetch` is disabled (the default setting), new data parts are loaded into the cache only when a query is run that requires those parts.
-
-If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action.
-
-Default value: 0.
-
-## add_implicit_sign_column_constraint_for_collapsing_engine
-
-If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
-
-Default value: false
-
-## add_minmax_index_for_numeric_columns
-
-When enabled, min-max (skipping) indices are added for all numeric columns of the table.
-
-Default value: false.
-
-## add_minmax_index_for_string_columns
-
-When enabled, min-max (skipping) indices are added for all string columns of the table.
-
-Default value: false.

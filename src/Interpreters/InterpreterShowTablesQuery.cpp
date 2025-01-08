@@ -81,7 +81,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         return rewritten_query.str();
     }
-    if (query.cluster)
+    else if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";

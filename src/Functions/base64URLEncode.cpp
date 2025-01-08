@@ -13,9 +13,9 @@ REGISTER_FUNCTION(Base64URLEncode)
     FunctionDocumentation::Arguments arguments = {{"url", "String column or constant."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the encoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT base64URLEncode('https://clickhouse.com')", "aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ"}};
-    FunctionDocumentation::Category category = {"Encoding"};
+    FunctionDocumentation::Categories categories = {"String encoding"};
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionBase64Conversion<Base64Encode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, categories});
 }
 
 }

@@ -17,21 +17,10 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Core/ServerSettings.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_validate_primary_key_type;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool dictionaries_lazy_load;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -124,12 +113,7 @@ StorageDictionary::StorageDictionary(
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-          table_id_,
-          dictionary_name_,
-          ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef()[Setting::dictionary_validate_primary_key_type])},
-          comment,
-          location_,
-          context_)
+        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_, context_->getSettingsRef().dictionary_validate_primary_key_type)}, comment, location_, context_)
 {
 }
 
@@ -216,7 +200,7 @@ void StorageDictionary::startup()
 {
     auto global_context = getContext();
 
-    bool lazy_load = global_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+    bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
         const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
@@ -351,7 +335,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+            bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -361,25 +345,26 @@ void registerStorageDictionary(StorageFactory & factory)
 
             return result_storage;
         }
-
-        /// Create dictionary storage that is view of underlying dictionary
-
-        if (args.engine_args.size() != 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
-
-        args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-        String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
-
-        if (args.mode <= LoadingStrictnessLevel::CREATE)
+        else
         {
-            const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
-            const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-            checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
-        }
+            /// Create dictionary storage that is view of underlying dictionary
 
-        return std::make_shared<StorageDictionary>(
-            args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
+            if (args.engine_args.size() != 1)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
+
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
+
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            {
+                const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
+                const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+                checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
+            }
+
+            return std::make_shared<StorageDictionary>(
+                args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
+        }
     });
 }
 

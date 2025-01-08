@@ -53,7 +53,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     return buf.str();
 }
 
-static AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
+AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
 {
     ASTs queries;
     ParserAttachAccessEntity parser;
@@ -82,7 +82,7 @@ static AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
             if (res)
                 throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true, /* max_number_of_authentication_methods = zero is unlimited*/ 0);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {

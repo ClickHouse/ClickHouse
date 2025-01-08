@@ -309,27 +309,28 @@ std::unique_ptr<IParserBase> ParserKQLQuery::getOperator(String & op_name)
 {
     if (op_name == "filter" || op_name == "where")
         return std::make_unique<ParserKQLFilter>();
-    if (op_name == "limit" || op_name == "take")
+    else if (op_name == "limit" || op_name == "take")
         return std::make_unique<ParserKQLLimit>();
-    if (op_name == "project")
+    else if (op_name == "project")
         return std::make_unique<ParserKQLProject>();
-    if (op_name == "distinct")
+    else if (op_name == "distinct")
         return std::make_unique<ParserKQLDistinct>();
-    if (op_name == "extend")
+    else if (op_name == "extend")
         return std::make_unique<ParserKQLExtend>();
-    if (op_name == "sort by" || op_name == "order by")
+    else if (op_name == "sort by" || op_name == "order by")
         return std::make_unique<ParserKQLSort>();
-    if (op_name == "summarize")
+    else if (op_name == "summarize")
         return std::make_unique<ParserKQLSummarize>();
-    if (op_name == "table")
+    else if (op_name == "table")
         return std::make_unique<ParserKQLTable>();
-    if (op_name == "make-series")
+    else if (op_name == "make-series")
         return std::make_unique<ParserKQLMakeSeries>();
-    if (op_name == "mv-expand")
+    else if (op_name == "mv-expand")
         return std::make_unique<ParserKQLMVExpand>();
-    if (op_name == "print")
+    else if (op_name == "print")
         return std::make_unique<ParserKQLPrint>();
-    return nullptr;
+    else
+        return nullptr;
 }
 
 bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -475,10 +476,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        String project_clause;
-        String order_clause;
-        String where_clause;
-        String limit_clause;
+        String project_clause, order_clause, where_clause, limit_clause;
         auto last_pos = operation_pos.back().second;
         auto last_op = operation_pos.back().first;
 

@@ -18,9 +18,7 @@ public:
         : Base(header, out_, std::forward<Args>(args)...)
     {
         if (handle_exceptions)
-        {
-            peekable_out = std::make_unique<AutoCanceledWriteBuffer<PeekableWriteBuffer>>(*Base::getWriteBufferPtr());
-        }
+            peekable_out = std::make_unique<PeekableWriteBuffer>(*Base::getWriteBufferPtr());
     }
 
     void consume(DB::Chunk chunk) override
@@ -60,17 +58,17 @@ public:
     void write(const Columns & columns, size_t row_num) override { Base::write(columns, row_num); }
     void writeRowBetweenDelimiter() override { Base::writeRowBetweenDelimiter(); }
 
-    void flushImpl() override
+    void flush() override
     {
         if (peekable_out)
             peekable_out->next();
 
-        Base::flushImpl();
+        Base::flush();
     }
 
     void finalizeBuffers() override
     {
-        if (peekable_out && !peekable_out->isCanceled())
+        if (peekable_out)
             peekable_out->finalize();
         Base::finalizeBuffers();
     }
@@ -103,3 +101,4 @@ private:
 };
 
 }
+

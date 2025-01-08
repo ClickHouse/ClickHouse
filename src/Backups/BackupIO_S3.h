@@ -10,7 +10,6 @@
 #include <IO/S3Settings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-#include <IO/S3/S3Capabilities.h>
 
 namespace DB
 {
@@ -77,12 +76,14 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
+    void removeFilesBatch(const Strings & file_names);
 
     const S3::URI s3_uri;
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
-    S3Capabilities s3_capabilities;
+    std::optional<bool> supports_batch_delete;
+
     BlobStorageLogWriterPtr blob_storage_log;
 };
 

@@ -44,9 +44,17 @@ private:
         {
             if (is_literal)
                 return executeLiteral(format);
-            if (isColumnConst(*input.column))
+            else if (isColumnConst(*input.column))
                 return executeConstant(input);
-            return executeNonconstant(input);
+            else
+                return executeNonconstant(input);
+        }
+
+        [[maybe_unused]] String toString() const
+        {
+            WriteBufferFromOwnString buf;
+            buf << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure() << "\n";
+            return buf.str();
         }
 
     private:
@@ -142,17 +150,19 @@ private:
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            if (which.isStringOrFixedString()
+            else if (
+                which.isStringOrFixedString()
                 && (executeString<ColumnString>(*arg.column, res_chars, res_offsets)
                     || executeString<ColumnFixedString>(*arg.column, res_chars, res_offsets)))
             {
                 return {std::move(res_col), std::make_shared<DataTypeString>(), arg.name};
             }
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The argument type of function {} is {}, but native numeric or string type is expected",
-                FunctionPrintf::name,
-                arg.type->getName());
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The argument type of function {} is {}, but native numeric or string type is expected",
+                    FunctionPrintf::name,
+                    arg.type->getName());
         }
     };
 
@@ -221,7 +231,9 @@ public:
             const auto & instruction = instructions[i];
             try
             {
+                // std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
                 concat_args[i] = instruction.execute();
+                // std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
             }
             catch (const fmt::v9::format_error & e)
             {
@@ -232,17 +244,18 @@ public:
                         instruction.format,
                         getName(),
                         e.what());
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Bad format {} in function {} with {} as input argument, reason: {}",
-                    instructions[i].format,
-                    getName(),
-                    instruction.input.dumpStructure(),
-                    e.what());
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Bad format {} in function {} with {} as input argument, reason: {}",
+                        instructions[i].format,
+                        getName(),
+                        instruction.input.dumpStructure(),
+                        e.what());
             }
         }
 
-        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count, /* dry_run = */ false);
+        auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);
         return res;
     }
 
@@ -345,14 +358,7 @@ private:
 
 REGISTER_FUNCTION(Printf)
 {
-    factory.registerFunction<FunctionPrintf>(
-        FunctionDocumentation{.description=R"(
-The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++.
-The format string can contain format specifiers starting with `%` character.
-Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output.
-Literal `%` character can be escaped by `%%`.)", .examples{{"sum", "select printf('%%%s %s %d', 'Hello', 'World', 2024);", "%Hello World 2024"}}, .category{"Strings - Replacing"}
-});
-
+    factory.registerFunction<FunctionPrintf>();
 }
 
 }

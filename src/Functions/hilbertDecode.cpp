@@ -1,7 +1,8 @@
-#include <limits>
-#include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/PerformanceAdaptors.h>
 #include "hilbertDecode2DLUT.h"
+#include <limits>
 
 
 namespace DB
@@ -116,7 +117,7 @@ The range tuple must be a constant:
             {"from_table", "SELECT hilbertDecode(2, code) FROM table", ""},
             {"from_table_range", "SELECT hilbertDecode((1,2), code) FROM table", ""},
             },
-        .category {"Encoding"}
+        .categories {"Hilbert coding", "Hilbert Curve"}
     });
 }
 

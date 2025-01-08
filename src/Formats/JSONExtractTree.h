@@ -1,11 +1,11 @@
 #pragma once
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
+#include <Formats/FormatSettings.h>
+
 
 namespace DB
 {
-
-struct FormatSettings;
 
 struct JSONExtractInsertSettings
 {

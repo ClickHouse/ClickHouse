@@ -122,7 +122,8 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     table->read(plan, column_names, storage_snapshot, query_info, context, stage, 8192, 1);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context))));
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context))));
 
     Block sample;
     {
