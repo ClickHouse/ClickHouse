@@ -65,7 +65,7 @@ and will run independently of the checks below:
 - [ ] <!---ci_exclude_release--> Exclude: All with release
 - [ ] <!---ci_exclude_debug--> Exclude: All with debug
 ---
-- [ ] <!---ci_include_fuzzer--> Run only fuzzers related jobs (libFuzzer fuzzers, AST fuzzers, etc.)
+- [ ] <!---ci_include_uzz--> Run only fuzzers related jobs (libFuzzer fuzzers, AST fuzzers, BuzzHouse, etc.)
 - [ ] <!---ci_exclude_ast--> Exclude: AST fuzzers
 ---
 - [ ] <!---do_not_test--> Do not test

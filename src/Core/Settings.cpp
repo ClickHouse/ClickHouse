@@ -894,6 +894,12 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
+    DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
+Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in ORDER BY keys.
+)", 0) \
+    DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
+Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
+)", 0) \
     DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
@@ -2406,6 +2412,9 @@ What to do when the limit is exceeded.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
+)", 0) \
+    DECLARE(UInt64, min_external_sort_block_bytes, "100Mi", R"(
+Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
@@ -6005,6 +6014,12 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine Iceberg
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+Enable Kusto Query Language (KQL) - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
