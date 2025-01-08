@@ -161,9 +161,9 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
             /// not match.
             if (!candidate.function->getStateType()->equals(*aggregate.function->getStateType()))
             {
-                LOG_TRACE(getLogger("optimizeUseProjections"), "Cannot match agg func {} vs {} by state {} vs {}",
-                    aggregate.column_name, candidate.column_name,
-                    candidate.function->getStateType()->getName(), aggregate.function->getStateType()->getName());
+                // LOG_TRACE(getLogger("optimizeUseProjections"), "Cannot match agg func {} vs {} by state {} vs {}",
+                //     aggregate.column_name, candidate.column_name,
+                //     candidate.function->getStateType()->getName(), aggregate.function->getStateType()->getName());
                 continue;
             }
 
@@ -203,10 +203,10 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 auto mt = matches.find(query_node);
                 if (mt == matches.end())
                 {
-                    LOG_TRACE(
-                        getLogger("optimizeUseProjections"),
-                        "Cannot match agg func {} vs {} : can't match arg {} vs {} : no node in map",
-                        aggregate.column_name, candidate.column_name, query_name, proj_name);
+                    // LOG_TRACE(
+                    //     getLogger("optimizeUseProjections"),
+                    //     "Cannot match agg func {} vs {} : can't match arg {} vs {} : no node in map",
+                    //     aggregate.column_name, candidate.column_name, query_name, proj_name);
 
                     break;
                 }
@@ -214,10 +214,10 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 const auto & node_match = mt->second;
                 if (node_match.node != proj_node || (node_match.monotonicity && !node_match.monotonicity->identity))
                 {
-                    LOG_TRACE(
-                        getLogger("optimizeUseProjections"),
-                        "Cannot match agg func {} vs {} : can't match arg {} vs {} : no match or monotonicity",
-                        aggregate.column_name, candidate.column_name, query_name, proj_name);
+                    // LOG_TRACE(
+                    //     getLogger("optimizeUseProjections"),
+                    //     "Cannot match agg func {} vs {} : can't match arg {} vs {} : no match or monotonicity",
+                    //     aggregate.column_name, candidate.column_name, query_name, proj_name);
 
                     break;
                 }
