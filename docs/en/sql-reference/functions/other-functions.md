@@ -2230,7 +2230,7 @@ Result:
 
 ## filesystemAvailable
 
-Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemUnreserved](#filesystemUnreserved)) because some space is reserved for the operating system.
+Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemUnreserved](#filesystemunreserved)) because some space is reserved for the operating system.
 
 **Syntax**
 
@@ -2258,7 +2258,7 @@ Result:
 └─────────────────┘
 ```
 
-## filesystemUnreserved {#`filesystem_unreserved`}
+## filesystemUnreserved
 
 Returns the total amount of the free space on the filesystem hosting the database persistence. (previously `filesystemFree`). See also [`filesystemAvailable`](#filesystemavailable).
 

@@ -1708,7 +1708,7 @@ toUInt8OrZero('abc'): 0
 - [`toUInt8OrNull`](#touint8ornull).
 - [`toUInt8OrDefault`](#touint8ordefault).
 
-## toUInt8OrNull {#toUInt8OrNull}
+## toUInt8OrNull
 
 Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 

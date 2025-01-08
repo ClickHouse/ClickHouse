@@ -11,7 +11,7 @@ sidebar_position: 207
 
 Производительность функции ниже, чем производительность функции [quantile](/docs/ru/sql-reference/aggregate-functions/reference/quantile) или [quantileTiming](/docs/ru/sql-reference/aggregate-functions/reference/quantiletiming). По соотношению размера состояния к точности вычисления, эта функция значительно превосходит `quantile`.
 
-Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
+Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles), это повысит эффективность запроса.
 
 **Синтаксис**
 

@@ -23,7 +23,7 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
 
 # Generating the data
 
-This is optional. We distribute the data freely - see [Downloading and inserting the data](#downloading_and_inserting_the_data).
+This is optional. We distribute the data freely - see [Downloading and inserting the data](#downloading-and-inserting-the-data).
 
 ```bash
 git clone git@github.com:ClickHouse/ClickHouse.git
@@ -64,7 +64,7 @@ CREATE TABLE git.commits
 
 - Linux - `~/clickhouse git-import` - 160 mins
 
-# Downloading and inserting the data {#downloading_and_inserting_the_data}
+# Downloading and inserting the data
 
 The following data can be used to reproduce a working environment. Alternatively, this dataset is available in play.clickhouse.com - see [Queries](#queries) for further details.
 
@@ -203,7 +203,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 0 rows in set. Elapsed: 50.535 sec. Processed 7.54 million rows, 2.09 GB (149.11 thousand rows/s., 41.40 MB/s.)
 ```
 
-# Queries {#queries}
+# Queries
 
 The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
