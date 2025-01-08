@@ -30,6 +30,7 @@ struct MatchedTrees
     {
         int direction = 1;
         bool strict = true;
+        bool identity = false;
         const Match * child_match = nullptr;
         const ActionsDAG::Node * child_node = nullptr;
     };

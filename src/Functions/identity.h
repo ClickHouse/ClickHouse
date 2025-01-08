@@ -32,6 +32,11 @@ public:
     {
         return arguments.front().column;
     }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return {.is_monotonic = true, .is_always_monotonic = true, .is_identity = true};
+    }
 };
 
 struct IdentityName
