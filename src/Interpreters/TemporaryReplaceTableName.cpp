@@ -1,9 +1,10 @@
 #include "TemporaryReplaceTableName.h"
-#include <regex>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/SipHash.h>
-#include <IO/Operators.h>
+
+#include <Common/re2.h>
+
+#include <base/hex.h>
+#include <fmt/core.h>
+
 
 namespace DB
 {
@@ -14,13 +15,10 @@ namespace DB
 
     std::optional<TemporaryReplaceTableName> TemporaryReplaceTableName::fromString(const String & str)
     {
-        const std::regex pattern("_tmp_replace_(.*)_(.*)");
-        std::smatch matches;
-        if (std::regex_match(str, matches, pattern) && matches.size() == 3)
+        static const re2::RE2 pattern("_tmp_replace_(.*)_(.*)");
+        TemporaryReplaceTableName result;
+        if (RE2::FullMatch(str, pattern, &result.name_hash, &result.random_suffix))
         {
-            TemporaryReplaceTableName result;
-            result.name_hash = matches[1].str();
-            result.random_suffix = matches[2].str();
             return result;
         }
         return std::nullopt;
