@@ -159,7 +159,7 @@ toInt8('-8'): -8
 **See also**
 
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toint8orNull).
+- [`toInt8OrNull`](#toInt8OrNull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrZero
@@ -219,7 +219,7 @@ toInt8OrZero('abc'): 0
 **See also**
 
 - [`toInt8`](#toint8).
-- [`toInt8OrNull`](#toInt8orNull).
+- [`toInt8OrNull`](#toInt8OrNull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrNull
@@ -344,7 +344,7 @@ toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 
 - [`toInt8`](#toint8).
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toint8orNull).
+- [`toInt8OrNull`](#toInt8OrNull).
 
 ## toInt16
 
@@ -1830,7 +1830,7 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 - [`toUInt8`](#touint8).
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#touint8orNull).
+- [`toUInt8OrNull`](#toUInt8orNull).
 
 ## toUInt16
 
