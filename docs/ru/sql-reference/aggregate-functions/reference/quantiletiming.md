@@ -38,7 +38,7 @@ quantileTiming(level)(expr)
 В противном случае, результат вычисления округляется до ближайшего множителя числа 16.
 
 :::note Примечание
-Для указанного типа последовательностей функция производительнее и точнее, чем [quantile](#quantile).
+Для указанного типа последовательностей функция производительнее и точнее, чем [quantile](/docs/ru/sql-reference/aggregate-functions/reference/quantile).
 :::
 
 **Возвращаемое значение**
@@ -85,5 +85,5 @@ SELECT quantileTiming(response_time) FROM t
 
 **Смотрите также**
 
--   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
--   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-   [median](/docs/ru/sql-reference/aggregate-functions/reference/median)
+-   [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles)

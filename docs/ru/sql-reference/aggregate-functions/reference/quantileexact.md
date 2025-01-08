@@ -70,7 +70,7 @@ SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 └───────────────────────────────┘
 ```
 
-При использовании в запросе нескольких функций  `quantile*` с разными уровнями, внутренние состояния не объединяются (то есть запрос работает менее эффективно). В этом случае используйте функцию [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles).
+При использовании в запросе нескольких функций  `quantile*` с разными уровнями, внутренние состояния не объединяются (то есть запрос работает менее эффективно). В этом случае используйте функцию [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles).
 
 **Синтаксис**
 
