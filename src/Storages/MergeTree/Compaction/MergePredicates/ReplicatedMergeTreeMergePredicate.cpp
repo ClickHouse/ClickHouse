@@ -20,31 +20,40 @@ namespace MergeTreeSetting
 
 using MergeCore = DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
 
-ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
+ReplicatedMergeTreeBaseMergePredicate::ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_)
     : queue(queue_)
 {
-    /// Use only information that can be quickly accessed locally without querying ZooKeeper
-    virtual_parts_ptr = &queue_.virtual_parts;
-    mutations_state_ptr = &queue_;
 }
 
-std::expected<void, PreformattedMessage> ReplicatedMergeTreeLocalMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
+std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
 {
     /// FIXME: remove lock here
     std::lock_guard lock(queue.state_mutex);
     return MergeCore::canMergeParts(left, right);
 }
 
-std::expected<void, PreformattedMessage> ReplicatedMergeTreeLocalMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
+std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
 {
-    /// FIXME: remove lock here
-    std::lock_guard lock(queue.state_mutex);
-    return MergeCore::canUsePartInMerges(part->name, part->info);
+    if (pinned_part_uuids_ptr && pinned_part_uuids_ptr->part_uuids.contains(part->uuid))
+        return std::unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid));
+
+    if (inprogress_quorum_part_ptr && *inprogress_quorum_part_ptr == part->name)
+        return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
+
+    return {};
+}
+
+ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
+    : ReplicatedMergeTreeBaseMergePredicate(queue_)
+{
+    /// Use only information that can be quickly accessed locally without querying ZooKeeper
+    virtual_parts_ptr = &queue_.virtual_parts;
+    mutations_state_ptr = &queue_;
 }
 
 ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePredicate(
     ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
-    : queue(queue_)
+    : ReplicatedMergeTreeBaseMergePredicate(queue_)
 {
     /// Order of actions is important, DO NOT CHANGE.
     /// For explanation check DistributedMergePredicate.
@@ -86,27 +95,10 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
     virtual_parts_ptr = &queue.virtual_parts;
     committing_blocks_ptr = committing_blocks.get();
     mutations_state_ptr = &queue;
-}
 
-std::expected<void, PreformattedMessage> ReplicatedMergeTreeZooKeeperMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
-{
-    /// FIXME: remove lock here
-    std::lock_guard lock(queue.state_mutex);
-    return MergeCore::canMergeParts(left, right);
-}
-
-std::expected<void, PreformattedMessage> ReplicatedMergeTreeZooKeeperMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
-{
-    /// FIXME: remove lock here
-    std::lock_guard lock(queue.state_mutex);
-
-    if (pinned_part_uuids && pinned_part_uuids->part_uuids.contains(part->uuid))
-        return std::unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid));
-
-    if (inprogress_quorum_part && *inprogress_quorum_part == part->name)
-        return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
-
-    return MergeCore::canUsePartInMerges(part->name, part->info);
+    /// Initialize ReplicatedMergeTree Merge preconditions
+    pinned_part_uuids_ptr = pinned_part_uuids.get();
+    inprogress_quorum_part_ptr = inprogress_quorum_part.get();
 }
 
 bool ReplicatedMergeTreeZooKeeperMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const

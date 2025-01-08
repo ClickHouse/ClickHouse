@@ -9,7 +9,19 @@ namespace DB
 class ReplicatedMergeTreeBaseMergePredicate : public DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>
 {
 public:
-    virtual std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const = 0;
+    explicit ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_);
+
+    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties &left, const PartProperties &right) const override;
+    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
+
+protected:
+    const ReplicatedMergeTreeQueue & queue;
+
+    /// List of UUIDs for parts that have their identity "pinned".
+    const PinnedPartUUIDs * pinned_part_uuids_ptr = nullptr;
+
+    /// Quorum state taken at some later time than prev_virtual_parts.
+    const String * inprogress_quorum_part_ptr = nullptr;
 };
 
 /// Lightweight version of ReplicatedMergeTreeZooKeeperMergePredicate that do not make any ZooKeeper requests,
@@ -19,24 +31,14 @@ class ReplicatedMergeTreeLocalMergePredicate final : public ReplicatedMergeTreeB
 public:
     explicit ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
     ~ReplicatedMergeTreeLocalMergePredicate() override = default;
-
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const override;
-
-private:
-    ReplicatedMergeTreeQueue & queue;
 };
 
 /// Complete version of merge predicate for ReplicatedMergeTree. Fetches data from ZooKeeper.
 class ReplicatedMergeTreeZooKeeperMergePredicate final : public ReplicatedMergeTreeBaseMergePredicate
 {
 public:
-    ReplicatedMergeTreeZooKeeperMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper,
-                                      std::optional<PartitionIdsHint> && partition_ids_hint_);
+    ReplicatedMergeTreeZooKeeperMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_);
     ~ReplicatedMergeTreeZooKeeperMergePredicate() override = default;
-
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const override;
 
     /// Returns true if part is needed for some REPLACE_RANGE entry.
     /// We should not drop part in this case, because replication queue may stuck without that part.
@@ -62,8 +64,6 @@ public:
     String getCoveringVirtualPart(const String & part_name) const;
 
 private:
-    const ReplicatedMergeTreeQueue & queue;
-
     std::shared_ptr<ActiveDataPartSet> prev_virtual_parts;
     std::shared_ptr<CommittingBlocks> committing_blocks;
     std::shared_ptr<PinnedPartUUIDs> pinned_part_uuids;

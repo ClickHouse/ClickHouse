@@ -27,6 +27,7 @@ namespace DB
 class StorageReplicatedMergeTree;
 class MergeTreeDataMergerMutator;
 
+class ReplicatedMergeTreeBaseMergePredicate;
 class ReplicatedMergeTreeLocalMergePredicate;
 class ReplicatedMergeTreeZooKeeperMergePredicate;
 class ReplicatedMergeTreeMergeStrategyPicker;
@@ -37,6 +38,7 @@ class ReplicatedMergeTreeQueue
 {
 private:
     friend class CurrentlyExecuting;
+    friend class ReplicatedMergeTreeBaseMergePredicate;
     friend class ReplicatedMergeTreeLocalMergePredicate;
     friend class ReplicatedMergeTreeZooKeeperMergePredicate;
     friend class DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
