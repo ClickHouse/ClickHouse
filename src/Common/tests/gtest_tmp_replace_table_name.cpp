@@ -28,9 +28,9 @@ TEST(TemporaryReplaceTableName, FromStringInvalidPrefix)
     ASSERT_FALSE(result.has_value());
 }
 
-TEST(TemporaryReplaceTableName, FromStringCompletelyInvalidFormat)
+TEST(TemporaryReplaceTableName, FromStringNormalTableName)
 {
-    auto result = DB::TemporaryReplaceTableName::fromString("invalid_format");
+    auto result = DB::TemporaryReplaceTableName::fromString("normal_table_name");
     ASSERT_FALSE(result.has_value());
 }
 
