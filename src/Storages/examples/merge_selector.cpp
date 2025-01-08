@@ -55,7 +55,7 @@ int main(int, char **)
 
     while (parts.size() > 1)
     {
-        PartsRange selected_parts = selector.select(ranges, 0);
+        PartsRange selected_parts = selector.select(ranges, 0, nullptr);
 
         if (selected_parts.empty())
         {
