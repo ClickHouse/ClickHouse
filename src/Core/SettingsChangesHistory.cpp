@@ -66,6 +66,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
+            {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
@@ -73,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
+            {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
             {"use_hive_partitioning", false, true, "Enabled the setting by default."},
@@ -86,7 +89,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
+            {"output_format_pretty_multiline_fields", false, true, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
+            {"allow_experimental_kusto_dialect", true, false, "A new setting"},
+            {"allow_experimental_prql_dialect", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -616,11 +625,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
+            {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
+            {"add_minmax_index_for_string_columns", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {
             /// Release closed. Please use 25.1
-            {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
+            {"enforce_index_structure_match_on_partition_manipulation", true, false, "New setting"},
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},

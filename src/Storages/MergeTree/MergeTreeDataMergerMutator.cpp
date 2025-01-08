@@ -33,6 +33,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsBool enable_max_bytes_limit_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
 }
 
@@ -149,7 +150,8 @@ std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && range
 struct PartitionStatistics
 {
     time_t min_age = std::numeric_limits<time_t>::max();
-    size_t parts_count = 0;
+    size_t part_count = 0;
+    size_t total_size = 0;
 };
 
 std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions(const PartsRanges & ranges)
@@ -161,16 +163,20 @@ std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions
         assert(!range.empty());
         PartitionStatistics & partition_stats = stats[range.front().part_info.partition_id];
 
-        partition_stats.parts_count += range.size();
+        partition_stats.part_count += range.size();
 
         for (const auto & part : range)
+        {
             partition_stats.min_age = std::min(partition_stats.min_age, part.age);
+            partition_stats.total_size += part.size;
+        }
     }
 
     return stats;
 }
 
 String getBestPartitionToOptimizeEntire(
+    size_t max_total_size_to_merge,
     const ContextPtr & context,
     const MergeTreeSettingsPtr & settings,
     const std::unordered_map<String, PartitionStatistics> & stats,
@@ -193,15 +199,27 @@ String getBestPartitionToOptimizeEntire(
         return {};
     }
 
+    const auto is_partition_invalid = [&](const PartitionStatistics & partition)
+    {
+        if (partition.part_count == 1)
+            return true;
+
+        if (!max_total_size_to_merge || !(*settings)[MergeTreeSetting::enable_max_bytes_limit_for_min_age_to_force_merge])
+            return false;
+
+        return partition.total_size > max_total_size_to_merge;
+    };
+
     auto best_partition_it = std::max_element(
         stats.begin(),
         stats.end(),
-        [](const auto & e1, const auto & e2)
+        [&](const auto & e1, const auto & e2)
         {
-            // If one partition has only a single part, always select the other partition.
-            if (e1.second.parts_count == 1)
+            // If one partition cannot be used for some reason (e.g. it has only single part, or it's size greater than limit), always select the other partition.
+            if (is_partition_invalid(e1.second))
                 return true;
-            if (e2.second.parts_count == 1)
+
+            if (is_partition_invalid(e2.second))
                 return false;
 
             // If both partitions have more than one part, select the older partition.
@@ -211,8 +229,7 @@ String getBestPartitionToOptimizeEntire(
     assert(best_partition_it != stats.end());
 
     const size_t best_partition_min_age = static_cast<size_t>(best_partition_it->second.min_age);
-    const size_t best_partition_parts_count = best_partition_it->second.parts_count;
-    if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || best_partition_parts_count == 1)
+    if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;
@@ -353,7 +370,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
                 partition_id, ReadableSize(selector.max_total_size_to_merge), ranges_in_partition.size());
     }
 
-    if (auto best = getBestPartitionToOptimizeEntire(context, settings, partitions_stats, log); !best.empty())
+    if (auto best = getBestPartitionToOptimizeEntire(selector.max_total_size_to_merge, context, settings, partitions_stats, log); !best.empty())
         partitions_hint.insert(std::move(best));
 
     LOG_TRACE(log,
@@ -410,7 +427,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
 
     const auto partitions_stats = calculateStatisticsForPartitions(ranges);
 
-    if (auto best = getBestPartitionToOptimizeEntire(context, settings, partitions_stats, log); !best.empty())
+    if (auto best = getBestPartitionToOptimizeEntire(selector.max_total_size_to_merge, context, settings, partitions_stats, log); !best.empty())
     {
         return selectAllPartsToMergeWithinPartition(
             metadata_snapshot,
