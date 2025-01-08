@@ -1002,8 +1002,96 @@ bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
+static bool parsePureInteger(char * buffer, size_t size, bool negative, Field & res)
 {
+    /// Larger than UInt256 or small enough to fit native types
+    if (size > 78 || size < 19)
+        return false;
+
+    if (size >= 39) /// Max Int128
+    {
+        /// Parse as UInt256
+        UInt256 number{0};
+        for (size_t i = 0; i < size; ++i)
+        {
+            number *= 10;
+            number += buffer[i] - '0';
+        }
+
+        if (number < 100)
+            /// We've overflown
+            return false;
+
+        if (!negative)
+        {
+            if (number <= static_cast<UInt256>(std::numeric_limits<UInt128>::max()))
+            {
+                res = static_cast<UInt128>(number);
+                return true;
+            }
+
+            res = number;
+            return true;
+        }
+
+        /// Negative. Make sure it fits
+        if ((number - 1) <= static_cast<UInt256>(std::numeric_limits<Int256>::max()))
+        {
+            if ((number - 1) <= static_cast<UInt256>(std::numeric_limits<Int128>::max()))
+            {
+                res = 0 - static_cast<Int128>(number);
+                return true;
+            }
+
+            res = 0 - static_cast<Int256>(number);
+            return true;
+        }
+    }
+
+    /// Parse as UInt128
+    UInt128 number{0};
+    for (size_t i = 0; i < size; ++i)
+    {
+        number *= 10;
+        number += buffer[i] - '0';
+    }
+
+    if (number < 100)
+        /// We've overflown
+        return false;
+
+    if (!negative)
+    {
+        if (number <= static_cast<UInt128>(std::numeric_limits<UInt64>::max()))
+        {
+            res = static_cast<UInt64>(number);
+            return true;
+        }
+
+        res = number;
+        return true;
+    }
+
+    /// Negative type
+    if ((number - 1) <= static_cast<UInt128>(std::numeric_limits<Int64>::max()))
+    {
+        res = 0 - static_cast<Int64>(number);
+        return true;
+    }
+
+    res = 0 - static_cast<Int128>(number);
+    return true;
+}
+
+static bool parseNumber(char * buffer, size_t size, bool negative, bool pure_integer, int base, Field & res)
+{
+    if (pure_integer)
+    {
+        chassert(base == 10);
+        if (parsePureInteger(buffer, size, negative, res))
+            return true;
+    }
+
     errno = 0;    /// Functions strto* don't clear errno.
 
     char * pos_integer = buffer;
@@ -1095,6 +1183,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     char buf[MAX_LENGTH_OF_NUMBER + 1];
 
     size_t buf_size = 0;
+    bool pure_integer = true;
     for (const auto * it = pos->begin; it != pos->end; ++it)
     {
         if (*it != '_')
@@ -1102,6 +1191,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             buf[buf_size] = *it;
             ++buf_size;
         }
+        pure_integer &= *it >= '0' && *it <= '9';
         if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
         {
             expected.add(pos, "number");
@@ -1123,7 +1213,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ++start_pos;
             --size;
-            if (parseNumber(start_pos, size, negative, 2, res))
+            if (parseNumber(start_pos, size, negative, false, 2, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1140,7 +1230,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ++start_pos;
             --size;
-            if (parseNumber(start_pos, size, negative, 16, res))
+            if (parseNumber(start_pos, size, negative, false, 16, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1158,7 +1248,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 ++start_pos;
                 --size;
             }
-            if (parseNumber(start_pos, size, negative, 10, res))
+            if (parseNumber(start_pos, size, negative, pure_integer, 10, res))
             {
                 auto literal = std::make_shared<ASTLiteral>(res);
                 literal->begin = literal_begin;
@@ -1169,7 +1259,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
     }
-    else if (parseNumber(start_pos, size, negative, 10, res))
+    else if (parseNumber(start_pos, size, negative, pure_integer, 10, res))
     {
         auto literal = std::make_shared<ASTLiteral>(res);
         literal->begin = literal_begin;

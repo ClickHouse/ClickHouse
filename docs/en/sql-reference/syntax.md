@@ -70,7 +70,8 @@ There are numeric, string, compound, and `NULL` literals.
 
 Numeric literals are parsed as follows:
 
-- First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+- If it's an integer in base 10 (only contains an optional sign and numbers) and it's large enough to require a big integer (more than 19 digits) we parse it as the smallest big integer possible (128-bit or 256-bit). Keep in mind that larger integers won't fit and will end up being parsed as a floating point number.
+- If the number was small or contained other characters (change of base, dots, ...), it's parsed as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
 - If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
 - If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
 - Otherwise, it returns an error.
@@ -85,6 +86,7 @@ The following Numeric literals are supported:
 **Decimals** – `0.1`
 **Exponential notation** - `1e100`, `-1e-100`
 **Floating point numbers** – `123.456`, `inf`, `nan`
+**Big Integers** - `100000000000000000000000`, `-57896044618658097711785492504343953926634992332820282019728792003956564819910`
 
 **Hex** – `0xc0fe`
 **SQL Standard compatible hex string** – `x'c0fe'`
