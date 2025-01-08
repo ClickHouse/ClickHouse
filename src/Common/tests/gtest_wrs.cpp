@@ -4,47 +4,51 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <numeric>
 #include <unordered_map>
 #include <vector>
-#include <array>
 
 using namespace DB;
 
 namespace
 {
 
-constexpr size_t N = 1'000'000;
-constexpr std::array<double, 5> weights = {10, 5, 5, 3, 2};
-constexpr double weights_sum = std::accumulate(weights.begin(), weights.end(), 0.0);
+const size_t N = 1'000'000;
+const std::unordered_map<size_t, double> objects = {
+    {0, 10},
+    {1, 5},
+    {2, 5},
+    {3, 3},
+    {4, 2},
+};
+const double weights_sum = 25;
 
 class ProbabilityValidator
 {
     void calculate(size_t k)
     {
-        std::vector<bool> select(weights.size(), false);
+        std::vector<bool> select(objects.size(), false);
         std::fill(select.begin(), select.begin() + k, true);
 
-        do {
+        do
+        {
             std::vector<size_t> subset;
-            for (size_t i = 0; i < weights.size(); ++i) {
-                if (select[i]) {
+            for (size_t i = 0; i < objects.size(); ++i)
+                if (select[i])
                     subset.push_back(i);
-                }
-            }
 
-            do {
+            do
+            {
                 double current_sum = weights_sum;
                 double p = 1;
 
-                for (size_t i : subset) {
-                    p *= (weights[i] / current_sum);
-                    current_sum -= weights[i];
+                for (size_t i : subset)
+                {
+                    p *= (objects.at(i) / current_sum);
+                    current_sum -= objects.at(i);
                 }
 
-                for (size_t i : subset) {
+                for (size_t i : subset)
                     probability[i] += p;
-                }
 
             } while (std::next_permutation(subset.begin(), subset.end()));
 
@@ -52,24 +56,16 @@ class ProbabilityValidator
     }
 
 public:
-    explicit ProbabilityValidator(size_t k)
-    {
-        calculate(k);
-    }
+    explicit ProbabilityValidator(size_t k) { calculate(k); }
 
     void validate(std::unordered_map<size_t, size_t> selects)
     {
-        for (size_t i = 0; i < 5; ++i)
-        {
-            std::cout << 1.0 * selects[i] / N << " " << probability[i] << std::endl;
-        }
-
         constexpr static double ERROR = 0.01;
 
-        ASSERT_EQ(probability.size(), weights.size());
-        ASSERT_EQ(selects.size(), weights.size());
+        ASSERT_EQ(probability.size(), objects.size());
+        ASSERT_EQ(selects.size(), objects.size());
 
-        for (size_t i = 0; i < weights.size(); ++i)
+        for (size_t i = 0; i < objects.size(); ++i)
         {
             const double algo_prob = 1.0 * selects[i] / N;
             ASSERT_TRUE(probability[i] - ERROR <= algo_prob && algo_prob <= probability[i] + ERROR);
@@ -83,10 +79,11 @@ private:
 std::unordered_map<size_t, size_t> calculateSelects(size_t k)
 {
     std::unordered_map<size_t, size_t> selects_count;
+    const auto get_weight = [](const auto & p) { return p.second; };
 
     for (size_t iter = 0; iter < N; ++iter)
-        for (auto index : pickWeightedRandom(weights, k))
-            selects_count[index] += 1;
+        for (auto it : pickWeightedRandom(objects, get_weight, k))
+            selects_count[it->first] += 1;
 
     return selects_count;
 }
@@ -117,4 +114,3 @@ GTEST_TEST(WRS, AES_K_5)
 {
     ProbabilityValidator(5).validate(calculateSelects(5));
 }
-
