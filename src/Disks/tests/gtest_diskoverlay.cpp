@@ -156,9 +156,11 @@ TEST_F(OverlayTest, moveDirectory)
     base->createDirectory("folder2");
     base->createFile("folder1/file1.txt");
     base->createDirectory("folder1/inner");
+    base->createFile("folder1/file3.txt");
 
     over->createFile("folder1/file2.txt");
     over->createFile("folder1/inner/file0.txt");
+    over->removeFile("folder1/file3.txt");
 
     over->moveDirectory("folder1", "folder2/folder1");
 
@@ -203,11 +205,12 @@ TEST_F(OverlayTest, moveDeleteReadListFile) {
     writeToFileBase("folder/file.txt", "test data");
     writeToFileBase("file1.txt", "test data 1");
 
+    writeToFileOver("folder/file.txt", " more data", true);
     over->createDirectory("folder2");
     over->moveDirectory("folder", "folder2/folder");
 
-    writeToFileOver("folder2/folder/file.txt", " more data", true);
-    EXPECT_EQ(readFromFileOver("folder2/folder/file.txt"), "test data more data");
+    writeToFileOver("folder2/folder/file.txt", " and more data", true);
+    EXPECT_EQ(readFromFileOver("folder2/folder/file.txt"), "test data more data and more data");
 
     over->removeFile("folder2/folder/file.txt");
     writeToFileOver("folder2/folder/file.txt", "more data", true);
