@@ -161,6 +161,16 @@ std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const S
     return {host, port};
 }
 
+std::shared_ptr<DataTypeEnum8> DistributedQueryStatusSource::getStatusEnum()
+{
+    return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"OK", static_cast<Int8>(QueryStatus::OK)},
+        {"IN_PROGRESS", static_cast<Int8>(QueryStatus::IN_PROGRESS)},
+        {"QUEUED", static_cast<Int8>(QueryStatus::QUEUED)},
+        {"UNFINISHED", static_cast<Int8>(QueryStatus::UNFINISHED)},
+    });
+}
+
 Chunk DistributedQueryStatusSource::generate()
 {
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();

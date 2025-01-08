@@ -30,7 +30,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -1816,17 +1816,11 @@ try
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] > 0 && new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = new_server_settings[ServerSetting::concurrent_threads_soft_limit_num];
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] > 0)
-            {
-                auto value = new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] * getNumberOfCPUCoresToUse();
-                if (value > 0 && value < concurrent_threads_soft_limit)
-                    concurrent_threads_soft_limit = value;
-            }
-            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
+            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);

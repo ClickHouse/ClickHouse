@@ -8,7 +8,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
-#include <Formats/FormatSettings.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/WeakHash.h>
 
