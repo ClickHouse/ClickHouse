@@ -878,14 +878,6 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPt
     return getDatabase(resolved_database);
 }
 
-// void DatabaseCatalog::addViewDependency(const StorageID & source_table_id, const StorageID & view_id)
-// {
-//     std::lock_guard lock{databases_mutex};
-//     view_dependencies.addDependency(source_table_id, view_id);
-//     LOG_DEBUG(log, "addViewDependency");
-//     view_dependencies.log();
-// }
-
 void DatabaseCatalog::removeViewDependency(const StorageID & source_table_id, const StorageID & view_id)
 {
     std::lock_guard lock{databases_mutex};
@@ -897,16 +889,6 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     std::lock_guard lock{databases_mutex};
     return view_dependencies.getDependencies(source_table_id);
 }
-
-// void DatabaseCatalog::updateViewDependency(const StorageID & /*old_source_table_id*/, const StorageID & /*old_view_id*/,
-//     const StorageID & /*new_source_table_id*/, const StorageID & /*new_view_id*/)
-// {
-//     // std::lock_guard lock{databases_mutex};
-//     // if (!old_source_table_id.empty())
-//     //     view_dependencies.removeDependency(old_source_table_id, old_view_id, /* remove_isolated_tables= */ true);
-//     // if (!new_source_table_id.empty())
-//     //     view_dependencies.addDependency(new_source_table_id, new_view_id);
-// }
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
@@ -1444,12 +1426,8 @@ void DatabaseCatalog::addDependencies(
     if (!new_loading_dependencies.empty())
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
     if (!new_view_dependencies.empty())
-    {
         for (auto & new_view_dependency : new_view_dependencies)
-        {
             view_dependencies.addDependency(StorageID{new_view_dependency}, table_id);
-        }
-    }
 }
 
 void DatabaseCatalog::addDependencies(

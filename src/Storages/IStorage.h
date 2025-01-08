@@ -587,7 +587,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part moves between shards are not supported by storage {}", getName());
     }
 
-
     /** If the table have to do some complicated work on startup,
       *  that must be postponed after creation of table object
       *  (like launching some background threads),

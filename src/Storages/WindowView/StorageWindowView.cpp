@@ -409,20 +409,17 @@ UInt32 StorageWindowView::getCleanupBound()
 {
     if (max_fired_watermark == 0)
         return 0;
-
     if (is_proctime)
         return max_fired_watermark;
 
     auto w_bound = max_fired_watermark;
     if (allowed_lateness)
         w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
-
     return getWindowLowerBound(w_bound);
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
 {
-    LOG_TRACE(log, "top of getCleanupQuery");
     ASTPtr function_less;
     function_less= makeASTFunction(
         "less",

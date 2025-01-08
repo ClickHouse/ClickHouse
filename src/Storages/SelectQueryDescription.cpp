@@ -6,9 +6,6 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
-
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -49,13 +46,11 @@ namespace
 
 StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPtr context, bool add_default_db = true)
 {
-    LOG_DEBUG(&Poco::Logger::get("SelectQueryDescription"), "extractDependentTableFromSelectQuery: query before add_default_db {}", query.formatForLogging());
     if (add_default_db)
     {
         AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
         visitor.visit(query);
     }
-    LOG_DEBUG(&Poco::Logger::get("SelectQueryDescription"), "extractDependentTableFromSelectQuery: query after add_default_db {}", query.formatForLogging());
 
     if (auto db_and_table = getDatabaseAndTable(query, 0))
     {

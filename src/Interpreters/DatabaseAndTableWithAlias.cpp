@@ -12,8 +12,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -115,26 +113,14 @@ std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery
 
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number)
 {
-    LOG_DEBUG(&Poco::Logger::get("getDatabaseAndTable"), "getDatabaseAndTable from select {}, table_number {}",
-        select.formatForLogging(), table_number);
-
     const ASTTableExpression * table_expression = getTableExpression(select, table_number);
     if (!table_expression)
-    {
-        LOG_DEBUG(&Poco::Logger::get("getDatabaseAndTable"), "zero table expression");
         return {};
-    }
-
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
     if (!database_and_table_name || !database_and_table_name->as<ASTTableIdentifier>())
-    {
-        LOG_DEBUG(&Poco::Logger::get("getDatabaseAndTable"), "zero table expression {}", !database_and_table_name);
         return {};
-    }
 
-
-    LOG_DEBUG(&Poco::Logger::get("getDatabaseAndTable"), "table expression {}", database_and_table_name->formatForLogging());
     return DatabaseAndTableWithAlias(database_and_table_name);
 }
 

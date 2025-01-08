@@ -118,8 +118,6 @@ private:
     /// have UUID, and we do inner table lookup by name instead.
     bool fixed_uuid = true;
 
-    bool dependencies_are_tracked = false;
-
     friend class RefreshTask;
 
     void checkStatementCanBeForwarded() const;

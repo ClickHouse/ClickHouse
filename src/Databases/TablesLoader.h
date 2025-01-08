@@ -83,7 +83,7 @@ private:
 
     AsyncLoader & async_loader;
     std::unordered_map<String, LoadTaskPtr> load_table; /// table_id -> load task
-    std::unordered_map<String, LoadTaskPtr> startup_table; /// table_id -> load task
+    std::unordered_map<String, LoadTaskPtr> startup_table; /// table_id -> startup task
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();

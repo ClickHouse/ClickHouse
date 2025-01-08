@@ -42,7 +42,7 @@ def started_cluster():
     try:
         cluster.start()
 
-        nodenum=1
+        nodenum = 1
         for node in [node1, node2]:
             node.query(
                 f"""
@@ -53,8 +53,7 @@ def started_cluster():
                 PARTITION BY date ORDER BY id
                 """
             )
-            nodenum+=1
-
+            nodenum += 1
 
         yield cluster
 
@@ -306,14 +305,18 @@ def test_materialized_views_cascaded_multiple(started_cluster):
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.x (IdText String) engine=MergeTree order by IdText")
-    query("create table to_join (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id") # default DB
+    query(
+        "create table to_join (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id"
+    )  # default DB
     query(
         "create table test_mv.z (Id UInt64, IdTextLength UInt64) engine=MergeTree order by Id"
     )
     query(
         "create table test_mv.zz (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id"
     )
-    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t") # default DB
+    query(
+        "create materialized view t_to_a to test_mv.a as select Id from test_mv.t"
+    )  # default DB
     query(
         "create materialized view t_to_x to test_mv.x as select toString(Id) as IdText from test_mv.t"
     )
@@ -345,8 +348,9 @@ def test_materialized_views_cascaded_multiple(started_cluster):
     query("drop table to_join sync")
     query("drop database test_mv sync")
 
+
 def test_materialized_views_replicated(started_cluster):
-    nodenum=1
+    nodenum = 1
     for node in [node1, node2]:
         node.query(
             f"""
@@ -373,7 +377,9 @@ def test_materialized_views_replicated(started_cluster):
         event.set()
 
     for i in range(100):
-        node1.query(f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i}) ")
+        node1.query(
+            f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i}) "
+        )
 
     job = p.apply_async(
         reload_node,
@@ -386,7 +392,9 @@ def test_materialized_views_replicated(started_cluster):
     i = 0
     for i in range(100, 130):
         try:
-            node1.query(f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})")
+            node1.query(
+                f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})"
+            )
         except QueryRuntimeException as e:
             time.sleep(0.1)
     logging.debug(f"i is {i}")
@@ -394,7 +402,9 @@ def test_materialized_views_replicated(started_cluster):
     disconnect_event.wait(90)
 
     for i in range(2000, 2100):
-        node1.query(f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})")
+        node1.query(
+            f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})"
+        )
 
     src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
     logging.debug(f"{src_rows} are found in test_mv.test_table_H (src)")
@@ -403,7 +413,9 @@ def test_materialized_views_replicated(started_cluster):
     p.close()
     p.join()
 
-    assert node1.query("select count(*) from test_mv.test_table_S Format CSV") == src_rows
+    assert (
+        node1.query("select count(*) from test_mv.test_table_S Format CSV") == src_rows
+    )
 
     for node in [node1, node2]:
         node.query(

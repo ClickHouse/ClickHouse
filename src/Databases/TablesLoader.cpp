@@ -6,10 +6,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <numeric>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -128,7 +128,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
             if (startup_table.contains(dependency_id.getFullTableName()))
                 startup_mv_dependency_tasks.push_back(startup_table[dependency_id.getFullTableName()]);
 
-        // Make startup table task
+        /// Make startup table task
         auto table_name = table_id.getQualifiedName();
         if (!databases.contains(table_name.database) || !load_table.contains(table_id.getFullTableName()))
             // Materialized view target does not necessary exist

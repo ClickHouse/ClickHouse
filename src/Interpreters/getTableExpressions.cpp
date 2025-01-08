@@ -6,8 +6,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -52,7 +50,6 @@ const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, siz
         return {};
 
     const auto & tables_element = tables_in_select_query.children[table_number]->as<ASTTablesInSelectQueryElement &>();
-    LOG_DEBUG(&Poco::Logger::get("getTableExpressions"), "{}", tables_element.formatForLogging());
 
     if (!tables_element.table_expression)
         return {};
