@@ -2410,6 +2410,12 @@ public:
                     using LeftFieldType = typename LeftDataType::FieldType;
                     using RightFieldType = typename RightDataType::FieldType;
 
+                    if (isBool(right.getPtr()))
+                    {
+                        result = nativeBoolCast(builder, arguments[0]);
+                        return true;
+                    }
+
                     if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     {
                         result = nativeCast(builder, arguments[0], right.getPtr());
@@ -3669,6 +3675,12 @@ public:
                 {
                     using LeftFieldType = typename LeftDataType::FieldType;
                     using RightFieldType = typename RightDataType::FieldType;
+
+                    if (isBool(right.getPtr()))
+                    {
+                        result_value = nativeBoolCast(builder, left.getPtr(), input_value);
+                        return true;
+                    }
 
                     if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     {
