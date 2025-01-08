@@ -783,7 +783,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
         if (in_info.status != InputStatus::Finished)
         {
             // We haven't read all data from this input
-            in_info.port->setNeeded(); 
+            in_info.port->setNeeded();
         }
     }
 
