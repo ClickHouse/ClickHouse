@@ -540,4 +540,45 @@ const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & get
 
     return settings_changes_history;
 }
+
+const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
+{
+    static VersionToSettingsChangesMap merge_tree_settings_changes_history;
+    static std::once_flag initialized_flag;
+    std::call_once(initialized_flag, [&]
+    {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.1",
+        {
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
+            {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
+            {"add_minmax_index_for_string_columns", false, false, "New setting"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "24.12",
+        {
+            /// Release closed. Please use 25.1
+            {"enforce_index_structure_match_on_partition_manipulation", true, false, "New setting"},
+            {"use_primary_key_cache", false, false, "New setting"},
+            {"prewarm_primary_key_cache", false, false, "New setting"},
+            {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
+            {"allow_experimental_reverse_key", false, false, "New setting"},
+            /// Release closed. Please use 25.1
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "24.11",
+        {
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "24.10",
+        {
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "24.9",
+        {
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "24.8",
+        {
+            {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
+        });
+    });
+
+    return merge_tree_settings_changes_history;
+}
+
 }
