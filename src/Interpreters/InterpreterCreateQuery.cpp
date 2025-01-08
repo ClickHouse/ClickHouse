@@ -20,7 +20,6 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include "Interpreters/TemporaryReplaceTableName.h"
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
