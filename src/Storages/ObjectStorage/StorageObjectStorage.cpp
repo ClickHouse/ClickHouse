@@ -246,7 +246,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        static std::mutex initialize_mutex;
         std::lock_guard lock(initialize_mutex);
 
         createIterator(nullptr);
@@ -429,9 +428,12 @@ private:
     const size_t max_block_size;
     size_t num_streams;
     const bool distributed_processing;
+    inline static std::mutex initialize_mutex;
 
     void createIterator(const ActionsDAG::Node * predicate)
     {
+        std::lock_guard lock(initialize_mutex);
+
         if (!iterator_wrapper.empty())
             return;
         auto context = getContext();
