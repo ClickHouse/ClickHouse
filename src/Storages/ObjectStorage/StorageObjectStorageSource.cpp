@@ -317,6 +317,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     bool need_only_count,
     bool read_all_columns)
 {
+    static std::mutex initialize_mutex;
+    std::lock_guard lock(initialize_mutex);
+
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
