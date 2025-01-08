@@ -1645,7 +1645,7 @@ toUInt8('8'): 8
 **See also**
 
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#toUInt8OrNull).
+- [`toUInt8OrNull`](#touint8ornull).
 - [`toUInt8OrDefault`](#touint8ordefault).
 
 ## toUInt8OrZero
@@ -1830,7 +1830,7 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 - [`toUInt8`](#touint8).
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#toUInt8OrNull).
+- [`toUInt8OrNull`](#touint8ornull).
 
 ## toUInt16
 
