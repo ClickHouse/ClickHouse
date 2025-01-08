@@ -852,7 +852,7 @@ void DatabaseReplicated::restoreTablesMetadataInKeeper()
     txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(tables_digest), -1));
     {
         std::lock_guard lock{metadata_mutex};
-        tables_metadata_digest += tables_digest;
+        tables_metadata_digest = tables_digest;
         assert(checkDigestValid(local_context));
     }
     txn->commit();
