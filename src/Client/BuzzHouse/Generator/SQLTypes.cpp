@@ -525,7 +525,12 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                     }
                 }
                 desc += " ";
-                SQLType * jtp = randomNextType(rg, fc.type_mask & ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
+
+                const uint32_t type_mask_backup = this->next_type_mask;
+                this->next_type_mask = fc.type_mask & ~(allow_nested | allow_enum);
+                SQLType * jtp = randomNextType(rg, this->next_type_mask, col_counter, tp ? jpt->mutable_type() : nullptr);
+                this->next_type_mask = type_mask_backup;
+
                 jtp->typeName(desc, false);
                 subcols.push_back(JSubType(npath, jtp));
             }
@@ -572,13 +577,6 @@ StatementGenerator::generateArraytype(RandomGenerator & rg, const uint32_t allow
     return new ArrayType(k);
 }
 
-SQLType * StatementGenerator::generateArraytype(RandomGenerator & rg, const uint32_t allowed_types)
-{
-    uint32_t col_counter = 0;
-
-    return generateArraytype(rg, allowed_types, col_counter, nullptr);
-}
-
 SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 60;
@@ -597,7 +595,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (/*non_nullable_type && */ nopt < (non_nullable_type + 1))
+    if (non_nullable_type && nopt < (non_nullable_type + 1))
     {
         //non nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
@@ -619,7 +617,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
     {
         //array
-        const uint32_t nallowed = allowed_types & ~(allow_nested | ((allowed_types & allow_nullable_inside_array) ? 0 : allow_nullable));
+        const uint32_t nallowed
+            = this->next_type_mask & ~(allow_nested | ((allowed_types & allow_nullable_inside_array) ? 0 : allow_nullable));
         return generateArraytype(rg, nallowed, col_counter, tp ? tp->mutable_array() : nullptr);
     }
     else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
@@ -628,10 +627,10 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         MapTypeDef * mt = tp ? tp->mutable_map() : nullptr;
 
         this->depth++;
-        SQLType * k
-            = this->randomNextType(rg, allowed_types & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
+        SQLType * k = this->randomNextType(
+            rg, this->next_type_mask & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
         this->width++;
-        SQLType * v = this->randomNextType(rg, allowed_types & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+        SQLType * v = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
         this->depth--;
         this->width--;
         return new MapType(k, v);
@@ -661,7 +660,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
                 tcd->mutable_col()->set_column("c" + std::to_string(ncname));
                 opt_cname = std::optional<uint32_t>(ncname);
             }
-            SQLType * k = this->randomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
+            SQLType * k
+                = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
             subtypes.push_back(SubType(opt_cname, k));
         }
         this->depth--;
@@ -682,7 +682,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
             subtypes.push_back(this->randomNextType(
-                rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
+                rg, this->next_type_mask & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
         }
         this->depth--;
         return new VariantType(subtypes);
@@ -705,7 +705,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             {
                 tcd->mutable_col()->set_column("c" + std::to_string(cname));
             }
-            SQLType * k = this->randomNextType(rg, allowed_types & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+            SQLType * k
+                = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
             subtypes.push_back(NestedSubType(cname, k));
         }
         this->depth--;
@@ -729,13 +730,6 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         assert(0);
     }
     return nullptr;
-}
-
-SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types)
-{
-    uint32_t col_counter = 0;
-
-    return randomNextType(rg, allowed_types, col_counter, nullptr);
 }
 
 void appendDecimal(RandomGenerator & rg, std::string & ret, const uint32_t left, const uint32_t right)
@@ -1323,7 +1317,11 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     else if (dynamic_cast<DynamicType *>(tp))
     {
         uint32_t col_counter = 0;
-        SQLType * next = randomNextType(rg, fc.type_mask & ~(allow_dynamic|allow_nested), col_counter, nullptr);
+        const uint32_t type_mask_backup = this->next_type_mask;
+
+        this->next_type_mask = fc.type_mask & ~(allow_dynamic | allow_nested);
+        SQLType * next = randomNextType(rg, this->next_type_mask, col_counter, nullptr);
+        this->next_type_mask = type_mask_backup;
 
         strAppendAnyValueInternal(rg, ret, next);
         if (rg.nextMediumNumber() < 4)

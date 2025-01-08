@@ -86,7 +86,8 @@ private:
 
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
          allow_subqueries = true, enforce_final = false, peer_query = false;
-    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
+    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0,
+             next_type_mask = std::numeric_limits<uint32_t>::max();
     std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::map<uint32_t, SQLTable> staged_tables, tables;
     std::map<uint32_t, SQLView> staged_views, views;
@@ -322,10 +323,7 @@ private:
     std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
     SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
     SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
-    SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types);
     SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
-
-    SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types);
     SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);

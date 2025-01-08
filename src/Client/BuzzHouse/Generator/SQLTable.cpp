@@ -974,43 +974,43 @@ int StatementGenerator::addTableColumn(
     SQLColumn col;
     SQLType * tp = nullptr;
     auto & to_add = staged ? t.staged_cols : t.cols;
-    uint32_t possible_types = fc.type_mask;
 
+    this->next_type_mask = fc.type_mask;
     if (t.isMySQLEngine() || t.hasMySQLPeer())
     {
-        possible_types &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
     }
     if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
     {
-        possible_types &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
             | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
-            possible_types &= ~(set_any_datetime_precision); //datetime must have 6 digits precision
+            this->next_type_mask &= ~(set_any_datetime_precision); //datetime must have 6 digits precision
         }
     }
     if (t.isSQLiteEngine() || t.hasSQLitePeer())
     {
-        possible_types &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
             | allow_nested | allow_geo);
         if (t.hasSQLitePeer())
         {
             //for bool it maps to int type, then it outputs 0 as default instead of false
             // for decimal it prints as text
-            possible_types &= ~(allow_bool | allow_decimals);
+            this->next_type_mask &= ~(allow_bool | allow_decimals);
         }
     }
     if (t.isMongoDBEngine())
     {
-        possible_types &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
     }
     if (t.hasDatabasePeer())
     {
         //ClickHouse's UUID sorting order is different from other databases
-        possible_types &= ~(allow_uuid);
+        this->next_type_mask &= ~(allow_uuid);
     }
 
     col.cname = cname;
@@ -1023,28 +1023,29 @@ int StatementGenerator::addTableColumn(
     }
     else if (special == ColumnSpecial::VERSION)
     {
-        if (((possible_types & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
+        if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
             Integers nint;
 
-            std::tie(tp, nint) = randomIntType(rg, possible_types);
+            std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
-        else if (((possible_types & allow_datetimes) == 0) || rg.nextBool())
+        else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
             Dates dd;
 
-            std::tie(tp, dd) = randomDateType(rg, possible_types);
+            std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
         }
         else
         {
-            tp = randomDateTimeType(rg, possible_types, cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
+            tp = randomDateTimeType(
+                rg, this->next_type_mask, cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
         }
     }
     else
     {
-        tp = randomNextType(rg, possible_types, t.col_counter, cd->mutable_type()->mutable_type());
+        tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
     }
     col.tp = tp;
     col.special = special;
