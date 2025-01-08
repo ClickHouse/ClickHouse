@@ -467,11 +467,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
                     required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     break;
                 case DataDestinationType::TABLE:
-                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
                     break;
                 case DataDestinationType::SHARD:
-                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     required_access.emplace_back(AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
                     break;
                 case DataDestinationType::DELETE:

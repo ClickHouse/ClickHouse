@@ -1892,7 +1892,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             if (join_clause.hasASOF())
             {
                 const auto & asof_conditions = join_clause.getASOFConditions();
-                assert(asof_conditions.size() == 1);
+                if (asof_conditions.size() > 1)
+                {
+                    throw Exception(
+                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                        "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
+                        join_node.formatASTForErrorMessage());
+                }
 
                 const auto & asof_condition = asof_conditions[0];
                 table_join->setAsofInequality(asof_condition.asof_inequality);
@@ -1909,7 +1915,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
             mixed_join_expression = std::make_shared<ExpressionActions>(
                 std::move(*join_clauses_and_actions.residual_join_expressions_actions),
-                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
+                ExpressionActionsSettings(planner_context->getQueryContext()));
 
             appendSetsFromActionsDAG(mixed_join_expression->getActionsDAG(), left_join_tree_query_plan.useful_sets);
             join_clauses_and_actions.residual_join_expressions_actions.reset();
