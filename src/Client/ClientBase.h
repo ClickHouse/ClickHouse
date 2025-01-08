@@ -103,6 +103,7 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
+    void processTextAsSingleQuery(const String & full_query);
 
 protected:
     void runInteractive();
@@ -119,6 +120,11 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
+    virtual bool buzzHouse()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+    }
+
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -126,7 +132,6 @@ protected:
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    void processTextAsSingleQuery(const String & full_query);
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
@@ -202,7 +207,7 @@ private:
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    String prompt() const;
+    String getPrompt() const;
 
     void resetOutput();
 
@@ -255,6 +260,8 @@ protected:
 
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
+
+    String appendSmileyIfNeeded(const String & prompt);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -345,7 +352,7 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
-    String prompt_by_server_display_name;
+    String prompt;
     String server_display_name;
 
     ProgressIndication progress_indication;
@@ -376,6 +383,10 @@ protected:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
+
+    //Options for BuzzHouse
+    String buzz_house_options_path;
+    bool buzz_house = false;
 
     struct
     {
