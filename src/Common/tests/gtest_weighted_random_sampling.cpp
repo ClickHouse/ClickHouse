@@ -90,27 +90,27 @@ std::unordered_map<size_t, size_t> calculateSelects(size_t k)
 
 }
 
-GTEST_TEST(WRS, AES_K_1)
+GTEST_TEST(WeightedRandomSampling, AES1)
 {
     ProbabilityValidator(1).validate(calculateSelects(1));
 }
 
-GTEST_TEST(WRS, AES_K_2)
+GTEST_TEST(WeightedRandomSampling, AES2)
 {
     ProbabilityValidator(2).validate(calculateSelects(2));
 }
 
-GTEST_TEST(WRS, AES_K_3)
+GTEST_TEST(WeightedRandomSampling, AES3)
 {
     ProbabilityValidator(3).validate(calculateSelects(3));
 }
 
-GTEST_TEST(WRS, AES_K_4)
+GTEST_TEST(WeightedRandomSampling, AES4)
 {
     ProbabilityValidator(4).validate(calculateSelects(4));
 }
 
-GTEST_TEST(WRS, AES_K_5)
+GTEST_TEST(WeightedRandomSampling, AES5)
 {
     ProbabilityValidator(5).validate(calculateSelects(5));
 }
