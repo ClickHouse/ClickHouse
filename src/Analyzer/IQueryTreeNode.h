@@ -42,7 +42,6 @@ enum class QueryTreeNodeType : uint8_t
     TABLE_FUNCTION,
     QUERY,
     ARRAY_JOIN,
-    CROSS_JOIN,
     JOIN,
     UNION
 };

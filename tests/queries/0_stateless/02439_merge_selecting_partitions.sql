@@ -1,5 +1,3 @@
--- Tags: no-shared-merge-tree
--- Predicate works in a different way
 drop table if exists rmt;
 
 create table rmt (n int, m int) engine=ReplicatedMergeTree('/test/02439/{shard}/{database}', '{replica}') partition by n order by n;

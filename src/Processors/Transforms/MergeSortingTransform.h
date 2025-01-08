@@ -28,7 +28,6 @@ public:
         bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
-        size_t min_external_sort_block_bytes_,
         size_t max_bytes_before_external_sort_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_);
@@ -45,7 +44,6 @@ protected:
 private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
-    size_t min_external_sort_block_bytes;
     size_t max_bytes_before_external_sort;
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t temporary_files_num = 0;

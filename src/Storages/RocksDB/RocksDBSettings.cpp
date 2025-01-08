@@ -74,9 +74,4 @@ void RocksDBSettings::loadFromQuery(const ASTStorage & storage_def)
         }
     }
 }
-
-bool RocksDBSettings::hasBuiltin(std::string_view name)
-{
-    return RocksDBSettingsImpl::hasBuiltin(name);
-}
 }

@@ -20,6 +20,7 @@ struct DataTypeValidationSettings
     bool allow_experimental_object_type = true;
     bool allow_suspicious_fixed_string_types = true;
     bool enable_variant_type = true;
+    bool allow_experimental_bfloat16_type = true;
     bool allow_suspicious_variant_types = true;
     bool validate_nested_types = true;
     bool enable_dynamic_type = true;

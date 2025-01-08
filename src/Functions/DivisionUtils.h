@@ -84,7 +84,7 @@ struct DivideIntegralImpl
         }
         else
         {
-            /// Comparisons are not strict to avoid rounding issues when operand is implicitly cast to float.
+            /// Comparisons are not strict to avoid rounding issues when operand is implicitly casted to float.
 
             if constexpr (is_floating_point<A>)
                 if (isNaN(a) || a >= std::numeric_limits<CastA>::max() || a <= std::numeric_limits<CastA>::lowest())

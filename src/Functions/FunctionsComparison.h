@@ -27,7 +27,6 @@
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/Context.h>
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
@@ -35,7 +34,6 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
-#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -45,11 +43,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
-}
 
 namespace ErrorCodes
 {
@@ -650,14 +643,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context), context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions]); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
 
-    explicit FunctionComparison(bool check_decimal_overflow_, bool allow_not_comparable_types_)
-        : check_decimal_overflow(check_decimal_overflow_), allow_not_comparable_types(allow_not_comparable_types_) {}
+    explicit FunctionComparison(bool check_decimal_overflow_)
+        : check_decimal_overflow(check_decimal_overflow_) {}
 
 private:
     bool check_decimal_overflow = true;
-    bool allow_not_comparable_types = false;
 
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
@@ -1134,31 +1126,6 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!allow_not_comparable_types)
-        {
-            if ((name == NameEquals::name || name == NameNotEquals::name))
-            {
-                if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
-                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                        arguments[0]->getName(),
-                        arguments[1]->getName(),
-                        getName());
-            }
-            else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
-                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                    arguments[0]->getName(),
-                    arguments[1]->getName(),
-                    getName());
-            }
-        }
-
         WhichDataType left(arguments[0].get());
         WhichDataType right(arguments[1].get());
 
@@ -1185,7 +1152,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow, allow_not_comparable_types));
+            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
 
             bool has_nullable = false;
             bool has_null = false;

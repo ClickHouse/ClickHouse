@@ -67,19 +67,15 @@ private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
-    using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
-    using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
 
     ObjectStorageType type;
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-
-    mutable std::mutex mutex;
-    UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
-    UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
-    UInt64 polling_backoff_ms TSA_GUARDED_BY(mutex);
-    CommitSettings commit_settings TSA_GUARDED_BY(mutex);
+    UInt64 polling_min_timeout_ms;
+    UInt64 polling_max_timeout_ms;
+    UInt64 polling_backoff_ms;
+    const CommitSettings commit_settings;
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
@@ -110,13 +106,12 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
-        ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
         ContextPtr local_context,
         bool commit_once_processed);
 
-    size_t getDependencies() const;
+    bool hasDependencies(const StorageID & table_id);
     bool streamToViews();
     void threadFunc();
 };

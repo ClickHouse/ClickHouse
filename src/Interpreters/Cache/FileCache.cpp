@@ -247,15 +247,7 @@ CachePriorityGuard::Lock FileCache::lockCache() const
 
 CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
 {
-    if (acquire_timeout.has_value())
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
-        return cache_guard.tryLockFor(acquire_timeout.value());
-    }
-    else
-    {
-        return cache_guard.tryLock();
-    }
+    return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
@@ -1340,8 +1332,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
         user = getCommonUser();
     }
 
-    UInt64 offset = 0;
-    UInt64 size = 0;
+    UInt64 offset = 0, size = 0;
     for (; key_it != fs::directory_iterator(); key_it++)
     {
         const fs::path key_directory = key_it->path();

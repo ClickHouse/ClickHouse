@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
+#include <Formats/FormatSettings.h>
 
 #include <vector>
 
@@ -9,7 +10,6 @@ namespace DB
 {
 
 class Block;
-struct FormatSettings;
 class NamesAndTypesList;
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 

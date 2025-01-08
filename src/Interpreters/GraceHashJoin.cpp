@@ -430,9 +430,6 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
-    if (rightTableCanBeReranged())
-        tryRerangeRightTableData();
-
     if (block.rows() == 0)
     {
         hash_join->joinBlock(block, not_processed);
@@ -716,12 +713,11 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
             if (!current_block.rows())
                 return;
         }
-        auto prev_keys_num = hash_join->getTotalRowCount();
 
+        auto prev_keys_num = hash_join->getTotalRowCount();
         hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
-        size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
-        size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-        if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+
+        if (!hasMemoryOverflow(hash_join))
             return;
 
         current_block = {};
@@ -758,20 +754,6 @@ size_t GraceHashJoin::getNumBuckets() const
 {
     std::shared_lock lock(rehash_mutex);
     return buckets.size();
-}
-
-bool GraceHashJoin::rightTableCanBeReranged() const
-{
-    if (hash_join && getNumBuckets() <= 1)
-        return hash_join->rightTableCanBeReranged();
-    return false;
-}
-
-void GraceHashJoin::tryRerangeRightTableData()
-{
-    std::lock_guard lock(hash_join_mutex);
-    if (hash_join)
-        hash_join->tryRerangeRightTableData();
 }
 
 GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const

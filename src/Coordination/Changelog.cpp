@@ -2399,14 +2399,6 @@ Changelog::~Changelog()
     try
     {
         flush();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    try
-    {
         shutdown();
     }
     catch (...)

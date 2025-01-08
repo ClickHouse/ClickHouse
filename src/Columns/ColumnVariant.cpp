@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -404,15 +402,6 @@ void ColumnVariant::get(size_t n, Field & res) const
         res = Null();
     else
         variants[discr]->get(offsetAt(n), res);
-}
-
-std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
-{
-    Discriminator discr = localDiscriminatorAt(n);
-    if (discr == NULL_DISCRIMINATOR)
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
-
-    return variants[discr]->getValueNameAndType(offsetAt(n));
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -1440,16 +1429,16 @@ bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-ColumnPtr ColumnVariant::compress(bool force_compression) const
+ColumnPtr ColumnVariant::compress() const
 {
-    ColumnPtr local_discriminators_compressed = local_discriminators->compress(force_compression);
-    ColumnPtr offsets_compressed = offsets->compress(force_compression);
+    ColumnPtr local_discriminators_compressed = local_discriminators->compress();
+    ColumnPtr offsets_compressed = offsets->compress();
     size_t byte_size = local_discriminators_compressed->byteSize() + offsets_compressed->byteSize();
     Columns compressed;
     compressed.reserve(variants.size());
     for (const auto & variant : variants)
     {
-        auto compressed_variant = variant->compress(force_compression);
+        auto compressed_variant = variant->compress();
         byte_size += compressed_variant->byteSize();
         compressed.emplace_back(std::move(compressed_variant));
     }

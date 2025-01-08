@@ -1,10 +1,10 @@
 import json
 import time
 
-from ._environment import _Environment
-from .result import Result
-from .settings import Settings
-from .utils import Shell
+from praktika._environment import _Environment
+from praktika.result import Result
+from praktika.settings import Settings
+from praktika.utils import Shell
 
 
 class GH:

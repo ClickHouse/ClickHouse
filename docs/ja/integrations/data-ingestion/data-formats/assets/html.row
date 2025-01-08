@@ -1,0 +1,4 @@
+<tr>
+  <td>${ip:Escaped}</td>
+  <td>${total:Escaped}</td>
+</tr>
