@@ -528,7 +528,7 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     //pto.LoopInterleaving = true;
     //pto.LoopVectorization = true;
 #if defined(__x86_64__)
-    llvm::PassBuilder pb(machine.get(), pto);
+    llvm::PassBuilder pb(nullptr, pto);
 #else
     llvm::PassBuilder pb(nullptr, pto);
 #endif
