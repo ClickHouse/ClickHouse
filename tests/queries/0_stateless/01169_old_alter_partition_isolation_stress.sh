@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-ordinary-database
+# Tags: long, no-replicated-database, no-ordinary-database, zookeeper
 
 # shellcheck disable=SC2015
 

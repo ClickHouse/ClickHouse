@@ -147,7 +147,8 @@ StorageRabbitMQ::StorageRabbitMQ(
     std::pair<String, UInt16> parsed_address;
     auto setting_rabbitmq_username = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value;
     auto setting_rabbitmq_password = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value;
-    String username, password;
+    String username;
+    String password;
 
     if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
@@ -329,6 +330,13 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 
     /// check for non-rabbitmq-related settings
     modified_context->applySettingsChanges(rabbitmq_settings->getFormatSettings());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    modified_context->setSetting("input_format_csv_detect_header", false);
+    modified_context->setSetting("input_format_tsv_detect_header", false);
+    modified_context->setSetting("input_format_custom_detect_header", false);
 
     return modified_context;
 }
@@ -687,7 +695,8 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
             if (setting_values.size() != 2)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid settings string: {}", setting);
 
-            String key = setting_values[0], value = setting_values[1];
+            String key = setting_values[0];
+            String value = setting_values[1];
 
             if (integer_settings.contains(key))
                 queue_settings[key] = parse<uint64_t>(value);
@@ -1322,7 +1331,14 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 
-    factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage(
+        "RabbitMQ",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .source_access_type = AccessType::RABBITMQ,
+            .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
+        });
 }
 
 }

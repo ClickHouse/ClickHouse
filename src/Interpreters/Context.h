@@ -21,6 +21,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
+#include <Backups/BackupsInMemoryHolder.h>
 
 #include "config.h"
 
@@ -76,6 +77,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
+class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -88,6 +90,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -144,7 +147,7 @@ struct Settings;
 struct SettingChange;
 class SettingsChanges;
 struct SettingsConstraintsAndProfileIDs;
-class SettingsProfileElements;
+struct AlterSettingsProfileElements;
 class RemoteHostFilter;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -288,6 +291,7 @@ protected:
 
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
+    std::shared_ptr<std::vector<UUID>> external_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -496,6 +500,8 @@ public:
 
         KitchenSink & operator=(const KitchenSink & rhs)
         {
+            if (&rhs == this)
+                return *this;
             analyze_counter = rhs.analyze_counter.load();
             return *this;
         }
@@ -533,6 +539,8 @@ protected:
     MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
+
+    BackupsInMemoryHolder backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -583,6 +591,7 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+    std::shared_ptr<IDisk> getDatabaseDisk() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -633,7 +642,7 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_);
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
     std::optional<UUID> getUserID() const;
@@ -863,7 +872,7 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
@@ -882,7 +891,7 @@ public:
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
-    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void tryCreateEmbeddedDictionaries() const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void waitForDictionariesLoad() const;
 
@@ -893,6 +902,8 @@ public:
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
+    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
@@ -900,6 +911,8 @@ public:
 
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
+    BackupsInMemoryHolder & getBackupsInMemory();
+    const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
@@ -1072,6 +1085,11 @@ public:
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
+    void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
+    void clearPrimaryIndexCache() const;
+
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -1113,6 +1131,7 @@ public:
     size_t getPrefetchThreadpoolSize() const;
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
+    ThreadPool & getIcebergCatalogThreadpool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -1284,8 +1303,6 @@ public:
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
 
-    /// Add started bridge command. It will be killed after context destruction
-    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
@@ -1395,6 +1412,8 @@ private:
 
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
+    void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
+
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock);
@@ -1407,7 +1426,7 @@ private:
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 
     void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source);
 
@@ -1416,6 +1435,9 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
+
+    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 

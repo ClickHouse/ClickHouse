@@ -148,6 +148,7 @@ private:
         MergeTreePartInfo latest_failed_part_info;
         time_t latest_fail_time = 0;
         String latest_fail_reason;
+        String latest_fail_error_code_name;
     };
 
     /// Mapping from znode path to Mutations Status
@@ -334,6 +335,7 @@ public:
         UPDATE,
         MERGE_PREDICATE,
         SYNC,
+        FIX_METADATA_VERSION,
         OTHER,
     };
 

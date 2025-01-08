@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/RestoreSettings.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -8,7 +9,9 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadPool_fwd.h>
+
 #include <filesystem>
+#include <future>
 
 
 namespace DB
@@ -53,7 +56,7 @@ public:
     using DataRestoreTasks = std::vector<DataRestoreTask>;
 
     /// Restores the metadata of databases and tables and returns tasks to restore the data of tables.
-    void run(Mode mode);
+    void run(Mode mode_);
 
     BackupPtr getBackup() const { return backup; }
     const RestoreSettings & getRestoreSettings() const { return restore_settings; }
@@ -80,10 +83,11 @@ private:
     ContextMutablePtr context;
     QueryStatusPtr process_list_element;
     std::function<void()> after_task_callback;
-    std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
     LoggerPtr log;
 
+    const ZooKeeperRetriesInfo zookeeper_retries_info;
+    Mode mode = Mode::RESTORE;
     Strings all_hosts;
     DDLRenamingMap renaming_map;
     std::vector<std::filesystem::path> root_paths_in_backup;
@@ -97,20 +101,27 @@ private:
     void findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
 
+    void logNumberOfDatabasesAndTablesToRestore() const;
     size_t getNumDatabases() const;
     size_t getNumTables() const;
 
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
-    void createDatabases();
+    void createAndCheckDatabases();
+    void createAndCheckDatabase(const String & database_name);
+    void createAndCheckDatabaseImpl(const String & database_name);
     void createDatabase(const String & database_name) const;
     void checkDatabase(const String & database_name);
 
     void applyCustomStoragePolicy(ASTPtr query_ptr);
 
     void removeUnresolvedDependencies();
-    void createTables();
+
+    void createAndCheckTables();
+    void createAndCheckTablesWithSameDependencyLevel(const std::vector<StorageID> & table_ids);
+    void createAndCheckTable(const QualifiedTableName & table_name);
+    void createAndCheckTableImpl(const QualifiedTableName & table_name);
     void createTable(const QualifiedTableName & table_name);
     void checkTable(const QualifiedTableName & table_name);
 
@@ -163,7 +174,6 @@ private:
     TablesDependencyGraph tables_dependencies TSA_GUARDED_BY(mutex);
     std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessRestorerFromBackup> access_restorer TSA_GUARDED_BY(mutex);
-    bool access_restored TSA_GUARDED_BY(mutex) = false;
 
     std::vector<std::future<void>> futures TSA_GUARDED_BY(mutex);
     std::atomic<bool> exception_caught = false;

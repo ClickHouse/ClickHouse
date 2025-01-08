@@ -8,18 +8,17 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
-
-TEST(DISABLED_SchedulerFairPolicy, Factory)
+TEST(SchedulerFairPolicy, Factory)
 {
     ResourceTest t;
 
     Poco::AutoPtr cfg = new Poco::Util::XMLConfiguration();
-    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", /* event_queue = */ nullptr, *cfg, "");
+    EventQueue event_queue;
+    SchedulerNodePtr fair = SchedulerNodeFactory::instance().get("fair", &event_queue, *cfg, "");
     EXPECT_TRUE(dynamic_cast<FairPolicy *>(fair.get()) != nullptr);
 }
 
-TEST(DISABLED_SchedulerFairPolicy, FairnessWeights)
+TEST(SchedulerFairPolicy, FairnessWeights)
 {
     ResourceTest t;
 
@@ -43,7 +42,7 @@ TEST(DISABLED_SchedulerFairPolicy, FairnessWeights)
     t.consumed("B", 20);
 }
 
-TEST(DISABLED_SchedulerFairPolicy, Activation)
+TEST(SchedulerFairPolicy, Activation)
 {
     ResourceTest t;
 
@@ -79,7 +78,7 @@ TEST(DISABLED_SchedulerFairPolicy, Activation)
     t.consumed("B", 10);
 }
 
-TEST(DISABLED_SchedulerFairPolicy, FairnessMaxMin)
+TEST(SchedulerFairPolicy, FairnessMaxMin)
 {
     ResourceTest t;
 
@@ -103,7 +102,7 @@ TEST(DISABLED_SchedulerFairPolicy, FairnessMaxMin)
     t.consumed("A", 20);
 }
 
-TEST(DISABLED_SchedulerFairPolicy, HierarchicalFairness)
+TEST(SchedulerFairPolicy, HierarchicalFairness)
 {
     ResourceTest t;
 

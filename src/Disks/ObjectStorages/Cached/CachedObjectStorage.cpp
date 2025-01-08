@@ -148,20 +148,6 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
-void CachedObjectStorage::removeObject(const StoredObject & object)
-{
-    removeCacheIfExists(object.remote_path);
-    object_storage->removeObject(object);
-}
-
-void CachedObjectStorage::removeObjects(const StoredObjects & objects)
-{
-    for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
-
-    object_storage->removeObjects(objects);
-}
-
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeCacheIfExists(object.remote_path);

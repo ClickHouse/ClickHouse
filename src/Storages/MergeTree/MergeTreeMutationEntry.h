@@ -30,6 +30,7 @@ struct MergeTreeMutationEntry
     MergeTreePartInfo latest_failed_part_info;
     time_t latest_fail_time = 0;
     String latest_fail_reason;
+    String latest_fail_error_code_name;
 
     /// If empty, applied to all partitions. Not serialized. Sorted (to use binary_search).
     PartitionIds partition_ids;
