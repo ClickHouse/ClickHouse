@@ -5,6 +5,10 @@ sidebar_label: Other
 title: Other Functions
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+
 # Other Functions
 
 ## hostName
@@ -1507,6 +1511,8 @@ Result:
 
 ## neighbor
 
+<DeprecatedBadge/>
+
 The window function that provides access to a row at a specified offset before or after the current row of a given column.
 
 **Syntax**
@@ -2229,7 +2235,7 @@ Result:
 
 ## filesystemAvailable
 
-Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for the operating system.
+Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemUnreserved](#filesystemunreserved)) because some space is reserved for the operating system.
 
 **Syntax**
 
@@ -2770,6 +2776,8 @@ Result:
 ```
 
 ## catboostEvaluate
+
+<CloudNotSupportedBadge/>
 
 :::note
 This function is not available in ClickHouse Cloud.
@@ -4188,11 +4196,13 @@ Result:
 
 ## transactionID
 
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
 Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
-
 ```
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
@@ -4235,6 +4245,9 @@ Result:
 ```
 
 ## transactionLatestSnapshot
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
@@ -4279,6 +4292,9 @@ Result:
 ```
 
 ## transactionOldestSnapshot
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 

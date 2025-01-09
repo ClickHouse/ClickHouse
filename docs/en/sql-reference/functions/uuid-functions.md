@@ -5,6 +5,8 @@ sidebar_label: UUIDs
 title: UUID Functions
 ---
 
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+
 # Functions for Working with UUIDs
 
 ## generateUUIDv4
@@ -622,6 +624,8 @@ SELECT generateSnowflakeID('expr', 1);
 
 ## snowflakeToDateTime
 
+<DeprecatedBadge/>
+
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
@@ -662,6 +666,8 @@ Result:
 ```
 
 ## snowflakeToDateTime64
+
+<DeprecatedBadge/>
 
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
@@ -704,6 +710,8 @@ Result:
 
 ## dateTimeToSnowflake
 
+<DeprecatedBadge/>
+
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
@@ -742,6 +750,8 @@ Result:
 ```
 
 ## dateTime64ToSnowflake
+
+<DeprecatedBadge/>
 
 :::warning
 This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.

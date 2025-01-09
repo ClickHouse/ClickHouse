@@ -5,10 +5,18 @@ sidebar_label: UDF
 title: User Defined Functions
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # UDFs User Defined Functions
 
-
 ## Executable User Defined Functions
+
+<PrivatePreviewBadge/>
+
+:::note
+This feature is supported in private preview in ClickHouse Cloud. Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
+:::
+
 ClickHouse can call any external executable program or script to process data.
 
 The configuration of executable user defined functions can be located in one or more xml-files. The path to the configuration is specified in the [user_defined_executable_functions_config](../../operations/server-configuration-parameters/settings.md#user_defined_executable_functions_config) parameter.
@@ -33,7 +41,7 @@ A function configuration contains the following settings:
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
-## Examples
+### Examples
 
 **Inline script**
 
@@ -283,16 +291,16 @@ Result:
 ```
 
 
-## Error Handling
+### Error Handling
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
 
-## Evaluation of Argument Expressions
+### Evaluation of Argument Expressions
 
 In almost all programming languages, one of the arguments might not be evaluated for certain operators. This is usually the operators `&&`, `||`, and `?:`.
 But in ClickHouse, arguments of functions (operators) are always evaluated. This is because entire parts of columns are evaluated at once, instead of calculating each row separately.
 
-## Performing Functions for Distributed Query Processing
+### Performing Functions for Distributed Query Processing
 
 For distributed query processing, as many stages of query processing as possible are performed on remote servers, and the rest of the stages (merging intermediate results and everything after that) are performed on the requestor server.
 

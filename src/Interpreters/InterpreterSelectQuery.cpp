@@ -223,6 +223,7 @@ FilterDAGInfoPtr generateFilterActions(
     const StorageMetadataPtr & metadata_snapshot,
     Names & prerequisite_columns,
     PreparedSetsPtr prepared_sets)
+try
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
@@ -284,6 +285,11 @@ FilterDAGInfoPtr generateFilterActions(
     }
 
     return filter_info;
+}
+catch (Exception & e)
+{
+    e.addMessage("While applying a row policy (see system.row_policies)");
+    throw;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -1124,8 +1130,7 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
