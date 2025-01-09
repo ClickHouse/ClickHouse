@@ -66,6 +66,7 @@ public:
     {
         time_t min_age{std::numeric_limits<time_t>::max()};
         size_t num_parts = 0;
+        size_t sum_bytes = 0;
     };
     using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
 
@@ -107,7 +108,7 @@ public:
         String & out_disable_reason,
         bool dry_run = false);
 
-    String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
+    String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info, size_t max_total_size_to_merge = 0) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
     PartitionIdsHint getPartitionsThatMayBeMerged(
