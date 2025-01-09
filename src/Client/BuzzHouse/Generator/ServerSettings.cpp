@@ -951,8 +951,6 @@ std::map<std::string, CHSetting> serverSettings = {
     //{"wait_for_async_insert", CHSetting(trueOrFalse, {})},
     {"write_through_distributed_cache", CHSetting(trueOrFalse, {})}};
 
-std::map<std::string, CHSetting> queryOracleSettings;
-
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
     if (!fc.timezones.empty())
@@ -968,13 +966,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
                       ret += "'";
                   },
                   {})}});
-    }
-    for (auto & [key, value] : serverSettings)
-    {
-        if (!value.oracle_values.empty())
-        {
-            queryOracleSettings.insert({{key, value}});
-        }
     }
 }
 

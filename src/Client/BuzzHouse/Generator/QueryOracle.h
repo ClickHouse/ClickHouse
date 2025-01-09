@@ -47,4 +47,6 @@ public:
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
 
+void loadFuzzerOracleSettings(const FuzzConfig & fc);
+
 }

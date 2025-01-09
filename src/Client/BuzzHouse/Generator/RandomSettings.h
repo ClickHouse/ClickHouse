@@ -37,10 +37,6 @@ const std::function<void(RandomGenerator &, std::string &)> zeroToThree
 
 extern std::map<std::string, CHSetting> serverSettings;
 
-extern std::map<std::string, CHSetting> queryOracleSettings;
-
-extern std::map<std::string, CHSetting> mergeTreeTableSettings;
-
 const std::map<std::string, CHSetting> memoryTableSettings
     = {{"min_bytes_to_keep",
         CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {})},
@@ -142,4 +138,5 @@ const std::map<TableEngineValues, std::map<std::string, CHSetting>> allColumnSet
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
+
 }

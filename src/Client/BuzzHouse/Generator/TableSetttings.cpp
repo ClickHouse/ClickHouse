@@ -5,7 +5,7 @@ namespace BuzzHouse
 
 static std::vector<std::string> merge_storage_policies;
 
-std::map<std::string, CHSetting> mergeTreeTableSettings = {
+static std::map<std::string, CHSetting> mergeTreeTableSettings = {
     {"adaptive_write_buffer_initial_size",
      CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024)); }, {})},
     {"add_minmax_index_for_numeric_columns", CHSetting(trueOrFalse, {})},

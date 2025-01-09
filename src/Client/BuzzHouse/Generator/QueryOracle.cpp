@@ -286,6 +286,19 @@ int QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & 
     return 0;
 }
 
+static std::map<std::string, CHSetting> queryOracleSettings;
+
+void loadFuzzerOracleSettings(const FuzzConfig &)
+{
+    for (auto & [key, value] : serverSettings)
+    {
+        if (!value.oracle_values.empty())
+        {
+            queryOracleSettings.insert({{key, value}});
+        }
+    }
+}
+
 /*
 Run query with different settings oracle
 */

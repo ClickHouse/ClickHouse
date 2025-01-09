@@ -488,6 +488,7 @@ bool Client::buzzHouse()
         fc.loadServerConfigurations();
         loadFuzzerServerSettings(fc);
         loadFuzzerTableSettings(fc);
+        loadFuzzerOracleSettings(fc);
         SCOPE_EXIT({ BuzzHouse::clearSystemTables(); });
         BuzzHouse::loadSystemTables(has_cloud_features);
 
