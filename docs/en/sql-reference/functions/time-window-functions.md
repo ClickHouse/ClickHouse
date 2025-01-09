@@ -4,7 +4,14 @@ sidebar_position: 175
 sidebar_label: Time Window
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+
 # Time Window Functions
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](../statements/create/view.md/#window-view-experimental) are listed below:
 

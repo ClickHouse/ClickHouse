@@ -95,7 +95,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
                         const AccessFlags & min_flags_with_children,
                         const AccessFlags & max_flags_with_children,
                         const size_t level,
-                        bool /* grant_option */) -> AccessFlags
+                        bool /* grant_option */,
+                        bool leaf_or_wildcard) -> AccessFlags
     {
         AccessFlags res = flags;
 
@@ -153,7 +154,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if ((res & AccessFlags::allTableFlags())
             || (level <= 2 && (res & show_columns))
-            || (level == 2 && (max_flags_with_children & show_columns)))
+            /// GRANT SELECT(x) ON y => GRANT SELECT(x) ON y, GRANT SHOW_TABLES ON y
+            || (leaf_or_wildcard && level == 2 && (max_flags_with_children & show_columns)))
         {
             res |= show_tables;
         }
@@ -163,10 +165,16 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if ((res & AccessFlags::allDatabaseFlags())
             || (level <= 1 && (res & show_tables_or_dictionaries))
-            || (level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
+            || (leaf_or_wildcard && level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
         {
             res |= show_databases;
         }
+
+        static const AccessFlags alter_delete = AccessType::ALTER_DELETE;
+        static const AccessFlags select = AccessType::SELECT;
+        static const AccessFlags move_partition = AccessType::ALTER_MOVE_PARTITION;
+        if ((res & alter_delete) && (res & select) && level <= 2)
+            res |= move_partition;
 
         max_flags |= res;
 
@@ -354,7 +362,8 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = getLogger("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> current_roles_with_admin_option;
     if (params.use_default_roles)
     {
         current_roles = user->granted_roles.findGranted(user->default_roles);

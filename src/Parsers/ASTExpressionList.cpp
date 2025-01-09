@@ -33,7 +33,7 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
         if (frame.surround_each_list_element_with_parens)
             ostr << "(";
 
-        children[i]->formatImpl(ostr, settings, state, frame_nested);
+        children[i]->format(ostr, settings, state, frame_nested);
 
         if (frame.surround_each_list_element_with_parens)
             ostr << ")";
@@ -67,7 +67,7 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
         if (frame.surround_each_list_element_with_parens)
             ostr << "(";
 
-        children[i]->formatImpl(ostr, settings, state, frame_nested);
+        children[i]->format(ostr, settings, state, frame_nested);
 
         if (frame.surround_each_list_element_with_parens)
             ostr << ")";

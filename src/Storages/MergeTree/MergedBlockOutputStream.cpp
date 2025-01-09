@@ -53,9 +53,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         save_primary_index_in_memory,
         blocks_are_granules_size);
 
-    /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
-    if (data_part->isStoredOnDisk())
-        data_part_storage->createDirectories();
+    data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
@@ -119,7 +117,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
-    void cancel();
+    void cancel() noexcept;
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
@@ -130,7 +128,7 @@ void MergedBlockOutputStream::Finalizer::finish()
         to_finish->finish();
 }
 
-void MergedBlockOutputStream::Finalizer::cancel()
+void MergedBlockOutputStream::Finalizer::cancel() noexcept
 {
     std::unique_ptr<Impl> to_cancel = std::move(impl);
     impl.reset();
@@ -167,7 +165,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
-void MergedBlockOutputStream::Finalizer::Impl::cancel()
+void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept
 {
     writer.cancel();
 
@@ -183,15 +181,8 @@ MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : imp
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
 {
-    try
-    {
-        if (impl)
-            finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (impl)
+        cancel();
 }
 
 
@@ -246,8 +237,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    if (new_part->isStoredOnDisk())
-       written_files = finalizePartOnDisk(new_part, checksums);
+    written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
