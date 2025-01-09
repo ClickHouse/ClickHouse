@@ -10,7 +10,7 @@ namespace DB
 {
     String TemporaryReplaceTableName::toString() const
     {
-        return fmt::format("_tmp_replace_{}_{}", getHexUIntLowercase(name_hash), random_suffix);
+        return fmt::format("_tmp_replace_{}_{}", name_hash, random_suffix);
     }
 
     std::optional<TemporaryReplaceTableName> TemporaryReplaceTableName::fromString(const String & str)
