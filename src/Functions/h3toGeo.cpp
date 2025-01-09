@@ -92,8 +92,8 @@ public:
         }
 
         MutableColumns columns;
-        columns.emplace_back(std::move(longitude));
         columns.emplace_back(std::move(latitude));
+        columns.emplace_back(std::move(longitude));
         return ColumnTuple::create(std::move(columns));
     }
 };
