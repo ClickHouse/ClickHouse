@@ -71,7 +71,7 @@ PartProperties buildPartProperties(
 {
     return PartProperties{
         .name = part->name,
-        .part_info = part->info,
+        .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .size = part->getExistingBytesOnDisk(),

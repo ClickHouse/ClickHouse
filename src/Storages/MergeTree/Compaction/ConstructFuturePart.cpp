@@ -10,7 +10,7 @@ static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTree
 
     for (const auto & properties : range)
     {
-        if (auto part = data.getPartIfExists(properties.part_info, lookup_statuses))
+        if (auto part = data.getPartIfExists(properties.info, lookup_statuses))
             data_parts.push_back(std::move(part));
         else
             return std::nullopt;

@@ -13,7 +13,7 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(const StorageMergeTree & storag
 
 std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
 {
-    if (left.part_info.partition_id != right.part_info.partition_id)
+    if (left.info.partition_id != right.info.partition_id)
         return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
     if (left.projection_names != right.projection_names)
@@ -22,8 +22,8 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
                 fmt::join(left.projection_names, ", "), left.name, fmt::join(right.projection_names, ", "), right.name));
 
     {
-        uint64_t left_mutation_version = storage.getCurrentMutationVersion(left.part_info, merge_mutate_lock);
-        uint64_t right_mutation_ver = storage.getCurrentMutationVersion(right.part_info, merge_mutate_lock);
+        uint64_t left_mutation_version = storage.getCurrentMutationVersion(left.info, merge_mutate_lock);
+        uint64_t right_mutation_ver = storage.getCurrentMutationVersion(right.info, merge_mutate_lock);
 
         if (left_mutation_version != right_mutation_ver)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left.name, right.name));
@@ -32,7 +32,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
     {
         uint32_t max_possible_level = storage.getMaxLevelInBetween(left, right);
 
-        if (max_possible_level > std::max(left.part_info.level, right.part_info.level))
+        if (max_possible_level > std::max(left.info.level, right.info.level))
             return std::unexpected(PreformattedMessage::create(
                     "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have",
                     left.name, right.name, max_possible_level));
