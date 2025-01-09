@@ -96,6 +96,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
+            {"allow_experimental_kusto_dialect", true, false, "A new setting"},
+            {"allow_experimental_prql_dialect", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -625,11 +627,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
+            {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
+            {"add_minmax_index_for_string_columns", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {
             /// Release closed. Please use 25.1
-            {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
+            {"enforce_index_structure_match_on_partition_manipulation", true, false, "New setting"},
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},

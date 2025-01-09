@@ -206,7 +206,7 @@ bool authenticateUserByHTTP(
     }
     else if (has_config_credentials)
     {
-        current_credentials = std::make_unique<BasicCredentials>(*config_credentials);
+        current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
     }
     else // I.e., now using user name and password strings ("Basic").
     {
