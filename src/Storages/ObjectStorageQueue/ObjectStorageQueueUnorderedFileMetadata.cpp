@@ -238,7 +238,6 @@ std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedA
                      paths[i / 2],
                      responses[i].error == Coordination::Error::ZNONODE ? "Processed" : "Failed");
         }
-
         i += 2;
     }
     return result;

@@ -205,8 +205,7 @@ ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::Obje
     if (mode == ObjectStorageQueueMode::UNORDERED)
         indexes = ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
     else
-        /// TODO: support buckets
-        indexes = ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), /* buckets_num */0, log);
+        indexes = ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
 
     Source::ObjectInfos result;
     result.reserve(indexes.size());

@@ -593,24 +593,34 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
 std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     const std::vector<std::string> & paths,
     const std::filesystem::path & zk_path_,
-    size_t /* buckets_num */,
+    size_t buckets_num,
     LoggerPtr log_)
 {
-    /// TODO: Support buckets
+    const auto zk_client = getZooKeeper();
+    const bool use_buckets_for_processing = buckets_num > 1;
 
-    auto zk_client = getZooKeeper();
-    auto processed_node_path = getProcessedPathWithoutBucket(zk_path_);
+    buckets_num = std::max<size_t>(buckets_num, 1);
+    std::map<size_t, std::string> max_processed_file_per_bucket;
 
-    NodeMetadata max_processed_file;
-    Coordination::Stat stat;
-    bool has_max_processed_file = getMaxProcessedFile(max_processed_file, &stat, processed_node_path, zk_client);
+    for (size_t i = 0; i < buckets_num; ++i)
+    {
+        auto processed_node_path = use_buckets_for_processing
+            ? getProcessedPathWithBucket(zk_path_, i)
+            : getProcessedPathWithoutBucket(zk_path_);
+
+        NodeMetadata max_processed_file;
+        if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, zk_client))
+            max_processed_file_per_bucket[i] = max_processed_file.file_path;
+    }
 
     std::vector<std::string> failed_paths;
     std::vector<size_t> check_paths_indexes;
     for (size_t i = 0; i < paths.size(); ++i)
     {
         const auto & path = paths[i];
-        if (has_max_processed_file && path <= max_processed_file.file_path)
+        const auto bucket = use_buckets_for_processing ? getBucketForPathImpl(path, buckets_num) : 0;
+        if (!max_processed_file_per_bucket.empty()
+            && path <= max_processed_file_per_bucket[bucket])
         {
             LOG_TEST(log_, "Skipping file {}: Processed", path);
             continue;

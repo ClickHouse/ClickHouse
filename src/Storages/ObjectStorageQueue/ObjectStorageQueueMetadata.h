@@ -88,6 +88,7 @@ public:
 
     /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;
+    size_t getBucketsNum() const { return buckets_num; }
     Bucket getBucketForPath(const std::string & path) const;
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
