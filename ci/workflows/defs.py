@@ -261,6 +261,7 @@ class JobNames:
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
     CLICKBENCH = "ClickBench"
+    DOCKER_SERVER = "Docker server"
 
 
 class ToolSet:
@@ -764,4 +765,29 @@ class Jobs:
             [ArtifactNames.CH_AMD_RELEASE],
             [ArtifactNames.CH_ARM_RELEASE],
         ],
+    )
+    # docker_job = Job.Config(
+    #     name=JobNames.DOCKER_SERVER,
+    #     runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+    #     command="python3 ./ci/jobs/docker_server_job.py --from-binary",
+    #     digest_config=Job.CacheDigestConfig(
+    #         include_paths=[
+    #             "./ci/jobs/docker_server_from_binary.py",
+    #             "./ci/docker/clickhouse-server",
+    #         ],
+    #     ),
+    #     requires=[ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ARM_RELEASE],
+    # )
+    docker_job = Job.Config(
+        name=JobNames.DOCKER_SERVER,
+        # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
+        runs_on=[RunnerLabels.STYLE_CHECK_AMD],
+        command="python3 ./ci/jobs/docker_server_job.py --from-deb",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docker_server_job.py",
+                "./ci/docker/clickhouse-server",
+            ],
+        ),
+        requires=[ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.DEB_ARM_RELEASE],
     )

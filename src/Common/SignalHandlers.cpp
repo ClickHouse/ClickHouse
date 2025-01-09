@@ -177,7 +177,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 template <typename T>
 struct ValueHolder
 {
-    ValueHolder(T value_) : value(value_)
+    explicit ValueHolder(T value_) : value(value_)
     {}
 
     T value;
