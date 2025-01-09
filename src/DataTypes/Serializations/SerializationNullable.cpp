@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnNullable.h>
@@ -20,25 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-}
-
-DataTypePtr SerializationNullable::SubcolumnCreator::create(const DataTypePtr & prev) const
-{
-    return makeNullableSafe(prev);
-}
-
-SerializationPtr SerializationNullable::SubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
-{
-    if (prev_type && !prev_type->canBeInsideNullable())
-        return prev_serialization;
-    return std::make_shared<SerializationNullable>(prev_serialization);
-}
-
-ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    if (prev->canBeInsideNullable())
-        return ColumnNullable::create(prev, null_map);
-    return prev;
 }
 
 void SerializationNullable::enumerateStreams(
@@ -64,7 +46,7 @@ void SerializationNullable::enumerateStreams(
 
     settings.path.back() = Substream::NullableElements;
     if (type_nullable && type_nullable->getNestedType()->canBeInsideNullable())
-        settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
+        settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(null_map_data.column);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)

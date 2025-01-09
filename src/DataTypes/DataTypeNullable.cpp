@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -105,7 +106,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubco
     if (!nested_subcolumn_data)
         return nullptr;
 
-    auto creator = SerializationNullable::SubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
+    auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
     auto res = std::make_unique<ISerialization::SubstreamData>();
     res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
     res->type = creator.create(nested_subcolumn_data->type);

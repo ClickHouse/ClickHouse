@@ -1,6 +1,7 @@
+#include <DataTypes/NullableUtils.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Common/assert_cast.h>
-#include <Interpreters/NullableUtils.h>
-
 
 namespace DB
 {
@@ -49,6 +50,26 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
     }
 
     return null_map_holder;
+}
+
+
+DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
+{
+    return makeNullableSafe(prev);
+}
+
+SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
+{
+    if (prev_type && !prev_type->canBeInsideNullable())
+        return prev_serialization;
+    return std::make_shared<SerializationNullable>(prev_serialization);
+}
+
+ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
+{
+    if (prev->canBeInsideNullable())
+        return ColumnNullable::create(prev, null_map);
+    return prev;
 }
 
 }
