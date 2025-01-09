@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/array-functions
 sidebar_position: 10
 sidebar_label: Arrays
+title: Array Functions
 ---
 
 # Array Functions

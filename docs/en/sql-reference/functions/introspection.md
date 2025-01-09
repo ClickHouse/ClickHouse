@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/introspection
 sidebar_position: 100
 sidebar_label: Introspection
+title: Introspection Functions
 ---
 
 # Introspection Functions

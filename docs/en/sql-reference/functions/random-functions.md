@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/random-functions
 sidebar_position: 145
 sidebar_label: Random Numbers
+title: Random Functions
 ---
 
 # Functions for Generating Random Numbers

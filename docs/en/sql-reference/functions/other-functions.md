@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/other-functions
 sidebar_position: 140
 sidebar_label: Other
+title: Other Functions
 ---
 
 # Other Functions

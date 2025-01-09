@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/uuid-functions
 sidebar_position: 205
 sidebar_label: UUIDs
+title: UUID Functions
 ---
 
 # Functions for Working with UUIDs

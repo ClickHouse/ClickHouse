@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/nlp-functions
 sidebar_position: 130
 sidebar_label: NLP (experimental)
+title: NLP Functions
 ---
 
 # Natural Language Processing (NLP) Functions
