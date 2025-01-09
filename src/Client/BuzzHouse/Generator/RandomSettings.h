@@ -140,7 +140,6 @@ const std::map<TableEngineValues, std::map<std::string, CHSetting>> allColumnSet
        {IcebergS3, {}},
        {Merge, {}}};
 
-void setRandomSetting(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, std::string & ret, SetValue * set);
-void loadFuzzerSettings(const FuzzConfig & fc);
-
+void loadFuzzerServerSettings(const FuzzConfig & fc);
+void loadFuzzerTableSettings(const FuzzConfig & fc);
 }

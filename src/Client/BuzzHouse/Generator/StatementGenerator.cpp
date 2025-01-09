@@ -13,6 +13,18 @@ int StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) c
     return 0;
 }
 
+int StatementGenerator::setRandomSetting(
+    RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, std::string & ret, SetValue * set)
+{
+    const std::string & setting = rg.pickKeyRandomlyFromMap(settings);
+
+    set->set_property(setting);
+    ret.resize(0);
+    settings.at(setting).random_func(rg, ret);
+    set->set_value(ret);
+    return 0;
+}
+
 int StatementGenerator::generateSettingValues(
     RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, const size_t nvalues, SettingValues * vals)
 {

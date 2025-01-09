@@ -486,7 +486,8 @@ bool Client::buzzHouse()
 
         //Load server configurations for the fuzzer
         fc.loadServerConfigurations();
-        loadFuzzerSettings(fc);
+        loadFuzzerServerSettings(fc);
+        loadFuzzerTableSettings(fc);
         SCOPE_EXIT({ BuzzHouse::clearSystemTables(); });
         BuzzHouse::loadSystemTables(has_cloud_features);
 

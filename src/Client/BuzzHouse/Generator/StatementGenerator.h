@@ -266,6 +266,7 @@ private:
     int generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     int generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     int generateAlterTable(RandomGenerator & rg, AlterTable * at);
+    int setRandomSetting(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, std::string & ret, SetValue * set);
     int generateSettingValues(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, SettingValues * vals);
     int
     generateSettingValues(RandomGenerator & rg, const std::map<std::string, CHSetting> & settings, size_t nvalues, SettingValues * vals);
