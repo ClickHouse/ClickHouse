@@ -224,7 +224,8 @@ void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadl
         {
             if (i > 0)
                 names += ", ";
-            if (i >= 20) {
+            if (i >= 20)
+            {
                 names += "...";
                 break;
             }
