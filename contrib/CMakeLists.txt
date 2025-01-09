@@ -222,6 +222,8 @@ add_contrib (ulid-c-cmake ulid-c)
 add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
+add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib (numactl-cmake numactl)
 

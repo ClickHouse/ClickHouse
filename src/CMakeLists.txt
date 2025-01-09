@@ -651,6 +651,10 @@ if (TARGET ch_contrib::prometheus_protobufs)
     dbms_target_link_libraries (PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
+if (TARGET ch_contrib::antlr4_grammars)
+    dbms_target_link_libraries (PUBLIC ch_contrib::antlr4_grammars)
+endif()
+
 if (TARGET ch_rust::skim)
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
