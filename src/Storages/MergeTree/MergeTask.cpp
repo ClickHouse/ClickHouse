@@ -117,7 +117,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 
