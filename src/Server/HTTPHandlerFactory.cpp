@@ -8,10 +8,13 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
+#include "Server/HTTP/HTTP2RequestHandlerFactory.h"
+#include "Server/StaticRequestHandler2.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "WebUIRequestHandler.h"
+#include "base/defines.h"
 
 
 namespace DB
@@ -177,6 +180,13 @@ createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfigurati
         addDefaultHandlersFactory(*factory, server, config, async_metrics);
         return factory;
     }
+}
+
+HTTP2RequestHandlerFactoryPtr
+createHTTP2HandlerFactory(IServer & server)
+{
+    auto factory = std::make_shared<SimpleHTTP2HandlerFactory<StaticRequestHandler2>>(server);
+    return factory;
 }
 
 static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)

@@ -16,6 +16,7 @@ public:
         TCP,
         HTTP,
         HTTPS,
+        HTTP2,
         MYSQL,
         GRPC,
         POSTGRESQL,
