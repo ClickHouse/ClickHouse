@@ -1,10 +1,10 @@
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserCreateWorkloadQuery.h>
 #include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
-#include <Parsers/ParserCopyQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
 #include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserDropResourceQuery.h>
