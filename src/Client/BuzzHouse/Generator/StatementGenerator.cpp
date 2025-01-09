@@ -1758,19 +1758,12 @@ int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 const auto has_merge_tree_func = [](const SQLTable & t)
 { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily(); };
 
-const auto has_replicated_merge_tree_func = [](const SQLTable & t)
-{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isReplicatedMergeTree(); };
-
 const auto has_refreshable_view_func = [](const SQLView & v)
 { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED && v.is_refreshable; };
 
 int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc)
 {
     const uint32_t has_merge_tree = static_cast<uint32_t>(collectionHas<SQLTable>(has_merge_tree_func));
-    const uint32_t has_replicated_merge_tree
-        = has_merge_tree * static_cast<uint32_t>(collectionHas<SQLTable>(has_replicated_merge_tree_func));
-    const uint32_t has_replicated_database = static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(
-        [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED && d->isReplicatedDatabase(); }));
     const uint32_t has_refreshable_view = static_cast<uint32_t>(collectionHas<SQLView>(has_refreshable_view_func));
     const uint32_t reload_embedded_dictionaries = 1;
     const uint32_t reload_dictionaries = 3;
@@ -1796,18 +1789,18 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
     const uint32_t start_moves = 8 * has_merge_tree;
     const uint32_t wait_loading_parts = 8 * has_merge_tree;
     //for replicated merge trees
-    const uint32_t stop_fetches = 8 * has_replicated_merge_tree;
-    const uint32_t start_fetches = 8 * has_replicated_merge_tree;
-    const uint32_t stop_replicated_sends = 8 * has_replicated_merge_tree;
-    const uint32_t start_replicated_sends = 8 * has_replicated_merge_tree;
-    const uint32_t stop_replication_queues = 0 * has_replicated_merge_tree;
-    const uint32_t start_replication_queues = 0 * has_replicated_merge_tree;
-    const uint32_t stop_pulling_replication_log = 0 * has_replicated_merge_tree;
-    const uint32_t start_pulling_replication_log = 0 * has_replicated_merge_tree;
-    const uint32_t sync_replica = 8 * has_replicated_merge_tree;
-    const uint32_t sync_replicated_database = 8 * has_replicated_database;
-    const uint32_t restart_replica = 8 * has_replicated_merge_tree;
-    const uint32_t restore_replica = 8 * has_replicated_merge_tree;
+    const uint32_t stop_fetches = 8 * has_merge_tree;
+    const uint32_t start_fetches = 8 * has_merge_tree;
+    const uint32_t stop_replicated_sends = 8 * has_merge_tree;
+    const uint32_t start_replicated_sends = 8 * has_merge_tree;
+    const uint32_t stop_replication_queues = 0 * has_merge_tree;
+    const uint32_t start_replication_queues = 0 * has_merge_tree;
+    const uint32_t stop_pulling_replication_log = 0 * has_merge_tree;
+    const uint32_t start_pulling_replication_log = 0 * has_merge_tree;
+    const uint32_t sync_replica = 8 * has_merge_tree;
+    const uint32_t sync_replicated_database = 8 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
+    const uint32_t restart_replica = 8 * has_merge_tree;
+    const uint32_t restore_replica = 8 * has_merge_tree;
     const uint32_t restart_replicas = 3;
     const uint32_t drop_filesystem_cache = 3;
     const uint32_t sync_file_cache = 1;
@@ -2037,7 +2030,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_fetches());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_fetches());
     }
     else if (
         start_fetches
@@ -2047,7 +2040,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_fetches());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_fetches());
     }
     else if (
         stop_replicated_sends
@@ -2058,7 +2051,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_replicated_sends());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replicated_sends());
     }
     else if (
         start_replicated_sends
@@ -2069,7 +2062,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_replicated_sends());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replicated_sends());
     }
     else if (
         stop_replication_queues
@@ -2080,7 +2073,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_replication_queues());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replication_queues());
     }
     else if (
         start_replication_queues
@@ -2091,7 +2084,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_replication_queues());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replication_queues());
     }
     else if (
         stop_pulling_replication_log
@@ -2103,7 +2096,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_pulling_replication_log());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_pulling_replication_log());
     }
     else if (
         start_pulling_replication_log
@@ -2115,7 +2108,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_pulling_replication_log());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_pulling_replication_log());
     }
     else if (
         sync_replica
@@ -2131,7 +2124,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
 
         srep->set_policy(
             static_cast<SyncReplica_SyncPolicy>((rg.nextRandomUInt32() % static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX)) + 1));
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, srep->mutable_est());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, srep->mutable_est());
     }
     else if (
         sync_replicated_database
@@ -2143,8 +2136,8 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(
-            [](const std::shared_ptr<SQLDatabase> & dd) { return dd->attached == DetachStatus::ATTACHED && dd->isReplicatedDatabase(); }));
+        const std::shared_ptr<SQLDatabase> & d
+            = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         sc->mutable_sync_replicated_database()->set_database("d" + std::to_string(d->dname));
     }
@@ -2159,7 +2152,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_restart_replica());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restart_replica());
     }
     else if (
         restore_replica
@@ -2172,7 +2165,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + 1))
     {
-        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_restore_replica());
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restore_replica());
     }
     else if (
         restart_replicas
