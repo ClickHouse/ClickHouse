@@ -413,6 +413,7 @@ class PRInfo:
                 or "docker/docs" in f
                 or "Settings.cpp" in f
                 or "FormatFactorySettings.h" in f
+                or "tests/ci/docs_check.py" in f
             ):
                 return True
         return False
