@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
@@ -40,7 +41,7 @@ BlockIO InterpreterCopyQuery::execute()
         if (!table_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such table function in copy command");
 
-        auto table_storage = table_function->execute(ast_table_func, context_lock, "copy_files");
+        auto table_storage = table_function->execute(ast_table_func, context_lock, table_function->getName());
         auto storage_metadata = table_storage->getInMemoryMetadataPtr();
         auto sink = table_storage->write(std::make_shared<ASTInsertQuery>(), storage_metadata, context_lock, false);
 
@@ -52,6 +53,10 @@ BlockIO InterpreterCopyQuery::execute()
         out.addInterpreterContext(context_lock);
         out.addSource(std::move(sink));
         pipeline.addChain(std::move(out));
+
+        pipeline.setSinks(
+            [&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+            { return std::make_shared<EmptySink>(cur_header); });
 
         BlockIO res;
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
