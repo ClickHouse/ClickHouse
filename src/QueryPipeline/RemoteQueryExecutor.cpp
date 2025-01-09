@@ -963,6 +963,9 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
+    if (!context->canUseParallelReplicasOnInitiator())
+        return false;
+
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)
         return false;
