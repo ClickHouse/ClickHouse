@@ -414,9 +414,12 @@ def test_backup_to_s3_multipart():
     )
     assert backup_events["WriteBufferFromS3Microseconds"] > 0
     assert "WriteBufferFromS3RequestsErrors" not in backup_events
+
     # restore
     assert (
-        restore_events["ReadBufferFromS3Bytes"] - backup_meta_size == restore_total_size
+        restore_events["ReadBufferFromS3Bytes"]
+        + restore_events["RestorePartsSkippedBytes"]
+        == restore_total_size + backup_meta_size
     )
     assert restore_events["ReadBufferFromS3Microseconds"] > 0
     assert "ReadBufferFromS3RequestsErrors" not in restore_events
