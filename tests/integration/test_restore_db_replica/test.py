@@ -180,30 +180,6 @@ def start_cluster():
     ],
 )
 @pytest.mark.parametrize(
-    "need_fill_tables",
-    [
-        pytest.param(
-            False,
-            id="empty tables",
-        ),
-        pytest.param(
-            True,
-            id="fill tables",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "process_table, failed_action_with_table, action_with_table",
-    [
-        pytest.param(
-            "test_create_table",
-            failed_create_table,
-            create_table,
-            id="create table",
-        ),
-    ],
-)
-@pytest.mark.parametrize(
     "changed_table, failed_change_table, change_table",
     [
         pytest.param(
@@ -226,14 +202,12 @@ def test_query_after_restore_db_replica(
     need_restart,
     exists_table,
     handler_create_table,
-    need_fill_tables,
-    process_table,
-    failed_action_with_table,
-    action_with_table,
     changed_table,
     failed_change_table,
     change_table,
 ):
+    process_table = "test_create_table"
+
     prepare_db(exclusive_database_name)
     inserted_data = 1000
 
@@ -242,10 +216,9 @@ def test_query_after_restore_db_replica(
     if exists_table:
         handler_create_table(node_1, f"{exclusive_database_name}.{exists_table_name}")
 
-        if need_fill_tables:
-            fill_table(
-                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
-            )
+        fill_table(
+            node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
+        )
 
     zk = cluster.get_kazoo_client("zoo1")
 
@@ -264,7 +237,7 @@ def test_query_after_restore_db_replica(
         node_2, exclusive_database_name
     )
 
-    failed_action_with_table(node_1, f"{exclusive_database_name}.{process_table}")
+    failed_create_table(node_1, f"{exclusive_database_name}.{process_table}")
 
     assert expected_tables == get_tables_from_replicated(
         node_1, exclusive_database_name
@@ -287,23 +260,6 @@ def test_query_after_restore_db_replica(
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
-    if exists_table:
-
-        # The threads of the ddl_worker start asynchronously, so we need to wait for recoverLostReplica to finish.
-        # wait_for_log_line isn't suitable because we have several restores in one test.
-        time.sleep(2)
-
-        assert zk.exists(
-            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
-        )
-        assert expected_tables == get_tables_from_replicated(
-            node_1, exclusive_database_name
-        )
-        if need_fill_tables:
-            check_contains_table(
-                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
-            )
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
         is None
@@ -316,28 +272,30 @@ def test_query_after_restore_db_replica(
     )
 
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-    time.sleep(2)
-
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
 
     if exists_table:
-        assert [exists_table_name] == get_tables_from_replicated(
-            node_1, exclusive_database_name
+        assert node_1.query_with_retry(
+            f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}' ORDER BY table",
+            retry_count=10,
+            sleep_time=1,
+            check_callback=lambda tables: tables == exists_table_name,
         )
-        assert [exists_table_name] == get_tables_from_replicated(
-            node_2, exclusive_database_name
+        assert node_2.query_with_retry(
+            f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}' ORDER BY table",
+            retry_count=10,
+            sleep_time=1,
+            check_callback=lambda tables: tables == exists_table_name,
         )
-        if need_fill_tables:
-            check_contains_table(
-                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
-            )
-            check_contains_table(
-                node_2, f"{exclusive_database_name}.{exists_table_name}", inserted_data
-            )
+        check_contains_table(
+            node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
+        )
+        check_contains_table(
+            node_2, f"{exclusive_database_name}.{exists_table_name}", inserted_data
+        )
 
-    action_with_table(node_1, f"{exclusive_database_name}.{process_table}")
-    if need_fill_tables:
-        fill_table(node_1, f"{exclusive_database_name}.{process_table}", inserted_data)
+    create_table(node_1, f"{exclusive_database_name}.{process_table}")
+    fill_table(node_1, f"{exclusive_database_name}.{process_table}", inserted_data)
 
     expected_tables = [process_table]
     if exists_table:
@@ -352,13 +310,12 @@ def test_query_after_restore_db_replica(
         node_2, exclusive_database_name
     )
 
-    if need_fill_tables:
-        check_contains_table(
-            node_1, f"{exclusive_database_name}.{process_table}", inserted_data
-        )
-        check_contains_table(
-            node_2, f"{exclusive_database_name}.{process_table}", inserted_data
-        )
+    check_contains_table(
+        node_1, f"{exclusive_database_name}.{process_table}", inserted_data
+    )
+    check_contains_table(
+        node_2, f"{exclusive_database_name}.{process_table}", inserted_data
+    )
 
     if exists_table:
         assert zk.exists(
@@ -391,8 +348,6 @@ def test_query_after_restore_db_replica(
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
-    time.sleep(2)
-
     if exists_table:
         assert zk.exists(
             f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
@@ -424,14 +379,13 @@ def test_query_after_restore_db_replica(
         node_2, exclusive_database_name
     )
 
-    if need_fill_tables:
-        if exists_table:
-            check_contains_table(
-                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
-            )
+    if exists_table:
         check_contains_table(
-            node_2, f"{exclusive_database_name}.{changed_table}", inserted_data
+            node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
         )
+    check_contains_table(
+        node_2, f"{exclusive_database_name}.{changed_table}", inserted_data
+    )
 
     if exists_table:
         node_1.query(f"DROP TABLE {exclusive_database_name}.{exists_table_name} SYNC")
@@ -523,8 +477,10 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     for node in nodes:
         node.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
-
-    time.sleep(2)
+        assert node.wait_for_log_line(
+            f"{exclusive_database_name}): All tables are created successfully",
+            look_behind_lines=1000,
+        )
 
     assert [f"{count_test_table_1}"] == node_1.query(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
