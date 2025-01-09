@@ -958,7 +958,12 @@ namespace DB
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
-
+    DECLARE(UInt32, num_fiber_stack_cache, 32, R"(
+    Number of fiber stack caches. Multiple caches are used to avoid lock contention.
+    )", 0) \
+    DECLARE(UInt64, max_fiber_stack_cache_size_bytes, 32lu * 64 * 1024 * 1024, R"(
+    Maximum size of fiber stack cache in bytes, should be multiple of `num_fiber_stack_cache`
+    )", 0) \
 
 // clang-format on
 

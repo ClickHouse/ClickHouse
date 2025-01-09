@@ -363,6 +363,10 @@
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
     M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
+    \
+    M(FiberStackCacheBytes, "Total size of fiber stacks in the cache.") \
+    M(FiberStackCacheActive, "Total number of fiber stacks in the cache that are currently in use.") \
+    M(FiberStackActive, "Total number of fiber stacks (cached and not cached) that are currently in use.")
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
