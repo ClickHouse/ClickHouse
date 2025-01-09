@@ -32,6 +32,12 @@
 namespace
 {
 
+/// Trim ending whitespace inplace
+void rightTrim(String & s)
+{
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
 std::string getEditor()
 {
     const char * editor = std::getenv("EDITOR"); // NOLINT(concurrency-mt-unsafe)
@@ -378,14 +384,6 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
 
-    auto commit_immediately_action = [this](char32_t code)
-    {
-        replxx_last_is_delimiter = false;
-        commit_line = true;
-        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-    };
-    rx.bind_key(Replxx::KEY::control('D'), commit_immediately_action);
-
     /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
     /// it also bound to M-p/M-n).
@@ -496,14 +494,14 @@ ReplxxLineReader::~ReplxxLineReader()
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
-    commit_line = false;
 
     const char* cinput = rx.input(prompt);
     if (cinput == nullptr)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
 
-    return commit_line ? COMMIT_LINE : INPUT_LINE;
+    rightTrim(input);
+    return INPUT_LINE;
 }
 
 void ReplxxLineReader::addToHistory(const String & line)

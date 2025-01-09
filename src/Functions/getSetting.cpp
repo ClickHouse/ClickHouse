@@ -101,7 +101,7 @@ Returns the current value of a custom setting.
         .examples = {
             {"getSetting", "SET custom_a = 123; SELECT getSetting('custom_a');", "123"},
         },
-        .categories{"Other"}}, FunctionFactory::Case::Sensitive);
+        .category{"Other"}}, FunctionFactory::Case::Sensitive);
     factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>(FunctionDocumentation{
         .description = R"(
 Returns the current value of a custom setting or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
@@ -117,7 +117,7 @@ Returns the current value of a custom setting or returns the default value speci
             {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', 100);", "100"},
             {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', NULL);", "NULL"},
         },
-        .categories{"Other"}}, FunctionFactory::Case::Sensitive);
+        .category{"Other"}}, FunctionFactory::Case::Sensitive);
 }
 
 }

@@ -116,7 +116,7 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
-            .categories{"Other"}
+            .category{"Other"}
         });
 }
 
@@ -137,7 +137,7 @@ Function that converts ClickHouse table structure to Protobuf format schema
 "    uint32 x = 2;\n"
 "}"},
             },
-            .categories{"Other"}
+            .category{"Other"}
         });
 }
 

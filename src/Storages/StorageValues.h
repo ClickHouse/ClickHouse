@@ -41,6 +41,9 @@ public:
     /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
     bool supportsTransactions() const override { return true; }
 
+    bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
+
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
 private:

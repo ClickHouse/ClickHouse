@@ -32,7 +32,7 @@ QUERY id: 0
     FUNCTION id: 5, function_name: and, function_type: ordinary, result_type: Bool
       ARGUMENTS
         LIST id: 6, nodes: 2
-          CONSTANT id: 7, constant_value: UInt64_1, constant_value_type: Bool
+          CONSTANT id: 7, constant_value: Bool_1, constant_value_type: Bool
           FUNCTION id: 8, function_name: notIn, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2

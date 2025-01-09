@@ -73,7 +73,7 @@ namespace
                 res_columns[8]->insert(documentation.argumentsAsString());
                 res_columns[9]->insert(documentation.returned_value);
                 res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.categoriesAsString());
+                res_columns[11]->insert(documentation.category);
             }
         }
         else

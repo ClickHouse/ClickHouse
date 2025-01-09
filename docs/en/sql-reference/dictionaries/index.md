@@ -6,6 +6,7 @@ sidebar_position: 35
 
 import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 import CloudDetails from '@site/docs/en/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Dictionaries
 
@@ -52,6 +53,8 @@ Dictionaries can be created with [DDL queries](../../sql-reference/statements/cr
 - The dictionaries can be easily renamed
 
 ## Creating a dictionary with a configuration file
+
+<CloudNotSupportedBadge/>
 
 :::note
 Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as user `default`.

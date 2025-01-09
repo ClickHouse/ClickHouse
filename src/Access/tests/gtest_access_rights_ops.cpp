@@ -3,8 +3,6 @@
 #include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
 #include <IO/WriteBufferFromString.h>
 
-#include <list>
-
 using namespace DB;
 
 TEST(AccessRights, Radix)

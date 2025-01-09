@@ -170,7 +170,7 @@ SELECT d, dynamicType(d) FROM test;
 │ [1,2,3]       │ Array(Int64)   │
 └───────────────┴────────────────┘
 )"}}},
-        .categories{"Variant"},
+        .category{"Variants"},
     });
 
     factory.registerFunction<FunctionIsDynamicElementInSharedData>(FunctionDocumentation{
@@ -194,7 +194,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 │ [1,2,3]       │ true               │
 └───────────────┴────────────────────┘
 )"}}},
-        .categories{"Variant"},
+        .category{"Variants"},
     });
 }
 

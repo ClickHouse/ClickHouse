@@ -331,7 +331,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
@@ -345,7 +345,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -360,7 +360,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -375,7 +375,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -390,7 +390,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randChiSquared(5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
@@ -404,7 +404,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randStudentT(5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -420,7 +420,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randFisherF(5) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -435,7 +435,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -450,7 +450,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -465,7 +465,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 
 
@@ -480,7 +480,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randPoisson(3) FROM numbers(100000);", ""}},
-    .categories{"Distribution"}
+    .category{"Random Numbers"}
     });
 }
 

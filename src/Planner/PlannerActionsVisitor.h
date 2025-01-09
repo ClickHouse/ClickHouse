@@ -7,7 +7,6 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/ConstantNode.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/WindowDescription.h>
@@ -68,8 +67,6 @@ String calculateActionNodeName(const QueryTreeNodePtr & node,
 
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
-
-String calculateConstantActionNodeName(const ConstantNode & constant_node);
 
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);

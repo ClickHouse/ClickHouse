@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
+#include <Formats/FormatSettings.h>
 
 #include <base/scope_guard.h>
 

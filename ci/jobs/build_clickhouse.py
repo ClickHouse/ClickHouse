@@ -1,13 +1,16 @@
 import argparse
 import os
 
-from praktika.result import Result, ResultTranslator
-from praktika.settings import Settings
+from praktika.result import Result
 from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.workflows.defs import CIFiles, ToolSet
 from ci.workflows.pull_request import S3_BUILDS_BUCKET
+
+current_directory = Utils.cwd()
+build_dir = f"{current_directory}/ci/tmp/build/"
+temp_dir = f"{current_directory}/ci/tmp/"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -41,7 +44,7 @@ CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
 -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
 {AUX_DEFS} \
 -DCMAKE_C_COMPILER={COMPILER} -DCMAKE_CXX_COMPILER={COMPILER_CPP} \
--DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 {DIR}"""
+-DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1 {DIR}"""
 
 # release:          cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
 # binary release:   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
@@ -123,8 +126,6 @@ def main():
             COMPILER_CPP=ToolSet.COMPILER_CPP,
         )
 
-    build_dir = f"{Settings.TEMP_DIR}/build"
-
     res = True
     results = []
     version = ""
@@ -194,8 +195,7 @@ def main():
         else:
             deb_arch = "arm64"
 
-        output_dir = "/tmp/praktika/output/"
-        assert Shell.check(f"rm -f {output_dir}/*.deb")
+        assert Shell.check(f"rm -f {temp_dir}/*.deb")
 
         results.append(
             Result.from_commands_run(
@@ -203,7 +203,7 @@ def main():
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
                 ],
                 workdir=build_dir,
                 with_log=True,

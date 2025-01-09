@@ -3,6 +3,7 @@ slug: /en/guides/developer/transactional
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Transactional (ACID) support
 
@@ -50,6 +51,7 @@ Same as Case 1 above, with this detail:
 ## Transactions, Commit, and Rollback
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 In addition to the functionality described at the top of this document, ClickHouse has experimental support for transactions, commits, and rollback functionality.
 

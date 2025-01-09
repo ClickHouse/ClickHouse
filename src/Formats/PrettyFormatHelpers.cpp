@@ -28,7 +28,7 @@ void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t ro
         return;
 
     auto value = column.getFloat64(row);
-    auto threshold = settings.pretty.output_format_pretty_single_large_number_tip_threshold;
+    auto threshold = settings.pretty.single_large_number_tip_threshold;
 
     if (threshold && isFinite(value) && abs(value) > threshold)
     {

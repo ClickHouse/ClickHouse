@@ -28,7 +28,7 @@ Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB
 )",
         .examples{
             {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)", ""}},
-        .categories{"OtherFunctions"}
+        .category{"Other"}
     });
 }
 

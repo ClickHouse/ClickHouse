@@ -25,8 +25,13 @@ def get_genuine_zk():
 
 def get_fake_zk():
     print("node", cluster.get_instance_ip("node"))
+    kazoo_retry = {
+        "max_tries": 10,
+    }
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":9181", timeout=30.0
+        hosts=cluster.get_instance_ip("node") + ":9181",
+        timeout=30.0,
+        connection_retry=kazoo_retry,
     )
 
     def reset_last_zxid_listener(state):

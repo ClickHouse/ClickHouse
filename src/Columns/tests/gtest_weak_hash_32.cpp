@@ -21,10 +21,9 @@
 using namespace DB;
 
 template <typename T>
-void checkColumnImpl(
+void checkColumn(
     const WeakHash32::Container & hash,
-    const PaddedPODArray<T> & eq_class,
-    UInt32 scale = 0)
+    const PaddedPODArray<T> & eq_class)
 {
     ASSERT_EQ(hash.size(), eq_class.size());
 
@@ -42,34 +41,12 @@ void checkColumnImpl(
             else
             {
                 if (it->second != hash[i])
-                {
-                    if constexpr (is_decimal<T>)
-                        std::cout << "Different hashes for the same equivalent class (" << toString(val, scale) << ")\n";
-                    else
-                        std::cout << "Different hashes for the same equivalent class (" << toString(val) << ")\n";
-                }
+                    std::cout << "Different hashes for the same equivalent class (" << toString(val) << ")\n";
 
                 ASSERT_EQ(it->second, hash[i]);
             }
         }
     }
-}
-
-template <typename T>
-void checkColumn(
-    const WeakHash32::Container & hash,
-    const PaddedPODArray<T> & eq_class)
-{
-    checkColumnImpl(hash, eq_class);
-}
-
-template <is_decimal T>
-void checkColumn(
-    const WeakHash32::Container & hash,
-    const PaddedPODArray<T> & eq_class,
-    UInt32 scale)
-{
-    checkColumnImpl(hash, eq_class, scale);
 }
 
 TEST(WeakHash32, ColumnVectorU8)
@@ -253,7 +230,7 @@ TEST(WeakHash32, ColumnDecimal32)
 
     WeakHash32 hash = col->getWeakHash32();
 
-    checkColumn(hash.getData(), col->getData(), col->getScale());
+    checkColumn(hash.getData(), col->getData());
 }
 
 TEST(WeakHash32, ColumnDecimal64)
@@ -269,7 +246,7 @@ TEST(WeakHash32, ColumnDecimal64)
 
     WeakHash32 hash = col->getWeakHash32();
 
-    checkColumn(hash.getData(), col->getData(), col->getScale());
+    checkColumn(hash.getData(), col->getData());
 }
 
 TEST(WeakHash32, ColumnDecimal128)
@@ -285,7 +262,7 @@ TEST(WeakHash32, ColumnDecimal128)
 
     WeakHash32 hash = col->getWeakHash32();
 
-    checkColumn(hash.getData(), col->getData(), col->getScale());
+    checkColumn(hash.getData(), col->getData());
 }
 
 TEST(WeakHash32, ColumnString1)

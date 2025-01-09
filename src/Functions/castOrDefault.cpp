@@ -342,7 +342,7 @@ If the default value is not provided in the second argument, it is assumed to be
                 {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
                 {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"},
                 {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
-            .categories{"ConversionFunctions"}
+            .category{"Type Conversion"}
         });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });

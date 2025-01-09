@@ -81,6 +81,7 @@ static struct InitFiu
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
+    REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
 
 
 namespace FailPoints

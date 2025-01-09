@@ -24,14 +24,15 @@ public:
     using Source = StorageObjectStorageSource;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
+    using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
     struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
             const Source::ObjectInfo & object_info,
-            ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_);
+            FileMetadataPtr file_metadata_);
 
-        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata;
+        FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -143,7 +144,7 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool success, const std::string & exception_message = {});
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
 
 private:
     const String name;
@@ -165,11 +166,25 @@ private:
     const bool commit_once_processed;
 
     LoggerPtr log;
-
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
-
     Source::ReaderHolder reader;
+
+    enum class FileState
+    {
+        Processing,
+        ErrorOnRead,
+        Cancelled,
+        Processed,
+    };
+    struct ProcessedFile
+    {
+        explicit ProcessedFile(FileMetadataPtr metadata_)
+            : state(FileState::Processing), metadata(metadata_) {}
+
+        FileState state;
+        FileMetadataPtr metadata;
+        std::string exception_during_read;
+    };
+    std::vector<ProcessedFile> processed_files;
 
     Chunk generateImpl();
     void applyActionAfterProcessing(const String & path);

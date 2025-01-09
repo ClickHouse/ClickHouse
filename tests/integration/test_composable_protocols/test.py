@@ -199,3 +199,11 @@ def test_proxy_1():
         assert str(e).find("Exception: user123: Authentication failed") >= 0
     else:
         assert False, "Expected 'Exception: user123: Authentication failed'"
+
+
+# tests PROXYv1 over HTTP
+def test_http_proxy_1():
+    proxy = Proxy1()
+    port = proxy.start((server.ip_address, 8223))
+
+    assert execute_query_http("localhost", port, "SELECT 1") == "1\n"

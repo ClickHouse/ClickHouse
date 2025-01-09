@@ -242,6 +242,7 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
+    void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &);
 
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;

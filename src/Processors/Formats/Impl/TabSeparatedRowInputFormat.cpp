@@ -63,7 +63,8 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<TabSeparatedFormatReader>(*in_, format_settings_, is_raw),
-        format_settings_.tsv.try_detect_header)
+        format_settings_.tsv.try_detect_header,
+        format_settings_.tsv.allow_variable_number_of_columns)
     , buf(std::move(in_))
 {
 }

@@ -68,7 +68,7 @@ DROP TABLE t2;
 
 
 CREATE DATABASE test_02184 ORDER BY kek; -- {serverError UNKNOWN_ELEMENT_IN_AST}
-CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError UNKNOWN_ELEMENT_IN_AST}
+CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError UNKNOWN_SETTING}
 CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}
 SET default_table_engine = 'MergeTree';
 CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}

@@ -59,8 +59,11 @@ namespace DB
 /// Allows delaying the start of query execution until the entirety of query is inserted.
 bool LineReader::hasInputData() const
 {
-    pollfd fd{in_fd, POLLIN, 0};
-    return poll(&fd, 1, 0) == 1;
+    timeval timeout = {0, 0};
+    fd_set fds{};
+    FD_ZERO(&fds);
+    FD_SET(in_fd, &fds);
+    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
@@ -131,7 +134,8 @@ void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelin
     }
 }
 
-LineReader::LineReader(
+LineReader::LineReader
+(
     const String & history_file_path_,
     bool multiline_,
     Patterns extenders_,
@@ -153,11 +157,8 @@ LineReader::LineReader(
 
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
 {
-    static const String EMPTY_LINE = " ";
-
     String line;
     bool need_next_line = false;
-    bool is_first_line = true;
 
     while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
     {
@@ -165,32 +166,8 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         {
             line.clear();
             need_next_line = false;
-            is_first_line = true;
             continue;
         }
-
-        if (status == COMMIT_LINE)
-        {
-            bool is_empty = input.empty();
-            trim(input);
-
-            if (!input.empty())
-                line += (line.empty() ? "" : "\n") + input;
-
-            if (!line.empty())
-                break;
-
-            if (!is_first_line || !is_empty)
-            {
-                /// To prevent the client from exiting.
-                line = EMPTY_LINE;
-            }
-
-            break;
-        }
-
-        is_first_line = false;
-        trim(input);
 
         if (input.empty())
         {
@@ -255,6 +232,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
             return ABORT;
     }
 
+    trim(input);
     return INPUT_LINE;
 }
 

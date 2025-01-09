@@ -5,6 +5,7 @@ sidebar_label:  MergeTree
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # MergeTree
 
@@ -969,6 +970,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 ## Column Statistics {#column-statistics}
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 

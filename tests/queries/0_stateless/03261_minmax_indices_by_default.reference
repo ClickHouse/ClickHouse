@@ -1,0 +1,41 @@
+Check skipping indices after table creation
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+Add numeric column
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_n	minmax	n	0
+After materialize
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_n	minmax	n	34
+Drop numeric column
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+Add string column
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_s	minmax	s	0
+Add another string column
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_s	minmax	s	0
+auto_minmax_index_t	minmax	t	0
+Drop string column t
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_s	minmax	s	0
+Rename column s to t
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_t	minmax	t	0
+tbl5 with add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns disabled
+x_idx	minmax	x	0

@@ -236,6 +236,9 @@ public:
       */
     virtual bool isComparable() const { return false; }
 
+    /// Is it possible to compare for equal?
+    virtual bool isComparableForEquality() const { return isComparable(); }
+
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */

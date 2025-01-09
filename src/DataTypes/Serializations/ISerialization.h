@@ -467,6 +467,7 @@ public:
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
+    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>

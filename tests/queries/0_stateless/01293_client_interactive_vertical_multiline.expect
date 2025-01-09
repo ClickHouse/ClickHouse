@@ -141,9 +141,5 @@ expect "1: 1"
 expect "2: 2"
 expect ":) "
 
-send -- "SELECT 1"
-expect "│ 1 │"
-expect ":) "
-
 send -- ""
 expect eof

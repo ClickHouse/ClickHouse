@@ -4,9 +4,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
-#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -24,19 +22,10 @@ class ConstantNode final : public IQueryTreeNode
 {
 public:
     /// Construct constant query tree node from constant value and source expression
-    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression);
+    explicit ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression);
 
     /// Construct constant query tree node from constant value
-    explicit ConstantNode(ConstantValue constant_value_);
-
-    /** Construct constant query tree node from column and data type.
-      *
-      * Throws exception if value cannot be converted to value data type.
-      */
-    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_);
-
-    /// Construct constant query tree node from column, data type will be derived from field value
-    explicit ConstantNode(ColumnPtr constant_column_);
+    explicit ConstantNode(ConstantValuePtr constant_value_);
 
     /** Construct constant query tree node from field and data type.
       *
@@ -48,21 +37,16 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const ColumnPtr & getColumn() const
+    const Field & getValue() const
     {
-        return constant_value.getColumn();
-    }
-
-    /// Get constant value
-    Field getValue() const
-    {
-        Field out;
-        constant_value.getColumn()->get(0, out);
-        return out;
+        return constant_value->getValue();
     }
 
     /// Get constant value string representation
-    String getValueStringRepresentation() const;
+    const String & getValueStringRepresentation() const
+    {
+        return value_string;
+    }
 
     /// Returns true if constant node has source expression, false otherwise
     bool hasSourceExpression() const
@@ -89,12 +73,11 @@ public:
 
     DataTypePtr getResultType() const override
     {
-        return constant_value.getType();
+        return constant_value->getType();
     }
 
     /// Check if conversion to AST requires wrapping with _CAST function.
-    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
-    static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
+    bool requiresCastCall() const;
 
     /// Check if constant is a result of _CAST function constant folding.
     bool receivedFromInitiatorServer() const;
@@ -108,11 +91,6 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    std::pair<String, DataTypePtr> getValueNameAndType() const
-    {
-        return constant_value.getValueNameAndType();
-    }
-
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
@@ -123,7 +101,8 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    ConstantValue constant_value;
+    ConstantValuePtr constant_value;
+    String value_string;
     QueryTreeNodePtr source_expression;
     size_t mask_id = 0;
 

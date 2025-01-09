@@ -218,9 +218,9 @@ REGISTER_FUNCTION(GenerateUUIDv7)
     FunctionDocumentation::Arguments arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UUID version 7.";
     FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
-    FunctionDocumentation::Categories categories = {"UUID"};
+    FunctionDocumentation::Category category = {"UUIDs"};
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, categories});
+    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, category});
 }
 
 }

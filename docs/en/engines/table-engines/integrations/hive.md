@@ -4,7 +4,11 @@ sidebar_position: 84
 sidebar_label: Hive
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # Hive
+
+<CloudNotSupportedBadge/>
 
 The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently it supports input formats as below:
 

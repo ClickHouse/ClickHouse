@@ -111,5 +111,4 @@ RUN arch=${TARGETARCH:-amd64} \
     && dpkg -i /tmp/nfpm.deb \
     && rm /tmp/nfpm.deb
 
-ENV PYTHONPATH="/wd"
 ENV PYTHONUNBUFFERED=1

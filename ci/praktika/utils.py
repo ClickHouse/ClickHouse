@@ -359,6 +359,10 @@ class Shell:
 class Utils:
 
     @staticmethod
+    def absolute_path(path):
+        return os.path.abspath(str(path))
+
+    @staticmethod
     def is_arm():
         arch = platform.machine()
         if "arm" in arch.lower() or "aarch" in arch.lower():

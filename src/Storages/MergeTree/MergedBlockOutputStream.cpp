@@ -53,9 +53,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         save_primary_index_in_memory,
         blocks_are_granules_size);
 
-    /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
-    if (data_part->isStoredOnDisk())
-        data_part_storage->createDirectories();
+    data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
@@ -239,8 +237,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    if (new_part->isStoredOnDisk())
-       written_files = finalizePartOnDisk(new_part, checksums);
+    written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);

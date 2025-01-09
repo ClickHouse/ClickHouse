@@ -2,8 +2,6 @@
 
 #include <cstring>
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
@@ -110,13 +108,6 @@ public:
     {
         chassert(n < size());
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
-    }
-
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        WriteBufferFromOwnString wb;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1}, wb);
-        return {wb.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t n) const override

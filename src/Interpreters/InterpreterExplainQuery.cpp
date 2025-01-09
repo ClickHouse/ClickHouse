@@ -231,7 +231,7 @@ struct QueryTreeSettings
 
 struct QueryPlanSettings
 {
-    QueryPlan::ExplainPlanOptions query_plan_options;
+    ExplainPlanOptions query_plan_options;
 
     /// Apply query plan optimizations.
     bool optimize = true;
@@ -248,6 +248,7 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+            {"distributed", query_plan_options.distributed},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -516,6 +517,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (settings.json)
             {
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'json'");
+
                 /// Add extra layers to make plan look more like from postgres.
                 auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
                 plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));

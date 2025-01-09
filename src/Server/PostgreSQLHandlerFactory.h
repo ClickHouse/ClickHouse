@@ -19,6 +19,8 @@ private:
     ProfileEvents::Event write_event;
 
 #if USE_SSL
+    std::string conf_name;
+
     bool ssl_enabled = true;
 #else
     bool ssl_enabled = false;
@@ -28,7 +30,13 @@ private:
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
 
 public:
-    explicit PostgreSQLHandlerFactory(IServer & server_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    explicit PostgreSQLHandlerFactory(
+        IServer & server_,
+#if USE_SSL
+        const std::string & conf_name_,
+#endif
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
 };

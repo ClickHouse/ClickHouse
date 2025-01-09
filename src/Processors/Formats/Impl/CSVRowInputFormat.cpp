@@ -71,7 +71,8 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::move(format_reader_),
-        format_settings_.csv.try_detect_header),
+        format_settings_.csv.try_detect_header,
+        format_settings_.csv.allow_variable_number_of_columns),
     buf(std::move(in_))
 {
     checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
@@ -93,7 +94,8 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<CSVFormatReader>(*in_, format_settings_),
-        format_settings_.csv.try_detect_header),
+        format_settings_.csv.try_detect_header,
+        format_settings_.csv.allow_variable_number_of_columns),
     buf(std::move(in_))
 {
     checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
@@ -348,11 +350,6 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
     skipEndOfLine(*buf, format_settings.csv.allow_cr_end_of_line);
     return true;
-}
-
-bool CSVFormatReader::allowVariableNumberOfColumns() const
-{
-    return format_settings.csv.allow_variable_number_of_columns;
 }
 
 bool CSVFormatReader::readField(

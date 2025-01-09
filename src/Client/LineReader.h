@@ -74,7 +74,6 @@ protected:
         ABORT = 0,
         RESET_LINE,
         INPUT_LINE,
-        COMMIT_LINE,
     };
 
     const String history_file_path;

@@ -1159,7 +1159,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    fillVirtualColumns(result, leading_begin_part_offset, leading_end_part_offset);
+    fillVirtualColumns(result.columns, result, leading_begin_part_offset, leading_end_part_offset);
 
     ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * result.numReadRows());
     ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * result.numReadRows());
@@ -1167,23 +1167,23 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     return result;
 }
 
-void MergeTreeRangeReader::fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
     ColumnPtr part_offset_column;
 
     auto add_offset_column = [&](const auto & column_name)
     {
         size_t pos = read_sample_block.getPositionByName(column_name);
-        chassert(pos < result.columns.size());
+        chassert(pos < columns.size());
 
         /// Column may be persisted in part.
-        if (result.columns[pos])
+        if (columns[pos])
             return;
 
         if (!part_offset_column)
             part_offset_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
-        result.columns[pos] = part_offset_column;
+        columns[pos] = part_offset_column;
     };
 
     if (read_sample_block.has("_part_offset"))
@@ -1194,7 +1194,7 @@ void MergeTreeRangeReader::fillVirtualColumns(ReadResult & result, UInt64 leadin
         add_offset_column(BlockOffsetColumn::name);
 }
 
-ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
     size_t num_rows = result.numReadRows();
 
@@ -1240,6 +1240,14 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
         return columns;
     }
 
+    UInt64 leading_begin_part_offset = 0;
+    UInt64 leading_end_part_offset = 0;
+    if (!stream.isFinished())
+    {
+        leading_begin_part_offset = stream.currentPartOffset();
+        leading_end_part_offset = stream.lastPartOffset();
+    }
+
     columns.resize(merge_tree_reader->numColumnsInResult());
 
     const auto & rows_per_granule = result.rows_per_granule;
@@ -1271,6 +1279,8 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
     if (num_rows && num_rows != result.total_rows_per_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
                         num_rows, result.total_rows_per_granule);
+
+    fillVirtualColumns(columns, result, leading_begin_part_offset, leading_end_part_offset);
 
     ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows);
     ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows);

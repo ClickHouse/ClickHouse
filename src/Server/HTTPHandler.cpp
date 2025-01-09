@@ -31,7 +31,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/scope_guard.h>
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
@@ -41,14 +40,9 @@
 
 #include <Poco/Net/HTTPMessage.h>
 
-#include "config.h"
-
 #include <algorithm>
-#include <chrono>
-#include <iterator>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -81,6 +75,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
 
     extern const int INVALID_SESSION_TIMEOUT;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
 }
 
@@ -149,12 +144,10 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 
 HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
-    if (config.has(config_prefix + ".handler.user") || config.has(config_prefix + ".handler.password"))
-    {
-        credentials.emplace(
-            config.getString(config_prefix + ".handler.user", "default"),
-            config.getString(config_prefix + ".handler.password", ""));
-    }
+    if (config.has(config_prefix + ".handler.password"))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "{}.handler.password will be ignored. Please remove it from config.", config_prefix);
+    if (config.has(config_prefix + ".handler.user"))
+        credentials.emplace(config.getString(config_prefix + ".handler.user", "default"));
 }
 
 void HTTPHandler::pushDelayedResults(Output & used_output)
@@ -723,6 +716,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())

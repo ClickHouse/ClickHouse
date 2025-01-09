@@ -95,7 +95,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
                         const AccessFlags & min_flags_with_children,
                         const AccessFlags & max_flags_with_children,
                         const size_t level,
-                        bool /* grant_option */) -> AccessFlags
+                        bool /* grant_option */,
+                        bool leaf_or_wildcard) -> AccessFlags
     {
         AccessFlags res = flags;
 
@@ -153,7 +154,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if ((res & AccessFlags::allTableFlags())
             || (level <= 2 && (res & show_columns))
-            || (level == 2 && (max_flags_with_children & show_columns)))
+            /// GRANT SELECT(x) ON y => GRANT SELECT(x) ON y, GRANT SHOW_TABLES ON y
+            || (leaf_or_wildcard && level == 2 && (max_flags_with_children & show_columns)))
         {
             res |= show_tables;
         }
@@ -163,7 +165,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if ((res & AccessFlags::allDatabaseFlags())
             || (level <= 1 && (res & show_tables_or_dictionaries))
-            || (level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
+            || (leaf_or_wildcard && level == 1 && (max_flags_with_children & show_tables_or_dictionaries)))
         {
             res |= show_databases;
         }
