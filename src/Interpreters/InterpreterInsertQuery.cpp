@@ -18,6 +18,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/addSubcolumnsExtraction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -449,7 +450,7 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
         context_ptr,
         null_as_default);
 
-    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
+    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(addSubcolumnsExtraction(std::move(adding_missing_defaults_dag), query_sample_block, context_ptr));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)

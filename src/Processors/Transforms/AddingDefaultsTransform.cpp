@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addSubcolumnsExtraction.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -179,7 +180,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context, CompileExpressions::yes), true);
+        auto actions = std::make_shared<ExpressionActions>(addSubcolumnsExtraction(std::move(*dag), header, context), ExpressionActionsSettings(context, CompileExpressions::yes), true);
         actions->execute(evaluate_block);
     }
 
