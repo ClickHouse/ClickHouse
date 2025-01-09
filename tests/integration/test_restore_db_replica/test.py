@@ -56,7 +56,7 @@ def prepare_db(db_name: str):
 
 
 def failed_create_table(node, table_name: str):
-    assert node.query_and_get_error(
+    node.query_and_get_error(
         f"""
             CREATE TABLE {table_name} (n UInt32)
             ENGINE = ReplicatedMergeTree
@@ -66,7 +66,7 @@ def failed_create_table(node, table_name: str):
 
 
 def failed_rename_table(node, table_name: str, new_table_name: str):
-    assert node.query_and_get_error(
+    node.query_and_get_error(
         f"""
             RENAME TABLE {table_name} TO {new_table_name}
         """
@@ -74,7 +74,7 @@ def failed_rename_table(node, table_name: str, new_table_name: str):
 
 
 def failed_alter_table(node, table_name: str):
-    assert node.query_and_get_error(
+    node.query_and_get_error(
         f"""
             ALTER TABLE {table_name} ADD COLUMN m String
         """
@@ -82,18 +82,18 @@ def failed_alter_table(node, table_name: str):
 
 
 def create_table(node, table_name: str):
-    assert node.query(
+    node.query(
         f"""
-            SET distributed_ddl_task_timeout=10;
             CREATE TABLE {table_name} (n UInt32)
             ENGINE = ReplicatedMergeTree
-            ORDER BY n PARTITION BY n % 10;
+            ORDER BY n PARTITION BY n % 10
+            SETTINGS distributed_ddl_task_timeout=5;
         """
     )
 
 
 def rename_table(node, table_name: str, new_table_name: str):
-    assert node.query(
+    node.query(
         f"""
             RENAME TABLE {table_name} TO {new_table_name}
         """
@@ -101,7 +101,7 @@ def rename_table(node, table_name: str, new_table_name: str):
 
 
 def alter_table(node, table_name: str):
-    assert node.query(
+    node.query(
         f"""
             ALTER TABLE {table_name} ADD COLUMN m String
         """
@@ -288,6 +288,11 @@ def test_query_after_restore_db_replica(
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
     if exists_table:
+
+        # The threads of the ddl_worker start asynchronously, so we need to wait for recoverLostReplica to finish.
+        # wait_for_log_line isn't suitable because we have several restores in one test.
+        time.sleep(2)
+
         assert zk.exists(
             f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
         )
@@ -311,6 +316,8 @@ def test_query_after_restore_db_replica(
     )
 
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    time.sleep(2)
+
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
 
     if exists_table:
@@ -384,6 +391,8 @@ def test_query_after_restore_db_replica(
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
+    time.sleep(2)
+
     if exists_table:
         assert zk.exists(
             f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
@@ -437,6 +446,20 @@ def test_query_after_restore_db_replica(
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
+
+    node_1.query(
+        f"DROP DATABASE IF EXISTS {exclusive_database_name}_broken_tables SYNC"
+    )
+    node_2.query(
+        f"DROP DATABASE IF EXISTS {exclusive_database_name}_broken_tables SYNC"
+    )
+
+    node_1.query(
+        f"DROP DATABASE IF EXISTS {exclusive_database_name}_broken_replicated_tables SYNC"
+    )
+    node_2.query(
+        f"DROP DATABASE IF EXISTS {exclusive_database_name}_broken_replicated_tables SYNC"
+    )
 
 
 @pytest.mark.parametrize(
@@ -500,6 +523,8 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     for node in nodes:
         node.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    time.sleep(2)
 
     assert [f"{count_test_table_1}"] == node_1.query(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
