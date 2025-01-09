@@ -66,4 +66,4 @@ Result:
 **See Also**
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+- [quantiles](/docs/en/sql-reference/aggregate-functions/reference/quantiles)

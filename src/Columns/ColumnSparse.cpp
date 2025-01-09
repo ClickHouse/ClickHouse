@@ -94,11 +94,6 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
-{
-    return values->getValueNameAndType(getValueIndex(n));
-}
-
 bool ColumnSparse::getBool(size_t n) const
 {
     return values->getBool(getValueIndex(n));

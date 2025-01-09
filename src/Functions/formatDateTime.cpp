@@ -506,10 +506,10 @@ private:
                 fractional_second /= 10;
             }
 
-            for (UInt32 i = scale, value = fractional_second; i > 0 && value > 0; --i)
+            for (UInt32 i = scale; i > 0 && fractional_second > 0; --i)
             {
-                dest[i - 1] += value % 10;
-                value /= 10;
+                dest[i - 1] += fractional_second % 10;
+                fractional_second /= 10;
             }
             return 6;
         }
@@ -520,10 +520,10 @@ private:
             if (scale == 0)
                 scale = 6;
 
-            for (Int64 i = scale, value = fractional_second; i > 0; --i)
+            for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += value % 10;
-                value /= 10;
+                dest[i - 1] += fractional_second % 10;
+                fractional_second /= 10;
             }
             return scale;
         }
@@ -534,10 +534,10 @@ private:
             if (scale == 0)
                 scale = 1;
 
-            for (Int64 i = scale, value = fractional_second; i > 0; --i)
+            for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += value % 10;
-                value /= 10;
+                dest[i - 1] += fractional_second % 10;
+                fractional_second /= 10;
             }
             return scale;
         }

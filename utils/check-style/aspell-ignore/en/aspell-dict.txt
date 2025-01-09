@@ -88,6 +88,7 @@ BestEffortOrZero
 BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
+BetaBadge
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -171,6 +172,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickPipes
 ClickVisual
 ClickableSquare
 CloudAvailableBadge
@@ -250,6 +252,7 @@ DeliveryTag
 DeltaLake
 Deltalake
 Denormalize
+DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
@@ -293,6 +296,7 @@ ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
 ExecutablePool
+ExperimentalBadge
 ExtType
 ExternalDistributed
 FFFD
@@ -825,6 +829,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
@@ -1218,6 +1223,7 @@ alphaTokens
 amplab
 analysisOfVariance
 analytics
+annindexes
 anonymize
 anonymized
 ansi
@@ -2424,6 +2430,7 @@ pread
 preallocate
 prebuild
 prebuilt
+preconfigured
 preemptable
 preferServerCiphers
 prefetch
@@ -2473,6 +2480,7 @@ protocol
 proxied
 pseudorandom
 pseudorandomize
+pseudoterminal
 psql
 ptrs
 punycodeDecode
@@ -2657,6 +2665,7 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
+sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey

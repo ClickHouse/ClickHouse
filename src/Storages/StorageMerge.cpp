@@ -687,7 +687,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 child.plan.addStep(std::move(filter_step));
             }
 
-            child.plan.optimize(QueryPlanOptimizationSettings::fromContext(modified_context));
+            child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
         }
 
         res.emplace_back(std::move(child));
@@ -1136,10 +1136,10 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    auto optimisation_settings = QueryPlanOptimizationSettings::fromContext(context);
+    QueryPlanOptimizationSettings optimization_settings(context);
     /// All optimisations will be done at plans creation
-    optimisation_settings.optimize_plan = false;
-    auto builder = child.plan.buildQueryPipeline(optimisation_settings, BuildQueryPipelineSettings::fromContext(context));
+    optimization_settings.optimize_plan = false;
+    auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
     if (!builder->initialized())
         return builder;
@@ -1260,8 +1260,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(),
-        ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
 
@@ -1532,6 +1531,11 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
+    /* Output headers may differ from what StorageMerge expects in some cases.
+     * When the child table engine produces a query plan for the stage after FetchColumns,
+     * execution names in the output header may be different.
+     * The same happens with StorageDistributed, even in the case of FetchColumns.
+     */
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
         && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
