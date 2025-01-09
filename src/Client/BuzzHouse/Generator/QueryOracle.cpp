@@ -333,6 +333,7 @@ int QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             setv->set_value(rg.pickRandomlyFromSet(chs.oracle_values));
             nsettings.push_back(rg.pickRandomlyFromSet(chs.oracle_values));
         }
+        can_test_query_success &= !chs.changes_behavior;
     }
     return 0;
 }
