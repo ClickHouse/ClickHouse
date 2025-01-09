@@ -1,5 +1,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
@@ -510,12 +511,12 @@ void executeQueryWithParallelReplicas(
         new_context->setSetting("use_hedged_requests", Field{false});
     }
 
-    if (settings.max_execution_time_leaf.value > 0)
+    if (settings[Settings::max_execution_time_leaf].value > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'
-        new_context->setSetting("max_execution_time", Field{new_settings.max_execution_time_leaf});
-        new_context->setSetting("timeout_overflow_mode", Field{new_settings.timeout_overflow_mode_leaf});
+        new_context->setSetting("max_execution_time", Field{new_settings[Settings::max_execution_time_leaf]});
+        new_context->setSetting("timeout_overflow_mode", Field{new_settings[Settings::timeout_overflow_mode_leaf]});
     }
 
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
