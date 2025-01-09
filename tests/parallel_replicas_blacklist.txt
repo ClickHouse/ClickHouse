@@ -9,6 +9,7 @@
 02995_bad_formatting_union_intersect
 03045_unknown_identifier_alias_substitution
 02561_temporary_table_sessions
+02525_different_engines_in_temporary_tables
 
     https://github.com/ClickHouse/ClickHouse/issues/74324
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
@@ -68,7 +69,7 @@
     Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
 01594_storage_join_uuid
     Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
-02498_storage_join_key_positions
+02498_storage_join_key_positions.gen
 
     https://github.com/ClickHouse/ClickHouse/pull/73609
     Cannot parse string
@@ -389,6 +390,8 @@
 01739_index_hint
 01913_quantile_deterministic
 02402_merge_engine_with_view
+    No order guarantee with group_by_overflow_mode='any'
+02180_group_by_lowcardinality
 
     plan and incorrect result
 01763_filter_push_down_bugs
