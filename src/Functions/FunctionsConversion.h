@@ -5521,7 +5521,12 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNativeNumber(from_type) || isEnum(from_type))
+        else if (isNativeNumber(from_type))
+        {
+            auto function = Function::create(context);
+            return createNativeNumberToEnumWrapper<EnumType>(function, from_type);
+        }
+        else if (isEnum(from_type))
         {
             auto function = Function::create(context);
             return createFunctionAdaptor(function, from_type);
@@ -5559,6 +5564,38 @@ private:
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Enum conversion changes value for element '{}' from {} to {}",
                     name_value.first, toString(old_value), toString(new_value));
         }
+    }
+
+    template <typename EnumType>
+    WrapperType createNativeNumberToEnumWrapper(FunctionPtr function, const DataTypePtr & from_type) const
+    {
+        auto function_adaptor
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(function)->build({ColumnWithTypeAndName{nullptr, from_type, ""}});
+        return [function_adaptor](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & res_type,
+                   const ColumnNullable * nullable_col,
+                   size_t input_rows_count)
+        {
+            const auto & col = arguments.front().column.get();
+            const auto & result_type = typeid_cast<const EnumType &>(*res_type);
+
+            if (col)
+            {
+                const auto size = col->size();
+
+                if (nullable_col)
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!nullable_col->isNullAt(i)) [[maybe_unused]]
+                            auto res = result_type.findByValue(col->getInt(i));
+                    }
+                else
+                    for (size_t i = 0; i < size; ++i) [[maybe_unused]]
+                        auto res = result_type.findByValue(col->getInt(i));
+            }
+            return function_adaptor->execute(arguments, res_type, input_rows_count, /*dry_run*/ false);
+        };
     }
 
     template <typename ColumnStringType, typename EnumType>
