@@ -180,7 +180,7 @@ left(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [Int*](../data-types/int-uint).
 
 **Returned value**
 
@@ -344,7 +344,7 @@ right(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [Int*](../data-types/int-uint).
 
 **Returned value**
 
