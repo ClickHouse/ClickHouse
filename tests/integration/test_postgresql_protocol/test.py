@@ -56,7 +56,13 @@ def started_cluster():
 def test_psql_client(started_cluster):
     node = cluster.instances["node"]
 
-    for query_file in ["query1.sql", "query2.sql", "query3.sql", "query4.sql", "query5.sql"]:
+    for query_file in [
+        "query1.sql",
+        "query2.sql",
+        "query3.sql",
+        "query4.sql",
+        "query5.sql"
+    ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
             os.path.join(SCRIPT_DIR, "queries", query_file),
@@ -108,7 +114,15 @@ def test_psql_client(started_cluster):
     )
     logging.debug(res)
     assert res == "\n".join(
-        ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
+        [
+            "SELECT 0",
+            "INSERT 0 0",
+            "tmp_column",
+            "0",
+            "1",
+            "(2 rows)",
+            "SELECT 0\n"
+        ]
     )
 
     res = started_cluster.exec_in_container(
@@ -116,7 +130,15 @@ def test_psql_client(started_cluster):
     )
     logging.debug(res)
     assert res == "\n".join(
-        ["SELECT 0", "SELECT 0", "SELECT 0", "INSERT 0 0", "SELECT 0", "INSERT 0 0", "SELECT 0\n"]
+        [
+            "SELECT 0",
+            "SELECT 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0",
+            "INSERT 0 0",
+            "SELECT 0\n"
+        ]
     )
 
 
