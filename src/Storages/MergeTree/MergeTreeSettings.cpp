@@ -89,6 +89,7 @@ namespace ErrorCodes
     DECLARE(UInt64, merge_tree_clear_old_parts_interval_seconds, 1, "The period of executing the clear old parts operation in background.", 0) \
     DECLARE(UInt64, min_age_to_force_merge_seconds, 0, "If all parts in a certain range are older than this value, range will be always eligible for merging. Set to 0 to disable.", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, "Whether min_age_to_force_merge_seconds should be applied only on the entire partition and not on subset.", false) \
+    DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, false, "Whether merges picked based on min_age_to_force_merge_seconds and min_age_to_force_merge_on_partition_only, should be limited by max_bytes_to_merge_at_max_space_in_pool", false) \
     DECLARE(UInt64, number_of_free_entries_in_pool_to_execute_optimize_entire_partition, 25, "When there is less than specified number of free entries in pool, do not try to execute optimize entire partition with a merge (this merge is created when set min_age_to_force_merge_seconds > 0 and min_age_to_force_merge_on_partition_only = true). This is to leave free threads for regular merges and avoid \"Too many parts\"", 0) \
     DECLARE(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", EXPERIMENTAL) \
     DECLARE(UInt64, replicated_max_mutations_in_one_entry, 10000, "Max number of mutation commands that can be merged together and executed in one MUTATE_PART entry (0 means unlimited)", 0) \
@@ -220,6 +221,8 @@ namespace ErrorCodes
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, "Disable FETCH PARTITION query for zero copy replication.", 0) \
     DECLARE(Bool, enable_block_number_column, false, "Enable persisting column _block_number for each row.", 0) ALIAS(allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, "Enable persisting column _block_offset for each row.", 0) \
+    DECLARE(Bool, add_minmax_index_for_numeric_columns, false, "Automatically create min-max indices for columns of numeric type", 0) \
+    DECLARE(Bool, add_minmax_index_for_string_columns, false, "Automatically create min-max indices for columns of string type", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", EXPERIMENTAL) \
@@ -284,7 +287,7 @@ namespace ErrorCodes
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(MACRO) \
-    MACRO(index_granularity)
+    MACRO(index_granularity)                           \
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
     MERGE_TREE_SETTINGS(M, ALIAS)             \
@@ -773,7 +776,8 @@ std::string_view MergeTreeSettings::resolveName(std::string_view name)
 
 bool MergeTreeSettings::isReadonlySetting(const String & name)
 {
-    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts";
+    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts"
+           || name == "add_minmax_index_for_numeric_columns" || name == "add_minmax_index_for_string_columns";
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)

@@ -1133,11 +1133,13 @@ By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
 
 ## cache_populated_by_fetch
 
-A Cloud only setting. 
+:::note
+This setting applies only to ClickHouse Cloud.
+:::
 
 When `cache_populated_by_fetch` is disabled (the default setting), new data parts are loaded into the cache only when a query is run that requires those parts.
 
-If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action. 
+If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action.
 
 Default value: 0.
 
@@ -1146,3 +1148,15 @@ Default value: 0.
 If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
 
 Default value: false
+
+## add_minmax_index_for_numeric_columns
+
+When enabled, min-max (skipping) indices are added for all numeric columns of the table.
+
+Default value: false.
+
+## add_minmax_index_for_string_columns
+
+When enabled, min-max (skipping) indices are added for all string columns of the table.
+
+Default value: false.
