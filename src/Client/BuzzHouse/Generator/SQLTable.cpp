@@ -1280,7 +1280,13 @@ PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator &
 
 TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
 {
-    if (rg.nextSmallNumber() < 9)
+    const uint32_t noption = rg.nextSmallNumber();
+
+    if (noption < 4)
+    {
+        return TableEngineValues::MergeTree;
+    }
+    if (noption < 9)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, TableEngineValues::VersionedCollapsingMergeTree);
         return static_cast<TableEngineValues>(table_engine(rg.generator));
