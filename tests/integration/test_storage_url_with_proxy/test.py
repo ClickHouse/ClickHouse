@@ -64,7 +64,7 @@ def test_s3_with_proxy_list(cluster):
     )
 
     content_type = "application/zstd"
-    date = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+    date = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
     resource = "/root/data/ch-proxy-test/test.csv"
     get_sig_string = f"GET\n\n{content_type}\n{date}\n{resource}"
     password = "minio123"
