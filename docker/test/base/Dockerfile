@@ -12,7 +12,6 @@ RUN apt-get update \
         ripgrep \
         zstd \
         locales \
-        vim-common \
         sudo \
         --yes --no-install-recommends \
     && apt-get clean \
