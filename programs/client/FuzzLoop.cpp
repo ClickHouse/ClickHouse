@@ -538,6 +538,11 @@ bool Client::buzzHouse()
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
                 const uint32_t nopt = next_dist(rg.generator);
 
+                if ((correctness_oracle + settings_oracle + dump_oracle + peer_oracle) > 0
+                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
+                {
+                    (void)qo.ResetOracleValues();
+                }
                 if (correctness_oracle && nopt < (correctness_oracle + 1))
                 {
                     //correctness test query
@@ -562,6 +567,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
+                    (void)qo.SetIntermediateStepSuccess(!have_error);
 
                     sq2.Clear();
                     full_query2.resize(0);
@@ -577,6 +583,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
+                    (void)qo.SetIntermediateStepSuccess(!have_error);
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
@@ -584,7 +591,6 @@ bool Client::buzzHouse()
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
-                    bool second_success = true;
                     const BuzzHouse::SQLTable & t
                         = rg.pickRandomlyFromVector(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
 
@@ -601,7 +607,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    second_success &= !have_error;
+                    (void)qo.SetIntermediateStepSuccess(!have_error);
 
                     sq3.Clear();
                     full_query.resize(0);
@@ -609,7 +615,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    second_success &= !have_error;
+                    (void)qo.SetIntermediateStepSuccess(!have_error);
 
                     sq4.Clear();
                     full_query.resize(0);
@@ -617,17 +623,14 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    second_success &= !have_error;
+                    (void)qo.SetIntermediateStepSuccess(!have_error);
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    second_success &= !have_error;
-                    (void)qo.processOracleQueryResult(false, second_success, "Dump and read table");
+                    (void)qo.processOracleQueryResult(false, !have_error, "Dump and read table");
                 }
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
-                    bool second_success = true;
-
                     //test results with peer tables
                     sq1.Clear();
                     full_query.resize(0);
@@ -646,7 +649,7 @@ bool Client::buzzHouse()
                         BuzzHouse::SQLQueryToString(full_query2, entry);
                         outf << full_query2 << std::endl;
                         server_up &= processBuzzHouseQuery(full_query2);
-                        second_success &= !have_error;
+                        (void)qo.SetIntermediateStepSuccess(!have_error);
                     }
                     (void)qo.optimizePeerTables(gen);
 
@@ -654,8 +657,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    second_success &= !have_error;
-                    (void)qo.processOracleQueryResult(false, second_success, "Peer table query");
+                    (void)qo.processOracleQueryResult(false, !have_error, "Peer table query");
                 }
                 else if (run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query + 1))
                 {
@@ -663,7 +665,6 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-
                     gen.updateGenerator(sq1, ei, !have_error);
                 }
                 else

@@ -544,6 +544,18 @@ int QueryOracle::replaceQueryWithTablePeers(
     return 0;
 }
 
+int QueryOracle::ResetOracleValues()
+{
+    first_success = second_sucess = other_steps_sucess = true;
+    return 0;
+}
+
+int QueryOracle::SetIntermediateStepSuccess(const bool success)
+{
+    other_steps_sucess &= success;
+    return 0;
+}
+
 int QueryOracle::processOracleQueryResult(const bool first, const bool success, const std::string & oracle_name)
 {
     bool & res = first ? first_success : second_sucess;
@@ -555,10 +567,16 @@ int QueryOracle::processOracleQueryResult(const bool first, const bool success, 
         md5_hash.hashFile(qfile.generic_string(), first ? first_digest : second_digest);
     }
     res = success;
-    if (!first && first_success && second_sucess
-        && !std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest)))
+    if (!first && other_steps_sucess)
     {
-        throw std::runtime_error(oracle_name + " oracle failed");
+        if (first_success != second_sucess)
+        {
+            throw std::runtime_error(oracle_name + " oracle failed with different success results");
+        }
+        if (first_success && !std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest)))
+        {
+            throw std::runtime_error(oracle_name + " oracle failed with different result sets");
+        }
     }
     return 0;
 }

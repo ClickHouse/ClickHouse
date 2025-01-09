@@ -12,7 +12,7 @@ class QueryOracle
 private:
     const FuzzConfig & fc;
     MD5Impl md5_hash;
-    bool first_success = false, second_sucess = false;
+    bool first_success = false, second_sucess = false, other_steps_sucess = false;
     uint8_t first_digest[16], second_digest[16];
     std::string buf;
     std::set<uint32_t> found_tables;
@@ -23,6 +23,8 @@ private:
 public:
     explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }
 
+    int ResetOracleValues();
+    int SetIntermediateStepSuccess(const bool success);
     int processOracleQueryResult(bool first, bool success, const std::string & oracle_name);
 
     /* Correctness query oracle */
