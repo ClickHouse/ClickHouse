@@ -32,6 +32,7 @@ import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import (
     AzureUploader,
+    HDFSUploader,
     LocalUploader,
     S3Uploader,
     get_file_contents,
@@ -66,6 +67,9 @@ def get_spark():
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
+        with_hdfs = True
+        if is_arm():
+            with_hdfs = False
         cluster.add_instance(
             "node1",
             main_configs=[
@@ -77,6 +81,7 @@ def started_cluster():
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             with_azurite=True,
+            with_hdfs=with_hdfs,
             stay_alive=True,
         )
         cluster.add_instance(
@@ -126,6 +131,8 @@ def started_cluster():
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
         )
+
+        cluster.default_hdfs_uploader = HDFSUploader(cluster)
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
 
@@ -250,6 +257,26 @@ def get_creation_expression(
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
+    elif storage_type == "hdfs":
+        if run_on_cluster:
+            assert table_function
+            return f"""
+                icebergHDFSCluster('cluster_simple', hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
+            """
+        else:
+            if table_function:
+                return f"""
+                    icebergHDFS(hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
+                """
+            else:
+                return (
+                    f"""
+                    DROP TABLE IF EXISTS {table_name};
+                    CREATE TABLE {table_name}
+                    ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')"""
+                    + allow_dynamic_metadata_for_datalakes_suffix
+                )
+
     elif storage_type == "local":
         assert not run_on_cluster
 
@@ -332,6 +359,10 @@ def default_upload_directory(
         return started_cluster.default_local_uploader.upload_directory(
             local_path, remote_path, **kwargs
         )
+    elif storage_type == "hdfs":
+        return started_cluster.default_hdfs_uploader.upload_directory(
+            local_path, remote_path, **kwargs
+        )
     elif storage_type == "s3":
         print(kwargs)
         return started_cluster.default_s3_uploader.upload_directory(
@@ -346,8 +377,10 @@ def default_upload_directory(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_single_iceberg_file(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -376,8 +409,10 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_partition_by(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -411,8 +446,10 @@ def test_partition_by(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -471,8 +508,10 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_types(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -537,8 +576,10 @@ def test_types(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs"])
 def test_cluster_table_function(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
 
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -637,8 +678,10 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_delete_files(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -707,11 +750,13 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 @pytest.mark.parametrize("is_table_function", [False, True])
 def test_evolved_schema_simple(
     started_cluster, format_version, storage_type, is_table_function
 ):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1085,8 +1130,10 @@ def test_evolved_schema_simple(
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_not_evolved_schema(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1497,8 +1544,10 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
     assert "UNSUPPORTED_METHOD" in error
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_row_based_deletes(started_cluster, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
@@ -1534,8 +1583,10 @@ def test_row_based_deletes(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_schema_inference(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     for format in ["Parquet", "ORC", "Avro"]:
@@ -1602,8 +1653,10 @@ def test_schema_inference(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_metadata_file_selection(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
@@ -1637,8 +1690,10 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_metadata_file_format_with_uuid(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (

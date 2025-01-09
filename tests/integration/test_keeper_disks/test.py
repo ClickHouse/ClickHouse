@@ -18,6 +18,7 @@ node_logs = cluster.add_instance(
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
     with_minio=True,
+    with_hdfs=True,
 )
 
 node_snapshot = cluster.add_instance(
@@ -25,6 +26,7 @@ node_snapshot = cluster.add_instance(
     main_configs=["configs/enable_keeper_snapshot.xml"],
     stay_alive=True,
     with_minio=True,
+    with_hdfs=True,
 )
 
 
@@ -131,6 +133,12 @@ def get_local_snapshots(node):
     return get_local_files("/var/lib/clickhouse/coordination/snapshots", node)
 
 
+def test_supported_disk_types(started_cluster):
+    node_logs.stop_clickhouse()
+    node_logs.start_clickhouse()
+    node_logs.contains_in_log("Disk type 'hdfs' is not supported for Keeper")
+
+
 def test_logs_with_disks(started_cluster):
     setup_local_storage(started_cluster, node_logs)
 
@@ -160,7 +168,7 @@ def test_logs_with_disks(started_cluster):
 
         node_logs.wait_for_log_line(
             "KeeperLogStore: Continue to write into changelog_34_36.bin",
-            look_behind_lines=2000,
+            look_behind_lines=1000,
         )
 
         # all but the latest log should be on S3
