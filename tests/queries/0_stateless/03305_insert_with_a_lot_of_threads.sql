@@ -1,4 +1,5 @@
-SET max_rows_to_read=0;
-CREATE TABLE testing_a_lot_of_threads (a UInt64, b String) engine=MergeTree ORDER BY ();
-INSERT INTO testing_a_lot_of_threads SELECT number, toString(number) FROM system.numbers LIMIT 1000000000 SETTINGS max_insert_threads=10000;
-SELECT count(*) FROM testing_a_lot_of_threads;
+SET max_memory_usage = 2e9;
+CREATE TABLE testing_memory (a UInt64, b String) engine=MergeTree ORDER BY ();
+INSERT INTO testing_memory SELECT number, toString(number) FROM system.numbers LIMIT 1000000000 SETTINGS max_insert_threads=500;
+SELECT count(*) FROM testing_memory;
+DROP TABLE testing_memory;

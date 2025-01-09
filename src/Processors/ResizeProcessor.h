@@ -157,7 +157,6 @@ public:
 
     String getName() const override { return "MemoryDependentResize"; }
 
-    Status prepare() override;
     Status prepare(const PortNumbers &, const PortNumbers &) override;
 
 private:
@@ -203,7 +202,7 @@ private:
     std::vector<OutputPortWithStatus> output_ports;
 
     std::vector<bool> is_output_enabled;
-    static constexpr size_t LOW_MEMORY_THRESHOLD = 4ULL * 1024 * 1024;
+    static constexpr size_t LOW_MEMORY_THRESHOLD = 300ULL * 1024 * 1024; /// Need to be exchanged to some real block size
 };
 
 }
