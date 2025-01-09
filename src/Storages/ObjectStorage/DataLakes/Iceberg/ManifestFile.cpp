@@ -33,19 +33,12 @@ Int32 ManifestFileContent::getSchemaId() const
     return impl->schema_id;
 }
 
-const std::vector<DB::ColumnPtr> & ManifestFileContent::getPartitionColumns() const
+
+const std::vector<PartitionColumnInfo> & ManifestFileContent::getPartitionColumnInfos() const
 {
-    return impl->partition_columns;
+    return impl->partition_column_infos;
 }
 
-const std::vector<PartitionTransform> & ManifestFileContent::getPartitionTransforms() const
-{
-    return impl->partition_transforms;
-}
-const std::vector<Int32> & ManifestFileContent::getPartitionSourceIds() const
-{
-    return impl->partition_source_ids;
-}
 
 ManifestFileContent::ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_) : impl(std::move(impl_))
 {
@@ -183,8 +176,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
-            columns.at(1)->getFamilyName());
+            "The parsed column from Avro file of `partition` field should be Tuple type, got {}",
+            big_partition_column->getFamilyName());
     }
     const auto * big_partition_tuple = assert_cast<const ColumnTuple *>(big_partition_column.get());
 
@@ -207,11 +200,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         {
             continue;
         }
-        auto partition_name = current_field->getValue<String>("name");
-
-        this->partition_columns.push_back(big_partition_tuple->getColumnPtr(i));
-        this->partition_transforms.push_back(transform);
-        this->partition_source_ids.push_back(source_id);
+        partition_column_infos.emplace_back(transform, source_id, big_partition_tuple->getColumnPtr(i));
     }
 }
 

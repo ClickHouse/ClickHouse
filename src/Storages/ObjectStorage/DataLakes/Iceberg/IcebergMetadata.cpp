@@ -398,17 +398,17 @@ IcebergMetadata::getSpecificPartitionInfo(const ManifestFileEntry & manifest_fil
 {
     SpecificSchemaPartitionInfo specific_info;
 
-    for (size_t i = 0; i < manifest_file_entry.getContent().getPartitionColumns().size(); ++i)
+    for (size_t i = 0; i < manifest_file_entry.getContent().getPartitionColumnInfos().size(); ++i)
     {
         const auto & manifest_content = manifest_file_entry.getContent();
-        if (manifest_content.getPartitionTransforms()[i] == PartitionTransform::Unsupported
-            || manifest_content.getPartitionTransforms()[i] == PartitionTransform::Void)
+        if (manifest_content.getPartitionColumnInfos()[i].transform == PartitionTransform::Unsupported
+            || manifest_content.getPartitionColumnInfos()[i].transform == PartitionTransform::Void)
         {
             continue;
         }
-        Int32 source_id = manifest_file_entry.getContent().getPartitionSourceIds()[i];
+        Int32 source_id = manifest_file_entry.getContent().getPartitionColumnInfos()[i].source_id;
         NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_version, source_id);
-        size_t column_size = manifest_file_entry.getContent().getPartitionColumns()[i]->size();
+        size_t column_size = manifest_file_entry.getContent().getPartitionColumnInfos()[i].column->size();
         if (specific_info.ranges.empty())
         {
             specific_info.ranges.resize(column_size);
@@ -421,9 +421,9 @@ IcebergMetadata::getSpecificPartitionInfo(const ManifestFileEntry & manifest_fil
         for (size_t j = 0; j < column_size; ++j)
         {
             specific_info.ranges[j].push_back(getPartitionRange(
-                manifest_content.getPartitionTransforms()[i],
+                manifest_content.getPartitionColumnInfos()[i].transform,
                 static_cast<UInt32>(j),
-                manifest_content.getPartitionColumns()[i],
+                manifest_content.getPartitionColumnInfos()[i].column,
                 name_and_type.type));
         }
     }
@@ -465,46 +465,31 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
-    {
         return {};
-    }
 
-    auto data_files_getter = [&]()
+    if (!filter_dag && cached_unprunned_files_for_current_snapshot.has_value())
+        return cached_unprunned_files_for_current_snapshot.value();
+
+    Strings data_files;
+    for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
     {
-        Strings data_files;
-        for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
+        auto pruning_mask = getPruningMask(manifest_entry, filter_dag);
+        const auto & data_files_in_manifest = manifest_entry.getContent().getDataFiles();
+        for (size_t i = 0; i < data_files_in_manifest.size(); ++i)
         {
-            auto pruning_mask = getPruningMask(manifest_entry, filter_dag);
-            const auto & data_files_in_manifest = manifest_entry.getContent().getDataFiles();
-            for (size_t i = 0; i < data_files_in_manifest.size(); ++i)
+            if ((!filter_dag || pruning_mask.empty() || pruning_mask[i])
+                && (data_files_in_manifest[i].status != ManifestEntryStatus::DELETED))
             {
-                if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
-                {
-                    if (data_files_in_manifest[i].status != ManifestEntryStatus::DELETED)
-                    {
-                        data_files.push_back(data_files_in_manifest[i].data_file_name);
-                    }
-                }
+                data_files.push_back(data_files_in_manifest[i].data_file_name);
             }
         }
-        return data_files;
-    };
+    }
+
 
     if (!filter_dag)
-    {
-        if (cached_unprunned_files_for_current_snapshot.has_value())
-        {
-            return cached_unprunned_files_for_current_snapshot.value();
-        }
-        else
-        {
-            return (cached_unprunned_files_for_current_snapshot = data_files_getter()).value();
-        }
-    }
-    else
-    {
-        return data_files_getter();
-    }
+        return (cached_unprunned_files_for_current_snapshot = data_files).value();
+
+    return data_files;
 }
 
 Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)

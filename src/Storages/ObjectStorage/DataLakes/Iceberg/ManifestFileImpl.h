@@ -49,11 +49,8 @@ public:
     Int32 schema_id;
 
     // Size - number of supported partition columns
-    std::vector<PartitionTransform> partition_transforms;
-    std::vector<Int32> partition_source_ids;
+    std::vector<PartitionColumnInfo> partition_column_infos;
 
-    //Size - number of supported partition columns, each column has an entry for each file
-    std::vector<DB::ColumnPtr> partition_columns;
 
     // Size - number of files
     std::vector<DataFileEntry> data_files;

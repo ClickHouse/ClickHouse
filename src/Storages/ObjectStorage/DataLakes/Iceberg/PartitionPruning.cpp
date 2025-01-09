@@ -52,25 +52,22 @@ Iceberg::PartitionTransform getTransform(const String & transform_name)
 
 DateLUTImpl::Values getValues(Int32 value, Iceberg::PartitionTransform transform)
 {
-    if (transform == Iceberg::PartitionTransform::Year)
+    switch (transform)
     {
-        return DateLUT::instance().lutIndexByYearSinceEpochStartsZeroIndexing(value);
+        case Iceberg::PartitionTransform::Year:
+            return DateLUT::instance().lutIndexByYearSinceEpochStartsZeroIndexing(value);
+        case Iceberg::PartitionTransform::Month:
+            return DateLUT::instance().lutIndexByMonthSinceEpochStartsZeroIndexing(static_cast<UInt32>(value));
+        case Iceberg::PartitionTransform::Day:
+            return DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value));
+        case Iceberg::PartitionTransform::Hour: {
+            DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value / 24));
+            values.date += (value % 24) * 3600;
+            return values;
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform for get day function: {}", transform);
     }
-    else if (transform == Iceberg::PartitionTransform::Month)
-    {
-        return DateLUT::instance().lutIndexByMonthSinceEpochStartsZeroIndexing(static_cast<UInt32>(value));
-    }
-    else if (transform == Iceberg::PartitionTransform::Day)
-    {
-        return DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value));
-    }
-    else if (transform == Iceberg::PartitionTransform::Hour)
-    {
-        DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value / 24));
-        values.date += (value % 24) * 3600;
-        return values;
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform for get day function: {}", transform);
 }
 
 Int64 getTime(Int32 value, Iceberg::PartitionTransform transform)

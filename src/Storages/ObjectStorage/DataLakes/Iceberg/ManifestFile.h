@@ -35,6 +35,13 @@ struct DataFileEntry
     DataFileContent content;
 };
 
+struct PartitionColumnInfo
+{
+    PartitionTransform transform;
+    Int32 source_id;
+    DB::ColumnPtr column;
+};
+
 
 class ManifestFileContent
 {
@@ -43,9 +50,8 @@ public:
 
     const std::vector<DataFileEntry> & getDataFiles() const;
     Int32 getSchemaId() const;
-    const std::vector<DB::ColumnPtr> & getPartitionColumns() const;
-    const std::vector<PartitionTransform> & getPartitionTransforms() const;
-    const std::vector<Int32> & getPartitionSourceIds() const;
+    const std::vector<PartitionColumnInfo> & getPartitionColumnInfos() const;
+
 
 private:
     std::unique_ptr<ManifestFileContentImpl> impl;
