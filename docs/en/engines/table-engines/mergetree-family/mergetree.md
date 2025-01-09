@@ -694,10 +694,10 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
 - [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
-- [`hdfs` for HDFS](#hdfs-storage)
-- [`web` for read-only from web](#web-storage)
-- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
+- [`blob_storage_disk` for Azure Blob Storage](/docs/en/engines/table-engines/integrations/azureBlobStorage#table_engine-mergetree-azure-blob-storage)
+- [`hdfs` for HDFS](/docs/en/engines/table-engines/integrations/hdfs)
+- [`web` for read-only from web](/docs/en/operations/storing-data#web-storage)
+- [`cache` for local caching](/docs/en/operations/storing-data#using-local-cache)
 - [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
 - [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/docs/en/operations/storing-data.md#s3-plain-rewritable-storage)
 
@@ -725,7 +725,7 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
 for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
-See [dynamic storage](#dynamic-storage) for more details.
+See [dynamic storage](/docs/en/operations/storing-data#dynamic-configuration) for more details.
 :::
 
 Configuration structure:
