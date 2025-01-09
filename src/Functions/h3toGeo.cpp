@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 
 #include <h3api.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -92,8 +93,17 @@ public:
         }
 
         MutableColumns columns;
-        columns.emplace_back(std::move(latitude));
-        columns.emplace_back(std::move(longitude));
+        if (context->getSettingsRef()[Setting::use_legacy_h3ToGeo_order]) 
+        {
+            columns.emplace_back(std::move(longitude));
+            columns.emplace_back(std::move(latitude));
+        }
+        else
+        {
+            columns.emplace_back(std::move(latitude));
+            columns.emplace_back(std::move(longitude));
+        }
+        
         return ColumnTuple::create(std::move(columns));
     }
 };
