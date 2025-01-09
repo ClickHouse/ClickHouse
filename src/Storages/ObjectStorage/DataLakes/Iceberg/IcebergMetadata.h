@@ -127,14 +127,6 @@ private:
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
-    Iceberg::SpecificSchemaPartitionInfo
-    getSpecificPartitionInfo(const Iceberg::ManifestFileEntry & manifest_file_entry, Int32 schema_version) const;
-
-    std::vector<bool> getPruningMask(const Iceberg::ManifestFileEntry & manifest_file_entry, const ActionsDAG * filter_dag) const;
-
-    std::tuple<KeyCondition, NamesAndTypesList, std::vector<size_t>>
-    getPruningInfo(const Iceberg::ManifestFileEntry & manifest_file_entry, const ActionsDAG * filter_dag) const;
-
     //Fields are needed only for providing dynamic polymorphism
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;

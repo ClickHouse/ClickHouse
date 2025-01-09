@@ -61,7 +61,7 @@ DateLUTImpl::Values getDateLUTImplValues(Int32 value, Iceberg::PartitionTransfor
             return DateLUT::instance().lutIndexByMonthSinceEpochStartsZeroIndexing(static_cast<UInt32>(value));
         case Iceberg::PartitionTransform::Day:
             return DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value));
-        case Iceberg::PartitionTransform::Hour: 
+        case Iceberg::PartitionTransform::Hour:
         {
             DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value / 24));
             values.date += (value % 24) * 3600;

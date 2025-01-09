@@ -6,9 +6,9 @@
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
-#    include "SchemaProcessor.h"
+#include "SchemaProcessor.h"
 
 namespace Iceberg
 {
