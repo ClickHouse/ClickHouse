@@ -2282,7 +2282,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_prefer_block_bytes](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_prefer_block_bytes) - Average block bytes output by parquet reader. Default value - `16744704`.
 - [output_format_parquet_write_page_index](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Add a possibility to write page index into parquet files. Need to disable `output_format_parquet_use_custom_encoder` at present. Default value - `true`.
 
-## ParquetMetadata {data-format-parquet-metadata}
+## ParquetMetadata {#data-format-parquet-metadata}
 
 Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
 - num_columns - the number of columns
@@ -2927,6 +2927,7 @@ Outputs the following columns:
    - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
 
 Example: find compilation units that have the most function definitions (including template instantiations and functions from included header files):
+
 ```sql
 SELECT
     unit_name,

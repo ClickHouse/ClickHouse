@@ -287,13 +287,17 @@ To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/dev
 
 You can compile packages and install them or use programs without installing packages.
 
-      Client: <build_directory>/programs/clickhouse-client
-      Server: <build_directory>/programs/clickhouse-server
+```
+Client: <build_directory>/programs/clickhouse-client
+Server: <build_directory>/programs/clickhouse-server
+```
 
 You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-      /var/lib/clickhouse/data/default/
-      /var/lib/clickhouse/metadata/default/
+```
+/var/lib/clickhouse/data/default/
+/var/lib/clickhouse/metadata/default/
+```
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
