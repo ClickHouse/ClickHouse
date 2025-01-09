@@ -759,13 +759,13 @@ std::map<std::string, CHSetting> serverSettings = {
     {"output_format_values_escape_quote_with_quote", CHSetting(trueOrFalse, {})},
     {"output_format_write_statistics", CHSetting(trueOrFalse, {})},
     {"page_cache_inject_eviction", CHSetting(trueOrFalse, {"0", "1"})},
-    {"parallel_replica_offset",
+    /*{"parallel_replica_offset",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},*/
     {"parallel_replicas_allow_in_with_subquery", CHSetting(trueOrFalse, {"0", "1"})},
-    {"parallel_replicas_count",
+    /*{"parallel_replicas_count",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},*/
     {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {})},
     {"parallel_replicas_index_analysis_only_on_coordinator", CHSetting(trueOrFalse, {"0", "1"})},
     {"parallel_replicas_custom_key_range_lower",
