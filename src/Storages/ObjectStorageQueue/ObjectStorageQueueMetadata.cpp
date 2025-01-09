@@ -197,6 +197,8 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 zookeeper_path,
                 path,
                 file_status,
+                bucket_info,
+                buckets_num,
                 table_metadata.loading_retries,
                 log);
     }

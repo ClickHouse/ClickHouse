@@ -26,15 +26,11 @@ namespace ErrorCodes
 
 namespace
 {
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
-    }
-
     time_t now()
     {
         return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
+
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
@@ -116,19 +112,25 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::N
 
 ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & path_,
+    const std::filesystem::path & zk_path_,
     const std::string & processing_node_path_,
     const std::string & processed_node_path_,
     const std::string & failed_node_path_,
     FileStatusPtr file_status_,
+    BucketInfoPtr bucket_info_,
+    size_t buckets_num_,
     size_t max_loading_retries_,
     LoggerPtr log_)
     : path(path_)
     , node_name(getNodeName(path_))
     , file_status(file_status_)
     , max_loading_retries(max_loading_retries_)
+    , zk_path(zk_path_)
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
+    , buckets_num(buckets_num_)
+    , bucket_info(bucket_info_)
     , node_metadata(createNodeMetadata(path))
     , log(log_)
     , processing_node_id_path(processing_node_path + "_processing_id")
@@ -475,6 +477,81 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
                 zkutil::makeSetRequest(
                     retrieable_failed_node_path, node_metadata.toString(), retriable_failed_node_stat.version));
         }
+    }
+}
+
+zkutil::ZooKeeperPtr ObjectStorageQueueIFileMetadata::getZooKeeper()
+{
+    return Context::getGlobalContextInstance()->getZooKeeper();
+}
+
+size_t ObjectStorageQueueIFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num_)
+{
+    return sipHash64(path_) % buckets_num_;
+}
+
+ObjectStorageQueueIFileMetadata::BucketHolderPtr ObjectStorageQueueIFileMetadata::tryAcquireBucket(
+    const std::filesystem::path & zk_path_,
+    const Bucket & bucket,
+    const Processor & processor,
+    LoggerPtr log_)
+{
+    const auto zk_client = getZooKeeper();
+    const auto bucket_lock_path = zk_path_ / "buckets" / toString(bucket) / "lock";
+    const auto bucket_lock_id_path = zk_path_ / "buckets" / toString(bucket) / "lock_id";
+    const auto processor_info = getProcessorInfo(processor);
+
+    while (true)
+    {
+        Coordination::Requests requests;
+
+        /// Create bucket lock node as ephemeral node.
+        requests.push_back(zkutil::makeCreateRequest(bucket_lock_path, "", zkutil::CreateMode::Ephemeral));
+
+        /// Create bucket lock id node as persistent node if it does not exist yet.
+        /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.
+        /// (See comment near ObjectStorageQueueIFileMetadata::processing_node_version).
+        bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+        if (create_if_not_exists_enabled)
+        {
+            requests.push_back(
+                zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
+        }
+        else if (!zk_client->exists(bucket_lock_id_path))
+        {
+            requests.push_back(zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent));
+        }
+
+        requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
+
+        Coordination::Responses responses;
+        const auto code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses.back());
+            const auto bucket_lock_version = set_response.stat.version;
+
+            LOG_TEST(
+                log_,
+                "Processor {} acquired bucket {} for processing (bucket lock version: {})",
+                processor, bucket, bucket_lock_version);
+
+            return std::make_shared<BucketHolder>(
+                bucket,
+                bucket_lock_version,
+                bucket_lock_path,
+                bucket_lock_id_path,
+                zk_client,
+                log_);
+        }
+
+        if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            return nullptr;
+
+        if (create_if_not_exists_enabled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", code);
+
+        LOG_INFO(log_, "Bucket lock id path was probably created or removed while acquiring the bucket (error code: {}), will retry", code);
     }
 }
 

@@ -17,11 +17,6 @@ namespace ErrorCodes
 
 namespace
 {
-    ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(const std::string & path, size_t buckets_num)
-    {
-        return sipHash64(path) % buckets_num;
-    }
-
     std::string getProcessedPathWithBucket(const std::filesystem::path & zk_path, size_t bucket)
     {
         return zk_path / "buckets" / toString(bucket) / "processed";
@@ -32,21 +27,14 @@ namespace
         return zk_path / "processed";
     }
 
-    bool useBucketsForProcessing(size_t buckets_num)
+    std::string getProcessedPath(
+        const std::filesystem::path & zk_path,
+        const std::string & path,
+        std::optional<size_t> buckets_num)
     {
-        return buckets_num > 1;
-    }
-
-    std::string getProcessedPath(const std::filesystem::path & zk_path, const std::string & path, size_t buckets_num)
-    {
-        if (useBucketsForProcessing(buckets_num))
-            return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num));
+        if (buckets_num.has_value())
+            return getProcessedPathWithBucket(zk_path, ObjectStorageQueueIFileMetadata::getBucketForPath(path, buckets_num.value()));
         return getProcessedPathWithoutBucket(zk_path);
-    }
-
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
     }
 }
 
@@ -124,29 +112,26 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
+        zk_path_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
-        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_),
+        /* processed_node_path */getProcessedPath(
+            zk_path_, path_, useBucketsForProcessingImpl(buckets_num_) ? std::optional<size_t>(buckets_num_) : std::nullopt),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
+        bucket_info_,
+        buckets_num_,
         max_loading_retries_,
         log_)
-    , buckets_num(buckets_num_)
-    , zk_path(zk_path_)
-    , bucket_info(bucket_info_)
 {
 }
 
-bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
+std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(size_t buckets_num_)
 {
-    return DB::useBucketsForProcessing(buckets_num);
-}
-
-std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(size_t buckets_num)
-{
-    if (DB::useBucketsForProcessing(buckets_num))
+    if (useBucketsForProcessingImpl(buckets_num_))
     {
         std::vector<std::string> paths{"buckets", "failed", "processing"};
-        for (size_t i = 0; i < buckets_num; ++i)
+        paths.reserve(paths.size() + buckets_num_);
+        for (size_t i = 0; i < buckets_num_; ++i)
             paths.push_back("buckets/" + toString(i));
         return paths;
     }
@@ -175,76 +160,6 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
         return true;
     }
     return false;
-}
-
-ObjectStorageQueueOrderedFileMetadata::Bucket ObjectStorageQueueOrderedFileMetadata::getBucketForPath(const std::string & path_, size_t buckets_num)
-{
-    return getBucketForPathImpl(path_, buckets_num);
-}
-
-ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
-    const std::filesystem::path & zk_path,
-    const Bucket & bucket,
-    const Processor & processor,
-    LoggerPtr log_)
-{
-    const auto zk_client = getZooKeeper();
-    const auto bucket_lock_path = zk_path / "buckets" / toString(bucket) / "lock";
-    const auto bucket_lock_id_path = zk_path / "buckets" / toString(bucket) / "lock_id";
-    const auto processor_info = getProcessorInfo(processor);
-
-    while (true)
-    {
-        Coordination::Requests requests;
-
-        /// Create bucket lock node as ephemeral node.
-        requests.push_back(zkutil::makeCreateRequest(bucket_lock_path, "", zkutil::CreateMode::Ephemeral));
-
-        /// Create bucket lock id node as persistent node if it does not exist yet.
-        /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.
-        /// (See comment near ObjectStorageQueueIFileMetadata::processing_node_version).
-        bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
-        if (create_if_not_exists_enabled)
-        {
-            requests.push_back(
-                zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
-        }
-        else if (!zk_client->exists(bucket_lock_id_path))
-        {
-            requests.push_back(zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent));
-        }
-
-        requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
-
-        Coordination::Responses responses;
-        const auto code = zk_client->tryMulti(requests, responses);
-        if (code == Coordination::Error::ZOK)
-        {
-            const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses.back());
-            const auto bucket_lock_version = set_response.stat.version;
-
-            LOG_TEST(
-                log_,
-                "Processor {} acquired bucket {} for processing (bucket lock version: {})",
-                processor, bucket, bucket_lock_version);
-
-            return std::make_shared<BucketHolder>(
-                bucket,
-                bucket_lock_version,
-                bucket_lock_path,
-                bucket_lock_id_path,
-                zk_client,
-                log_);
-        }
-
-        if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
-            return nullptr;
-
-        if (create_if_not_exists_enabled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", code);
-
-        LOG_INFO(log_, "Bucket lock id path was probably created or removed while acquiring the bucket (error code: {}), will retry", code);
-    }
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
@@ -453,7 +368,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordin
     prepareProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */false);
 }
 
-void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value)
+void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path_, size_t value)
 {
     auto zk_client = getZooKeeper();
     const auto log = getLogger("ObjectStorageQueueOrderedFileMetadata");
@@ -464,7 +379,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
     Coordination::Responses responses;
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
-        const auto old_processed_path = getProcessedPathWithoutBucket(zk_path);
+        const auto old_processed_path = getProcessedPathWithoutBucket(zk_path_);
         NodeMetadata processed_node;
         Coordination::Stat processed_node_stat;
         bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
@@ -484,7 +399,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
 
         for (size_t i = 0; i < value; ++i)
         {
-            const auto new_processed_path = getProcessedPathWithBucket(zk_path, /* bucket */i);
+            const auto new_processed_path = getProcessedPathWithBucket(zk_path_, /* bucket */i);
             zk_client->createAncestors(new_processed_path);
 
             requests.push_back(zkutil::makeCreateRequest(

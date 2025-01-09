@@ -10,26 +10,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
-    }
-}
-
 ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
-    const std::filesystem::path & zk_path,
+    const std::filesystem::path & zk_path_,
     const std::string & path_,
     FileStatusPtr file_status_,
+    BucketInfoPtr bucket_info_,
+    size_t buckets_num_,
     size_t max_loading_retries_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
-        /* processing_node_path */zk_path / "processing" / getNodeName(path_),
-        /* processed_node_path */zk_path / "processed" / getNodeName(path_),
-        /* failed_node_path */zk_path / "failed" / getNodeName(path_),
+        zk_path_,
+        /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
+        /* processed_node_path */zk_path_ / "processed" / getNodeName(path_),
+        /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
+        bucket_info_,
+        buckets_num_,
         max_loading_retries_,
         log_)
 {
@@ -48,7 +45,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
         const size_t failed_path_doesnt_exist_idx = requests.size();
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
-
 
         const auto created_processing_path_idx = requests.size();
         requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
