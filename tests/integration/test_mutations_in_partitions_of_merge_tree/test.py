@@ -110,8 +110,8 @@ def test_trivial_alter_in_partition_replicated_merge_tree(started_cluster):
     try:
         name = "test_trivial_alter_in_partition_replicated_merge_tree"
 
-        node1.query(f"DROP TABLE IF EXISTS {name}")
-        node2.query(f"DROP TABLE IF EXISTS {name}")
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node2.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
         for node in (node1, node2):
             node.query(
@@ -149,8 +149,8 @@ def test_trivial_alter_in_partition_replicated_merge_tree(started_cluster):
             assert node.query(f"SELECT sum(x) FROM {name}").splitlines() == ["2"]
 
     finally:
-        node1.query(f"DROP TABLE IF EXISTS {name}")
-        node2.query(f"DROP TABLE IF EXISTS {name}")
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node2.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_alter_in_partition_merge_tree_invalid_valid_valid(started_cluster):
