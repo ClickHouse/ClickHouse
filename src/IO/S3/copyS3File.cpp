@@ -144,6 +144,9 @@ namespace
         void createMultipartUpload()
         {
             S3::CreateMultipartUploadRequest request;
+            if(request.ChecksumAlgorithmHasBeenSet()) {
+
+            }
             fillCreateMultipartRequest(request);
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
@@ -514,11 +517,23 @@ namespace
 
         void fillPutRequest(S3::PutObjectRequest & request)
         {
-            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), offset, size);
-
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetContentLength(size);
+            auto read_buffer_internal = create_read_buffer();
+            read_buffer_internal->getFileOffsetOfBufferEnd();
+            auto* buffer_from_file_desc = dynamic_cast<ReadBufferFromFileDescriptor*>(read_buffer_internal.get()
+            if (request.ChecksumAlgorithmHasBeenSet() && buffer_from_file_desc) {
+                LOG_INFO("Checksum has been set. Will automatically double the "
+                         "bandwith from {} to {}", throttler->getMaxSpeed(), 2 * throttler->getMaxSpeed() )
+                ThrottlerPtr throttler = buffer_from_file_desc->throttler;
+                if(throttler) {
+                    buffer_from_file_desc->throttler
+                        = std::make_shared<Throttler>(2 * throttler->getMaxSpeed(), throttler);
+                 }
+            }
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(read_buffer_internal, offset, size);
+
             request.SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), size));
 
             if (object_metadata.has_value())
@@ -605,15 +620,28 @@ namespace
 
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
-            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
-
             /// Setup request.
             auto request = std::make_unique<S3::UploadPartRequest>();
+
+            std::unique_ptr<SeekableReadBuffer> read_buffer_internal = create_read_buffer();
+
             request->SetBucket(dest_bucket);
             request->SetKey(dest_key);
             request->SetPartNumber(static_cast<int>(part_number));
             request->SetUploadId(multipart_upload_id);
             request->SetContentLength(part_size);
+            auto* buffer_from_file_desc = dynamic_cast<ReadBufferFromFileDescriptor*>(read_buffer_internal.get() )
+            if (request->ChecksumAlgorithmHasBeenSet() && buffer_from_file_desc) {
+                LOG_INFO("Checksum has been set. Will automatically double the "
+                         "bandwith from {} to {}", throttler->getMaxSpeed(), 2 * throttler->getMaxSpeed() )
+                ThrottlerPtr throttler = buffer_from_file_desc->throttler;
+                if(throttler) {
+                    buffer_from_file_desc->throttler
+                        = std::make_shared<Throttler>(2 * throttler->getMaxSpeed(), throttler);
+                }
+            }
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(read_buffer_internal, part_offset, part_size);
+
             request->SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), part_size));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840

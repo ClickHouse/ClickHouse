@@ -22,8 +22,6 @@ protected:
 
     int fd;
 
-    ThrottlerPtr throttler;
-
     bool nextImpl() override;
     void prefetch(Priority priority) override;
 
@@ -50,6 +48,8 @@ public:
         , throttler(throttler_)
     {
     }
+
+    ThrottlerPtr throttler;
 
     int getFD() const
     {
