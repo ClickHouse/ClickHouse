@@ -524,9 +524,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        if (has_postponed_packet)
+        if (packet_in_progress)
         {
-            has_postponed_packet = false;
+            /// packet type is handled already, read and parse packet itself
+            read_context->resume();
+            /// Check if packet is not ready yet.
+            if (read_context->isInProgress())
+                return ReadResult(read_context->getFileDescriptor());
+
+            packet_in_progress = false;
             auto read_result = processPacket(read_context->getPacket());
             if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
                 return read_result;
@@ -973,20 +979,28 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
         recreate_read_context = false;
     }
 
-    chassert(!has_postponed_packet);
+    // if not in processing current packet, read only packet type first
+    if (!packet_in_progress)
+        read_context->readOnlyPacketTypeNext();
 
     read_context->resume();
     if (read_context->isInProgress()) // <- nothing to process
         return false;
 
+    packet_in_progress = true;
+
     const auto packet_type = read_context->getPacketType();
     if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
     {
+        // resume reading packet
+        read_context->resume();
+        if (!read_context->isInProgress()) // data is not arrived yet
+            return false;
+
+        packet_in_progress = false;
         processPacket(read_context->getPacket());
         return true;
     }
-
-    has_postponed_packet = true;
 
 #endif
 

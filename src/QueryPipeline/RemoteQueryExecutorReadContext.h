@@ -41,6 +41,8 @@ public:
 
     UInt64 getPacketType() const { return packet.type; }
 
+    void readOnlyPacketTypeNext() { read_only_packet_type_next = true; }
+
 private:
     bool checkTimeout(bool blocking = false);
 
@@ -60,6 +62,8 @@ private:
 
         void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
+
+    std::atomic_bool read_only_packet_type_next = false;
 
     std::atomic_bool is_in_progress = false;
     Packet packet;
