@@ -15,7 +15,6 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVI
 */
 int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
-    const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
@@ -63,7 +62,6 @@ SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY 
 */
 int QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
-    const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.inner_query().select().sel().select_core());
@@ -102,7 +100,6 @@ Dump and read table oracle
 int QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
     bool first = true;
-    const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * sel = ts->mutable_sel()->mutable_select_core();
@@ -355,7 +352,6 @@ int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 
 int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const bool peer_query, StatementGenerator & gen, SQLQuery & sq2)
 {
-    const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     const bool global_aggregate = rg.nextSmallNumber() < 4;
@@ -472,6 +468,7 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
                         gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
                         jtf->mutable_table_alias()->set_table(buf);
                         found_tables.insert(tname);
+                        can_test_query_success &= t.hasClickHousePeer();
                     }
                 }
             }
@@ -546,7 +543,7 @@ int QueryOracle::replaceQueryWithTablePeers(
 
 int QueryOracle::ResetOracleValues()
 {
-    first_success = second_sucess = other_steps_sucess = true;
+    first_success = second_sucess = other_steps_sucess = can_test_query_success = true;
     return 0;
 }
 
@@ -556,24 +553,30 @@ int QueryOracle::SetIntermediateStepSuccess(const bool success)
     return 0;
 }
 
-int QueryOracle::processOracleQueryResult(const bool first, const bool success, const std::string & oracle_name)
+int QueryOracle::processFirstOracleQueryResult(const bool success)
 {
-    bool & res = first ? first_success : second_sucess;
-
     if (success)
     {
-        const std::filesystem::path & qfile = fc.db_file_path / "query.data";
-
-        md5_hash.hashFile(qfile.generic_string(), first ? first_digest : second_digest);
+        md5_hash.hashFile(qfile.generic_string(), first_digest);
     }
-    res = success;
-    if (!first && other_steps_sucess)
+    first_success = success;
+    return 0;
+}
+
+int QueryOracle::processSecondOracleQueryResult(const bool success, const std::string & oracle_name)
+{
+    if (success)
     {
-        if (first_success != second_sucess)
+        md5_hash.hashFile(qfile.generic_string(), second_digest);
+    }
+    second_sucess = success;
+    if (other_steps_sucess)
+    {
+        if (can_test_query_success && first_success != second_sucess)
         {
             throw std::runtime_error(oracle_name + " oracle failed with different success results");
         }
-        if (first_success && !std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest)))
+        if (first_success && second_sucess && !std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest)))
         {
             throw std::runtime_error(oracle_name + " oracle failed with different result sets");
         }

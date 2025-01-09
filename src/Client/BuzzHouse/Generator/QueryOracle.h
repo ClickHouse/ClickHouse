@@ -11,8 +11,9 @@ class QueryOracle
 {
 private:
     const FuzzConfig & fc;
+    const std::filesystem::path qfile;
     MD5Impl md5_hash;
-    bool first_success = false, second_sucess = false, other_steps_sucess = false;
+    bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
     uint8_t first_digest[16], second_digest[16];
     std::string buf;
     std::set<uint32_t> found_tables;
@@ -21,11 +22,12 @@ private:
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);
 
 public:
-    explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }
+    explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc), qfile(ffc.db_file_path / "query.data") { buf.reserve(4096); }
 
     int ResetOracleValues();
-    int SetIntermediateStepSuccess(const bool success);
-    int processOracleQueryResult(bool first, bool success, const std::string & oracle_name);
+    int SetIntermediateStepSuccess(bool success);
+    int processFirstOracleQueryResult(bool success);
+    int processSecondOracleQueryResult(bool success, const std::string & oracle_name);
 
     /* Correctness query oracle */
     int generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);

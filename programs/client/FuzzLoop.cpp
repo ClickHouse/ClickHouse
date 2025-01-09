@@ -550,7 +550,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Correctness query");
+                    (void)qo.processFirstOracleQueryResult(!have_error);
 
                     sq2.Clear();
                     full_query.resize(0);
@@ -558,7 +558,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.processOracleQueryResult(false, !have_error, "Correctness query");
+                    (void)qo.processSecondOracleQueryResult(!have_error, "Correctness query");
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
@@ -575,7 +575,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Multi setting query");
+                    (void)qo.processFirstOracleQueryResult(!have_error);
 
                     sq3.Clear();
                     full_query.resize(0);
@@ -587,7 +587,7 @@ bool Client::buzzHouse()
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(false, !have_error, "Multi setting query");
+                    (void)qo.processSecondOracleQueryResult(!have_error, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
@@ -600,7 +600,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Dump and read table");
+                    (void)qo.processFirstOracleQueryResult(!have_error);
 
                     sq2.Clear();
                     (void)qo.generateExportQuery(rg, gen, t, sq2);
@@ -627,7 +627,7 @@ bool Client::buzzHouse()
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(false, !have_error, "Dump and read table");
+                    (void)qo.processSecondOracleQueryResult(!have_error, "Dump and read table");
                 }
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
@@ -638,7 +638,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Peer table query");
+                    (void)qo.processFirstOracleQueryResult(!have_error);
 
                     sq2.Clear();
                     (void)qo.replaceQueryWithTablePeers(rg, sq1, gen, peer_queries, sq2);
@@ -657,7 +657,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(false, !have_error, "Peer table query");
+                    (void)qo.processSecondOracleQueryResult(!have_error, "Peer table query");
                 }
                 else if (run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query + 1))
                 {
