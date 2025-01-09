@@ -526,7 +526,7 @@ static ColumnPtr readOffsetsFromFixedArrowListColumn(const std::shared_ptr<arrow
 {
     auto offsets_column = ColumnUInt64::create();
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
-    size_t size = arrow_column->length();
+    int64_t size = arrow_column->length();
     offsets_data.reserve(size);
     for (int64_t i = 0; i < size; ++i)
         offsets_data.emplace_back((i + 1) * length);
