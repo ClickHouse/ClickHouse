@@ -298,8 +298,8 @@ JSON
 			"type": "String"
 		},
 		{
-			"name": "y",
-			"type": "Enum8('a' = 1)"
+			"name": "throwIf(equals(y, 'b'))",
+			"type": "UInt8"
 		}
 	],
 
@@ -308,29 +308,29 @@ JSON
 		{
 			"x": 1,
 			"s": "str1",
-			"y": "a"
+			"throwIf(equals(y, 'b'))": 0
 		},
 		{
 			"x": 2,
 			"s": "str2",
-			"y": "a"
+			"throwIf(equals(y, 'b'))": 0
 		},
 		{
 			"x": 3,
 			"s": "str3",
-			"y": "a"
+			"throwIf(equals(y, 'b'))": 0
 		}
 	],
 
 	"rows": 3,
 
-	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"x":1,"s":"str1","y":"a"}
-{"x":2,"s":"str2","y":"a"}
-{"x":3,"s":"str3","y":"a"}
-{"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "}
+{"x":1,"s":"str1","throwIf(equals(y, 'b'))":0}
+{"x":2,"s":"str2","throwIf(equals(y, 'b'))":0}
+{"x":3,"s":"str3","throwIf(equals(y, 'b'))":0}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -344,33 +344,33 @@ JSONCompact
 			"type": "String"
 		},
 		{
-			"name": "y",
-			"type": "Enum8('a' = 1)"
+			"name": "throwIf(equals(y, 'b'))",
+			"type": "UInt8"
 		}
 	],
 
 	"data":
 	[
-		[1, "str1", "a"],
-		[2, "str2", "a"],
-		[3, "str3", "a"]
+		[1, "str1", 0],
+		[2, "str2", 0],
+		[3, "str3", 0]
 	],
 
 	"rows": 3,
 
-	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-[1, "str1", "a"]
-[2, "str2", "a"]
-[3, "str3", "a"]
-["Code: 691. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "]
+[1, "str1", 0]
+[2, "str2", 0]
+[3, "str3", 0]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"row_1": {"x":1,"s":"str1","y":"a"},
-	"row_2": {"x":2,"s":"str2","y":"a"},
-	"row_3": {"x":3,"s":"str3","y":"a"},
-	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
+	"row_1": {"x":1,"s":"str1","throwIf(equals(y, 'b'))":0},
+	"row_2": {"x":2,"s":"str2","throwIf(equals(y, 'b'))":0},
+	"row_3": {"x":3,"s":"str3","throwIf(equals(y, 'b'))":0},
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -386,8 +386,8 @@ XML
 				<type>String</type>
 			</column>
 			<column>
-				<name>y</name>
-				<type>Enum8('a' = 1)</type>
+				<name>throwIf(equals(y, 'b'))</name>
+				<type>UInt8</type>
 			</column>
 		</columns>
 	</meta>
@@ -395,21 +395,21 @@ XML
 		<row>
 			<x>1</x>
 			<s>str1</s>
-			<y>a</y>
+			<field>0</field>
 		</row>
 		<row>
 			<x>2</x>
 			<s>str2</s>
-			<y>a</y>
+			<field>0</field>
 		</row>
 		<row>
 			<x>3</x>
 			<s>str3</s>
-			<y>a</y>
+			<field>0</field>
 		</row>
 	</data>
 	<rows>3</rows>
-	<exception>Code: 691. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 With parallel formatting
 JSON
@@ -685,8 +685,8 @@ JSON
 			"type": "String"
 		},
 		{
-			"name": "y",
-			"type": "Enum8('a' = 1)"
+			"name": "throwIf(equals(y, 'b'))",
+			"type": "UInt8"
 		}
 	],
 
@@ -697,10 +697,10 @@ JSON
 
 	"rows": 0,
 
-	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONEachRow
-{"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "}
+{"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "}
 JSONCompact
 {
 	"meta":
@@ -714,8 +714,8 @@ JSONCompact
 			"type": "String"
 		},
 		{
-			"name": "y",
-			"type": "Enum8('a' = 1)"
+			"name": "throwIf(equals(y, 'b'))",
+			"type": "UInt8"
 		}
 	],
 
@@ -726,13 +726,13 @@ JSONCompact
 
 	"rows": 0,
 
-	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONCompactRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 JSONCompactEachRow
-["Code: 691. : Unexpected value 99 in enum: While executing JSONCompactEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "]
+["Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "]
 JSONObjectEachRow
 {
-	"exception": "Code: 691. : Unexpected value 99 in enum: While executing JSONObjectEachRowRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) "
+	"exception": "Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) "
 }
 XML
 <?xml version='1.0' encoding='UTF-8' ?>
@@ -748,15 +748,15 @@ XML
 				<type>String</type>
 			</column>
 			<column>
-				<name>y</name>
-				<type>Enum8('a' = 1)</type>
+				<name>throwIf(equals(y, 'b'))</name>
+				<type>UInt8</type>
 			</column>
 		</columns>
 	</meta>
 	<data>
 	</data>
 	<rows>0</rows>
-	<exception>Code: 691. : Unexpected value 99 in enum: While executing XMLRowOutputFormat. (UNKNOWN_ELEMENT_OF_ENUM) </exception>
+	<exception>Code: 395. : Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(y, 'b') :: 4) -> throwIf(equals(y, 'b')) UInt8 : 3'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) </exception>
 </result>
 With parallel formatting
 JSON
