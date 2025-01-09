@@ -47,8 +47,10 @@ add_library(clickhouse_storages_system ${storages_system_sources})
 target_link_libraries(clickhouse_storages_system PRIVATE
     dbms
     common
-    clickhouse_common_zookeeper_base
+    string_utils
     clickhouse_common_zookeeper
     clickhouse_parsers
     Poco::JSON
 )
+
+target_include_directories(clickhouse_storages_system PRIVATE InformationSchema)

@@ -7,6 +7,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
+#include <Common/SipHash.h>
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -123,7 +124,7 @@ public:
 
     bool hasEmptyBound() const { return has_empty_bound; }
 
-    inline bool contains(CoordinateType x, CoordinateType y) const
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
     {
         Point point(x, y);
 
@@ -166,10 +167,10 @@ public:
 
     UInt64 getAllocatedBytes() const;
 
-    bool contains(CoordinateType x, CoordinateType y) const;
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
 
 private:
-    enum class CellType : uint8_t
+    enum class CellType
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
@@ -198,7 +199,7 @@ private:
         }
 
         /// Inner part of the HalfPlane is the left side of initialized vector.
-        bool contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
+        bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
     };
 
     struct Cell
@@ -232,7 +233,7 @@ private:
     void calcGridAttributes(Box & box);
 
     template <typename T>
-    T getCellIndex(T row, T col) const { return row * grid_size + col; }
+    T ALWAYS_INLINE getCellIndex(T row, T col) const { return row * grid_size + col; }
 
     /// Complex case. Will check intersection directly.
     inline void addComplexPolygonCell(size_t index, const Box & box);
@@ -380,6 +381,8 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
     }
+
+    UNREACHABLE();
 }
 
 
@@ -582,7 +585,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
+        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -608,7 +611,31 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
+    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
     return Impl::call(x, y, impl);
 }
+
+
+template <typename Polygon>
+UInt128 sipHash128(Polygon && polygon)
+{
+    SipHash hash;
+
+    auto hash_ring = [&hash](const auto & ring)
+    {
+        UInt32 size = static_cast<UInt32>(ring.size());
+        hash.update(size);
+        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+    };
+
+    hash_ring(polygon.outer());
+
+    const auto & inners = polygon.inners();
+    hash.update(inners.size());
+    for (auto & inner : inners)
+        hash_ring(inner);
+
+    return hash.get128();
+}
+
 }

@@ -10,23 +10,19 @@ namespace ProfileEvents
 namespace DB
 {
 
-TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limited_log_)
+TaskTracker::TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
-    , limited_log(limited_log_)
+    , limitedLog(limitedLog_)
 {}
 
 TaskTracker::~TaskTracker()
 {
-    /// Tasks should be waited outside of dtor.
-    /// Important for WriteBufferFromS3/AzureBlobStorage, where TaskTracker is currently used.
-    chassert(finished_futures.empty() && futures.empty());
-
     safeWaitAll();
 }
 
-ThreadPoolCallbackRunnerUnsafe<void> TaskTracker::syncRunner()
+ThreadPoolCallbackRunner<void> TaskTracker::syncRunner()
 {
     return [](Callback && callback, int64_t) mutable -> std::future<void>
     {
@@ -142,7 +138,7 @@ void TaskTracker::waitTilInflightShrink()
         return;
 
     if (futures.size() >= max_tasks_inflight)
-        LOG_TEST(limited_log, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
+        LOG_TEST(limitedLog, "have to wait some tasks finish, in queue {}, limit {}", futures.size(), max_tasks_inflight);
 
     Stopwatch watch;
 
@@ -174,3 +170,4 @@ bool TaskTracker::isAsync() const
 }
 
 }
+

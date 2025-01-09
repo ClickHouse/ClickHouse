@@ -88,10 +88,9 @@ public:
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
-        {
-            auto buf = WriteBufferFromVector<ColumnString::Chars>(data);
-            Impl::writeSchema(buf, message_name, columns_list.getAll());
-        }
+        WriteBufferFromVector buf(data);
+        Impl::writeSchema(buf, message_name, columns_list.getAll());
+        buf.finalize();
         auto & offsets = assert_cast<ColumnString &>(*col_res).getOffsets();
         offsets.push_back(data.size());
         return ColumnConst::create(std::move(col_res), input_rows_count);
@@ -117,7 +116,8 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "}"},
             },
             .categories{"Other"}
-        });
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 
@@ -138,7 +138,8 @@ Function that converts ClickHouse table structure to Protobuf format schema
 "}"},
             },
             .categories{"Other"}
-        });
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 }

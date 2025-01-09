@@ -1,6 +1,6 @@
 #include <Common/formatIPv6.h>
 #include <base/hex.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <base/range.h>
 #include <array>
@@ -40,7 +40,7 @@ namespace detail
     struct NumToString : Decompose<num> {};
 
     template <class T, T... ints>
-    static consteval std::array<std::pair<const char *, size_t>, sizeof...(ints)> str_make_array_impl(std::integer_sequence<T, ints...>)
+    consteval std::array<std::pair<const char *, size_t>, sizeof...(ints)> str_make_array_impl(std::integer_sequence<T, ints...>)
     {
         return std::array<std::pair<const char *, size_t>, sizeof...(ints)> { std::pair<const char *, size_t> {NumToString<ints>::value, NumToString<ints>::size}... };
     }
@@ -51,7 +51,7 @@ namespace detail
  *      second - size of the string as would returned by strlen()
  */
 template <size_t N>
-static consteval std::array<std::pair<const char *, size_t>, N> str_make_array()
+consteval std::array<std::pair<const char *, size_t>, N> str_make_array()
 {
     return detail::str_make_array_impl(std::make_integer_sequence<int, N>{});
 }

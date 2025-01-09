@@ -27,7 +27,6 @@ protected:
     bool supportsColumnsMask() const override { return true; }
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const override;
-    Block getFilterSampleBlock() const override;
 };
 
 }

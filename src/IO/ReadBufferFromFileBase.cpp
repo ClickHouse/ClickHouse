@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FILE_SIZE;
+}
+
 ReadBufferFromFileBase::ReadBufferFromFileBase() : BufferWithOwnMemory<SeekableReadBuffer>(0)
 {
 }
@@ -21,9 +26,11 @@ ReadBufferFromFileBase::ReadBufferFromFileBase(
 
 ReadBufferFromFileBase::~ReadBufferFromFileBase() = default;
 
-std::optional<size_t> ReadBufferFromFileBase::tryGetFileSize()
+size_t ReadBufferFromFileBase::getFileSize()
 {
-    return file_size;
+    if (file_size)
+        return *file_size;
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for read buffer");
 }
 
 void ReadBufferFromFileBase::setProgressCallback(ContextPtr context)

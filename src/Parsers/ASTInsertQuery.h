@@ -3,8 +3,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 
-class SipHash;
-
 namespace DB
 {
 
@@ -26,6 +24,7 @@ public:
     ASTPtr settings_ast;
 
     ASTPtr select;
+    ASTPtr watch;
     ASTPtr infile;
     ASTPtr compression;
 
@@ -64,6 +63,7 @@ public:
         if (partition_by) { res->partition_by = partition_by->clone(); res->children.push_back(res->partition_by); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (watch) { res->watch = watch->clone(); res->children.push_back(res->watch); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
 
@@ -73,7 +73,7 @@ public:
     QueryKind getQueryKind() const override { return async_insert_flush ? QueryKind::AsyncInsertFlush : QueryKind::Insert; }
 
 protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 

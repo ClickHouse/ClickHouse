@@ -1,6 +1,4 @@
-#include "config.h"
-
-#if USE_QATLIB
+#ifdef ENABLE_ZSTD_QAT_CODEC
 
 #include <Common/logger_useful.h>
 #include <Compression/CompressionCodecZSTD.h>
@@ -8,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
 #include <Poco/Logger.h>
-
 #include <qatseqprod.h>
 #include <zstd.h>
 

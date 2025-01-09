@@ -1,23 +1,14 @@
 #include "NamedCollectionsHelpers.h"
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/queryToString.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/assert_cast.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_named_collection_override_by_default;
-}
 
 namespace ErrorCodes
 {
@@ -103,7 +94,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.empty())
         return nullptr;
 
-    NamedCollectionFactory::instance().loadIfNot();
+    NamedCollectionUtils::loadIfNot();
 
     auto collection_name = getCollectionName(asts);
     if (!collection_name.has_value())
@@ -125,7 +116,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.size() == 1)
         return collection_copy;
 
-    const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
+    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
@@ -140,7 +131,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             // if allow_override_by_default is false we don't allow extra arguments
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
         }
-        if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
+        else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
@@ -170,7 +161,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
+    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
     for (const auto & key : keys)
     {
         if (collection_copy->isOverridable(key, allow_override_by_default))

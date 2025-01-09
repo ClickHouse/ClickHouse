@@ -10,10 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#include "Common/PODArray.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "base/types.h"
 
 namespace DB
 {
@@ -28,7 +26,7 @@ static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
 void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const String & s = field.safeGet<const String &>();
+    const String & s = field.get<const String &>();
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -39,7 +37,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
-    String & s = field.safeGet<String &>();
+    String & s = field.get<String &>();
     s.resize(n);
     istr.readStrict(s.data(), n);
 }
@@ -185,17 +183,14 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
 }
 
 
-void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data)
-    {
-        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<ColumnFixedString::Chars,true>(data, istr) : readEscapedStringInto<ColumnFixedString::Chars,false>(data, istr);
-    });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
 }
 
 bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr); return true; });
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); return true; });
 }
 
 
@@ -235,14 +230,14 @@ void SerializationFixedString::serializeTextJSON(const IColumn & column, size_t 
 }
 
 
-void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr); });
 }
 
-bool SerializationFixedString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+bool SerializationFixedString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    return tryRead(*this, column, [&istr, &settings](ColumnFixedString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { return tryReadJSONStringInto(data, istr); });
 }
 
 void SerializationFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const

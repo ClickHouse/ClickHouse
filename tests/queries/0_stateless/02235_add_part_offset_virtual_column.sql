@@ -21,7 +21,6 @@ CREATE TABLE t_random_1
 )
 ENGINE = GenerateRandom(1, 5, 3);
 
-SET optimize_trivial_insert_select = 1;
 INSERT INTO t_1 select rowNumberInAllBlocks(), *, '1984-01-01' from t_random_1 limit 1000000;
 
 OPTIMIZE TABLE t_1 FINAL;

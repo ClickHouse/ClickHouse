@@ -45,12 +45,12 @@ struct AggregateFunctionSparkbarData
     Y insert(const X & x, const Y & y)
     {
         if (isNaN(y) || y <= 0)
-            return {};
+            return 0;
 
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
         {
-            if constexpr (is_floating_point<Y>)
+            if constexpr (std::is_floating_point_v<Y>)
             {
                 it->getMapped() += y;
                 return it->getMapped();
@@ -173,13 +173,13 @@ private:
 
         if (from_x >= to_x)
         {
-            size_t sz = updateFrame(values, Y{8});
+            size_t sz = updateFrame(values, 8);
             values.push_back('\0');
             offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
             return;
         }
 
-        PaddedPODArray<Y> histogram(width, Y{0});
+        PaddedPODArray<Y> histogram(width, 0);
         PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
 
         for (const auto & point : data.points)
@@ -197,7 +197,7 @@ private:
 
             Y res;
             bool has_overfllow = false;
-            if constexpr (is_floating_point<Y>)
+            if constexpr (std::is_floating_point_v<Y>)
                 res = histogram[index] + point.getMapped();
             else
                 has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
@@ -218,10 +218,10 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] = histogram[i] / count_histogram[i];
+                histogram[i] /= count_histogram[i];
         }
 
-        Y y_max{};
+        Y y_max = 0;
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -245,17 +245,17 @@ private:
                 continue;
             }
 
-            constexpr auto levels_num = Y{BAR_LEVELS - 1};
-            if constexpr (is_floating_point<Y>)
+            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
+            if constexpr (std::is_floating_point_v<Y>)
             {
                 y = y / (y_max / levels_num) + 1;
             }
             else
             {
                 Y scaled;
-                bool has_overflow = common::mulOverflow<Y>(y, levels_num, scaled);
+                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
 
-                if (has_overflow)
+                if (has_overfllow)
                     y = y / (y_max / levels_num) + 1;
                 else
                     y = scaled / y_max + 1;

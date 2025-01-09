@@ -33,7 +33,7 @@ ALTER TABLE 02707_keepermap_delete_update UPDATE value = 'Another' WHERE key > 2
 SELECT *, _version FROM 02707_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
 
-ALTER TABLE 02707_keepermap_delete_update UPDATE key = key * 10 WHERE 1 = 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE 02707_keepermap_delete_update UPDATE key = key * 10 WHERE 1 = 1; -- { serverError 36 }
 SELECT *, _version FROM 02707_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import pytest
-
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 

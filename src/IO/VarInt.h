@@ -5,6 +5,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
+
 namespace DB
 {
 
@@ -33,6 +34,20 @@ inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
     ++ostr.position();
 }
 
+inline void writeVarUInt(UInt64 x, std::ostream & ostr)
+{
+    while (x > 0x7F)
+    {
+        uint8_t byte = 0x80 | (x & 0x7F);
+        ostr.put(byte);
+
+        x >>= 7;
+    }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+    ostr.put(final_byte);
+}
+
 inline char * writeVarUInt(UInt64 x, char * ostr)
 {
     while (x > 0x7F)
@@ -53,8 +68,8 @@ inline char * writeVarUInt(UInt64 x, char * ostr)
     return ostr;
 }
 
-template <typename OutBuf>
-inline void writeVarInt(Int64 x, OutBuf & ostr)
+template <typename Out>
+inline void writeVarInt(Int64 x, Out & ostr)
 {
     writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
@@ -91,9 +106,21 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     if (istr.buffer().end() - istr.position() >= 10)
-        varint_impl::readVarUInt<false>(x, istr);
-    else
-        varint_impl::readVarUInt<true>(x, istr);
+        return varint_impl::readVarUInt<false>(x, istr);
+    return varint_impl::readVarUInt<true>(x, istr);
+}
+
+inline void readVarUInt(UInt64 & x, std::istream & istr)
+{
+    x = 0;
+    for (size_t i = 0; i < 10; ++i)
+    {
+        UInt64 byte = istr.get();
+        x |= (byte & 0x7F) << (7 * i);
+
+        if (!(byte & 0x80))
+            return;
+    }
 }
 
 inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
@@ -117,8 +144,8 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
     return istr;
 }
 
-template <typename InBuf>
-inline void readVarInt(Int64 & x, InBuf & istr)
+template <typename In>
+inline void readVarInt(Int64 & x, In & istr)
 {
     readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
     x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);

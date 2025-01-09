@@ -4,7 +4,7 @@
 #include <Functions/HTMLCharacterReference.h>
 #include <base/find_symbols.h>
 #include <base/hex.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -28,20 +28,20 @@ namespace
             const ColumnString::Chars & data,
             const ColumnString::Offsets & offsets,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            ColumnString::Offsets & res_offsets)
         {
             /// The size of result is always not more than the size of source.
             /// Because entities decodes to the shorter byte sequence.
             /// Example: &#xx... &#xx... will decode to UTF-8 byte sequence not longer than 4 bytes.
             res_data.resize(data.size());
 
-            res_offsets.resize(input_rows_count);
+            size_t size = offsets.size();
+            res_offsets.resize(size);
 
             size_t prev_offset = 0;
             size_t res_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
                 size_t src_size = offsets[i] - prev_offset;
@@ -55,7 +55,7 @@ namespace
             res_data.resize(res_offset);
         }
 
-        [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+        [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function decodeHTMLComponent cannot work with FixedString argument");
         }
@@ -64,12 +64,14 @@ namespace
         static const int max_legal_unicode_value = 0x10FFFF;
         static const int max_decimal_length_of_unicode_point = 7; /// 1114111
 
+
         static size_t execute(const char * src, size_t src_size, char * dst)
         {
             const char * src_pos = src;
             const char * src_end = src + src_size;
             char * dst_pos = dst;
-
+            // perfect hashmap to lookup html character references
+            HTMLCharacterHash hash;
             // to hold char seq for lookup, reuse it
             std::vector<char> seq;
             while (true)
@@ -106,7 +108,7 @@ namespace
                     // null terminate the sequence
                     seq.push_back('\0');
                     // lookup the html sequence in the perfect hashmap.
-                    const auto * res = HTMLCharacterHash::Lookup(seq.data(), strlen(seq.data()));
+                    const auto * res = hash.Lookup(seq.data(), strlen(seq.data()));
                     // reset so that it's reused in the next iteration
                     seq.clear();
                     if (res)
@@ -156,14 +158,14 @@ namespace
                 ++dst_pos;
                 return 1;
             }
-            if (code_point < (1 << 11))
+            else if (code_point < (1 << 11))
             {
                 dst_pos[0] = ((code_point >> 6) & 0x1F) + 0xC0;
                 dst_pos[1] = (code_point & 0x3F) + 0x80;
                 dst_pos += 2;
                 return 2;
             }
-            if (code_point < (1 << 16))
+            else if (code_point < (1 << 16))
             {
                 dst_pos[0] = ((code_point >> 12) & 0x0F) + 0xE0;
                 dst_pos[1] = ((code_point >> 6) & 0x3F) + 0x80;
@@ -171,13 +173,15 @@ namespace
                 dst_pos += 3;
                 return 3;
             }
-
-            dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
-            dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
-            dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
-            dst_pos[3] = (code_point & 0x3F) + 0x80;
-            dst_pos += 4;
-            return 4;
+            else
+            {
+                dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
+                dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
+                dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
+                dst_pos[3] = (code_point & 0x3F) + 0x80;
+                dst_pos += 4;
+                return 4;
+            }
         }
 
         [[maybe_unused]] static bool isValidNumericEntity(const char * src, const char * end, uint32_t & code_point)

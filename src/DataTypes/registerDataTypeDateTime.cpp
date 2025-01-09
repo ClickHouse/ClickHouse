@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-enum class ArgumentKind : uint8_t
+enum class ArgumentKind
 {
     Optional,
     Mandatory
@@ -49,13 +49,13 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
             if (argument && argument->value.getType() != field_type)
                 throw Exception(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
                     argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            throw Exception(
-                getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            else
+                throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
     }
 
-    return argument->value.safeGet<NearestResultType>();
+    return argument->value.get<NearestResultType>();
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -108,11 +108,11 @@ static DataTypePtr create64(const ASTPtr & arguments)
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
 {
-    factory.registerDataType("DateTime", create, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("DateTime32", create32, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("DateTime64", create64, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("DateTime", create, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("DateTime32", create32, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("DateTime64", create64, DataTypeFactory::CaseInsensitive);
 
-    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
 }
 
 }
