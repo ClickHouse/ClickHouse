@@ -15,15 +15,15 @@ on: # yamllint disable-line rule:truthy
       - reopened
       - opened
     branches:
-      # Anything/24.8 (e.g customizations/24.8.x)
-      - '**/24.8*'
+      # Anything/24.12 (e.g customizations/24.12.x or -24.12)
+      - '**[/-]24.12*'
   release:
     types:
       - published
       - prereleased
   push:
     branches:
-      - 'releases/24.8**'
+      - 'releases/24.12**'
   workflow_dispatch:
 
 jobs:
