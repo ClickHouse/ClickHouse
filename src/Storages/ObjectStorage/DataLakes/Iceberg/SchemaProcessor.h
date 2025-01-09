@@ -78,6 +78,7 @@ public:
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
+    std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
@@ -88,7 +89,7 @@ private:
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
     DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
-    DataTypePtr getSimpleType(const String & type_name);
+    static DataTypePtr getSimpleType(const String & type_name);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);

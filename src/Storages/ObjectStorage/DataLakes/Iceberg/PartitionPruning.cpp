@@ -50,7 +50,8 @@ Iceberg::PartitionTransform getTransform(const String & transform_name)
     }
 }
 
-DateLUTImpl::Values getValues(Int32 value, Iceberg::PartitionTransform transform)
+// This function is used to convert the value to the start of the corresponding time period (internal ClickHouse representation)
+DateLUTImpl::Values getDateLUTImplValues(Int32 value, Iceberg::PartitionTransform transform)
 {
     switch (transform)
     {
@@ -71,20 +72,23 @@ DateLUTImpl::Values getValues(Int32 value, Iceberg::PartitionTransform transform
     }
 }
 
+// This function is used to convert the value to the start of the corresponding time period (in seconds)
 Int64 getTime(Int32 value, Iceberg::PartitionTransform transform)
 {
-    DateLUTImpl::Values values = getValues(value, transform);
+    DateLUTImpl::Values values = getDateLUTImplValues(value, transform);
     return values.date;
 }
 
+// This function is used to convert the value to the start of the corresponding date period (in days)
 Int16 getDay(Int32 value, Iceberg::PartitionTransform transform)
 {
     DateLUTImpl::Time got_time = getTime(value, transform);
     return DateLUT::instance().toDayNum(got_time);
 }
 
+
 Range getPartitionRange(
-    Iceberg::PartitionTransform partition_transform, UInt32 index, ColumnPtr partition_column, DataTypePtr column_data_type)
+    Iceberg::PartitionTransform partition_transform, size_t index, ColumnPtr partition_column, DataTypePtr column_data_type)
 {
     if (partition_transform == Iceberg::PartitionTransform::Unsupported)
     {
@@ -96,7 +100,7 @@ Range getPartitionRange(
         Field entry = (*column.get())[index];
         return Range{entry, true, entry, true};
     }
-    auto [nested_data_type, value] = [&]() -> std::pair<DataTypePtr, Int32>
+    const auto [nested_data_type, value] = [&]() -> std::pair<DataTypePtr, Int32>
     {
         if (column->getDataType() == TypeIndex::Int32)
         {

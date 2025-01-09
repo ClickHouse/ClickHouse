@@ -1,3 +1,4 @@
+#include "Core/NamesAndTypes.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -371,8 +372,14 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
     auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
     auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
     auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
+    schema_processor.addIcebergTableSchema(schema_object);
     auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
-        std::move(manifest_file_reader), format_version, configuration_ptr->getPath(), getFormatSettings(getContext()), schema_id);
+        std::move(manifest_file_reader),
+        format_version,
+        configuration_ptr->getPath(),
+        getFormatSettings(getContext()),
+        schema_id,
+        schema_processor);
     auto [manifest_file_iterator, _inserted]
         = manifest_files_by_name.emplace(manifest_file, ManifestFileContent(std::move(manifest_file_impl)));
     ManifestFileEntry manifest_file_entry{manifest_file_iterator};
@@ -380,7 +387,6 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
     {
         manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
     }
-    schema_processor.addIcebergTableSchema(schema_object);
     return manifest_file_entry;
 }
 
@@ -393,73 +399,26 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
     return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
 }
 
-SpecificSchemaPartitionInfo
-IcebergMetadata::getSpecificPartitionInfo(const ManifestFileEntry & manifest_file_entry, Int32 schema_version) const
+std::tuple<KeyCondition, NamesAndTypesList, std::vector<size_t>>
+IcebergMetadata::getPruningInfo(const ManifestFileEntry & manifest_file_entry, const ActionsDAG * filter_dag) const
 {
-    SpecificSchemaPartitionInfo specific_info;
-
+    NamesAndTypesList partition_pruning_names_and_types;
+    std::vector<size_t> partition_pruning_indices;
     for (size_t i = 0; i < manifest_file_entry.getContent().getPartitionColumnInfos().size(); ++i)
     {
-        const auto & manifest_content = manifest_file_entry.getContent();
-        if (manifest_content.getPartitionColumnInfos()[i].transform == PartitionTransform::Unsupported
-            || manifest_content.getPartitionColumnInfos()[i].transform == PartitionTransform::Void)
+        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(
+            current_schema_id, manifest_file_entry.getContent().getPartitionColumnInfos()[i].source_id);
+        if (name_and_type)
         {
-            continue;
-        }
-        Int32 source_id = manifest_file_entry.getContent().getPartitionColumnInfos()[i].source_id;
-        NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_version, source_id);
-        size_t column_size = manifest_file_entry.getContent().getPartitionColumnInfos()[i].column->size();
-        if (specific_info.ranges.empty())
-        {
-            specific_info.ranges.resize(column_size);
-        }
-        else
-        {
-            assert(specific_info.ranges.size() == column_size);
-        }
-        specific_info.partition_names_and_types.push_back(name_and_type);
-        for (size_t j = 0; j < column_size; ++j)
-        {
-            specific_info.ranges[j].push_back(getPartitionRange(
-                manifest_content.getPartitionColumnInfos()[i].transform,
-                static_cast<UInt32>(j),
-                manifest_content.getPartitionColumnInfos()[i].column,
-                name_and_type.type));
+            partition_pruning_names_and_types.push_back(name_and_type.value());
+            partition_pruning_indices.push_back(i);
         }
     }
-    return specific_info;
-}
-
-std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & manifest_file_entry, const ActionsDAG * filter_dag) const
-{
-    if (filter_dag == nullptr)
-    {
-        return {};
-    }
-    SpecificSchemaPartitionInfo specific_info = getSpecificPartitionInfo(manifest_file_entry, current_schema_id);
-    std::vector<bool> pruning_mask(specific_info.ranges.size(), true);
-
-    if (!specific_info.partition_names_and_types.empty())
-    {
-        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings(getContext()));
-        const KeyCondition partition_key_condition(
-            filter_dag, getContext(), specific_info.partition_names_and_types.getNames(), partition_minmax_idx_expr);
-        for (size_t j = 0; j < specific_info.ranges.size(); ++j)
-        {
-            if (!partition_key_condition.checkInHyperrectangle(specific_info.ranges[j], specific_info.partition_names_and_types.getTypes())
-                     .can_be_true)
-            {
-                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
-                pruning_mask[j] = false;
-            }
-            else
-            {
-                pruning_mask[j] = true;
-            }
-        }
-    }
-    return pruning_mask;
+    ExpressionActionsPtr partition_minmax_idx_expr
+        = std::make_shared<ExpressionActions>(ActionsDAG(partition_pruning_names_and_types), ExpressionActionsSettings(getContext()));
+    const KeyCondition partition_key_condition(
+        filter_dag, getContext(), partition_pruning_names_and_types.getNames(), partition_minmax_idx_expr);
+    return std::make_tuple(partition_key_condition, partition_pruning_names_and_types, partition_pruning_indices);
 }
 
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
@@ -473,14 +432,26 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     Strings data_files;
     for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
     {
-        auto pruning_mask = getPruningMask(manifest_entry, filter_dag);
+        auto [partition_key_condition, partition_pruning_info, partition_pruning_indices] = getPruningInfo(manifest_entry, filter_dag);
         const auto & data_files_in_manifest = manifest_entry.getContent().getDataFiles();
-        for (size_t i = 0; i < data_files_in_manifest.size(); ++i)
+        for (const auto & data_file : data_files_in_manifest)
         {
-            if ((!filter_dag || pruning_mask.empty() || pruning_mask[i])
-                && (data_files_in_manifest[i].status != ManifestEntryStatus::DELETED))
+            if (data_file.status != ManifestEntryStatus::DELETED)
             {
-                data_files.push_back(data_files_in_manifest[i].data_file_name);
+                std::vector<Range> ranges;
+                ranges.reserve(partition_pruning_indices.size());
+                for (const auto j : partition_pruning_indices)
+                {
+                    ranges.push_back(data_file.partition_ranges[j]);
+                }
+                if (partition_key_condition.checkInHyperrectangle(ranges, partition_pruning_info.getTypes()).can_be_true)
+                {
+                    data_files.push_back(data_file.data_file_name);
+                }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
+                }
             }
         }
     }

@@ -33,13 +33,13 @@ struct DataFileEntry
     String data_file_name;
     ManifestEntryStatus status;
     DataFileContent content;
+    std::vector<DB::Range> partition_ranges;
 };
 
 struct PartitionColumnInfo
 {
     PartitionTransform transform;
     Int32 source_id;
-    DB::ColumnPtr column;
 };
 
 

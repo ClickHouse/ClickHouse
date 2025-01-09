@@ -52,7 +52,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     Int32 format_version_,
     const String & common_path,
     const DB::FormatSettings & format_settings,
-    Int32 schema_id_)
+    Int32 schema_id_,
+    const IcebergSchemaProcessor & schema_processor)
 {
     this->schema_id = schema_id_;
     avro::NodePtr root_node = manifest_file_reader_->dataSchema().root();
@@ -148,26 +149,6 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         content_int_column = assert_cast<const ColumnInt32 *>(content_column.get());
     }
 
-    for (size_t i = 0; i < data_file_tuple_column->size(); ++i)
-    {
-        DataFileContent content_type = DataFileContent::DATA;
-        if (format_version_ == 2)
-        {
-            content_type = DataFileContent(content_int_column->getElement(i));
-            if (content_type != DataFileContent::DATA)
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
-        }
-        const auto status = ManifestEntryStatus(status_int_column->getInt(i));
-
-        const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-        const auto pos = data_path.find(common_path);
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
-
-        const auto file_path = data_path.substr(pos);
-        this->data_files.push_back({file_path, status, content_type});
-    }
 
     Poco::JSON::Parser parser;
 
@@ -189,6 +170,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
+    std::vector<ColumnPtr> partition_columns;
+
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -196,11 +179,44 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         auto source_id = current_field->getValue<Int32>("source-id");
         PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
 
-        if (transform == PartitionTransform::Unsupported)
+        if (transform == PartitionTransform::Unsupported || transform == PartitionTransform::Void)
         {
             continue;
         }
-        partition_column_infos.emplace_back(transform, source_id, big_partition_tuple->getColumnPtr(i));
+
+        partition_column_infos.emplace_back(transform, source_id);
+        partition_columns.push_back(big_partition_tuple->getColumnPtr(i));
+    }
+
+    for (size_t i = 0; i < data_file_tuple_column->size(); ++i)
+    {
+        DataFileContent content_type = DataFileContent::DATA;
+        if (format_version_ == 2)
+        {
+            content_type = DataFileContent(content_int_column->getElement(i));
+            if (content_type != DataFileContent::DATA)
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+        }
+        const auto status = ManifestEntryStatus(status_int_column->getInt(i));
+
+        const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
+        const auto pos = data_path.find(common_path);
+        if (pos == std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
+
+        const auto file_path = data_path.substr(pos);
+        std::vector<DB::Range> partition_ranges;
+        partition_ranges.reserve(partition_columns.size());
+        for (size_t j = 0; j < partition_columns.size(); ++j)
+        {
+            partition_ranges.push_back(getPartitionRange(
+                partition_column_infos[j].transform,
+                i,
+                partition_columns[j],
+                schema_processor.getFieldCharacteristics(schema_id, partition_column_infos[j].source_id).type));
+        }
+        this->data_files.push_back({file_path, status, content_type, partition_ranges});
     }
 }
 
