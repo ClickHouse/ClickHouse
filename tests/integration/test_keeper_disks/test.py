@@ -160,7 +160,7 @@ def test_logs_with_disks(started_cluster):
 
         node_logs.wait_for_log_line(
             "KeeperLogStore: Continue to write into changelog_34_36.bin",
-            look_behind_lines=1000,
+            look_behind_lines=2000,
         )
 
         # all but the latest log should be on S3
