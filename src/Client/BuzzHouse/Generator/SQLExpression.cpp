@@ -590,7 +590,9 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     if (!nallow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
         //aggregate
-        const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0)];
+        const uint32_t next_off
+            = rg.nextSmallNumber() < 2 ? (rg.nextLargeNumber() % 5) : (nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0));
+        const CHAggregate & agg = CHAggrs[next_off];
         const uint32_t agg_max_params = std::min(agg.max_params, UINT32_C(5));
         const uint32_t max_params = std::min(this->fc.max_width - this->width, agg_max_params);
         const uint32_t agg_max_args = std::min(agg.max_args, UINT32_C(5));
@@ -707,7 +709,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         else
         {
             //use a default catalog function
-            const CHFunction & func = rg.nextLargeNumber() < 5 ? materialize : CHFuncs[nopt];
+            const CHFunction & func = rg.nextMediumNumber() < 5 ? materialize : CHFuncs[nopt];
             const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
 
             n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
