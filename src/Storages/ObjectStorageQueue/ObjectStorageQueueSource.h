@@ -160,7 +160,7 @@ private:
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
-    void commit(bool success, const std::string & exception_message = {});
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
 
     const String name;
     const size_t processor_id;
