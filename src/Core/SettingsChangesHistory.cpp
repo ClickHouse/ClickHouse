@@ -72,6 +72,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
         }
     },
     {"24.11",
