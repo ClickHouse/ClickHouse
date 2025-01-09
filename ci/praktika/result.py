@@ -323,25 +323,25 @@ class Result(MetaClasses.Serializable):
         print(f"> Starting execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
-        for command_ in command:
-            if callable(command_):
-                # If command is a Python function, call it with provided arguments
-                result = command_(*command_args, **command_kwargs)
-                if isinstance(result, bool):
-                    res = result
-                elif result:
-                    error_infos.append(str(result))
-                    res = False
-            else:
-                # Run shell command in a specified directory with logging and verbosity
-                with ContextManager.cd(workdir):
+        with ContextManager.cd(workdir):
+            for command_ in command:
+                if callable(command_):
+                    # If command is a Python function, call it with provided arguments
+                    result = command_(*command_args, **command_kwargs)
+                    if isinstance(result, bool):
+                        res = result
+                    elif result:
+                        error_infos.append(str(result))
+                        res = False
+                else:
+                    # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
                     res = exit_code == 0
 
-            # If fail_fast is enabled, stop on first failure
-            if not res and fail_fast:
-                print(f"Execution stopped due to failure in [{command_}]")
-                break
+                # If fail_fast is enabled, stop on first failure
+                if not res and fail_fast:
+                    print(f"Execution stopped due to failure in [{command_}]")
+                    break
 
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
