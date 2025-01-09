@@ -1,0 +1,4 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression
+      ReadFromPreparedSource (_minmax_count_projection)
