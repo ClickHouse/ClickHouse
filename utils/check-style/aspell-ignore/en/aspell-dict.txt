@@ -2478,6 +2478,7 @@ protocol
 proxied
 pseudorandom
 pseudorandomize
+pseudoterminal
 psql
 ptrs
 punycodeDecode
@@ -2662,6 +2663,7 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
+sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
