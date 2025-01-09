@@ -119,7 +119,7 @@ The backslash loses its special meaning i.e. it is interpreted literally should 
 | Supported Escape                    | Description                                                             |
 |-------------------------------------|-------------------------------------------------------------------------|
 | `\xHH`                              | 8-bit character specification followed by any number of hex digits (H). | 
-| `\N`                                |                                                                         |
+| `\N`                                | does nothing (eg `SELECT 'a\Nb'` returns `ab`)                          |
 | `\a`                                | alert                                                                   |
 | `\b`                                | backspace                                                               |
 | `\e`                                | escape character                                                        |
