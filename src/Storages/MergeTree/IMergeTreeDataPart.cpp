@@ -518,33 +518,14 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
     return {};
 }
 
-bool IMergeTreeDataPart::enabledMaxMinTimeOfDataInsertion() const
-{
-    return (*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file];
-}
-
 time_t IMergeTreeDataPart::getMinTimeOfDataInsertion() const
 {
-    if (!(*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
-        return 0;
-
-    if (min_time_of_data_insert.has_value())
-    {
-        return *min_time_of_data_insert;
-    }
-    return modification_time;
+    return min_time_of_data_insert.value_or(modification_time);
 }
 
 time_t IMergeTreeDataPart::getMaxTimeOfDataInsertion() const
 {
-    if (!(*storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
-        return 0;
-
-    if (max_time_of_data_insert.has_value())
-    {
-        return *max_time_of_data_insert;
-    }
-    return modification_time;
+    return max_time_of_data_insert.value_or(modification_time);
 }
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_)
@@ -1156,12 +1137,10 @@ void IMergeTreeDataPart::loadInsertTimeInfo()
         auto file_buf = metadata_manager->read(MIN_MAX_TIME_OF_DATA_INSERT_FILE);
         /// Escape undefined behavior:
         /// "The behavior is undefined if *this does not contain a value"
-        min_time_of_data_insert = static_cast<time_t>(0);
-        max_time_of_data_insert = static_cast<time_t>(0);
-
-        tryReadText(*min_time_of_data_insert, *file_buf);
+        tryReadText(min_time_of_data_insert.emplace(0), *file_buf);
         checkString(" ", *file_buf);
-        tryReadText(*max_time_of_data_insert, *file_buf);
+        tryReadText(max_time_of_data_insert.emplace(0), *file_buf);
+
     }
     catch (const DB::Exception & ex)
     {

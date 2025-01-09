@@ -46,15 +46,8 @@ struct PartsComparatorByOldestData
 {
     bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
     {
-        if (f->enabledMaxMinTimeOfDataInsertion() && s->enabledMaxMinTimeOfDataInsertion())
-        {
-            return std::forward_as_tuple(f->getMinTimeOfDataInsertion(), f->getMaxTimeOfDataInsertion()) >
+        return std::forward_as_tuple(f->getMinTimeOfDataInsertion(), f->getMaxTimeOfDataInsertion()) >
                 std::forward_as_tuple(s->getMinTimeOfDataInsertion(), s->getMaxTimeOfDataInsertion());
-        }
-        /// Backoff if files with insert time not generated.
-        auto first_minmax_time = f->getMinMaxTime();
-        auto second_minmax_time = s->getMinMaxTime();
-        return std::tie(first_minmax_time, f->name) < std::tie(second_minmax_time, s->name);
     }
 };
 

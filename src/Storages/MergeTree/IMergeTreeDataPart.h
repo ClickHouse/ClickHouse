@@ -218,7 +218,6 @@ public:
     /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
     std::pair<time_t, time_t> getMinMaxTime() const;
 
-    bool enabledMaxMinTimeOfDataInsertion() const;
     /// Returns two timespamps with min/max time of when data was added in this part.
     /// These values doesn't require the special partition key in part schema.
     /// Just keeping for each part two variable and update them with inserts, merges and mutations.
