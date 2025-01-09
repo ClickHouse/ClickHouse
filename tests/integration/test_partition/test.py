@@ -372,6 +372,11 @@ def test_drop_detached_parts(drop_detached_parts_table):
 
 
 def test_system_detached_parts(drop_detached_parts_table):
+    q("drop table if exists sdp_0 sync")
+    q("drop table if exists sdp_1 sync")
+    q("drop table if exists sdp_2 sync")
+    q("drop table if exists sdp_3 sync")
+
     q(
         "create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
