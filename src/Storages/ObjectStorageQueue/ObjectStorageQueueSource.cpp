@@ -668,18 +668,20 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         processed_files.size(),
         insert_succeeded ? "Processed" : "Failed");
 
+    const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = files_metadata->useBucketsForProcessing();
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
 
-    /// If we use buckets for processing (only in Ordered mode)
-    /// - collect a map: bucket_id -> max_processed_path.
-    if (insert_succeeded && use_buckets_for_processing)
+    /// For Ordered mode collect a map: bucket_id -> max_processed_path.
+    /// If no buckets are used, we still do this for Ordered mode,
+    /// just consider there will be only one bucket with id 0.
+    if (insert_succeeded && is_ordered_mode)
     {
         for (size_t i = 0; i < processed_files.size(); ++i)
         {
             const auto & file_metadata = processed_files[i].metadata;
             const auto & file_path = file_metadata->getPath();
-            const auto bucket = file_metadata->getBucket();
+            const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
 
             auto [it, inserted] = last_processed_file_idx_per_bucket.emplace(bucket, i);
             if (!inserted
@@ -699,17 +701,24 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             {
                 if (insert_succeeded)
                 {
-                    /// If we use buckets for processing, we need to commit as Processed
-                    /// only one max_processed_file per each bucket,
-                    /// for all other files we only remove Processing nodes.
-                    if (!use_buckets_for_processing
-                        || last_processed_file_idx_per_bucket[file_metadata->getBucket()] == i)
+                    if (is_ordered_mode)
                     {
-                        file_metadata->prepareProcessedRequests(requests);
+                        /// For Ordered mode we need to commit as Processed
+                        /// only one max_processed_file per each bucket,
+                        /// for all other files we only remove Processing nodes.
+                        const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
+                        if (last_processed_file_idx_per_bucket[bucket] == i)
+                        {
+                            file_metadata->prepareProcessedRequests(requests);
+                        }
+                        else
+                        {
+                            file_metadata->prepareResetProcessingRequests(requests);
+                        }
                     }
                     else
                     {
-                        file_metadata->prepareResetProcessingRequests(requests);
+                        file_metadata->prepareProcessedRequests(requests);
                     }
                     successful_files.push_back(StoredObject(file_metadata->getPath()));
                 }

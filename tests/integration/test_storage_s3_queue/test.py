@@ -1854,9 +1854,6 @@ def test_upgrade(started_cluster):
     assert expected_rows == get_count()
 
 
-@pytest.mark.skip(
-    reason="test is flaky - I will fix it asynchronously ASAP not to block another PR (locally it stably passes, so fixing it takes some time)"
-)
 def test_exception_during_insert(started_cluster):
     node = started_cluster.instances["instance_too_many_parts"]
 
@@ -1874,6 +1871,9 @@ def test_exception_during_insert(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
         },
     )
     node.rotate_logs()
@@ -1931,7 +1931,8 @@ def test_exception_during_insert(started_cluster):
     wait_for_rows(expected_rows[0])
 
 
-def test_commit_on_limit(started_cluster):
+@pytest.mark.parametrize("processing_threads", [1, 8])
+def test_commit_on_limit(started_cluster, processing_threads):
     node = started_cluster.instances["instance"]
 
     # A unique table name is necessary for repeatable tests
@@ -1954,7 +1955,7 @@ def test_commit_on_limit(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
+            "s3queue_processing_threads_num": processing_threads,
             "s3queue_loading_retries": 0,
             "s3queue_max_processed_files_before_commit": 10,
         },

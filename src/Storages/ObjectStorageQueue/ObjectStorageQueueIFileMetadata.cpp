@@ -407,6 +407,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
     if (!retriable)
     {
+        LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
+
         /// Check Processing node id and remove processing_node_id node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
@@ -441,6 +443,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
     if (node_metadata.retries >= max_loading_retries)
     {
+        LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
+
         /// Check Processing node id and remove processing_node_id node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
