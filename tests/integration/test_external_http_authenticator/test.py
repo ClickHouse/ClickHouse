@@ -1,13 +1,13 @@
 import json
 import logging
-import pytest
 import os
 import sys
 
-
-from .http_auth_server import GOOD_PASSWORD, USER_RESPONSES
+import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+from .http_auth_server import GOOD_PASSWORD, USER_RESPONSES
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

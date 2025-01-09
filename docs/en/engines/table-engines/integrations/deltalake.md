@@ -48,6 +48,10 @@ Using named collections:
 CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
 ```
 
+### Data cache {#data-cache}
+
+`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
+
 ## See also
 
 - [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)

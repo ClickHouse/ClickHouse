@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace Poco::Net { class SocketAddress; }
 
@@ -43,15 +44,18 @@ public:
     Session & operator=(const Session &) = delete;
 
     /// Provides information about the authentication type of a specified user.
-    AuthenticationType getAuthenticationType(const String & user_name) const;
+    std::unordered_set<AuthenticationType> getAuthenticationTypes(const String & user_name) const;
 
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
-    AuthenticationType getAuthenticationTypeOrLogInFailure(const String & user_name) const;
+    std::unordered_set<AuthenticationType> getAuthenticationTypesOrLogInFailure(const String & user_name) const;
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
-    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
-    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_ = {});
+
+    /// `external_roles_` names of the additional roles (over what is granted via local access control mechanisms) that would be granted to user during this session.
+    /// Role is not granted if it can't be found by name via AccessControl (i.e. doesn't exist on this instance).
+    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_ = {});
 
     // Verifies whether the user's validity extends beyond the current time.
     // Throws an exception if the user's validity has expired.
@@ -98,7 +102,6 @@ public:
 
     /// Closes and removes session
     void closeSession(const String & session_id);
-
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
@@ -113,6 +116,8 @@ private:
 
     mutable UserPtr user;
     std::optional<UUID> user_id;
+    std::vector<UUID> external_roles;
+    AuthenticationData user_authenticated_with;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

@@ -15,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool mutations_execute_nondeterministic_on_initiator;
+    extern const SettingsBool mutations_execute_subqueries_on_initiator;
+    extern const SettingsUInt64 mutations_max_literal_size_to_replace;
+}
 
 namespace
 {
@@ -166,8 +172,7 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
 ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.mutations_execute_subqueries_on_initiator
-        && !settings.mutations_execute_nondeterministic_on_initiator)
+    if (!settings[Setting::mutations_execute_subqueries_on_initiator] && !settings[Setting::mutations_execute_nondeterministic_on_initiator])
         return nullptr;
 
     auto query = alter_command.clone();
@@ -197,29 +202,28 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
         }
     };
 
-    if (settings.mutations_execute_subqueries_on_initiator)
+    if (settings[Setting::mutations_execute_subqueries_on_initiator])
     {
         Scalars scalars;
         Scalars local_scalars;
 
         ExecuteScalarSubqueriesVisitor::Data data{
             WithContext{context},
-            /*subquery_depth=*/ 0,
+            /*subquery_depth=*/0,
             scalars,
             local_scalars,
-            /*only_analyze=*/ false,
-            /*is_create_parameterized_view=*/ false,
-            /*replace_only_to_literals=*/ true,
-            settings.mutations_max_literal_size_to_replace};
+            /*only_analyze=*/false,
+            /*is_create_parameterized_view=*/false,
+            /*replace_only_to_literals=*/true,
+            settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteScalarSubqueriesVisitor visitor(data);
         visit(visitor);
     }
 
-    if (settings.mutations_execute_nondeterministic_on_initiator)
+    if (settings[Setting::mutations_execute_nondeterministic_on_initiator])
     {
-        ExecuteNonDeterministicConstFunctionsVisitor::Data data{
-            context, settings.mutations_max_literal_size_to_replace};
+        ExecuteNonDeterministicConstFunctionsVisitor::Data data{context, settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteNonDeterministicConstFunctionsVisitor visitor(data);
         visit(visitor);

@@ -182,7 +182,7 @@ Returns the difference between `a` and the nearest integer not greater than `a` 
 In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
         )",
             .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
-            .categories{"Arithmetic"}},
+            .category{"Arithmetic"}},
         FunctionFactory::Case::Insensitive);
 
     factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);

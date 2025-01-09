@@ -50,12 +50,20 @@
 
 #include <Poco/Util/Application.h>
 
+#include "config.h"
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDialect dialect;
+    extern const SettingsBool use_client_time_zone;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -64,6 +72,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_PASSWORD;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int USER_EXPIRED;
 }
@@ -186,8 +195,14 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
+        if (config.has(prefix + ".history_max_entries"))
+        {
+            config.setUInt("history_max_entries", history_max_entries);
+        }
         if (config.has(prefix + ".accept-invalid-certificate"))
             config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
+        if (config.has(prefix + ".prompt"))
+            config.setString("prompt", config.getString(prefix + ".prompt"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -210,7 +225,7 @@ std::vector<String> Client::loadWarningMessages()
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {});
+                          &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -223,7 +238,7 @@ std::vector<String> Client::loadWarningMessages()
 
                     size_t rows = packet.block.rows();
                     for (size_t i = 0; i < rows; ++i)
-                        messages.emplace_back(column[i].get<String>());
+                        messages.emplace_back(column[i].safeGet<String>());
                 }
                 continue;
 
@@ -250,6 +265,7 @@ std::vector<String> Client::loadWarningMessages()
         }
     }
 }
+
 
 Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
 {
@@ -307,9 +323,9 @@ void Client::initialize(Poco::Util::Application & self)
         config().setString("password", env_password);
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : global_context->getSettingsRef().allUnchanged())
+    for (const auto & setting : global_context->getSettingsRef().getUnchangedNames())
     {
-        const auto & name = setting.getName();
+        String name{setting};
         if (config().has(name))
             global_context->setSetting(name, config().getString(name));
     }
@@ -340,7 +356,9 @@ try
 
     processConfig();
     adjustSettings();
-    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")),
+        toProgressOption(config().getString("progress-table", "default")));
+    initKeystrokeInterceptor();
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
@@ -364,7 +382,7 @@ try
     }
     catch (const Exception & e)
     {
-        if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED ||
+        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
             config().has("password") ||
             config().getBool("ask-password", false) ||
             !is_interactive)
@@ -419,7 +437,7 @@ catch (const Exception & e)
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
-    return e.code() ? e.code() : -1;
+    return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
 catch (...)
 {
@@ -468,31 +486,38 @@ void Client::connect()
                 connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
+
+            /// Apply setting changes received from server, but with lower priority than settings
+            /// changed from command line.
+            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
+            const Settings & settings = global_context->getSettingsRef();
+            std::erase_if(settings_from_server, [&](const SettingChange & change)
+            {
+                return settings.isChanged(change.name);
+            });
+            global_context->applySettingsChanges(settings_from_server);
+
             break;
         }
         catch (const Exception & e)
         {
-            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                /// This problem can't be fixed with reconnection so it is not attempted
+            /// This problem can't be fixed with reconnection so it is not attempted
+            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
                 throw;
-            }
-            else
-            {
-                if (attempted_address_index == hosts_and_ports.size() - 1)
-                    throw;
 
-                if (is_interactive)
-                {
-                    std::cerr << "Connection attempt to database at "
-                              << connection_parameters.host << ":" << connection_parameters.port
-                              << " resulted in failure"
-                              << std::endl
-                              << getExceptionMessage(e, false)
-                              << std::endl
-                              << "Attempting connection to the next provided address"
-                              << std::endl;
-                }
+            if (attempted_address_index == hosts_and_ports.size() - 1)
+                throw;
+
+            if (is_interactive)
+            {
+                std::cerr << "Connection attempt to database at "
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << " resulted in failure"
+                          << std::endl
+                          << getExceptionMessage(e, false)
+                          << std::endl
+                          << "Attempting connection to the next provided address"
+                          << std::endl;
             }
         }
     }
@@ -501,13 +526,15 @@ void Client::connect()
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
-    if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
+    server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+    if (server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
 
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
+#if not CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
@@ -523,9 +550,10 @@ void Client::connect()
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
                         << std::endl;
         }
+#endif
     }
 
-    if (!client_context->getSettingsRef().use_client_time_zone)
+    if (!client_context->getSettingsRef()[Setting::use_client_time_zone])
     {
         const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
         if (!time_zone.empty())
@@ -550,40 +578,53 @@ void Client::connect()
         }
     }
 
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-
-    Strings keys;
-    config().keys("prompt_by_server_display_name", keys);
-    for (const String & key : keys)
+    /// A custom prompt can be specified
+    /// - directly (possible as CLI parameter or in client.xml as top-level <prompt>...</prompt> or within client.xml's connection credentials)
+    /// - via prompt_by_server_display_name (only possible in client.xml as top-level <prompt>...</prompt>).
+    if (config().has("prompt"))
+        prompt = config().getString("prompt");
+    else if (config().has("prompt_by_server_display_name"))
     {
-        if (key != "default" && server_display_name.find(key) != std::string::npos)
+        if (config().has("prompt_by_server_display_name.default"))
+            prompt = config().getRawString("prompt_by_server_display_name.default");
+
+        Strings keys;
+        config().keys("prompt_by_server_display_name", keys);
+        for (const auto & key : keys)
         {
-            prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
-            break;
+            if (key != "default" && server_display_name.contains(key))
+            {
+                prompt = config().getRawString("prompt_by_server_display_name." + key);
+                break;
+            }
         }
+    }
+    else
+    {
+        prompt = "{display_name}";
     }
 
     /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
     {
-        String unescaped_prompt_by_server_display_name;
-        ReadBufferFromString in(prompt_by_server_display_name);
-        readEscapedString(unescaped_prompt_by_server_display_name, in);
-        prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+        String prompt_escaped;
+        ReadBufferFromString in(prompt);
+        readEscapedString(prompt_escaped, in);
+        prompt = prompt_escaped;
     }
 
-    /// Prompt may contain the following substitutions in a form of {name}.
-    std::map<String, String> prompt_substitutions{
+    /// Substitute placeholders in the form of {name}:
+    const std::map<String, String> prompt_substitutions{
         {"host", connection_parameters.host},
         {"port", toString(connection_parameters.port)},
         {"user", connection_parameters.user},
         {"display_name", server_display_name},
     };
 
-    /// Quite suboptimal.
     for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-}
+        boost::replace_all(prompt, "{" + key + "}", value);
 
+    prompt = appendSmileyIfNeeded(prompt);
+}
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
 void Client::printChangedSettings() const
@@ -730,7 +771,7 @@ bool Client::processWithFuzzing(const String & full_query)
     }
 
     // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    if (client_context->getSettingsRef()[Setting::dialect] == DB::Dialect::kusto)
     {
         return true;
     }
@@ -766,7 +807,7 @@ bool Client::processWithFuzzing(const String & full_query)
         else
             this_query_runs = 1;
     }
-    else if (const auto * insert = orig_ast->as<ASTInsertQuery>())
+    else if (const auto * /*insert*/ _ = orig_ast->as<ASTInsertQuery>())
     {
         this_query_runs = 1;
         queries_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
@@ -1073,17 +1114,7 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
-    for (const auto & setting : global_context->getSettingsRef().all())
-    {
-        const auto & name = setting.getName();
-        if (options.count(name))
-        {
-            if (allow_repeated_settings)
-                config().setString(name, options[name].as<Strings>().back());
-            else
-                config().setString(name, options[name].as<String>());
-        }
-    }
+    global_context->getSettingsRef().addToClientOptions(config(), options, allow_repeated_settings);
 
     if (options.count("config-file") && options.count("config"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
@@ -1164,6 +1195,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
     client_context = global_context;
     initClientContext();
+
+    /// Allow to pass-through unknown settings to the server.
+    client_context->getAccessControl().allowAllSettings();
 }
 
 
@@ -1387,7 +1421,8 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -1396,7 +1431,8 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 1;
+        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

@@ -1,11 +1,14 @@
 import os
+import re
+import time
+import uuid
 
 import pytest
-import uuid
-import time
+from pyhdfs import HdfsClient
+
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
-from pyhdfs import HdfsClient
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -393,6 +396,21 @@ def test_read_files_with_spaces(started_cluster):
     node1.query(f"drop table test")
 
 
+def test_write_files_with_spaces(started_cluster):
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    dir = "/itime=2024-10-24 10%3A02%3A04"
+    fs.mkdirs(dir)
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw) select 123 settings hdfs_truncate_on_insert=1"
+    )
+    result = node1.query(
+        f"select * from hdfs('hdfs://hdfs1:9000{dir}/test.csv', TSVRaw)"
+    )
+    assert int(result) == 123
+    fs.delete(dir, recursive=True)
+
+
 def test_truncate_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     node1.query(
@@ -618,7 +636,7 @@ def test_multiple_inserts(started_cluster):
     node1.query(f"drop table test_multiple_inserts")
 
 
-def test_format_detection(started_cluster):
+def test_format_detection_from_file_name(started_cluster):
     node1.query(
         f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"
     )
@@ -731,7 +749,10 @@ def test_virtual_columns_2(started_cluster):
     table_function = (
         f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
     )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
+    node1.query(
+        f"insert into table function {table_function} SELECT 1, 'kek'",
+        settings={"use_hive_partitioning": 0},
+    )
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "kek"
@@ -1204,6 +1225,37 @@ def test_format_detection(started_cluster):
 
     assert expected_result == result
 
+    node.query(
+        f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1')"
+    )
+    result = node.query(f"show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    node.query("drop table test_format_detection")
+    node.query(
+        f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1', auto)"
+    )
+    result = node.query(f"show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    node.query("drop table test_format_detection")
+    node.query(
+        f"create table test_format_detection engine=HDFS('hdfs://hdfs1:9000/{dir}/test_format_detection1', auto, 'none')"
+    )
+    result = node.query(f"show create table test_format_detection")
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+    )
+
+    node.query("drop table test_format_detection")
+
 
 def test_write_to_globbed_partitioned_path(started_cluster):
     node = started_cluster.instances["node1"]
@@ -1253,6 +1305,43 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     )
 
     assert int(result) == 44
+
+
+def test_hive_partitioning_with_one_parameter(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/file_1", f"column0,column1\nElizabeth,Gordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/file_1")
+        == f"column0,column1\nElizabeth,Gordon\n"
+    )
+
+    r = node1.query(
+        "SELECT column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/file_1', 'CSVWithNames')",
+        settings={"use_hive_partitioning": 1},
+    )
+    assert r == f"Elizabeth\n"
+
+
+def test_hive_partitioning_without_setting(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/column1=Gordon/parquet_2")
+        == f"Elizabeth\tGordon\n"
+    )
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier `.*` in scope.*", re.DOTALL
+    )
+
+    with pytest.raises(QueryRuntimeException, match=pattern):
+        node1.query(
+            f"SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            settings={"use_hive_partitioning": 0},
+        )
 
 
 if __name__ == "__main__":

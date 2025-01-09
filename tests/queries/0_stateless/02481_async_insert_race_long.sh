@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, long
+# Tags: no-random-settings, no-fasttest, long, no-shared-merge-tree
+# no-shared-merge-tree: heavy-weight test which doesn't test shared merge tree
 
 set -e
 

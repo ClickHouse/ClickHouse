@@ -181,7 +181,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a UInt64", getName());
 
-        total_buckets = params[0].get<UInt64>();
+        total_buckets = params[0].safeGet<UInt64>();
 
         this->x_type = WhichDataType(arguments[0]).idx;
         this->y_type = WhichDataType(arguments[1]).idx;
@@ -329,7 +329,7 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDateTime64 &>(column);
-                    col.getData().push_back(static_cast<UInt64>(value));
+                    col.getData().push_back(static_cast<Int64>(value));
                 };
             default:
                 return [](IColumn & column, Float64 value)

@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
 #include <string>
@@ -22,7 +23,6 @@ namespace DB
 class QueryStatus;
 struct Progress;
 class InternalTextLogsQueue;
-
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
@@ -92,6 +92,14 @@ public:
 
     static std::string_view getQueryId();
 
+    // For IO Scheduling
+    static void attachReadResource(ResourceLink link);
+    static void detachReadResource();
+    static ResourceLink getReadResourceLink();
+    static void attachWriteResource(ResourceLink link);
+    static void detachWriteResource();
+    static ResourceLink getWriteResourceLink();
+
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope : private boost::noncopyable
     {
@@ -101,6 +109,39 @@ public:
 
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
+    };
+
+    /// Scoped attach/detach of IO resource links
+    struct IOScope : private boost::noncopyable
+    {
+        explicit IOScope(ResourceLink read_resource_link, ResourceLink write_resource_link)
+        {
+            if (read_resource_link)
+            {
+                attachReadResource(read_resource_link);
+                read_attached = true;
+            }
+            if (write_resource_link)
+            {
+                attachWriteResource(write_resource_link);
+                write_attached = true;
+            }
+        }
+
+        explicit IOScope(const IOSchedulingSettings & settings)
+            : IOScope(settings.read_resource_link, settings.write_resource_link)
+        {}
+
+        ~IOScope()
+        {
+            if (read_attached)
+                detachReadResource();
+            if (write_attached)
+                detachWriteResource();
+        }
+
+        bool read_attached = false;
+        bool write_attached = false;
     };
 };
 

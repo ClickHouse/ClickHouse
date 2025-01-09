@@ -18,10 +18,12 @@ class StorageFromMergeTreeDataPart final : public IStorage
 {
 public:
     /// Used in part mutation.
-    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData::DataPartPtr & part_,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
-        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
+        , mutations_snapshot(mutations_snapshot_)
         , storage(part_->storage)
         , partition_id(part_->info.partition_id)
     {
@@ -30,10 +32,13 @@ public:
     }
 
     /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
@@ -81,7 +86,7 @@ public:
 
 private:
     const MergeTreeData::DataPartsVector parts;
-    const std::vector<AlterConversionsPtr> alter_conversions;
+    const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     const MergeTreeData & storage;
     const String partition_id;
     const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;

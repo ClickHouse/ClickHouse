@@ -18,6 +18,21 @@ MessageQueueSink::MessageQueueSink(
 {
 }
 
+MessageQueueSink::~MessageQueueSink()
+{
+    if (isCancelled())
+    {
+        if (format)
+            format->cancel();
+
+        if (buffer)
+            buffer->cancel();
+
+        if (producer)
+            producer->cancel();
+    }
+}
+
 void MessageQueueSink::onStart()
 {
     LOG_TEST(
@@ -38,15 +53,28 @@ void MessageQueueSink::onStart()
 
 void MessageQueueSink::onFinish()
 {
-    producer->finish();
+    if (format)
+        format->finalize();
+    if (buffer)
+        buffer->finalize();
+    if (producer)
+        producer->finish();
+}
+
+void MessageQueueSink::onException(std::exception_ptr /* exception */)
+{
+    onFinish();
 }
 
 void MessageQueueSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
+
     if (columns.empty())
         return;
 
+    /// The formatter might hold pointers to buffer (e.g. if PeekableWriteBuffer is used), which means the formatter
+    /// needs to be reset after buffer might reallocate its memory. In this exact case after restarting the buffer.
     if (row_format)
     {
         size_t row = 0;
@@ -61,34 +89,23 @@ void MessageQueueSink::consume(Chunk & chunk)
                 row_format->writeRow(columns, row);
             }
             row_format->finalize();
-            row_format->resetFormatter();
+            buffer->finalize();
             producer->produce(buffer->str(), i, columns, row - 1);
             /// Reallocate buffer if it's capacity is large then DBMS_DEFAULT_BUFFER_SIZE,
             /// because most likely in this case we serialized abnormally large row
             /// and won't need this large allocated buffer anymore.
             buffer->restart(DBMS_DEFAULT_BUFFER_SIZE);
+            row_format->resetFormatter();
         }
     }
     else
     {
         format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
         format->finalize();
+        buffer->finalize();
         producer->produce(buffer->str(), chunk.getNumRows(), columns, chunk.getNumRows() - 1);
-        format->resetFormatter();
         buffer->restart();
-    }
-}
-
-
-void MessageQueueSink::onCancel() noexcept
-{
-    try
-    {
-        onFinish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancellation.");
+        format->resetFormatter();
     }
 }
 

@@ -6,8 +6,7 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
-#include <IO/ReadSettings.h>
-
+#include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
@@ -24,6 +23,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -82,9 +82,10 @@ public:
 
     bool isInitialized() const;
 
-    const String & getBasePath() const;
+    /// Throws if `!load_metadata_asynchronously` and there is an exception in `init_exception`
+    void throwInitExceptionIfNeeded();
 
-    static Key createKeyForPath(const String & path);
+    const String & getBasePath() const;
 
     static const UserInfo & getCommonUser();
 
@@ -112,7 +113,8 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const UserInfo & user);
+        const UserInfo & user,
+        std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -160,12 +162,17 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
+
+    size_t getBoundaryAlignment() const { return boundary_alignment; }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
         const UserInfo & user,
-        size_t lock_wait_timeout_milliseconds);
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -197,7 +204,11 @@ private:
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> background_download_max_file_segment_size;
     size_t load_metadata_threads;
+    const bool load_metadata_asynchronously;
+    std::atomic<bool> stop_loading_metadata = false;
+    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
 
     BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
@@ -209,6 +220,7 @@ private:
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
+    OnceFlag initialize_called;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
@@ -245,6 +257,8 @@ private:
      * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
      */
     FileCacheQueryLimitPtr query_limit;
+
+    void initializeImpl(bool load_metadata);
 
     void assertInitialized() const;
     void assertCacheCorrectness();

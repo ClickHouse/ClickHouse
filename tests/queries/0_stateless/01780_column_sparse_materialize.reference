@@ -1,0 +1,50 @@
+-- { echoOn }
+
+SELECT dumpColumnStructure(id) FROM sparse_t;
+UInt64, Sparse(size = 2, UInt64(size = 2), UInt64(size = 1))
+UInt64, Sparse(size = 2, UInt64(size = 2), UInt64(size = 1))
+SELECT dumpColumnStructure(materialize(id)) FROM sparse_t;
+UInt64, UInt64(size = 2)
+UInt64, UInt64(size = 2)
+SELECT dumpColumnStructure(u) FROM sparse_t;
+UInt64, Sparse(size = 2, UInt64(size = 1), UInt64(size = 0))
+UInt64, Sparse(size = 2, UInt64(size = 1), UInt64(size = 0))
+SELECT dumpColumnStructure(materialize(u)) FROM sparse_t;
+UInt64, UInt64(size = 2)
+UInt64, UInt64(size = 2)
+SELECT dumpColumnStructure(s) FROM sparse_t;
+String, Sparse(size = 2, String(size = 2), UInt64(size = 1))
+String, Sparse(size = 2, String(size = 2), UInt64(size = 1))
+SELECT dumpColumnStructure(materialize(s)) FROM sparse_t;
+String, String(size = 2)
+String, String(size = 2)
+SELECT dumpColumnStructure(arr1) FROM sparse_t;
+Array(String), Array(size = 2, UInt64(size = 2), String(size = 1))
+Array(String), Array(size = 2, UInt64(size = 2), String(size = 1))
+SELECT dumpColumnStructure(materialize(arr1)) FROM sparse_t;
+Array(String), Array(size = 2, UInt64(size = 2), String(size = 1))
+Array(String), Array(size = 2, UInt64(size = 2), String(size = 1))
+SELECT dumpColumnStructure(arr2) FROM sparse_t;
+Array(UInt64), Array(size = 2, UInt64(size = 2), UInt64(size = 1))
+Array(UInt64), Array(size = 2, UInt64(size = 2), UInt64(size = 1))
+SELECT dumpColumnStructure(materialize(arr2)) FROM sparse_t;
+Array(UInt64), Array(size = 2, UInt64(size = 2), UInt64(size = 1))
+Array(UInt64), Array(size = 2, UInt64(size = 2), UInt64(size = 1))
+SELECT dumpColumnStructure(t) FROM sparse_t;
+Tuple(a UInt64, s String), Tuple(size = 2, Sparse(size = 2, UInt64(size = 1), UInt64(size = 0)), Sparse(size = 2, String(size = 1), UInt64(size = 0)))
+Tuple(a UInt64, s String), Tuple(size = 2, Sparse(size = 2, UInt64(size = 1), UInt64(size = 0)), Sparse(size = 2, String(size = 1), UInt64(size = 0)))
+SELECT dumpColumnStructure(materialize(t)) FROM sparse_t;
+Tuple(a UInt64, s String), Tuple(size = 2, UInt64(size = 2), String(size = 2))
+Tuple(a UInt64, s String), Tuple(size = 2, UInt64(size = 2), String(size = 2))
+SELECT dumpColumnStructure(t.a) FROM sparse_t;
+UInt64, Sparse(size = 2, UInt64(size = 1), UInt64(size = 0))
+UInt64, Sparse(size = 2, UInt64(size = 1), UInt64(size = 0))
+SELECT dumpColumnStructure(materialize(t.a)) FROM sparse_t;
+UInt64, UInt64(size = 2)
+UInt64, UInt64(size = 2)
+SELECT dumpColumnStructure(t.s) FROM sparse_t;
+String, Sparse(size = 2, String(size = 1), UInt64(size = 0))
+String, Sparse(size = 2, String(size = 1), UInt64(size = 0))
+SELECT dumpColumnStructure(materialize(t.s)) FROM sparse_t;
+String, String(size = 2)
+String, String(size = 2)

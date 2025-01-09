@@ -59,12 +59,12 @@ constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 10000
 template <typename T, GroupArraySortedStrategy strategy>
 struct GroupArraySortedData
 {
+    static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
+
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = PODArray<T, 32, Allocator>;
+    using Array = typename std::conditional_t<is_value_generic_field, std::vector<T>, PODArray<T, 32, Allocator>>;
 
     static constexpr size_t partial_sort_max_elements_factor = 2;
-
-    static constexpr bool is_value_generic_field = std::is_same_v<T, Field>;
 
     Array values;
 
@@ -144,7 +144,7 @@ struct GroupArraySortedData
         }
 
         if (values.size() > max_elements)
-            values.resize(max_elements, arena);
+            resize(max_elements, arena);
     }
 
     ALWAYS_INLINE void partialSortAndLimitIfNeeded(size_t max_elements, Arena * arena)
@@ -153,7 +153,23 @@ struct GroupArraySortedData
             return;
 
         ::nth_element(values.begin(), values.begin() + max_elements, values.end(), Comparator());
-        values.resize(max_elements, arena);
+        resize(max_elements, arena);
+    }
+
+    ALWAYS_INLINE void resize(size_t n, Arena * arena)
+    {
+        if constexpr (is_value_generic_field)
+            values.resize(n);
+        else
+            values.resize(n, arena);
+    }
+
+    ALWAYS_INLINE void push_back(T && element, Arena * arena)
+    {
+        if constexpr (is_value_generic_field)
+            values.push_back(element);
+        else
+            values.push_back(element, arena);
     }
 
     ALWAYS_INLINE void addElement(T && element, size_t max_elements, Arena * arena)
@@ -171,12 +187,12 @@ struct GroupArraySortedData
                 return;
             }
 
-            values.push_back(std::move(element), arena);
+            push_back(std::move(element), arena);
             std::push_heap(values.begin(), values.end(), Comparator());
         }
         else
         {
-            values.push_back(std::move(element), arena);
+            push_back(std::move(element), arena);
             partialSortAndLimitIfNeeded(max_elements, arena);
         }
     }
@@ -208,14 +224,6 @@ struct GroupArraySortedData
 
             for (size_t i = 0; i < values.size(); ++i)
                 result_array_data[result_array_data_insert_begin + i] = values[i];
-        }
-    }
-
-    ~GroupArraySortedData()
-    {
-        for (auto & value : values)
-        {
-            value.~T();
         }
     }
 };
@@ -313,14 +321,12 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elements);
 
         auto & values = this->data(place).values;
-        values.resize_exact(size, arena);
 
-        if constexpr (std::is_same_v<T, Field>)
+        if constexpr (Data::is_value_generic_field)
         {
+            values.resize(size);
             for (Field & element : values)
             {
-                /// We must initialize the Field type since some internal functions (like operator=) use them
-                new (&element) Field;
                 bool has_value = false;
                 readBinary(has_value, buf);
                 if (has_value)
@@ -329,6 +335,7 @@ public:
         }
         else
         {
+            values.resize_exact(size, arena);
             if constexpr (std::endian::native == std::endian::little)
             {
                 buf.readStrict(reinterpret_cast<char *>(values.data()), size * sizeof(values[0]));
@@ -391,21 +398,20 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should have limit argument", name);
     }
-    else if (parameters.size() == 1)
+    if (parameters.size() == 1)
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-               throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
-
-        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        max_elems = parameters[0].get<UInt64>();
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0)
+            || (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
+
+        max_elems = parameters[0].safeGet<UInt64>();
     }
     else
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Function {} does not support this number of arguments", name);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} does not support this number of arguments", name);
 
     if (max_elems > group_array_sorted_sort_strategy_max_elements_threshold)
         return createAggregateFunctionGroupArraySortedImpl<GroupArraySortedSort>(argument_types[0], parameters, max_elems);

@@ -70,8 +70,7 @@ public:
             pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
             if (pos == end)
                 return false;
-            else
-                token_end = pos;
+            token_end = pos;
 
             if (*pos == '?')
             {

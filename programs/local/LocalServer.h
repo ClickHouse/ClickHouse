@@ -4,7 +4,6 @@
 #include <Client/LocalConnection.h>
 
 #include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Loggers/Loggers.h>
 #include <Common/InterruptListener.h>

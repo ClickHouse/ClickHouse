@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const String & s = field.get<const String &>();
+    const String & s = field.safeGet<const String &>();
     if (settings.binary.max_binary_string_size && s.size() > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
@@ -59,7 +59,7 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
             settings.binary.max_binary_string_size);
 
     field = String();
-    String & s = field.get<String &>();
+    String & s = field.safeGet<String &>();
     s.resize(size);
     istr.readStrict(s.data(), size);
 }

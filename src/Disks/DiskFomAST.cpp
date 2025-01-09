@@ -1,6 +1,7 @@
 #include <Disks/DiskFomAST.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/SipHash.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Parsers/formatAST.h>
@@ -132,7 +133,7 @@ std::string DiskFomAST::createCustomDisk(const ASTPtr & disk_function_ast, Conte
     FlattenDiskConfigurationVisitor::Data data{context, attach};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
-    return assert_cast<const ASTLiteral &>(*ast).value.get<String>();
+    return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }
 
 void DiskFomAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)

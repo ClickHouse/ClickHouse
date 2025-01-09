@@ -61,7 +61,8 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt);
+        std::optional<Extension> extension_ = std::nullopt,
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -260,11 +261,6 @@ private:
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
 
-    /// This is needed only for parallel reading from replicas, because
-    /// we create a RemoteQueryExecutor per replica and have to store additional info
-    /// about the number of the current replica or the count of replicas at all.
-    IConnections::ReplicaInfo replica_info;
-
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
     std::vector<ExternalTablesData> external_tables_data;
@@ -348,9 +344,6 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
-
-    /// Reads packet by packet
-    Block readPackets();
 };
 
 }

@@ -10,7 +10,7 @@ disk_name="s3_cache_02944"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
 INSERT INTO test SELECT randomString(100);
@@ -33,7 +33,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
@@ -47,7 +47,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
@@ -63,7 +63,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
@@ -77,7 +77,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='fatal';
 SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"

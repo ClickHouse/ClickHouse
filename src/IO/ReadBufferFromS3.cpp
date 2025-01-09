@@ -6,7 +6,6 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
@@ -34,6 +33,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 max_single_read_retries;
+}
+
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -49,7 +54,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    const S3::RequestSettings & request_settings_,
+    const S3::S3RequestSettings & request_settings_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
@@ -112,7 +117,7 @@ bool ReadBufferFromS3::nextImpl()
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings.max_single_read_retries;
+        bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
@@ -139,9 +144,9 @@ bool ReadBufferFromS3::nextImpl()
             next_result = impl->next();
             break;
         }
-        catch (Poco::Exception & e)
+        catch (...)
         {
-            if (!processException(e, getPosition(), attempt) || last_attempt)
+            if (!processException(getPosition(), attempt) || last_attempt)
                 throw;
 
             /// Pause before next attempt.
@@ -177,7 +182,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; n > 0; ++attempt)
     {
-        bool last_attempt = attempt >= request_settings.max_single_read_retries;
+        bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
@@ -203,9 +208,9 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);
         }
-        catch (Poco::Exception & e)
+        catch (...)
         {
-            if (!processException(e, range_begin, attempt) || last_attempt)
+            if (!processException(range_begin, attempt) || last_attempt)
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
@@ -220,7 +225,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     return initial_n;
 }
 
-bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset, size_t attempt) const
+bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
@@ -228,10 +233,11 @@ bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset,
         log,
         "Caught exception while reading S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}, "
         "Attempt: {}/{}, Message: {}",
-        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings.max_single_read_retries, e.message());
+        bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries],
+        getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
-    if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
+    if (auto * s3_exception = exception_cast<S3Exception *>(std::current_exception()))
     {
         /// It doesn't make sense to retry Access Denied or No Such Key
         if (!s3_exception->isRetryableError())
@@ -242,7 +248,7 @@ bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset,
     }
 
     /// It doesn't make sense to retry allocator errors
-    if (e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+    if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
     {
         tryLogCurrentException(log);
         return false;
@@ -423,25 +429,14 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
-    constexpr ResourceCost estimated_cost = 1;
-    ResourceGuard rlock(read_settings.resource_link, estimated_cost);
-
+    CurrentThread::IOScope io_scope(read_settings.io_scheduling);
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
-    rlock.unlock();
-
     if (outcome.IsSuccess())
-    {
-        ResourceCost bytes_read = outcome.GetResult().GetContentLength();
-        read_settings.resource_link.adjust(estimated_cost, bytes_read);
         return outcome.GetResultWithOwnership();
-    }
-    else
-    {
-        read_settings.resource_link.accumulate(estimated_cost);
-        const auto & error = outcome.GetError();
-        throw S3Exception(error.GetMessage(), error.GetErrorType());
-    }
+
+    const auto & error = outcome.GetError();
+    throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 
 }

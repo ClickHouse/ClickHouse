@@ -172,6 +172,27 @@ private:
     ParquetDataBuffer plain_data_buffer;
 };
 
+template <typename TColumn>
+class ParquetBitPlainReader : public ParquetDataValuesReader
+{
+public:
+    ParquetBitPlainReader(
+        Int32 max_def_level_,
+        std::unique_ptr<RleValuesReader> def_level_reader_,
+        std::unique_ptr<arrow::bit_util::BitReader> bit_reader_)
+        : max_def_level(max_def_level_)
+        , def_level_reader(std::move(def_level_reader_))
+        , bit_reader(std::move(bit_reader_))
+    {}
+
+    void readBatch(MutableColumnPtr & col_ptr, LazyNullMap & null_map, UInt32 num_values) override;
+
+private:
+    Int32 max_def_level;
+    std::unique_ptr<RleValuesReader> def_level_reader;
+    std::unique_ptr<arrow::bit_util::BitReader> bit_reader;
+};
+
 /**
  * The data and definition level encoding are same as ParquetPlainValuesReader.
  * But the element size is const and bigger than primitive data type.

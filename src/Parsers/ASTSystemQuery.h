@@ -23,7 +23,10 @@ public:
         SUSPEND,
         DROP_DNS_CACHE,
         DROP_CONNECTIONS_CACHE,
+        PREWARM_MARK_CACHE,
+        PREWARM_PRIMARY_INDEX_CACHE,
         DROP_MARK_CACHE,
+        DROP_PRIMARY_INDEX_CACHE,
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
@@ -95,12 +98,14 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         REFRESH_VIEW,
+        WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
         STOP_VIEW,
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
+        LOAD_PRIMARY_KEY,
         UNLOAD_PRIMARY_KEY,
         END
     };
@@ -129,6 +134,8 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+
+    std::optional<String> query_cache_tag;
 
     String filesystem_cache_name;
     std::string key_to_drop;
@@ -174,8 +181,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
-
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 

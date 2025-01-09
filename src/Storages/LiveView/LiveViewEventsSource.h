@@ -185,12 +185,10 @@ protected:
                         {
                             break;
                         }
-                        else
-                        {
-                            // repeat the event block as a heartbeat
-                            last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
-                            return { getPort().getHeader(), true };
-                        }
+
+                        // repeat the event block as a heartbeat
+                        last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+                        return {getPort().getHeader(), true};
                     }
                 }
             }

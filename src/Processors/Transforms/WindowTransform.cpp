@@ -23,6 +23,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -85,7 +86,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     using ValueType = typename ColumnType::ValueType;
     // Note that the storage type of offset returned by get<> is different, so
     // we need to specify the type explicitly.
-    const ValueType offset = static_cast<ValueType>(_offset.get<ValueType>());
+    const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
     assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -112,18 +113,13 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
             // We know that because offset is >= 0.
             return 1;
         }
-        else
-        {
-            // Overflow to the positive, [compared] must be less.
-            return -1;
-        }
+
+        // Overflow to the positive, [compared] must be less.
+        return -1;
     }
-    else
-    {
-        // No overflow, compare normally.
-        return compared_value < reference_value ? -1
-            : compared_value == reference_value ? 0 : 1;
-    }
+
+    // No overflow, compare normally.
+    return compared_value < reference_value ? -1 : compared_value == reference_value ? 0 : 1;
 }
 
 // A specialization of compareValuesWithOffset for floats.
@@ -140,7 +136,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    const auto offset = _offset.get<typename ColumnType::ValueType>();
+    const auto offset = _offset.safeGet<typename ColumnType::ValueType>();
     chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -216,11 +212,11 @@ static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
     {
         return -1;
     }
-    else if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    if (compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
     {
         return 0;
     }
-    else if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
+    if (!compared_column->isNullAt(compared_row) && reference_column->isNullAt(reference_row))
     {
         return 1;
     }
@@ -609,7 +605,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset.get<UInt64>()
+        window_description.frame.begin_offset.safeGet<UInt64>()
             * (window_description.frame.begin_preceding ? -1 : 1));
 
     frame_start = moved_row;
@@ -848,7 +844,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.end_offset.get<UInt64>()
+        window_description.frame.end_offset.safeGet<UInt64>()
             * (window_description.frame.end_preceding ? -1 : 1)
             + 1);
 
@@ -1157,8 +1153,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            if (ws.window_function_impl)
-                block.casted_columns.push_back(ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices));
+            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -1485,8 +1480,7 @@ void WindowTransform::work()
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     assert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min(next_output_block_number,
-        std::min(prev_frame_start.block, current_row.block));
+    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1501,11 +1495,10 @@ void WindowTransform::work()
     }
 }
 
-struct WindowFunctionRank final : public WindowFunction
+struct WindowFunctionRank final : public StatelessWindowFunction
 {
-    WindowFunctionRank(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1520,11 +1513,10 @@ struct WindowFunctionRank final : public WindowFunction
     }
 };
 
-struct WindowFunctionDenseRank final : public WindowFunction
+struct WindowFunctionDenseRank final : public StatelessWindowFunction
 {
-    WindowFunctionDenseRank(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionDenseRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1722,7 +1714,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
+struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1737,9 +1729,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
     }
 
-    WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    WindowFunctionExponentialTimeDecayedMax(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 2)
@@ -1997,11 +1988,10 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
         const Float64 decay_length;
 };
 
-struct WindowFunctionRowNumber final : public WindowFunction
+struct WindowFunctionRowNumber final : public StatelessWindowFunction
 {
-    WindowFunctionRowNumber(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    WindowFunctionRowNumber(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -2105,13 +2095,13 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
             auto type_id = argument_types[0]->getTypeId();
             if (type_id == TypeIndex::UInt8)
-                buckets = arg_col[transform->current_row.row].get<UInt8>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt8>();
             else if (type_id == TypeIndex::UInt16)
-                buckets = arg_col[transform->current_row.row].get<UInt16>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt16>();
             else if (type_id == TypeIndex::UInt32)
-                buckets = arg_col[transform->current_row.row].get<UInt32>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt32>();
             else if (type_id == TypeIndex::UInt64)
-                buckets = arg_col[transform->current_row.row].get<UInt64>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt64>();
 
             if (!buckets)
             {
@@ -2279,13 +2269,12 @@ public:
 
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
-struct WindowFunctionLagLeadInFrame final : public WindowFunction
+struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
 
-    WindowFunctionLagLeadInFrame(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
+    WindowFunctionLagLeadInFrame(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
         if (!parameters.empty())
         {
@@ -2361,7 +2350,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2389,7 +2378,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         {
             offset = (*current_block.input_columns[
                     workspace.argument_column_indices[1]])[
-                        transform->current_row.row].get<Int64>();
+                        transform->current_row.row].safeGet<Int64>();
 
             /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
@@ -2412,8 +2401,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             {
                 // Column with default values is specified.
                 const IColumn & default_column =
-                    current_block.casted_columns[function_index] ?
-                        *current_block.casted_columns[function_index].get() :
+                    current_block.cast_columns[function_index] ?
+                        *current_block.cast_columns[function_index].get() :
                         *current_block.input_columns[workspace.argument_column_indices[2]].get();
 
                 to.insert(default_column[transform->current_row.row]);
@@ -2433,11 +2422,10 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     }
 };
 
-struct WindowFunctionNthValue final : public WindowFunction
+struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
-    WindowFunctionNthValue(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
+    WindowFunctionNthValue(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(name_, argument_types_))
     {
         if (!parameters.empty())
         {
@@ -2475,13 +2463,13 @@ struct WindowFunctionNthValue final : public WindowFunction
 
         Int64 offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current_row.row].get<Int64>();
+            transform->current_row.row].safeGet<Int64>();
 
         /// Either overflow or really negative value, both is not acceptable.
         if (offset <= 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be in (0, {}], {} given",
+                "The offset for function {} must be in (1, {}], {} given",
                 getName(), INT64_MAX, offset);
         }
 

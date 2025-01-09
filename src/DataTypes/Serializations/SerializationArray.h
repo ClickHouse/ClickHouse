@@ -82,6 +82,10 @@ public:
         SerializationPtr create(const SerializationPtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
+
+private:
+    template <typename ReturnType>
+    ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
 
 }
