@@ -1689,7 +1689,7 @@ int StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     {
         assert(0);
     }
-    if (rg.nextSmallNumber() < 3)
+    if (att->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 3)
     {
         att->set_as_replicated(rg.nextBool());
     }

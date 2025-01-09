@@ -3598,7 +3598,7 @@ CONV_FN(Attach, at)
     ret += SQLObject_Name(at.sobject());
     ret += " ";
     SQLObjectNameToString(ret, at.object());
-    if (at.has_as_replicated())
+    if (at.sobject() != SQLObject::DATABASE && at.has_as_replicated())
     {
         ret += " AS";
         ret += at.as_replicated() ? "" : " NOT";
