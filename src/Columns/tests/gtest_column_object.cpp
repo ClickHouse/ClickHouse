@@ -1,6 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
