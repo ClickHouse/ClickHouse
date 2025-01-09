@@ -3,6 +3,9 @@
 
 #if USE_PARQUET
 
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
@@ -33,6 +36,8 @@
 namespace ProfileEvents
 {
     extern const Event ParquetFetchWaitTimeMicroseconds;
+    extern const Event ParquetMetaDataCacheHits;
+    extern const Event ParquetMetaDataCacheMisses;
 }
 
 namespace CurrentMetrics
@@ -484,6 +489,58 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
     return hyperrectangle;
 }
 
+ParquetFileMetaDataCache::ParquetFileMetaDataCache(UInt64 max_cache_entries)
+    : CacheBase(max_cache_entries) {}
+
+ParquetFileMetaDataCache *  ParquetFileMetaDataCache::instance(UInt64 max_cache_entries)
+{
+    static ParquetFileMetaDataCache instance(max_cache_entries);
+    return &instance;
+}
+
+std::shared_ptr<parquet::FileMetaData> ParquetBlockInputFormat::readMetadataFromFile()
+{
+    createArrowFileIfNotCreated();
+    return parquet::ReadMetaData(arrow_file);
+}
+
+std::shared_ptr<parquet::FileMetaData> ParquetBlockInputFormat::getFileMetaData()
+{
+    // in-memory cache is not implemented for local file operations, only for remote files
+    // there is a chance the user sets `input_format_parquet_use_metadata_cache=1` for a local file operation
+    // and the cache_key won't be set. Therefore, we also need to check for metadata_cache.key
+    if (!metadata_cache.use_cache || metadata_cache.key.empty())
+    {
+        return readMetadataFromFile();
+    }
+
+    auto [parquet_file_metadata, loaded] = ParquetFileMetaDataCache::instance(metadata_cache.max_entries)->getOrSet(
+        metadata_cache.key,
+        [&]()
+        {
+            return readMetadataFromFile();
+        }
+    );
+    if (loaded)
+        ProfileEvents::increment(ProfileEvents::ParquetMetaDataCacheMisses);
+    else
+        ProfileEvents::increment(ProfileEvents::ParquetMetaDataCacheHits);
+    return parquet_file_metadata;
+}
+
+void ParquetBlockInputFormat::createArrowFileIfNotCreated()
+{
+    if (arrow_file)
+    {
+        return;
+    }
+
+    // Create arrow file adapter.
+    // TODO: Make the adapter do prefetching on IO threads, based on the full set of ranges that
+    //       we'll need to read (which we know in advance). Use max_download_threads for that.
+    arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+}
+
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     const Block & header_,
@@ -528,7 +585,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (is_stopped)
         return;
 
-    metadata = parquet::ReadMetaData(arrow_file);
+    metadata = getFileMetaData();
     const bool prefetch_group = supportPrefetch();
 
     std::shared_ptr<arrow::Schema> schema;
@@ -594,6 +651,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         filtering_columns = parquet_bloom_filter_condition->getFilteringColumnKeys();
     }
 
+    bool has_row_groups_to_read = false;
+
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
@@ -628,7 +687,21 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().total_bytes_compressed += row_group_size;
         auto rows = adaptive_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
+
+        has_row_groups_to_read = true;
     }
+
+    if (has_row_groups_to_read)
+    {
+        createArrowFileIfNotCreated();
+    }
+}
+
+void ParquetBlockInputFormat::setStorageRelatedUniqueKey(const ServerSettings & server_settings, const Settings & settings, const String & key_)
+{
+    metadata_cache.key = key_;
+    metadata_cache.use_cache = settings.input_format_parquet_use_metadata_cache;
+    metadata_cache.max_entries = server_settings.input_format_parquet_metadata_cache_max_entries;
 }
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)

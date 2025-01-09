@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_PARQUET
 
+#include <Common/CacheBase.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -72,6 +73,8 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
+    void setStorageRelatedUniqueKey(const ServerSettings & server_settings, const Settings & settings, const String & key_) override;
+
 private:
     Chunk read() override;
 
@@ -89,6 +92,11 @@ private:
     void scheduleRowGroup(size_t row_group_batch_idx);
 
     void threadFunction(size_t row_group_batch_idx);
+
+    void createArrowFileIfNotCreated();
+    std::shared_ptr<parquet::FileMetaData> readMetadataFromFile();
+
+    std::shared_ptr<parquet::FileMetaData> getFileMetaData();
 
     inline bool supportPrefetch() const;
 
@@ -338,6 +346,12 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
+    struct Cache
+    {
+        String key;
+        bool use_cache = false;
+        UInt64 max_entries{0};
+    } metadata_cache;
 };
 
 class ParquetSchemaReader : public ISchemaReader
@@ -354,6 +368,16 @@ private:
     const FormatSettings format_settings;
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
     std::shared_ptr<parquet::FileMetaData> metadata;
+};
+
+class ParquetFileMetaDataCache : public CacheBase<String, parquet::FileMetaData>
+{
+public:
+    static ParquetFileMetaDataCache *  instance(UInt64 max_cache_entries);
+    void clear() {}
+
+private:
+    ParquetFileMetaDataCache(UInt64 max_cache_entries);
 };
 
 }
