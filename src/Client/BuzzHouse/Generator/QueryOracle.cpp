@@ -20,6 +20,8 @@ int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
     const uint32_t combination = 0; //TODO fix this rg.nextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
+    can_test_query_success = rg.nextBool();
+    gen.setAllowEngineUDF(!can_test_query_success);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
@@ -48,6 +50,7 @@ int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
     gen.levels.erase(gen.current_level);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
+    gen.setAllowEngineUDF(true);
 
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
