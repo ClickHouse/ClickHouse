@@ -17,24 +17,14 @@ namespace ErrorCodes
 
 namespace
 {
-    std::string getProcessedPathWithBucket(const std::filesystem::path & zk_path, size_t bucket)
-    {
-        return zk_path / "buckets" / toString(bucket) / "processed";
-    }
-
-    std::string getProcessedPathWithoutBucket(const std::filesystem::path & zk_path)
-    {
-        return zk_path / "processed";
-    }
-
     std::string getProcessedPath(
         const std::filesystem::path & zk_path,
-        const std::string & path,
-        std::optional<size_t> buckets_num)
+        std::optional<size_t> bucket = std::nullopt)
     {
-        if (buckets_num.has_value())
-            return getProcessedPathWithBucket(zk_path, ObjectStorageQueueIFileMetadata::getBucketForPath(path, buckets_num.value()));
-        return getProcessedPathWithoutBucket(zk_path);
+        if (bucket.has_value())
+            return zk_path / "buckets" / toString(bucket.value()) / "processed";
+        else
+            return zk_path / "processed";
     }
 }
 
@@ -115,7 +105,11 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         zk_path_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
         /* processed_node_path */getProcessedPath(
-            zk_path_, path_, useBucketsForProcessingImpl(buckets_num_) ? std::optional<size_t>(buckets_num_) : std::nullopt),
+            zk_path_,
+            useBucketsForProcessingImpl(buckets_num_)
+            ? std::optional<size_t>(
+                ObjectStorageQueueIFileMetadata::getBucketForPath(path_, buckets_num_))
+            : std::nullopt),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         bucket_info_,
@@ -312,7 +306,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(
     {
         for (size_t i = 0; i < buckets_num; ++i)
         {
-            auto path = getProcessedPathWithBucket(zk_path, i);
+            auto path = getProcessedPath(zk_path, i);
             prepareProcessedRequests(requests, zk_client, path, /* ignore_if_exists */true);
         }
     }
@@ -379,7 +373,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
     Coordination::Responses responses;
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
-        const auto old_processed_path = getProcessedPathWithoutBucket(zk_path_);
+        const auto old_processed_path = getProcessedPath(zk_path_);
         NodeMetadata processed_node;
         Coordination::Stat processed_node_stat;
         bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
@@ -399,7 +393,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
 
         for (size_t i = 0; i < value; ++i)
         {
-            const auto new_processed_path = getProcessedPathWithBucket(zk_path_, /* bucket */i);
+            const auto new_processed_path = getProcessedPath(zk_path_, /* bucket */i);
             zk_client->createAncestors(new_processed_path);
 
             requests.push_back(zkutil::makeCreateRequest(
