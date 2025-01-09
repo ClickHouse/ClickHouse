@@ -35,6 +35,7 @@ INSERT INTO anti_right_join (x, s) VALUES (2, 'b1'), (2, 'b2'), (4, 'b3'), (4, '
 
 SET join_use_nulls = 0;
 SET any_join_distinct_right_table_keys = 0;
+SET parallel_replicas_local_plan=1;
 
 SELECT 'any left';
 SELECT * FROM t1 ANY LEFT JOIN any_left_join j USING(x) ORDER BY x, str, s;

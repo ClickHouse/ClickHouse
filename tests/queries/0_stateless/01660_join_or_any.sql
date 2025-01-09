@@ -51,6 +51,8 @@ select '==';
 select a2, b2 + 1 from tab1 any right join tab2 on b1 + 1 = a2 + 1 or a1 + 4 = b2 + 2 ORDER BY a2, b2 + 1;
 
 SET any_join_distinct_right_table_keys = 1;
+SET parallel_replicas_local_plan=1;
+
 select 'any_join_distinct_right_table_keys = 1';
 select a2, b2 from tab2 any right join tab3 on a2 = a3 or b2 = b3 ORDER BY a2, b2;
 select '==';

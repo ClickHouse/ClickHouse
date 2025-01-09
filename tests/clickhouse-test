@@ -204,10 +204,7 @@ class SharedEngineReplacer:
 
     def _need_to_replace_something(self):
         return (
-            (
-                self.replace_replicated
-                or self.replace_non_replicated
-            )
+            (self.replace_replicated or self.replace_non_replicated)
             and "shared_merge_tree" not in self.file_name
         ) or self.cloud
 

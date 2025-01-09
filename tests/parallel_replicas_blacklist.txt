@@ -39,6 +39,10 @@
     Cannot find column `tuple(col_a, type)` in source stream, there are only columns: [__table1.id, tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type), tuple(replaceAll(__table1.data, 'a'_String, 'e'_String), __table1.type)]. (THERE_IS_NO_COLUMN) (in query: SELECT id, tuple(replaceAll(data, 'a', 'e') AS col_a, type) AS a, tuple(replaceAll(data, 'a', 'e') AS col_b, type) AS b FROM src;)
 03240_insert_select_named_tuple
 
+    https://github.com/ClickHouse/ClickHouse/issues/74367
+    Cannot find column in source stream
+02457_morton_coding_with_mask
+01358_mutation_delete_null_rows
 
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
@@ -60,15 +64,25 @@
 
 
     Storage Join/Set
+    https://github.com/ClickHouse/ClickHouse/issues/74362
     Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
 01594_storage_join_uuid
     Unsupported JOIN keys of type keys256 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;)
 02498_storage_join_key_positions
+
+    https://github.com/ClickHouse/ClickHouse/pull/73609
+    Cannot parse string
+03208_multiple_joins_with_storage_join
+
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
-    Method read is not supported by storage Set
+    Alter (Method read is not supported by storage Set)
     https://fiddle.clickhouse.com/6237cbe7-242e-4ae5-95d2-754a8284072c
 02581_share_big_sets_between_mutation_tasks_with_storage_set
+
+    https://github.com/ClickHouse/ClickHouse/issues/74366
+    Cannot convert type UInt8 to Variant(String, UInt64)
+02990_variant_where_cond
 
     Bloom filters
     Needle must not contain whitespace or separator characters: while executing 'FUNCTION hasToken(s : 0, 'abcabcabcabcabcabcabcab\0'_String :: 1) -> hasToken(__table1.s, 'abcabcabcabcabcabcabcab\0'_String) UInt8 : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (BAD_ARGUMENTS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:44318) (comment: 01781_token_extractor_buffer_overflow.sql) (in query: SELECT max(`__table1`.`id`) AS `max(id)` FROM `test_klfow1or`.`bloom_filter` AS `__table1` WHERE hasToken(`__table1`.`s`, 'abcabcabcabcabcabcabcab\0'))
@@ -166,6 +180,7 @@
 01173_transaction_control_queries
 01171_mv_select_insert_isolation_long
 02345_implicit_transaction
+01174_select_insert_isolation
 
     https://github.com/ClickHouse/clickhouse-private/issues/13900
 03075_shared_merge_tree_recursive_cte_smoke_test
@@ -253,6 +268,7 @@
 01049_join_low_card_bug_long.gen
 01721_join_implicit_cast_long.gen
 02516_join_with_totals_and_subquery_bug.gen
+03031_filter_float64_logical_error
     DB::Exception: Method read is not supported by storage Set: While processing x IN (_data_11099353983780129364_3343188837740940051). (NOT_IMPLEMENTED) (version 25.1.1.568) (from [::1]:49284) (comment: 00116_storage_set.sql) (in query: SELECT * FROM tab PREWHERE x IN (set) WHERE x IN (set) LIMIT 1 settings enable_analyzer=0;)
 00116_storage_set
 
@@ -350,7 +366,9 @@
 02944_variant_as_common_type
 02862_sorted_distinct_sparse_fix
 02417_load_marks_async
-
+03274_prewarm_primary_index_cache
+03270_processors_profile_log_3
+03252_merge_tree_min_bytes_to_seek
 
     # NOT BUGS
     Not a bug
@@ -380,6 +398,9 @@
 
     minor: formatted query in system.query_log
 02751_query_log_test_partitions
+
+    fail with parallel_replicas_local_plan=0
+    03155_in_nested_subselects
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
@@ -450,8 +471,13 @@
 02950_part_offset_as_primary_key
     max rows: 3.00, current rows: 4.00
 01480_binary_operator_monotonicity
+    max rows: 10.00, current rows: 100.00
+01801_approx_total_rows_mergetree_reverse
+
 00955_test_final_mark_use
 01624_soft_constraints
+02968_file_log_multiple_read
+03031_minmax_index_for_pointinpolygon
 
     ORDER BY ALL is missing for multiple queries
 00326_long_function_multi_if
