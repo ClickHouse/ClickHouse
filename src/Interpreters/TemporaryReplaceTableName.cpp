@@ -15,7 +15,7 @@ namespace DB
 
     std::optional<TemporaryReplaceTableName> TemporaryReplaceTableName::fromString(const String & str)
     {
-        static const re2::RE2 pattern("_tmp_replace_(.*)_(.*)");
+        static const re2::RE2 pattern(R"(^_tmp_replace_(\w+)_(\w+)$)");
         TemporaryReplaceTableName result;
         if (RE2::FullMatch(str, pattern, &result.name_hash, &result.random_suffix))
         {
