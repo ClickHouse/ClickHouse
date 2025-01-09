@@ -16,7 +16,8 @@ on: # yamllint disable-line rule:truthy
       - opened
     branches:
       # Anything/24.12 (e.g customizations/24.12.x or -24.12)
-      - '**[/-]24.12*'
+      - '**/24.12*'
+      - '**-24.12*'
   release:
     types:
       - published
