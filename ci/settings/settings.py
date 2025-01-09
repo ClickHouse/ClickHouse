@@ -19,3 +19,4 @@ CI_DB_DB_NAME = "default"
 CI_DB_TABLE_NAME = "checks"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
+PIPELINE_PRECHECKS = ["./ci/jobs/scripts/prechecks/pr_description.py"]

@@ -231,6 +231,13 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         cache_jobs={},
     ).dump()
 
+    if Settings.PIPELINE_PRECHECKS:
+        results.append(
+            Result.from_commands_run(
+                name="CI Pre Check", command=Settings.PIPELINE_PRECHECKS
+            )
+        )
+
     # checks:
     result_, info = _check_yaml_up_to_date()
     if result_.status != Result.Status.SUCCESS:

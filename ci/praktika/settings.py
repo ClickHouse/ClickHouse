@@ -21,6 +21,7 @@ class _Settings:
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
+    PIPELINE_PRECHECKS: Optional[List[str]] = None
 
     ######################################
     #    Runtime Settings                #
@@ -117,6 +118,7 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_GH_APP_ID",
     "MAIN_BRANCH",
     "DISABLE_MERGE_COMMIT",
+    "PIPELINE_PRECHECKS",
 ]
 
 
