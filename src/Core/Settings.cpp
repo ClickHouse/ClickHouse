@@ -3175,6 +3175,9 @@ Formatter '%f' in function 'formatDateTime' prints only the scale amount of digi
     DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
 Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 )", 0) \
+DECLARE(Bool, use_legacy_h3ToGeo_order, false, R"(
+If enabled, the function 'h3ToGeo' will return coordinates in the legacy order (longitude, latitude) instead of the standard order (latitude, longitude).
+)", 0) \
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
 Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
