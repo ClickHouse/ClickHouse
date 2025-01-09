@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/
+slug: /en/table-engines/
 ---
 
 import { TwoColumnList } from '/src/components/two_column_list'
