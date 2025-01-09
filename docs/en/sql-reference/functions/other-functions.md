@@ -387,7 +387,7 @@ materialize(x)
 
 **Parameters**
 
-- `x` — A constant. [Constant](../functions/index.md/#constants).
+- `x` — A constant. [Constant](/docs/en/sql-reference/functions//#constants).
 
 **Returned value**
 

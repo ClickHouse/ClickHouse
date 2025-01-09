@@ -21,7 +21,7 @@ generateUUIDv4([expr])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](/docs/en/sql-reference/functions/#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -93,7 +93,7 @@ generateUUIDv7([expr])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](/docs/en/sql-reference/functions/#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
