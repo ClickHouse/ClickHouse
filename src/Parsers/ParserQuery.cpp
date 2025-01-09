@@ -4,6 +4,7 @@
 #include <Parsers/ParserCreateResourceQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
 #include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserDropResourceQuery.h>
@@ -25,7 +26,6 @@
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserCopyQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
