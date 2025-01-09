@@ -126,6 +126,7 @@ std::map<std::string, CHSetting> serverSettings = {
     {"distributed_insert_skip_read_only_replicas", CHSetting(trueOrFalse, {})},
     {"do_not_merge_across_partitions_select_final", CHSetting(trueOrFalse, {})},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", CHSetting(trueOrFalse, {})},
+    {"enable_analyzer", CHSetting(trueOrFalse, {"0", "1"})},
     {"enable_blob_storage_log", CHSetting(trueOrFalse, {})},
     {"enable_early_constant_folding", CHSetting(trueOrFalse, {})},
     {"enable_extended_results_for_datetime_functions", CHSetting(trueOrFalse, {})},
@@ -777,7 +778,7 @@ std::map<std::string, CHSetting> serverSettings = {
     {"parallel_replicas_count",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},
-    {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {"0", "1"})},
+    {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {})},
     {"parallel_replicas_index_analysis_only_on_coordinator", CHSetting(trueOrFalse, {"0", "1"})},
     {"parallel_replicas_custom_key_range_lower",
      CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {})},
