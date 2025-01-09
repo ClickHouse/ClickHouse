@@ -20,7 +20,6 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
     FunctionOverloadResolverPtr func_builder_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
-
     FunctionOverloadResolverPtr func_builder_and
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 

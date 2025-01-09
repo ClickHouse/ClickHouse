@@ -109,6 +109,11 @@ public:
         }
     }
 
+    void setProgressWriteFrequencyMicroseconds(size_t value)
+    {
+        progress_write_frequency_us = value;
+    }
+
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -209,6 +214,9 @@ protected:
     Statistics statistics;
     std::atomic_bool has_progress_update_to_write = false;
 
+    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
+    std::mutex writing_mutex;
+
 private:
     size_t rows_read_before = 0;
     bool are_totals_written = false;
@@ -217,8 +225,8 @@ private:
     size_t result_rows = 0;
     size_t result_bytes = 0;
 
-    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
-    std::mutex writing_mutex;
+    UInt64 progress_write_frequency_us = 0;
+    std::atomic<UInt64> prev_progress_write_ns = 0;
 };
 
 }

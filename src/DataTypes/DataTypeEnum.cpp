@@ -26,19 +26,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace Setting
-{
-    extern const SettingsBool validate_enum_literals_in_opearators;
-}
-
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
 template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
-
-bool enumValidateLiteralsInOperators(const ContextPtr & context)
-{
-    return context->getSettingsRef()[Setting::validate_enum_literals_in_opearators];
-}
 
 template <typename Type>
 const char * DataTypeEnum<Type>::getFamilyName() const

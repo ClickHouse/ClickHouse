@@ -30,9 +30,9 @@ REGISTER_FUNCTION(LowerUTF8)
     FunctionDocumentation::Examples examples = {
         {"first", "SELECT lowerUTF8('München') as Lowerutf8;", "münchen"},
     };
-    FunctionDocumentation::Categories categories = {"String"};
+    FunctionDocumentation::Category category = {"Strings"};
 
-    factory.registerFunction<FunctionLowerUTF8>({description, syntax, arguments, returned_value, examples, categories});
+    factory.registerFunction<FunctionLowerUTF8>({description, syntax, arguments, returned_value, examples, category});
 }
 
 }
