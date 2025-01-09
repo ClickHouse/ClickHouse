@@ -1411,7 +1411,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
+- “[Executable User Defined Functions](/docs/en/sql-reference/functions/#executable-user-defined-functions).”.
 
 **Example**
 
@@ -3058,7 +3058,7 @@ Default:
 
 ## user_scripts_path
 
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/docs/en/sql-reference/functions/#executable-user-defined-functions).
 
 **Example**
 
@@ -3072,7 +3072,7 @@ Default:
 
 ## user_defined_path
 
-The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](/docs/en/sql-reference/functions/#user-defined-functions).
 
 **Example**
 
