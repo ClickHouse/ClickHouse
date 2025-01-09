@@ -40,6 +40,9 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 class PreparedSets;
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
+struct GlobalThresholdColumns;
+using GlobalThresholdColumnsPtr = std::shared_ptr<GlobalThresholdColumns>;
+
 struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
@@ -52,6 +55,11 @@ struct PrewhereInfo
     bool remove_prewhere_column = false;
     bool need_filter = false;
     bool generated_by_optimizer = false;
+
+    /// Push down the TopN threshold into MergeTreeSource. The threshold
+    /// represents the value of the (N-1)th element in the current TopN state.
+    /// During read, rows with values below this threshold can be skipped
+    GlobalThresholdColumnsPtr global_threshold_columns_ptr;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)

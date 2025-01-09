@@ -1232,6 +1232,34 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
     return helper.calculateActionNodeName(node);
 }
 
+String calculateActionNodeNameInStorage(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+{
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::COLUMN)
+    {
+        const auto & column_node = node->as<ColumnNode &>();
+        const auto & column_name = column_node.getColumnName();
+        auto column_source = column_node.getColumnSourceOrNull();
+        if (!column_source)
+            return "";
+
+        const auto * table_expression_data = planner_context.getTableExpressionDataOrNull(column_source);
+        if (!table_expression_data)
+            return "";
+
+        if (column_node.hasExpression() && column_source->getNodeType() == QueryTreeNodeType::TABLE)
+        {
+            if (column_node.getExpression()->getNodeType() == QueryTreeNodeType::COLUMN)
+                return column_node.getExpression()->as<ColumnNode &>().getColumnName();
+            else
+                return "";
+        }
+
+        return column_name;
+    }
+    return "";
+}
+
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
 {
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal, constant_type);

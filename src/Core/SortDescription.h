@@ -52,6 +52,9 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
+    /// If not empty, specifies the name of the column in storage with aliases resolved.
+    std::string column_name_in_storage;
+
     SortColumnDescription() = default;
 
     explicit SortColumnDescription(

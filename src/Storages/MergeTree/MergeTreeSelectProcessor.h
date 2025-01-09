@@ -120,6 +120,8 @@ public:
 
     void onFinish() const;
 
+    PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
+
 private:
     static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
 

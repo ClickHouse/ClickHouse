@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -29,6 +30,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
@@ -2453,6 +2455,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return std::make_unique<ReadFromMergeTree>(*this);
 }
 
+FunctionOverloadResolverPtr createInternalFunctionTopN(GlobalThresholdColumnsPtr global_threshold_columns_ptr);
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto & result = getAnalysisResult();
@@ -2531,6 +2535,72 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
     std::optional<ActionsDAG> result_projection;
+
+    if (top_n_column)
+    {
+        auto global_threshold_columns_ptr = std::make_shared<GlobalThresholdColumns>();
+        FunctionOverloadResolverPtr func_builder_top_n = createInternalFunctionTopN(global_threshold_columns_ptr);
+        if (prewhere_info)
+        {
+            const auto & node = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
+
+            const auto * col = [&]()
+            {
+                for (const auto & input : prewhere_info->prewhere_actions.getInputs())
+                {
+                    if (input->result_name == top_n_column->name)
+                        return input;
+                }
+
+                const auto & in = prewhere_info->prewhere_actions.addInput(top_n_column->name, top_n_column->type);
+                prewhere_info->prewhere_actions.addOrReplaceInOutputs(in);
+                return &in;
+            }();
+
+            auto func_builder_and = FunctionFactory::instance().get("and", context);
+
+            /// TODO(amos): Currently, the topN filter is always applied as the
+            /// first step, which might not be optimal. Need some heuristic or
+            /// cost-based optimization approaches to reorder prewhere steps
+            /// based on factors such as column size, filter selectivity, and
+            /// execution cost.
+            const auto & prewhere_node = prewhere_info->prewhere_actions.addFunction(
+                func_builder_and, {&prewhere_info->prewhere_actions.addFunction(func_builder_top_n, {col}, {}), &node}, {});
+
+            prewhere_info->prewhere_column_name = prewhere_node.result_name;
+            if (prewhere_info->remove_prewhere_column)
+            {
+                for (auto & output_node : prewhere_info->prewhere_actions.getOutputs())
+                {
+                    if (output_node->result_name == node.result_name)
+                    {
+                        output_node = &prewhere_node;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                prewhere_info->remove_prewhere_column = true;
+                prewhere_info->prewhere_actions.addOrReplaceInOutputs(prewhere_node);
+            }
+
+            prewhere_info->need_filter = true;
+        }
+        else
+        {
+            prewhere_info = std::make_shared<PrewhereInfo>();
+            prewhere_info->prewhere_actions = ActionsDAG({*top_n_column});
+            const auto & prewhere_node = prewhere_info->prewhere_actions.addFunction(
+                func_builder_top_n, {prewhere_info->prewhere_actions.getInputs().front()}, {});
+            prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
+            prewhere_info->prewhere_column_name = prewhere_node.result_name;
+            prewhere_info->remove_prewhere_column = true;
+            prewhere_info->need_filter = true;
+        }
+
+        prewhere_info->global_threshold_columns_ptr = std::move(global_threshold_columns_ptr);
+    }
 
     if (lazily_read_info)
     {

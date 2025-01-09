@@ -262,6 +262,7 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    void setTopNColumn(NameAndTypePair col) { top_n_column = std::move(col); }
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
@@ -304,6 +305,7 @@ private:
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
 
+    std::optional<NameAndTypePair> top_n_column;
     std::optional<VectorSearchParameters> vector_search_parameters;
 
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;

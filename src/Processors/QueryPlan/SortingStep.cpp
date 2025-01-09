@@ -14,6 +14,8 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
@@ -404,14 +406,30 @@ void SortingStep::fullSortStreams(
 {
     if (!skip_partial_sort || limit_)
     {
+        std::list<std::shared_ptr<PartialSortingTransform>> sorting_transforms;
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_);
+                sorting_transforms.emplace_back(std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_));
+                return sorting_transforms.back();
             });
+
+        /// Attach the current TopN threshold state from MergeTreeSource to
+        /// PartialSortingTransform. This allows the threshold to be dynamically
+        /// updated during runtime, enabling efficient filtering.
+        for (const auto & sorting : sorting_transforms)
+        {
+            IProcessor * input_processor = sorting.get();
+            while (input_processor->getInputs().size() == 1 && input_processor->getInputs().front().isConnected())
+                input_processor = &input_processor->getInputs().front().getOutputPort().getProcessor();
+
+            if (auto * merge_tree_source = typeid_cast<MergeTreeSource *>(input_processor);
+                merge_tree_source && merge_tree_source->getPrewhereInfo())
+                sorting->setGlobalThresholdColumnsPtr(merge_tree_source->getPrewhereInfo()->global_threshold_columns_ptr);
+        }
 
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;

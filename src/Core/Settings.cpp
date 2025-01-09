@@ -5555,6 +5555,21 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_push_down_order_by_limit, true, R"(
+Toggles a query-plan-level optimization which tries to push down order by limit clause as predicate.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(UInt64, max_limit_to_push_down_topn_predicate, 100, R"(
+Maximum LIMIT threshold for pushing down TopN predicates.
+
+When executing a query with `ORDER BY … LIMIT N`, ClickHouse will attempt to push down the TopN predicate to the storage engine to reduce network traffic and aggregation overhead. This parameter defines the maximum `LIMIT` value for which the pushdown will be applied.
+Setting this threshold too high may cause the storage engine to scan or maintain excessive intermediate state, leading to increased memory usage or degraded performance. Keeping the threshold lower ensures that pushdown remains within a safe and efficient range.
+)", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
