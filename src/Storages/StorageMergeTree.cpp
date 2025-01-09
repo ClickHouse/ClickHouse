@@ -1378,11 +1378,11 @@ UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const
 {
     auto parts_lock = lockParts();
 
-    auto begin = data_parts_by_info.find(left.part_info);
+    auto begin = data_parts_by_info.find(left.info);
     if (begin == data_parts_by_info.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find left part, left part {}. It's a bug", left.name);
 
-    auto end = data_parts_by_info.find(right.part_info);
+    auto end = data_parts_by_info.find(right.info);
     if (end == data_parts_by_info.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right.name);
 

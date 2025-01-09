@@ -45,7 +45,7 @@ int main(int, char **)
         parts.push_back(PartProperties
         {
             .name = name,
-            .part_info = part_info,
+            .info = part_info,
             .size = size,
             .age = age,
         });
@@ -82,7 +82,7 @@ int main(int, char **)
                 next_range.push_back(PartProperties
                 {
                     .name = part.name,
-                    .part_info = part.part_info,
+                    .info = part.info,
                     .size = part.size,
                     .age = part.age + 1,
                 });
@@ -107,14 +107,14 @@ int main(int, char **)
                 std::cout << "\033[1;31m";
 
                 in_range = true;
-                min_block = part.part_info.min_block;
+                min_block = part.info.min_block;
             }
 
             std::cout << part.name << "___" << (part.size / 1024);
             if (in_range)
             {
                 sum_merged_size += part.size;
-                max_level = std::max(part.part_info.level, max_level);
+                max_level = std::max(part.info.level, max_level);
             }
             else
             {
@@ -124,13 +124,13 @@ int main(int, char **)
             if (part.name == selected_parts.back().name)
             {
                 in_range = false;
-                max_block = part.part_info.max_block;
+                max_block = part.info.max_block;
 
                 auto part_info = MergeTreePartInfo::fromPartName(fmt::format("all_{}_{}_{}", min_block, max_block, max_level + 1), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
                 next_range.push_back(PartProperties
                 {
                     .name = part_info.getPartNameV1(),
-                    .part_info = part_info,
+                    .info = part_info,
                     .size = sum_merged_size,
                     .age = 0,
                 });
@@ -157,7 +157,7 @@ int main(int, char **)
                 next_range.push_back(PartProperties
                 {
                     .name = part.name,
-                    .part_info = part.part_info,
+                    .info = part.info,
                     .size = part.size,
                     .age = static_cast<time_t>(part.age + time_to_merge),
                 });

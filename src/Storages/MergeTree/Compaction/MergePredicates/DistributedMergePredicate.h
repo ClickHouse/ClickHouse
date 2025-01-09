@@ -64,18 +64,18 @@ public:
         /// and then check that these two parts have the same mutation version according to queue.mutations_by_partition.
 
         chassert(left.name != right.name);
-        chassert(checkCanMergePartsPreconditions(left.name, left.part_info) && checkCanMergePartsPreconditions(right.name, right.part_info));
+        chassert(checkCanMergePartsPreconditions(left.name, left.info) && checkCanMergePartsPreconditions(right.name, right.info));
 
-        if (left.part_info.partition_id != right.part_info.partition_id)
+        if (left.info.partition_id != right.info.partition_id)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
-        int64_t left_max_block = left.part_info.max_block;
-        int64_t right_min_block = right.part_info.min_block;
+        int64_t left_max_block = left.info.max_block;
+        int64_t right_min_block = right.info.min_block;
         chassert(left_max_block < right_min_block);
 
         if (committing_blocks_ptr && left_max_block + 1 < right_min_block)
         {
-            auto committing_blocks_ptrin_partition = committing_blocks_ptr->find(left.part_info.partition_id);
+            auto committing_blocks_ptrin_partition = committing_blocks_ptr->find(left.info.partition_id);
             if (committing_blocks_ptrin_partition != committing_blocks_ptr->end())
             {
                 const std::set<Int64> & block_numbers = committing_blocks_ptrin_partition->second;
@@ -90,7 +90,7 @@ public:
         {
             /// Fake part which will appear as merge result
             MergeTreePartInfo gap_part_info(
-                left.part_info.partition_id, left_max_block + 1, right_min_block - 1,
+                left.info.partition_id, left_max_block + 1, right_min_block - 1,
                 MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
             /// We don't select parts if any smaller part covered by our merge must exist after
@@ -105,10 +105,10 @@ public:
         if (mutations_state_ptr)
         {
             Int64 left_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.part_info.partition_id, left.part_info.getDataVersion());
+                left.info.partition_id, left.info.getDataVersion());
 
             Int64 right_mutation_version = mutations_state_ptr->getCurrentMutationVersion(
-                left.part_info.partition_id, right.part_info.getDataVersion());
+                left.info.partition_id, right.info.getDataVersion());
 
             if (left_mutation_version != right_mutation_version)
                 return std::unexpected(PreformattedMessage::create(

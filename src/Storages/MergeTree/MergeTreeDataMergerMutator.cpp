@@ -80,10 +80,10 @@ PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr &
             }
 
             /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
-            if (current_part.part_info.contains(prev_part.part_info))
+            if (current_part.info.contains(prev_part.info))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", current_part.name, prev_part.name);
 
-            if (!current_part.part_info.isDisjoint(prev_part.part_info))
+            if (!current_part.info.isDisjoint(prev_part.info))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", current_part.name, prev_part.name);
 
             mergeable_range.push_back(std::move(current_part));
@@ -141,7 +141,7 @@ std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && range
     for (auto && range : ranges)
     {
         assert(!range.empty());
-        ranges_by_partitions[range.front().part_info.partition_id].push_back(std::move(range));
+        ranges_by_partitions[range.front().info.partition_id].push_back(std::move(range));
     }
 
     return ranges_by_partitions;
@@ -161,7 +161,7 @@ std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions
     for (const auto & range : ranges)
     {
         assert(!range.empty());
-        PartitionStatistics & partition_stats = stats[range.front().part_info.partition_id];
+        PartitionStatistics & partition_stats = stats[range.front().info.partition_id];
 
         partition_stats.part_count += range.size();
 
@@ -310,7 +310,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
 void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time)
 {
     assert(!merge_choice.range.empty());
-    const String & partition_id = merge_choice.range.front().part_info.partition_id;
+    const String & partition_id = merge_choice.range.front().info.partition_id;
 
     switch (merge_choice.merge_type)
     {
@@ -361,7 +361,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             ranges_in_partition, metadata_snapshot, settings, next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges, current_time, log);
 
-        const String & partition_id = ranges_in_partition.front().front().part_info.partition_id;
+        const String & partition_id = ranges_in_partition.front().front().info.partition_id;
 
         if (merge_choice.has_value())
             partitions_hint.insert(partition_id);
@@ -490,7 +490,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         const PartProperties & part = parts.front();
 
         /// FIXME? Probably we should check expired ttls here, not only calculated.
-        if (part.part_info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
+        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
         {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,

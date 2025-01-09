@@ -14,7 +14,7 @@ namespace DB
 struct PartProperties
 {
     const std::string name;
-    const MergeTreePartInfo part_info;
+    const MergeTreePartInfo info;
     const std::set<std::string> projection_names = {};
 
     const bool all_ttl_calculated_if_any = false;
