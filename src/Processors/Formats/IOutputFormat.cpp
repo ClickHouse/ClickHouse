@@ -1,5 +1,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferDecorator.h>
 
 
 namespace DB
@@ -117,6 +118,10 @@ void IOutputFormat::work()
 void IOutputFormat::flushImpl()
 {
     out.next();
+
+    /// If output is a compressed buffer, we will flush the compressed chunk as well.
+    if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&out))
+        out_with_nested->getNestedBuffer()->next();
 }
 
 void IOutputFormat::flush()
@@ -180,6 +185,7 @@ void IOutputFormat::onProgress(const Progress & progress)
             if (lock)
             {
                 writeProgress(statistics.progress);
+                flushImpl();
                 prev_progress_write_ns = elapsed_ns;
                 has_progress_update_to_write = false;
             }

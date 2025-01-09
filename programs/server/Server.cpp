@@ -30,7 +30,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -131,6 +131,9 @@
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
+#    include <Server/SSH/SSHPtyHandlerFactory.h>
+#    include <Common/LibSSHInitializer.h>
+#    include <Common/LibSSHLogger.h>
 #endif
 
 #if USE_GRPC
@@ -872,6 +875,11 @@ try
 {
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
+#endif
+
+#if USE_SSL
+    ::ssh::LibSSHInitializer::instance();
+    ::ssh::libsshLogger::initialize();
 #endif
 
     Stopwatch startup_watch;
@@ -1816,17 +1824,11 @@ try
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] > 0 && new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = new_server_settings[ServerSetting::concurrent_threads_soft_limit_num];
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] > 0)
-            {
-                auto value = new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] * getNumberOfCPUCoresToUse();
-                if (value > 0 && value < concurrent_threads_soft_limit)
-                    concurrent_threads_soft_limit = value;
-            }
-            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
+            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
@@ -2858,6 +2860,37 @@ void Server::createServers(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
     #endif
             });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::TCP_SSH))
+        {
+            port_name = "tcp_ssh_port";
+            createServer(
+                config,
+                listen_host,
+                port_name,
+                listen_try,
+                start_servers,
+                servers,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSH && defined(OS_LINUX)
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "SSH PTY: " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new SSHPtyHandlerFactory(*this, config),
+                            server_pool,
+                            socket,
+                            new Poco::Net::TCPServerParams));
+#else
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
+#endif
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::MYSQL))
