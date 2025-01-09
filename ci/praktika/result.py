@@ -341,7 +341,7 @@ class Result(MetaClasses.Serializable):
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
                     if with_info:
                         with open(log_file, "r") as f:
-                            error_infos.append(f.read())
+                            error_infos.append(f.read().strip())
                     res = exit_code == 0
 
                 # If fail_fast is enabled, stop on first failure

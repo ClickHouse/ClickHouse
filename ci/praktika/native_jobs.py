@@ -220,11 +220,12 @@ def _config_workflow(workflow: Workflow.Config, job_name):
     info_lines = []
     job_status = Result.Status.SUCCESS
 
+    env = _Environment.get()
     workflow_config = RunConfig(
         name=workflow.name,
         digest_jobs={},
         digest_dockers={},
-        sha=_Environment.get().SHA,
+        sha=env.SHA,
         cache_success=[],
         cache_success_base64=[],
         cache_artifacts={},
@@ -232,11 +233,20 @@ def _config_workflow(workflow: Workflow.Config, job_name):
     ).dump()
 
     if Settings.PIPELINE_PRECHECKS:
-        results.append(
-            Result.from_commands_run(
-                name="CI Pre Check", command=Settings.PIPELINE_PRECHECKS
+        sw_ = Utils.Stopwatch()
+        res_ = []
+        for pre_check in Settings.PIPELINE_PRECHECKS:
+            res_.append(
+                Result.from_commands_run(
+                    name=str(pre_check), command=pre_check, with_info=True
+                )
             )
+
+        results.append(
+            Result.create_from(name="Pre Check", results=res_, stopwatch=sw_)
         )
+        if not results[-1].is_ok():
+            job_status = Result.Status.ERROR
 
     # checks:
     result_, info = _check_yaml_up_to_date()

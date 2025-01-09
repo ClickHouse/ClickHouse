@@ -29,6 +29,7 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_TYPE: str
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
+    PR_BODY: str
     LOCAL_RUN: bool = False
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
@@ -87,6 +88,7 @@ class _Environment(MetaClasses.Serializable):
         RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
+        PR_BODY = ""
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -97,6 +99,7 @@ class _Environment(MetaClasses.Serializable):
                 SHA = github_event["pull_request"]["head"]["sha"]
                 CHANGE_URL = github_event["pull_request"]["html_url"]
                 COMMIT_URL = CHANGE_URL + f"/commits/{SHA}"
+                PR_BODY = github_event["pull_request"]["body"]
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -158,6 +161,7 @@ class _Environment(MetaClasses.Serializable):
             BASE_BRANCH=BASE_BRANCH,
             INSTANCE_TYPE=INSTANCE_TYPE,
             INSTANCE_ID=INSTANCE_ID,
+            PR_BODY=PR_BODY,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
         )

@@ -1,7 +1,7 @@
 import dataclasses
 import importlib.util
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 
 @dataclasses.dataclass
@@ -21,7 +21,7 @@ class _Settings:
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
-    PIPELINE_PRECHECKS: Optional[List[str]] = None
+    PIPELINE_PRECHECKS: Optional[List[Union[str, callable]]] = None
 
     ######################################
     #    Runtime Settings                #

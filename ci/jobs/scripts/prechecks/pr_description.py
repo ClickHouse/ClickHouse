@@ -1,6 +1,8 @@
 import re
 import sys
 
+from praktika.info import Info
+
 LABEL_CATEGORIES = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
@@ -118,9 +120,9 @@ def is_ok(pr_body: str):
             description_error = f"Changelog entry required for category '{category}'"
 
     print(description_error)
-    return True
+    return not description_error
 
 
 if __name__ == "__main__":
-    if not is_ok(""):
+    if not is_ok(Info().pr_body):
         sys.exit(1)
