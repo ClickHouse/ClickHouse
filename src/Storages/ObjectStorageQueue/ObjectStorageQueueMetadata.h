@@ -74,6 +74,7 @@ public:
         LoggerPtr log);
 
     ObjectStorageType getType() const { return storage_type; }
+    std::string getPath() const { return zookeeper_path; }
 
     void registerIfNot(const StorageID & storage_id);
     size_t unregister(const StorageID & storage_id);

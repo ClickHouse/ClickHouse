@@ -6,6 +6,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <numeric>
 
 namespace DB
 {
@@ -587,6 +588,66 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
     }
 
     throw zkutil::KeeperException(code);
+}
+
+std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
+    const std::vector<std::string> & paths,
+    const std::filesystem::path & zk_path_,
+    size_t /* buckets_num */,
+    LoggerPtr log_)
+{
+    /// TODO: Support buckets
+
+    auto zk_client = getZooKeeper();
+    auto processed_node_path = getProcessedPathWithoutBucket(zk_path_);
+
+    NodeMetadata max_processed_file;
+    Coordination::Stat stat;
+    bool has_max_processed_file = getMaxProcessedFile(max_processed_file, &stat, processed_node_path, zk_client);
+
+    std::vector<std::string> failed_paths;
+    std::vector<size_t> check_paths_indexes;
+    for (size_t i = 0; i < paths.size(); ++i)
+    {
+        const auto & path = paths[i];
+        if (has_max_processed_file && path <= max_processed_file.file_path)
+        {
+            LOG_TEST(log_, "Skipping file {}: Processed", path);
+            continue;
+        }
+        failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
+        check_paths_indexes.push_back(i);
+    }
+
+    std::vector<size_t> result;
+    if (failed_paths.empty())
+    {
+        result.resize(paths.size());
+        std::iota(result.begin(), result.end(), 0);
+        return result;
+    }
+
+    auto check_code = [&](auto code, const std::string & path)
+    {
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    auto responses = zk_client->tryGet(failed_paths);
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        check_code(responses[i].error, paths[check_paths_indexes[i]]);
+        if (responses[i].error == Coordination::Error::ZNONODE)
+        {
+            result.push_back(check_paths_indexes[i]);
+        }
+        else
+        {
+            LOG_TEST(log_, "Skipping file {}: Failed", check_paths_indexes[i]);
+        }
+
+    }
+    return result;
 }
 
 }
