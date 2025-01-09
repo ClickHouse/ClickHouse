@@ -7,12 +7,9 @@ namespace DB {
     void HTTP2ServerConnection::run() {
         HTTP2ServerSession session(this, socket());
         
-        while (!stopped && !session.sessionEnd()) { // tcp_server.isOpen() && session.connected()
-            /// TODO: Add try and mutex
-
+        while (!stopped && !session.sessionEnd()) { 
             int rv = session.sessionReceive();
             if (rv != 0) {
-                /// TODO: Process error
                 return;
             }
         }

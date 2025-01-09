@@ -112,9 +112,6 @@ namespace DB {
 
         size_t r = stream->response.out.read(buf, length);
 
-        // if (r == -1) {
-        //     return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-        // }
         if (r == 0) {
             *data_flags |= NGHTTP2_DATA_FLAG_EOF;
         }
@@ -172,15 +169,13 @@ namespace DB {
     HTTP2ServerSession::HTTP2ServerSession(
             HTTP2ServerConnection* connection_,
             const Poco::Net::StreamSocket & socket_
-            // HTTPServerParams::Ptr pParams,
             )
-        : connection(connection_) // Poco::Net::HTTPServerSession(socket, pParams),
+        : connection(connection_)
         , socket(socket_)
         , input_buffer(100000)
         {   
             int rv = initHTTP2Session();
             if (rv != 0) {
-                /// TODO: make exception
                 throw std::runtime_error("Session init error");
             }
         }

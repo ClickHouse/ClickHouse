@@ -29,13 +29,7 @@ protected:
     static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
 
 private:
-    // HTTPContextPtr context;
-    // TCPServer & tcp_server;
-    // Poco::Net::HTTPServerParams::Ptr params;
     HTTP2RequestHandlerFactoryPtr factory;
-    // String forwarded_for;
-    // ProfileEvents::Event read_event;
-    // ProfileEvents::Event write_event;
     bool stopped;
     std::mutex mutex;  // guards the |factory| with assumption that creating handlers is not thread-safe.
 };

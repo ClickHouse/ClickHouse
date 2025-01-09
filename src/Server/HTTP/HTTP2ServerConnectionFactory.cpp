@@ -5,11 +5,7 @@
 namespace DB
 {
     HTTP2ServerConnectionFactory::HTTP2ServerConnectionFactory(
-        // HTTPContextPtr context_,
-        // Poco::Net::HTTPServerParams::Ptr params_,
         HTTP2RequestHandlerFactoryPtr factory_
-        // const ProfileEvents::Event & read_event_,
-        // const ProfileEvents::Event & write_event_
         )
     : factory(factory_)
     {
