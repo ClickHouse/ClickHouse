@@ -47,8 +47,8 @@ public:
             if (!disk_to.getDisk()->existsDirectory(target_location))
             {
                 LOG_INFO(
-                    &Poco::Logger::get("DisksClient"),
-                    "Copying file from disk {}, file path {} to disk {}, file path {}",
+                    &Poco::Logger::root(),
+                    "Copying file from disk '{}', file path '{}' to disk '{}', file path '{}'",
                     disk_from.getDisk()->getName(),
                     path_from,
                     disk_to.getDisk()->getName(),
@@ -64,14 +64,14 @@ public:
             else
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "cannot overwrite directory {} with non-directory {}", target_location, path_from);
+                    ErrorCodes::BAD_ARGUMENTS, "cannot overwrite directory '{}' with non-directory '{}'", target_location, path_from);
             }
         }
         else if (disk_from.getDisk()->existsDirectory(path_from))
         {
             if (!recursive)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--recursive not specified; omitting directory {}", path_from);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--recursive not specified; omitting directory '{}'", path_from);
             }
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
 
@@ -84,8 +84,8 @@ public:
                 disk_to.getDisk()->createDirectory(target_location);
             }
             LOG_INFO(
-                &Poco::Logger::get("DisksClient"),
-                "Copying directory content from disk {}, directory path {} to disk {}, directory path {}",
+                &Poco::Logger::root(),
+                "Copying directory content from disk '{}', directory path '{}' to disk '{}', directory path '{}'",
                 disk_from.getDisk()->getName(),
                 path_from,
                 disk_to.getDisk()->getName(),

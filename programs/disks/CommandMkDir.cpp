@@ -27,9 +27,17 @@ public:
 
         LOG_INFO(&Poco::Logger::get("DisksClient"), "Creating directory {} on disk {}", path, disk.getDisk()->getName());
         if (recursive)
+        {
+            LOG_INFO(
+                &Poco::Logger::get("DisksClient"), "Creating directory '{}' on disk '{}' recursively", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectories(path);
+        }
         else
+        {
+            LOG_INFO(&Poco::Logger::get("DisksClient"), "Creating directory '{}' on disk '{}'", path, disk.getDisk()->getName());
+
             disk.getDisk()->createDirectory(path);
+        }
     }
 };
 

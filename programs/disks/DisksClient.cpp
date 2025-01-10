@@ -266,8 +266,12 @@ void DisksClient::switchToDisk(const String & disk_, const std::optional<String>
         if (path_.has_value())
         {
             disks_with_paths.at(disk_).setPath(path_.value());
+            LOG_INFO(&Poco::Logger::get("DisksClient"), "Switching to disk '{}' with path '{}'", disk_, path_.value());
         }
-        LOG_INFO(&Poco::Logger::get("DisksClient"), "Switching to disk {} with path {}", disk_, path_.value());
+        else
+        {
+            LOG_INFO(&Poco::Logger::get("DisksClient"), "Switching to disk '{}' with default path", disk_);
+        }
         current_disk = disk_;
     }
     else
@@ -348,9 +352,10 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
     }
     auto disk_with_path = DiskWithPath{disk, path};
 
-    LOG_INFO(&Poco::Logger::get("DisksClient"), "Adding disk {} with path {}", disk_name, path.value_or(""));
+    LOG_INFO(&Poco::Logger::get("DisksClient"), "Adding disk '{}' with path '{}'", disk_name, path.value_or(""));
 
     // This block of code should not throw exceptions to preserve the program's invariants. We hope that no exceptions occur here.
+    try
     {
         created_disks.emplace(disk_name, disk);
         postponed_disks.erase(disk_name);
@@ -359,7 +364,7 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
     catch (...)
     {
         LOG_FATAL(
-            &Poco::Logger::get("DisksClient"), "Disk {} was not created, which leaded to broken invariants in the program", disk_name);
+            &Poco::Logger::get("DisksClient"), "Disk '{}' was not created, which leaded to broken invariants in the program", disk_name);
         std::terminate();
     }
 }
