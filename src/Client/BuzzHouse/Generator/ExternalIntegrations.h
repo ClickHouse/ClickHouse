@@ -56,7 +56,10 @@ public:
 
     virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const std::string &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, uint32_t, bool, std::vector<ColumnPathChain> &) { return false; }
+    virtual bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, std::vector<ColumnPathChain> &)
+    {
+        return false;
+    }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -76,13 +79,23 @@ public:
 
     virtual void columnTypeAsString(RandomGenerator &, SQLType *, std::string &) const { }
 
-    bool
-    performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<ColumnPathChain> & entries) override
+    bool performIntegration(
+        RandomGenerator & rg,
+        std::shared_ptr<SQLDatabase> db,
+        const uint32_t tname,
+        const bool can_shuffle,
+        std::vector<ColumnPathChain> & entries) override
     {
         const std::string str_tname = getTableName(tname);
 
         buf.resize(0);
         buf += "DROP TABLE IF EXISTS ";
+        if (db)
+        {
+            buf += "d";
+            buf += std::to_string(db->dname);
+            buf += ".";
+        }
         buf += str_tname;
         buf += ";";
 
@@ -92,6 +105,12 @@ public:
 
             buf.resize(0);
             buf += "CREATE TABLE ";
+            if (db)
+            {
+                buf += "d";
+                buf += std::to_string(db->dname);
+                buf += ".";
+            }
             buf += str_tname;
             buf += "(";
 
@@ -127,6 +146,13 @@ public:
         assert(t.hasDatabasePeer());
         buf.resize(0);
         buf += "DROP TABLE IF EXISTS ";
+
+        if (t.hasClickHousePeer() && t.db)
+        {
+            buf += "d";
+            buf += std::to_string(t.db->dname);
+            buf += ".";
+        }
         buf += getTableName(t.tname);
         buf += ";";
         return performQuery(buf);
@@ -147,21 +173,43 @@ public:
         //create table on other server
         if (res && is_clickhouse_integration)
         {
-            CreateTable newt;
-            newt.CopyFrom(*ct);
+            if (t.db)
+            {
+                CreateDatabase newd;
+                DatabaseEngine * deng = newd.mutable_dengine();
 
-            assert(newt.has_est() && !newt.has_table_as());
-            ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
-            est.mutable_database()->set_database("test");
+                newd.set_if_not_exists(true);
+                deng->set_engine(t.db->deng);
+                if (t.db->isReplicatedDatabase())
+                {
+                    deng->set_zoo_path(t.db->zoo_path_counter);
+                }
+                newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
 
-            buf.resize(0);
-            CreateTableToString(buf, newt);
-            buf += ";";
-            res &= performQuery(buf);
+                buf.resize(0);
+                CreateDatabaseToString(buf, newd);
+                buf += ";";
+                res &= performQuery(buf);
+            }
+            if (res)
+            {
+                CreateTable newt;
+                newt.CopyFrom(*ct);
+
+                assert(newt.has_est() && !newt.has_table_as());
+                ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
+                est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+                newt.set_create_opt(CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace);
+
+                buf.resize(0);
+                CreateTableToString(buf, newt);
+                buf += ";";
+                res &= performQuery(buf);
+            }
         }
         else if (res)
         {
-            res &= performIntegration(rg, t.tname, false, entries);
+            res &= performIntegration(rg, is_clickhouse_integration ? t.db : nullptr, t.tname, false, entries);
         }
         return res;
     }
@@ -174,6 +222,12 @@ public:
         buf.resize(0);
         truncateStatement(buf);
         buf += " ";
+        if (t.hasClickHousePeer() && t.db)
+        {
+            buf += "d";
+            buf += std::to_string(t.db->dname);
+            buf += ".";
+        }
         buf += getTableName(t.tname);
         buf += ";";
         (void)performQuery(buf);
@@ -249,7 +303,18 @@ public:
         }
     }
 
-    std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+    std::string getTableName(const uint32_t tname) override
+    {
+        std::string res;
+
+        if (!is_clickhouse)
+        {
+            res += "test.";
+        }
+        res += "t";
+        res += std::to_string(tname);
+        return res;
+    }
 
     void truncateStatement(std::string & outbuf) override
     {
@@ -267,6 +332,12 @@ public:
         {
             buf.resize(0);
             buf += "OPTIMIZE TABLE ";
+            if (t.db)
+            {
+                buf += "d";
+                buf += std::to_string(t.db->dname);
+                buf += ".";
+            }
             buf += getTableName(t.tname);
             buf += " FINAL;";
             (void)performQuery(buf);
@@ -573,7 +644,11 @@ public:
         te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
     }
 
-    bool performIntegration(RandomGenerator &, const uint32_t, const bool, std::vector<ColumnPathChain> &) override { return true; }
+    bool
+    performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, std::vector<ColumnPathChain> &) override
+    {
+        return true;
+    }
 
     ~RedisIntegration() override = default;
 };
@@ -665,8 +740,12 @@ public:
         te->add_params()->set_svalue(sc.password);
     }
 
-    bool
-    performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<ColumnPathChain> & entries) override
+    bool performIntegration(
+        RandomGenerator & rg,
+        std::shared_ptr<SQLDatabase>,
+        const uint32_t tname,
+        const bool can_shuffle,
+        std::vector<ColumnPathChain> & entries) override
     {
         try
         {
@@ -743,7 +822,8 @@ public:
         te->add_params()->set_svalue(sc.password);
     }
 
-    bool performIntegration(RandomGenerator &, const uint32_t tname, const bool, std::vector<ColumnPathChain> &) override
+    bool performIntegration(
+        RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, std::vector<ColumnPathChain> &) override
     {
         return sendRequest(sc.database + "/file" + std::to_string(tname));
     }
@@ -838,27 +918,27 @@ public:
         switch (dc)
         {
             case IntegrationCall::MySQL:
-                next_calls_succeeded.push_back(mysql->performIntegration(rg, b.tname, true, entries));
+                next_calls_succeeded.push_back(mysql->performIntegration(rg, b.db, b.tname, true, entries));
                 mysql->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::PostgreSQL:
-                next_calls_succeeded.push_back(postresql->performIntegration(rg, b.tname, true, entries));
+                next_calls_succeeded.push_back(postresql->performIntegration(rg, b.db, b.tname, true, entries));
                 postresql->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::SQLite:
-                next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.tname, true, entries));
+                next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.db, b.tname, true, entries));
                 sqlite->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::MongoDB:
-                next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.tname, true, entries));
+                next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.db, b.tname, true, entries));
                 mongodb->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::Redis:
-                next_calls_succeeded.push_back(redis->performIntegration(rg, b.tname, true, entries));
+                next_calls_succeeded.push_back(redis->performIntegration(rg, b.db, b.tname, true, entries));
                 redis->setEngineDetails(rg, b, tname, te);
                 break;
             case IntegrationCall::MinIO:
-                next_calls_succeeded.push_back(minio->performIntegration(rg, b.tname, true, entries));
+                next_calls_succeeded.push_back(minio->performIntegration(rg, b.db, b.tname, true, entries));
                 minio->setEngineDetails(rg, b, tname, te);
                 break;
         }

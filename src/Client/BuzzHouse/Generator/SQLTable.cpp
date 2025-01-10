@@ -1430,7 +1430,9 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         }
         tname = next.tname = this->table_counter++;
     }
-    ct->set_replace(replace);
+    ct->set_create_opt(
+        replace ? CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace
+                : CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create);
     if (next.db)
     {
         est->mutable_database()->set_database("d" + std::to_string(next.db->dname));

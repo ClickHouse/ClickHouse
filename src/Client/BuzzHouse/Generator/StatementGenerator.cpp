@@ -89,9 +89,10 @@ int StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateD
 
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (next.deng == DatabaseEngineValues::DReplicated)
+    if (next.isReplicatedDatabase())
     {
-        deng->set_zoo_path(this->zoo_path_counter++);
+        next.zoo_path_counter = this->zoo_path_counter++;
+        deng->set_zoo_path(next.zoo_path_counter);
     }
     next.dname = dname;
     cd->mutable_database()->set_database("d" + std::to_string(dname));
@@ -2963,7 +2964,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
         if (sq.has_inner_query() && success)
         {
-            if (query.create_table().replace())
+            if (query.create_table().create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace)
             {
                 dropTable(false, true, tname);
             }

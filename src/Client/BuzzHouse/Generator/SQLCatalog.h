@@ -102,6 +102,7 @@ public:
     DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
+    uint32_t zoo_path_counter;
 
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 };

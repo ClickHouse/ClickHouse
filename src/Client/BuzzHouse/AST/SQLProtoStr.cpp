@@ -2342,6 +2342,10 @@ CONV_FN(DatabaseEngine, deng)
 CONV_FN(CreateDatabase, create_database)
 {
     ret += "CREATE DATABASE ";
+    if (create_database.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
     DatabaseToString(ret, create_database.database());
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
@@ -2753,9 +2757,20 @@ CONV_FN(CreateTableAs, create_table)
 
 CONV_FN(CreateTable, create_table)
 {
-    ret += create_table.replace() ? "REPLACE" : "CREATE";
+    switch (create_table.create_opt())
+    {
+        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create:
+            ret += "CREATE";
+            break;
+        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace:
+            ret += "REPLACE";
+            break;
+        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace:
+            ret += "CREATE OR REPLACE";
+            break;
+    }
     ret += " ";
-    if (!create_table.replace() && create_table.is_temp())
+    if (create_table.create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create && create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
