@@ -19,6 +19,11 @@
 
 namespace DB
 {
+
+namespace Setting 
+{
+    extern const SettingsBool use_legacy_h3ToGeo_order;
+}
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
