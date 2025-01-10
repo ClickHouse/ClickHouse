@@ -32,7 +32,8 @@
 
     <style>
         :root {
-            --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
+            --background-color-rotate: 215;
+            --background-color: oklch(96% 0.0296 var(--background-color-rotate));
             --element-background-color: #FFF;
             --bar-color: #F8F4F0; /* Light bar in background of table cells. */
             --border-color: #EEE;
@@ -58,7 +59,8 @@
         }
 
         [data-theme="dark"] {
-            --background-color: #000;
+            --background-color-rotate: 250;
+            --background-color: oklch(10% 0.0296 var(--background-color-rotate));
             --element-background-color: #102030;
             --bar-color: #182838;
             --border-color: #111;
@@ -577,6 +579,17 @@
         }
     }
 
+    function queryToColor(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) - hash) + str.charCodeAt(i);
+            hash = hash & hash;
+        }
+
+        /// Limited range to avoid violet colors.
+        return 50 + Math.abs(hash % 200);
+    }
+
     let controller = null;
     async function postImpl(posted_request_num, query)
     {
@@ -694,6 +707,8 @@
         document.getElementById('check-mark').style.display = 'inline-block';
         document.getElementById('hourglass').style.display = 'none';
         document.getElementById('progress').style.display = 'none';
+
+        document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
         if (posted_request_num != request_num) { return; }
 
