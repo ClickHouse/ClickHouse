@@ -62,6 +62,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 input_format_parquet_metadata_cache_max_entries;
+    extern const ServerSettingsUInt64 input_format_parquet_metadata_cache_max_size;
 }
 
 namespace ErrorCodes
@@ -499,12 +500,12 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
     return hyperrectangle;
 }
 
-ParquetFileMetaDataCache::ParquetFileMetaDataCache(UInt64 max_cache_entries)
-    : CacheBase(max_cache_entries) {}
+ParquetFileMetaDataCache::ParquetFileMetaDataCache(UInt64 max_size_bytes, UInt64 max_entries)
+    : CacheBase(max_size_bytes, max_entries) {}
 
-ParquetFileMetaDataCache *  ParquetFileMetaDataCache::instance(UInt64 max_cache_entries)
+ParquetFileMetaDataCache *  ParquetFileMetaDataCache::instance(UInt64 max_size_bytes, UInt64 max_entries)
 {
-    static ParquetFileMetaDataCache instance(max_cache_entries);
+    static ParquetFileMetaDataCache instance(max_size_bytes, max_entries);
     return &instance;
 }
 
@@ -524,7 +525,7 @@ std::shared_ptr<parquet::FileMetaData> ParquetBlockInputFormat::getFileMetaData(
         return readMetadataFromFile();
     }
 
-    auto [parquet_file_metadata, loaded] = ParquetFileMetaDataCache::instance(metadata_cache.max_entries)->getOrSet(
+    auto [parquet_file_metadata, loaded] = ParquetFileMetaDataCache::instance(metadata_cache.max_size_bytes, metadata_cache.max_entries)->getOrSet(
         metadata_cache.key,
         [&]()
         {
@@ -711,6 +712,7 @@ void ParquetBlockInputFormat::setStorageRelatedUniqueKey(const ServerSettings & 
 {
     metadata_cache.key = key_;
     metadata_cache.use_cache = settings[Setting::input_format_parquet_use_metadata_cache];
+    metadata_cache.max_size_bytes = server_settings[ServerSetting::input_format_parquet_metadata_cache_max_size];
     metadata_cache.max_entries = server_settings[ServerSetting::input_format_parquet_metadata_cache_max_entries];
 }
 
