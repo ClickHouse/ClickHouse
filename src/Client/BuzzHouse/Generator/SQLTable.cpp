@@ -1585,8 +1585,11 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
     }
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next, [](const SQLColumn &) { return true; });
+    addTableRelation(rg, false, "", next);
+    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
     generateEngineDetails(rg, next, !added_pkey, te);
-    entries.clear();
+    this->entries.clear();
+    this->levels.clear();
     if (next.hasDatabasePeer())
     {
         flatTableColumnPath(0, next, [](const SQLColumn &) { return true; });
