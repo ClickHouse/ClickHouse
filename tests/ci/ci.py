@@ -1757,6 +1757,7 @@ def _upload_build_profile_data(
         except InsertException:
             logging.error("Failed to insert binary_size_file for the build, continue")
 
+
 def _add_build_to_version_history(
     pr_info: PRInfo,
     start_time: str,
@@ -1782,7 +1783,6 @@ def _add_build_to_version_history(
     }
 
     print(f"::notice ::Log Adding record to versions history: {data}")
-
 
 
 def _run_test(job_name: str, run_command: str) -> int:
