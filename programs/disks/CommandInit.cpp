@@ -6,13 +6,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
-
-
 class CommandInit final : public ICommand
 {
 public:

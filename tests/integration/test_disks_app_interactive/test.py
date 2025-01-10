@@ -94,7 +94,7 @@ class DisksClient(object):
 
     def list_disks(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
         output = self.execute_query("list-disks")
-        lines : List[str] = map(lambda x : x.strip(), output.split("\n"))
+        lines: List[str] = map(lambda x: x.strip(), output.split("\n"))
 
         initialized_disks = []
         unitialized_disks = []
@@ -109,10 +109,8 @@ class DisksClient(object):
             else:
                 if line == "":
                     continue
-                disk_ref.append( (line.split(":")[0], ":".join(line.split(":")[1:])) )
+                disk_ref.append((line.split(":")[0], ":".join(line.split(":")[1:])))
 
-
-        
         return list(sorted(initialized_disks)), list(sorted(unitialized_disks))
 
     def current_disk_with_path(self) -> Tuple[str, str]:

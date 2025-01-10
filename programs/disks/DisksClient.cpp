@@ -364,8 +364,7 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
     }
     catch (...)
     {
-        LOG_FATAL(
-            &Poco::Logger::get("DisksClient"), "Disk '{}' was not created, which leaded to broken invariants in the program", disk_name);
+        LOG_FATAL(&Poco::Logger::get("DisksClient"), "Disk '{}' was not created, which led to broken invariants in the program", disk_name);
         std::terminate();
     }
 }

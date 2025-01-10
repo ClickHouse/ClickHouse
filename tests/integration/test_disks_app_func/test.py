@@ -53,6 +53,7 @@ def write(source, disk, path):
         ]
     )
 
+
 def touch(source, disk, path):
     source.exec_in_container(
         [
@@ -175,17 +176,41 @@ def test_disks_app_func_ld(started_cluster):
         map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
     )
 
-    assert disks == ["Initialized disks:", "default:/", "Uninitialized disks:", "local", "test1", "test2", "test3", "test4"]
+    assert disks == [
+        "Initialized disks:",
+        "default:/",
+        "Uninitialized disks:",
+        "local",
+        "test1",
+        "test2",
+        "test3",
+        "test4",
+    ]
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--save-logs", "--query", "init local; list-disks"]
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--query",
+            "init local; list-disks",
+        ]
     )
 
     disks = list(
         map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
     )
 
-    assert disks == ["Initialized disks:", "default:/", "local:/", "Uninitialized disks:", "test1", "test2", "test3", "test4"]
+    assert disks == [
+        "Initialized disks:",
+        "default:/",
+        "local:/",
+        "Uninitialized disks:",
+        "test1",
+        "test2",
+        "test3",
+        "test4",
+    ]
 
 
 def test_disks_app_func_ls(started_cluster):

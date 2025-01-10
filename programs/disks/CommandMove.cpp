@@ -86,8 +86,7 @@ public:
 };
 
 CommandPtr makeCommandMove()
-{   
+{
     return std::make_shared<DB::CommandMove>();
 }
-
 }

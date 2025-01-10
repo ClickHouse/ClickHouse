@@ -32,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_YAML;
 };
 
 LineReader::Patterns DisksApp::query_extenders = {"\\"};
