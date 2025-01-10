@@ -486,7 +486,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
 
-        auto * pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
         Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
         Poco::Logger::root().setChannel(log);
     }
