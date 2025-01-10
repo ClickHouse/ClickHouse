@@ -455,6 +455,34 @@ static Int64 getFreeMemory()
     return std::numeric_limits<Int64>::max();
 }
 
+/// This function calculates how many output ports we want to keep "active"
+/// based on how much free memory is available. 
+/// It's just one example of a "desired concurrency" formula.
+static size_t calculateDesiredActiveOutputs(
+    Int64 free_memory,
+    size_t total_outputs,
+    size_t chunk_size_estimate,
+    double concurrency_factor = 1.5)
+{
+    // If free_memory is extremely large, we allow maximum concurrency
+    if (free_memory == std::numeric_limits<Int64>::max())
+        return total_outputs;
+
+    // Heuristic: if free_memory < chunk_size_estimate * concurrency_factor * total_outputs,
+    // we reduce concurrency proportionally.
+    // For example:
+    //   desired_active = (free_memory / concurrency_factor) / chunk_size_estimate
+    // with a lower bound of at least 1 (unless we truly can't proceed).
+    if (chunk_size_estimate == 0)
+        chunk_size_estimate = 64 * 1024; // fallback if we haven't measured chunk sizes
+
+    double ratio = static_cast<double>(free_memory) / (chunk_size_estimate * concurrency_factor);
+    size_t desired = (ratio > 0) ? static_cast<size_t>(std::floor(ratio)) : 0;
+    // Cap at total_outputs
+    desired = std::min(desired, total_outputs);
+    return desired;
+}
+
 IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
     LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
@@ -491,29 +519,29 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
     if (memory_is_low)
     {
         /// If we truly have zero free memory => we must disable some outputs aggressively
-        if (free_memory <= 0)
-        {
-            /// Disable any output that is not finished/disabled and does not currently have data in flight
-            for (size_t i = 0; i < output_ports.size(); ++i)
-            {
-                auto & out_info = output_ports[i];
-                if (is_output_enabled[i]
-                    && out_info.status != OutputStatus::Finished
-                    && out_info.status != OutputStatus::Disabled)
-                {
-                    /// If the port buffer is empty or can easily be dropped, disable it
-                    if (!out_info.port->hasData())
-                    {
-                        out_info.status = OutputStatus::Disabled;
-                        is_output_enabled[i] = false;
-                        LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
-                                  "Disabling output port {} due to no free memory",
-                                  i);
-                    }
-                }
-            }
-        }
-        else
+        // if (free_memory <= 0)
+        // {
+        //     /// Disable any output that is not finished/disabled and does not currently have data in flight
+        //     for (size_t i = 0; i < output_ports.size(); ++i)
+        //     {
+        //         auto & out_info = output_ports[i];
+        //         if (is_output_enabled[i]
+        //             && out_info.status != OutputStatus::Finished
+        //             && out_info.status != OutputStatus::Disabled)
+        //         {
+        //             /// If the port buffer is empty or can easily be dropped, disable it
+        //             if (!out_info.port->hasData())
+        //             {
+        //                 out_info.status = OutputStatus::Disabled;
+        //                 is_output_enabled[i] = false;
+        //                 LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
+        //                           "Disabling output port {} due to no free memory",
+        //                           i);
+        //             }
+        //         }
+        //     }
+        // }
+        // else
         {
             /// We have *some* free memory => let's reduce concurrency proportionally
             size_t total_enabled = 0;

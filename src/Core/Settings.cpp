@@ -5875,6 +5875,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(Bool, enable_memory_based_pipeline_throttling, false, R"(
+When enabled, the query pipeline will dynamically disable or re-enable output ports based on the current memory usage. This can help limit concurrency in certain parts of the pipeline to reduce the chances of hitting the memory limit. Note that memory used by aggregations, joins, and other operators outside of chunk flow may still push the query over the limit. This feature does not guarantee no MEMORY_LIMIT_EXCEEDED exceptions, but it attempts to throttle some parts of the pipeline based on in-flight chunk sizes.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
