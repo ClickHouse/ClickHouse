@@ -210,7 +210,7 @@ Same as `extractKeyValuePairs` but supports escaping.
 
 Supported escape sequences: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c &lt;= 31).
 
 This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
 input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
