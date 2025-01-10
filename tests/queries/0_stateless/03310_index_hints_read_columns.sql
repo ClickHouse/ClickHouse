@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-random-settings
+-- Tags: no-parallel, no-random-settings, no-object-storage
 
+SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_index_hint;
 
 CREATE TABLE t_index_hint (a UInt64, b UInt64)
