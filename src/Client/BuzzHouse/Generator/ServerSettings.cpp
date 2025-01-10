@@ -440,6 +440,11 @@ std::map<std::string, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
+};
+
+/// We need to split the serverSettings because in order to initialize the values for the map it
+/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
+static std::map<std::string, CHSetting> serverSettings2 = {
     {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
@@ -1019,10 +1024,16 @@ std::map<std::string, CHSetting> serverSettings = {
     {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
     {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
     //{"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
-    {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
+    {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}
+};
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
+    for (auto & setting : serverSettings2)
+    {
+        serverSettings.emplace(std::move(setting));
+    }
+
     if (!fc.timezones.empty())
     {
         settings_timezones.insert(settings_timezones.end(), fc.timezones.begin(), fc.timezones.end());
