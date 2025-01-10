@@ -23,7 +23,7 @@ public:
         const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsThrow<String>(options, "path");
 
-        LOG_INFO(, "Creating file at path: {}", disk.getRelativeFromRoot(path));
+        LOG_INFO(&Poco::Logger::root(), "Creating file at path: {}", disk.getRelativeFromRoot(path));
         disk.getDisk()->createFile(disk.getRelativeFromRoot(path));
     }
 };
