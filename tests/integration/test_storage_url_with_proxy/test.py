@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -64,7 +64,7 @@ def test_s3_with_proxy_list(cluster):
     )
 
     content_type = "application/zstd"
-    date = datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
     resource = "/root/data/ch-proxy-test/test.csv"
     get_sig_string = f"GET\n\n{content_type}\n{date}\n{resource}"
     password = "minio123"
