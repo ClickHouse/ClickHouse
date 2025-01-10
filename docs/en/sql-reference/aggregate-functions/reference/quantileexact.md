@@ -1,5 +1,4 @@
 ---
-title: quantileExact
 slug: /en/sql-reference/aggregate-functions/reference/quantileexact
 sidebar_position: 173
 ---

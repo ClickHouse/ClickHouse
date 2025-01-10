@@ -1,5 +1,4 @@
 ---
-title: quota_usage
 slug: /en/operations/system-tables/quota_usage
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

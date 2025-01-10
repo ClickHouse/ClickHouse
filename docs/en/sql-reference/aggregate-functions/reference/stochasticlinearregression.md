@@ -1,10 +1,9 @@
 ---
-title: stochasticLinearRegression
 slug: /en/sql-reference/aggregate-functions/reference/stochasticlinearregression
 sidebar_position: 192
 ---
 
-# stochasticLinearRegression
+# stochasticLinearRegression {#agg_functions_stochasticlinearregression_parameters}
 
 This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size, and has a few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), and [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 

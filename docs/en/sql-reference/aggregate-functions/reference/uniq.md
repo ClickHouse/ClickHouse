@@ -1,5 +1,4 @@
 ---
-title: uniq
 slug: /en/sql-reference/aggregate-functions/reference/uniq
 sidebar_position: 204
 ---

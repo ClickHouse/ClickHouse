@@ -1,5 +1,4 @@
 ---
-title: quantileTDigestWeighted
 slug: /en/sql-reference/aggregate-functions/reference/quantiletdigestweighted
 sidebar_position: 179
 ---

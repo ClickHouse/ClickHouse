@@ -1,5 +1,4 @@
 ---
-title: users
 slug: /en/operations/system-tables/users
 ---
 # users

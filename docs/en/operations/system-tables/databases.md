@@ -1,5 +1,4 @@
 ---
-title: databases
 slug: /en/operations/system-tables/databases
 ---
 # databases

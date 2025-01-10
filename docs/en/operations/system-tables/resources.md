@@ -1,5 +1,4 @@
 ---
-title: resources
 slug: /en/operations/system-tables/resources
 ---
 # resources

@@ -2,8 +2,9 @@
 slug: /en/sql-reference/functions/arithmetic-functions
 sidebar_position: 5
 sidebar_label: Arithmetic
-title: Arithmetic Functions
 ---
+
+# Arithmetic Functions
 
 Arithmetic functions work for any two operands of type `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`.
 

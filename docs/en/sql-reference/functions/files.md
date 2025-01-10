@@ -2,7 +2,6 @@
 slug: /en/sql-reference/functions/files
 sidebar_position: 75
 sidebar_label: Files
-title: File Functions
 ---
 
 ## file

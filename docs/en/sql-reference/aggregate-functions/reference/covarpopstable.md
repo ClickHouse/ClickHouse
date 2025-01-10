@@ -1,5 +1,4 @@
 ---
-title: covarPopStable
 slug: /en/sql-reference/aggregate-functions/reference/covarpopstable
 sidebar_position: 123
 ---

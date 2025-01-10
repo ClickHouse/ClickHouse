@@ -1,7 +1,7 @@
 ---
-title: maxIntersections
 slug: /en/sql-reference/aggregate-functions/reference/maxintersections
 sidebar_position: 163
+title: maxIntersections
 ---
 
 # maxIntersections

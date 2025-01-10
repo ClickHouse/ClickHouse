@@ -376,7 +376,7 @@ materialize(x)
 
 **パラメータ**
 
-- `x` — 定数。[Constant](/docs/en/sql-reference/functions//#constants)。
+- `x` — 定数。[Constant](../functions/index.md/#constants)。
 
 **戻り値**
 

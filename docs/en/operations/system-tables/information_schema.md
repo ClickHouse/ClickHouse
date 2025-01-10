@@ -1,5 +1,4 @@
 ---
-title: information_schema
 slug: /en/operations/system-tables/information_schema
 ---
 # INFORMATION_SCHEMA

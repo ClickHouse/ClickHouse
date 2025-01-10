@@ -1,5 +1,4 @@
 ---
-title: opentelemetry_span_log
 slug: /en/operations/system-tables/opentelemetry_span_log
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

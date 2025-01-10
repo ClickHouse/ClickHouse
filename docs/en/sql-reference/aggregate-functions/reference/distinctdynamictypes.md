@@ -1,5 +1,4 @@
 ---
-title: distinctDynamicTypes
 slug: /en/sql-reference/aggregate-functions/reference/distinctdynamictypes
 sidebar_position: 215
 ---

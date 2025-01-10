@@ -1,5 +1,4 @@
 ---
-title: avg
 slug: /en/sql-reference/aggregate-functions/reference/avg
 sidebar_position: 112
 ---

@@ -1,5 +1,4 @@
 ---
-title: detached_tables
 slug: /en/operations/system-tables/detached_tables
 ---
 # detached_tables

@@ -1,8 +1,7 @@
 ---
-slug: /en/sql-reference/functions/overview
+slug: /en/sql-reference/functions/
 sidebar_position: 1
 sidebar_label: Overview
-displayed_sidebar: sqlreference
 ---
 
 # Regular Functions

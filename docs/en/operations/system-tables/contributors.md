@@ -1,5 +1,4 @@
 ---
-title: contributors
 slug: /en/operations/system-tables/contributors
 ---
 # contributors

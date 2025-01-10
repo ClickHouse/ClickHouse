@@ -1,5 +1,4 @@
 ---
-title: settings_profiles
 slug: /en/operations/system-tables/settings_profiles
 ---
 # settings_profiles

@@ -1,5 +1,4 @@
 ---
-title: mutations
 slug: /en/operations/system-tables/mutations
 ---
 # mutations

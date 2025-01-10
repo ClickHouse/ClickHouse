@@ -1,5 +1,4 @@
 ---
-title: distributed_ddl_queue
 slug: /en/operations/system-tables/distributed_ddl_queue
 ---
 # distributed_ddl_queue

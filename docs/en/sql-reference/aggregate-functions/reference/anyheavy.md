@@ -1,5 +1,4 @@
 ---
-title: anyHeavy
 slug: /en/sql-reference/aggregate-functions/reference/anyheavy
 sidebar_position: 104
 ---

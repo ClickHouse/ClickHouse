@@ -1,5 +1,4 @@
 ---
-title: detached_parts
 slug: /en/operations/system-tables/detached_parts
 ---
 # detached_parts

@@ -1,5 +1,4 @@
 ---
-title: analysisOfVariance
 slug: /en/sql-reference/aggregate-functions/reference/analysis_of_variance
 sidebar_position: 101
 ---
