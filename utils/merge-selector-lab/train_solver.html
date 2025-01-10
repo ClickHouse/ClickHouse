@@ -5,6 +5,25 @@
         <title>Merge Selector Lab</title>
         <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
         <script src="https://d3js.org/d3.v7.min.js"></script>
+        <style>
+            #trainButton {
+                width: 100%;
+                position: relative;
+                overflow: hidden;
+                color: white;
+                background-color: #007bff;
+                border: none;
+            }
+            #trainButton .progress-fill {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                background-color: rgba(255, 255, 255, 0.3); /* Transparent overlay */
+                width: 0;
+                transition: width 0.1s linear; /* Smooth progress */
+            }
+        </style>
     </head>
     <body>
         <div class="container-fluid">
@@ -25,50 +44,13 @@
                 </div>
                 <div class="row mt-3">
                     <div class="col">
-                        <button type="button" class="btn btn-primary" id="trainButton">Train</button>
+                        <button type="button" class="btn btn-primary" id="trainButton">
+                            <span id="trainButtonText">Train</span>
+                            <div class="progress-fill"></div>
+                        </button>
                     </div>
                 </div>
             </form>
-        </div>
-
-        <div class="container-fluid">
-            <div class="p-3" id="options-container">
-                <table class="table table-bordered table-sm" id="options-table">
-                    <thead>
-                        <tr>
-                            <th>WA</th>
-                            <th>Integral, parts&times;sec</th>
-                            <th>Bases, parts</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="container-fluid bg-primary text-white">
-            <div class="p-3" id="metrics-container"></div>
-        </div>
-
-        <div class="container-fluid">
-            <div class="row">
-                <div class="col-md-12" id="util-container"></div>
-            </div>
-        </div>
-
-        <div class="container-fluid bg-primary text-white">
-            <div class="p-3" id="rewind-container"></div>
-        </div>
-
-        <div class="container-fluid">
-            <div class="row">
-                <div class="col-md-12" id="time-container"></div>
-            </div>
-        </div>
-
-        <div class="container-fluid">
-            <div class="p-3" id="var-container"></div>
         </div>
 
         <script type="module">
@@ -98,26 +80,25 @@
 
             document.getElementById('trainButton').addEventListener('click', async () => {
                 const trainButton = document.getElementById('trainButton');
-                trainButton.textContent = '⏳';
+                const progressFill = trainButton.querySelector('.progress-fill');
+                const trainButtonText = document.getElementById('trainButtonText');
+
                 trainButton.disabled = true;
+                trainButtonText.textContent = 'Training...';
+                progressFill.style.width = '0%';
 
-                const startTime = performance.now(); // Start timing
-
-                await delayMs(32);
-
-                const {minPartSize, maxPartSize, maxWorkers} = readParams();
+                const { minPartSize, maxPartSize, maxWorkers } = readParams();
 
                 let solver = new ModelSolver(mergeModel);
                 await solver.train(minPartSize, maxPartSize, maxWorkers, subgradientMethod,
-                    async function onProgress({progress}) {
-                        // TODO: add a progress bar for training and update its value here based on `progress` value
+                    async function onProgress({progress, runs_done, runs_total}) {
+                        // Update progress bar (button background)
+                        progressFill.style.width = `${progress}%`;
+                        trainButtonText.textContent = `Training: ${progress}% — ${runs_done}/${runs_total}`;
                         await delayMs(1);
                     });
 
-                const endTime = performance.now(); // End timing
-                console.log(`Solve execution time: ${(endTime - startTime).toFixed(2)} ms`); // Log time
-
-                trainButton.textContent = 'Train';
+                trainButtonText.textContent = 'Train Again';
                 trainButton.disabled = false;
             });
         </script>
