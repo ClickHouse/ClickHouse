@@ -720,7 +720,7 @@ Alias: `REPEAT`
 
 **Returned value**
 
-A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
+A string containing string `s` repeated `n` times. If `n` &lt;= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -754,7 +754,7 @@ Alias: `SPACE`.
 
 **Returned value**
 
-The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
+The string containing string ` ` repeated `n` times. If `n` &lt;= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
