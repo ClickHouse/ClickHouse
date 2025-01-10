@@ -23,7 +23,7 @@ namespace DB
 
 namespace Setting 
 {
-    extern const SettingsBool use_legacy_h3ToGeo_order;
+    extern const SettingsBool use_legacy_h3togeo_order;
 }
 namespace ErrorCodes
 {
@@ -41,9 +41,9 @@ class FunctionH3ToGeo : public IFunction
 public:
     static constexpr auto name = "h3ToGeo";
 
-    const bool use_legacy_h3ToGeo_order;
+    const bool use_legacy_h3togeo_order;
     explicit FunctionH3ToGeo(ContextPtr context)
-        : use_legacy_h3ToGeo_order(context->getSettingsRef()[Setting::use_legacy_h3ToGeo_order]) // Initialize constant
+        : use_legacy_h3togeo_order(context->getSettingsRef()[Setting::use_legacy_h3togeo_order]) // Initialize constant
     {}
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeo>(context); }
@@ -104,7 +104,7 @@ public:
         }
 
         MutableColumns columns;
-        if (use_legacy_h3ToGeo_order) 
+        if (use_legacy_h3togeo_order) 
         {
             columns.emplace_back(std::move(longitude));
             columns.emplace_back(std::move(latitude));
