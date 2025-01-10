@@ -11,7 +11,7 @@ namespace DB
 using PartitionIdsHint = std::unordered_set<String>;
 using CommittingBlocks = std::unordered_map<String, std::set<Int64>>;
 
-CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, const std::optional<PartitionIdsHint> & partition_ids_hint);
+CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint);
 
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
