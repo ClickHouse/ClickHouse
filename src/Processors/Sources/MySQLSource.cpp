@@ -60,7 +60,7 @@ MySQLSource::Connection::Connection(
 {
 }
 
-/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
+/// Used in MySQL tables and in doInvalidateQuery for dictionary source.
 MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
@@ -117,6 +117,10 @@ void MySQLWithFailoverSource::onStart()
                 LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
                 throw;
             }
+        }
+        catch (mysqlxx::ConnectionFailed & ecl)  /// Replica is probably down - try next.
+        {
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
         }
         catch (const mysqlxx::BadQuery & e)
         {

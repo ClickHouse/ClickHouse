@@ -315,6 +315,17 @@ public:
             /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
     }
 
+    String formatForAnything() const
+    {
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/true,
+            /*show_secrets=*/true,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+    }
+
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
     void cloneChildren();
@@ -350,7 +361,8 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
-        AsyncInsertFlush
+        AsyncInsertFlush,
+        ParallelWithQuery,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
