@@ -12,10 +12,15 @@ The client provides real-time feedback on query execution with a progress bar an
 
 ## Install
 
-The easiest way to install ClickHouse is with this command:
+To download ClickHouse, run:
 
 ```bash
 curl https://clickhouse.com/ | sh
+```
+
+To also install it, run:
+```bash
+sudo ./clickhouse install
 ```
 
 See [Install ClickHouse](../getting-started/install.md) for more installation options.
@@ -26,7 +31,7 @@ Different client and server versions are compatible with one another, but some f
 ## Run
 
 :::note
-If you are using the ClickHouse single binary, use `./clickhouse client` instead of `clickhouse-client`.
+If you only downloaded but did not install ClickHouse, use `./clickhouse client` instead of `clickhouse-client`.
 :::
 
 To connect to a ClickHouse server, run:
