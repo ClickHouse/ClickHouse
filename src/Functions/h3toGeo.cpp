@@ -46,7 +46,7 @@ public:
         : use_legacy_h3ToGeo_order(context->getSettingsRef()[Setting::use_legacy_h3ToGeo_order]) // Initialize constant
     {}
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeo>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeo>(context); }
 
     std::string getName() const override { return name; }
 
@@ -117,8 +117,6 @@ public:
         
         return ColumnTuple::create(std::move(columns));
     }
-    private:
-        ContextPtr context;
 };
 
 }
