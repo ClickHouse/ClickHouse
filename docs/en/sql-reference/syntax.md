@@ -135,7 +135,7 @@ The backslash loses its special meaning i.e. it is interpreted literally should 
 | `` ` ``                             | backtick                                                                |
 | `\/`                                | forward slash                                                           |
 | `\=`                                | equal sign                                                              |
-| ASCII control characters (c <= 31). |                                                                         |
+| ASCII control characters (c &lt;= 31). |                                                                      |
 
 :::note
 In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
