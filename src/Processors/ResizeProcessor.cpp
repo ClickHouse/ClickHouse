@@ -455,7 +455,7 @@ static Int64 getFreeMemory()
 }
 
 /// This function calculates how many output ports we want to keep "active"
-/// based on how much free memory is available. 
+/// based on how much free memory is available.
 /// It's just one example of a "desired concurrency" formula.
 static size_t calculateDesiredActiveOutputs(
     Int64 free_memory,
@@ -529,13 +529,13 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(
         if (active_count == 0)
             active_count = 1; // Ensure at least one active output is considered
 
-        size_t local_chunk_size = (chunk_size == 0) ? 64 * 1024 : chunk_size;  
+        size_t local_chunk_size = (chunk_size == 0) ? 64 * 1024 : chunk_size;
         double concurrency_factor = 1.5;
         double safety_factor      = 1.5;  // Optional safety margin
 
-        double threshold = static_cast<double>(local_chunk_size) 
-                           * concurrency_factor 
-                           * safety_factor 
+        double threshold = static_cast<double>(local_chunk_size)
+                           * concurrency_factor
+                           * safety_factor
                            * active_count;
 
         if (static_cast<double>(free_memory) < threshold)
