@@ -52,10 +52,29 @@
 []	mv1
 ['mv3']	mv2
 []	mv3
+<<<	exchange mv1 and mv2
+[]	.inner_id.
+[]	.inner_id.
+['mv2']	a
+[]	b
+['mv1']	c
+[]	mv1
+['mv3']	mv2
+[]	mv3
+<<<	exchange a and c
+[]	.inner_id.
+[]	.inner_id.
+['mv2']	a
+[]	b
+['mv1']	c
+[]	mv1
+['mv3']	mv2
+[]	mv3
 <<<	drop mv1
 []	.inner_id.
-[]	a
+[]	.inner_id.
+['mv2']	a
 []	b
-['mv2']	c
+['mv1']	c
 ['mv3']	mv2
 []	mv3
