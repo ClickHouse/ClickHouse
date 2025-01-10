@@ -236,14 +236,16 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         sw_ = Utils.Stopwatch()
         res_ = []
         for pre_check in Settings.PIPELINE_PRECHECKS:
+            if callable(pre_check):
+                name = pre_check.__name__
+            else:
+                name = str(pre_check)
             res_.append(
-                Result.from_commands_run(
-                    name=str(pre_check), command=pre_check, with_info=True
-                )
+                Result.from_commands_run(name=name, command=pre_check, with_info=True)
             )
 
         results.append(
-            Result.create_from(name="Pre Check", results=res_, stopwatch=sw_)
+            Result.create_from(name="Pre Checks", results=res_, stopwatch=sw_)
         )
         if not results[-1].is_ok():
             job_status = Result.Status.ERROR
