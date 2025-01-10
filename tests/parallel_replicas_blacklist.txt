@@ -45,6 +45,10 @@
 02457_morton_coding_with_mask
 01358_mutation_delete_null_rows
 
+    https://github.com/ClickHouse/ClickHouse/issues/74447
+    Sizes of columns doesn't match
+02861_filter_pushdown_const_bug
+
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
     clickhouse-test --no-shard
