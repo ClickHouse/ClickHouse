@@ -150,8 +150,6 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         return {last_token};
     }
 
-    std::cerr << last_token << std::endl;
-
     std::vector<String> answer = {};
     if (command->command_name == "help")
         return getCommandsToComplete(last_token);
@@ -164,8 +162,6 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token, true);
     }();
 
-    std::cerr << answer.size() << std::endl;
-
 
     for (const auto & disk_name : client->getAllDiskNames())
     {
@@ -175,8 +171,6 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         }
     }
 
-    std::cerr << answer.size() << std::endl;
-
     for (const auto & option : command->options_description.options())
     {
         String option_sign = "--" + option->long_name();
@@ -185,8 +179,6 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
             answer.push_back(option_sign);
         }
     }
-
-    std::cerr << answer.size() << std::endl;
 
     if (!answer.empty())
     {
@@ -206,7 +198,8 @@ bool DisksApp::processQueryText(const String & text)
     if (exit_strings.find(text) != exit_strings.end())
         return false;
     CommandPtr command;
-    auto subqueries = po::split_unix(text, ";");
+
+    auto subqueries = po::split_unix(text, "';");
     for (const auto & subquery : subqueries)
     {
         std::optional<String> error_string;

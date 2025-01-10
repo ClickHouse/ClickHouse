@@ -219,7 +219,7 @@ def test_disks_app_func_cp(started_cluster):
             "/usr/bin/clickhouse",
             "disks",
             "--query",
-            "'init test1; init test2; copy --recursive --disk-from test1 --disk-to test2 . .'",
+            "'init test1 ; init test2 ; copy --recursive --disk-from test1 --disk-to test2 . .'",
         ]
     )
 

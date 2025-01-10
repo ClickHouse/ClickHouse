@@ -314,7 +314,6 @@ std::vector<String> DisksClient::getAllFilesByPatternFromInitializedDisks(const 
     {
         try
         {
-            std::cerr << disk.getDisk()->getName() << std::endl;
             for (auto & word : disk.getAllFilesByPattern(pattern, ignore_exception))
             {
                 answer.push_back(word);
@@ -342,11 +341,11 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
 
     DiskPtr disk = postponed_disks.at(disk_name).first();
     chassert(disk_name == disk->getName());
-    auto disk_with_path = DiskWithPath{disk, path};
     if (!path.has_value())
     {
         path = postponed_disks.at(disk_name).second;
     }
+    auto disk_with_path = DiskWithPath{disk, path};
 
     // This should be the noexcept block of code not to break the invariants in program. We hope there is no room for exception here.
     try

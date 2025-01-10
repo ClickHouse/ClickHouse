@@ -92,16 +92,28 @@ class DisksClient(object):
         data = output.getvalue().strip().decode()
         return data
 
-    def list_disks(self) -> List[Tuple[str, str]]:
+    def list_disks(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
         output = self.execute_query("list-disks")
-        return list(
-            sorted(
-                map(
-                    lambda x: (x.split(":")[0], ":".join(x.split(":")[1:])),
-                    output.split("\n"),
-                )
-            )
-        )
+        lines : List[str] = map(lambda x : x.strip(), output.split("\n"))
+
+        initialized_disks = []
+        unitialized_disks = []
+
+        disk_ref = []
+
+        for line in lines:
+            if line.strip() == "Initialized disks:":
+                disk_ref = initialized_disks
+            elif line.strip() == "Uninitialized disks:":
+                disk_ref = unitialized_disks
+            else:
+                if line == "":
+                    continue
+                disk_ref.append( (line.split(":")[0], ":".join(line.split(":")[1:])) )
+
+
+        
+        return list(sorted(initialized_disks)), list(sorted(unitialized_disks))
 
     def current_disk_with_path(self) -> Tuple[str, str]:
         output = self.execute_query("current_disk_with_path")
@@ -168,6 +180,9 @@ class DisksClient(object):
     def ln(self, path_from: str, path_to: str):
         self.execute_query(f"link {path_from} {path_to}")
 
+    def init_disk(self, disk_name: str):
+        self.execute_query(f"init {disk_name}")
+
     def read(self, path_from: str, path_to: Optional[str] = None):
         path_to_adding = f"--path-to {path_to} " if path_to is not None else ""
         output = self.execute_query(f"read {path_from} {path_to_adding}")
@@ -202,7 +217,8 @@ def test_disks_app_interactive_list_disks():
         ("default", "/"),
         ("local", client.working_path),
     ]
-    assert expected_disks_with_path == client.list_disks()
+    client.init_disk("local")
+    assert expected_disks_with_path == client.list_disks()[0]
     assert client.current_disk_with_path() == ("default", "/")
     client.switch_disk("local")
     assert client.current_disk_with_path() == (
@@ -213,6 +229,7 @@ def test_disks_app_interactive_list_disks():
 
 def test_disks_app_interactive_list_files_local():
     client = DisksClient.getLocalDisksClient(True)
+    client.init_disk("local")
     client.switch_disk("local")
     excepted_listed_files = sorted(os.listdir("test_disks_app_interactive/"))
     listed_files = sorted(client.ls("test_disks_app_interactive/"))
@@ -292,6 +309,7 @@ def test_disks_app_interactive_cp_and_read():
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
+    client.init_disk("local")
     client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
     read_text = client.read("a.txt")
     assert initial_text == read_text
@@ -314,6 +332,7 @@ def test_disks_app_interactive_test_move_and_write():
     with open("a.txt", "w") as file:
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
+    client.init_disk("local")
     client.switch_disk("default")
     client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
     files = client.ls(".")
