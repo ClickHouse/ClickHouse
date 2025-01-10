@@ -36,12 +36,12 @@
             --background-color: oklch(96% 0.0296 var(--background-color-rotate));
             --element-background-color: #FFF;
             --bar-color: #F8F4F0; /* Light bar in background of table cells. */
-            --border-color: #EEE;
+            --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
-            --button-color: #FFAA00; /* Orange on light-cyan is especially good. */
+            --button-color: #FF0;
             --text-color: #000;
-            --button-active-color: #F00;
-            --button-active-text-color: #FFF;
+            --button-active-color: #FE0;
+            --button-active-text-color: #000;
             --misc-text-color: #888;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
             --table-header-color: #F8F8F8;
@@ -60,16 +60,16 @@
 
         [data-theme="dark"] {
             --background-color-rotate: 250;
-            --background-color: oklch(10% 0.0296 var(--background-color-rotate));
-            --element-background-color: #102030;
+            --background-color: oklch(15% 0.0296 var(--background-color-rotate));
+            --element-background-color: #000;
             --bar-color: #182838;
-            --border-color: #111;
-            --shadow-color: rgba(255, 255, 255, 0.1);
+            --border-color: #444;
+            --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
-            --button-color: #FFAA00;
+            --button-color: rgb(250 255 105);
             --button-text-color: #000;
-            --button-active-color: #F00;
-            --button-active-text-color: #FFF;
+            --button-active-color: #FE0;
+            --button-active-text-color: #000;
             --misc-text-color: #888;
             --error-color: #400;
             --table-header-color: #102020;
@@ -162,6 +162,7 @@
             height: 20vh;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
             min-width: 100%;
+            border-top: 0;
         }
 
         #inputs
