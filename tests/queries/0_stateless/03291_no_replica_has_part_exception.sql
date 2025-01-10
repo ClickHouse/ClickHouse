@@ -13,5 +13,7 @@ DETACH TABLE table1;
 SYSTEM START MERGES table2;
 SYSTEM START FETCHES table2;
 
+SELECT sleep(1) SETTINGS use_query_cache = 0;
+
 SELECT last_exception like '%NO_REPLICA_HAS_PART%' FROM system.replication_queue WHERE table='table2' and database=currentDatabase() and type='MERGE_PARTS';
 ATTACH TABLE table1;
