@@ -27,7 +27,7 @@ extern const int BAD_ARGUMENTS;
 
 BlockIO InterpreterCopyQuery::execute()
 {
-    auto ast_copy = std::static_pointer_cast<ASTCopyQuery>(query_ptr);
+    auto* ast_copy = query_ptr->as<ASTCopyQuery>();
     if (ast_copy->type == ASTCopyQuery::QueryType::COPY_TO)
     {
         auto ast_table_func = ast_copy->file;
@@ -64,10 +64,9 @@ BlockIO InterpreterCopyQuery::execute()
     }
     else
     {
-        auto context_lock = context.lock();
         InterpreterInsertQuery interpreter_insert(
             ast_copy->data,
-            context_lock,
+            getContext(),
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
