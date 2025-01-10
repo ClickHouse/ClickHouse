@@ -14,6 +14,14 @@ namespace DB
     return quoteString(std::string_view{x.data, x.size});
 }
 
+[[nodiscard]] String quoteStringPostgreSQL(std::string_view x);
+
+// Prefer string_view over StringRef for implicit conversions
+[[nodiscard]] inline String quoteStringPostgreSQL(std::same_as<StringRef> auto x)
+{
+    return quoteStringPostgreSQL(std::string_view{x.data, x.size});
+}
+
 /// Double quote the string.
 String doubleQuoteString(StringRef x);
 
