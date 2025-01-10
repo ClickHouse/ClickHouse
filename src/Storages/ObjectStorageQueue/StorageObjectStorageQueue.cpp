@@ -570,21 +570,56 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            for (auto & source : sources)
-                source->commit(/* success */false, getCurrentExceptionMessage(true));
-
+            commit(/* insert_succeeded */false, sources, getCurrentExceptionMessage(true));
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        for (auto & source : sources)
-            source->commit(/* success */true);
-
+        commit(/* insert_succeeded */true, sources);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
 
     return total_rows > 0;
+}
+
+void StorageObjectStorageQueue::commit(
+    bool insert_succeeded,
+    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    const std::string & exception_message) const
+{
+    Coordination::Requests requests;
+    StoredObjects successful_objects;
+    for (auto & source : sources)
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
+
+    if (requests.empty())
+    {
+        LOG_TEST(log, "Nothing to commit");
+        return;
+    }
+
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    {
+        /// We do need to apply after-processing action before committing requests to keeper.
+        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
+        object_storage->removeObjectsIfExist(successful_objects);
+    }
+
+    auto zk_client = getZooKeeper();
+    Coordination::Responses responses;
+
+    auto code = zk_client->tryMulti(requests, responses);
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperMultiException(code, requests, responses);
+
+    for (auto & source : sources)
+        source->finalizeCommit(insert_succeeded, exception_message);
+
+    LOG_TRACE(
+        log, "Successfully committed {} requests for {} sources",
+        requests.size(), sources.size());
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode

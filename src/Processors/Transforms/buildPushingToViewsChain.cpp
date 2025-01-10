@@ -374,7 +374,7 @@ std::optional<Chain> generateViewChain(
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
         out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
-        if (interpreter.shouldAddSquashingFroStorage(inner_table))
+        if (interpreter.shouldAddSquashingForStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
