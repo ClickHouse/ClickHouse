@@ -47,7 +47,7 @@ public:
             if (!disk_to.getDisk()->existsDirectory(target_location))
             {
                 LOG_INFO(
-                    &Poco::Logger::root(),
+                    &Poco::Logger::get("CommandCopy"),
                     "Copying file from disk '{}', file path '{}' to disk '{}', file path '{}'",
                     disk_from.getDisk()->getName(),
                     path_from,
@@ -84,7 +84,7 @@ public:
                 disk_to.getDisk()->createDirectory(target_location);
             }
             LOG_INFO(
-                &Poco::Logger::root(),
+                &Poco::Logger::get("CommandCopy"),
                 "Copying directory content from disk '{}', directory path '{}' to disk '{}', directory path '{}'",
                 disk_from.getDisk()->getName(),
                 path_from,

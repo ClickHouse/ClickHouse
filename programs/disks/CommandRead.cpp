@@ -32,11 +32,19 @@ public:
         {
             String relative_path_to = disk.getRelativeFromRoot(path_to.value());
             out = disk.getDisk()->writeFile(relative_path_to);
+            LOG_INFO(
+                &Poco::Logger::get("CommandRead"),
+                "Writing file from '{}' to '{}' at disk '{}'",
+                path_from,
+                path_to.value(),
+                disk.getDisk()->getName());
             copyData(*in, *out);
         }
         else
         {
             out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            LOG_INFO(
+                &Poco::Logger::get("CommandRead"), "Writing file from '{}' to 'stdout' at disk '{}'", path_from, disk.getDisk()->getName());
             copyData(*in, *out);
             out->write('\n');
         }

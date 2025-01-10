@@ -27,9 +27,15 @@ public:
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
+        {
+            LOG_INFO(&Poco::Logger::get("CommandList"), "Listing directory '{}' recursively at disk '{}'", path, disk.getDisk()->getName());
             listRecursive(disk, path, show_hidden);
+        }
         else
+        {
+            LOG_INFO(&Poco::Logger::get("CommandList"), "Listing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
             list(disk, path, show_hidden);
+        }
     }
 
 private:

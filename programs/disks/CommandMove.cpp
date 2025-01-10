@@ -32,6 +32,12 @@ public:
 
         if (disk.getDisk()->existsFile(path_from))
         {
+            LOG_INFO(
+                &Poco::Logger::get("CommandMove"),
+                "Moving file from '{}' to '{}' at disk '{}'",
+                path_from,
+                path_to,
+                disk.getDisk()->getName());
             disk.getDisk()->moveFile(path_from, path_to);
         }
         else if (disk.getDisk()->existsDirectory(path_from))
@@ -40,6 +46,12 @@ public:
             if (!disk.getDisk()->existsDirectory(target_location))
             {
                 disk.getDisk()->createDirectory(target_location);
+                LOG_INFO(
+                    &Poco::Logger::get("CommandMove"),
+                    "Moving directory from '{}' to '{}' at disk '{}'",
+                    path_from,
+                    target_location,
+                    disk.getDisk()->getName());
                 disk.getDisk()->moveDirectory(path_from, target_location);
             }
             else
@@ -53,7 +65,12 @@ public:
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
                 }
-
+                LOG_INFO(
+                    &Poco::Logger::get("CommandMove"),
+                    "Moving directory from '{}' to '{}' at disk '{}'",
+                    path_from,
+                    target_location,
+                    disk.getDisk()->getName());
                 disk.getDisk()->moveDirectory(path_from, target_location);
             }
         }

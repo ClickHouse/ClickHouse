@@ -21,6 +21,8 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
+#include "Loggers/OwnFormattingChannel.h"
+#include "Loggers/OwnPatternFormatter.h"
 #include "config.h"
 
 namespace DB
@@ -483,7 +485,10 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel(log_path)));
+
+        auto * pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
+        Poco::Logger::root().setChannel(log);
     }
     else
     {
