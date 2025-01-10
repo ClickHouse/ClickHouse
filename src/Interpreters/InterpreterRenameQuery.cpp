@@ -142,7 +142,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         {
             DatabaseCatalog::instance().checkTablesCanBeExchangedWithNoCyclicDependencies(from_table_id, to_table_id);
             std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, false, false, false, /*mv*/ true);
-            std::tie(to_ref_dependencies, to_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(to_table_id, false, false, false, /*mv*/ true);
+            std::tie(to_ref_dependencies, to_loading_dependencies, to_mv_dependencies) = database_catalog.removeDependencies(to_table_id, false, false, false, /*mv*/ true);
         }
         else
         {
