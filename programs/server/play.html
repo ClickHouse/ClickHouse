@@ -48,8 +48,7 @@
             --table-hover-filter: brightness(0.95);
             --null-color: #A88;
             --link-color: #06D;
-            --logo-color: #CEE;
-            --logo-color-active: #BDD;
+            --logo-color: #FFF;
             --border-color-selected: #F80;
 
             --progress-background-color: var(--background-color);
@@ -76,8 +75,7 @@
             --table-hover-filter: brightness(1.2);
             --null-color: #A88;
             --link-color: #4BDAF7;
-            --logo-color: #222;
-            --logo-color-active: #333;
+            --logo-color: #444;
             --border-color-selected: #FF0;
 
             --progress-foreground-color: #080;
@@ -427,21 +425,9 @@
 
         #cloud-logo
         {
-            color: var(--background-color);
-            text-shadow: 0rem 0rem 2rem var(--logo-color);
+            color: var(--logo-color);
             font-size: 10vw;
             display: block;
-        }
-
-        #logo:hover
-        {
-            fill: var(--logo-color-active);
-            color: var(--logo-color-active);
-        }
-
-        #cloud-logo:hover
-        {
-            filter: brightness(150%);
         }
 
         #logo-container
