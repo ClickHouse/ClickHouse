@@ -2,6 +2,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 

@@ -91,7 +91,6 @@ void registerStorageAzure(StorageFactory & factory)
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
         .source_access_type = AccessType::AZURE,
-        .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     });
 }
 #endif
@@ -109,7 +108,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
         .source_access_type = AccessType::S3,
-        .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     });
 }
 
@@ -143,7 +141,6 @@ void registerStorageHDFS(StorageFactory & factory)
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
         .source_access_type = AccessType::HDFS,
-        .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     });
 }
 #endif
@@ -180,7 +177,6 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 
     factory.registerStorage(
@@ -194,7 +190,6 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
@@ -209,7 +204,6 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::AZURE,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
 #    if USE_HDFS
@@ -224,7 +218,6 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::HDFS,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
     factory.registerStorage(
@@ -238,7 +231,6 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::FILE,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 }
 
@@ -260,7 +252,6 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .supports_settings = false,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
     UNUSED(factory);
@@ -281,7 +272,6 @@ void registerStorageHudi(StorageFactory & factory)
             .supports_settings = false,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #endif
     UNUSED(factory);

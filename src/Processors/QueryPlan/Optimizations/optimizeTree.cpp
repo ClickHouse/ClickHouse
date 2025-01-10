@@ -20,9 +20,9 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    if (!optimization_settings.optimize_plan)
+    if (!settings.optimize_plan)
         return;
 
     const auto & optimizations = getOptimizations();
@@ -42,7 +42,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -72,7 +72,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         /// Apply all optimizations.
         for (const auto & optimization : optimizations)
         {
-            if (!(optimization_settings.*(optimization.is_enabled)))
+            if (!(settings.*(optimization.is_enabled)))
                 continue;
 
             /// Just in case, skip optimization if it is not initialized.
@@ -85,8 +85,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                                 max_optimizations_to_apply);
 
             /// Try to apply optimization.
-            Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
-            auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
+            auto update_depth = optimization.apply(frame.node, nodes);
             if (update_depth)
                 ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
@@ -127,6 +126,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 

@@ -80,7 +80,6 @@ class ClickHouseVersion:
             self._tweak = 1
         else:
             self._major += 1
-            self._minor = 1
             self._revision += 1
             self._patch = 1
             self._tweak = 1

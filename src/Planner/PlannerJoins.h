@@ -54,12 +54,6 @@ struct ASOFCondition
 class JoinClause
 {
 public:
-    JoinClause() = default;
-    JoinClause(JoinClause &&) = default;
-    JoinClause(const JoinClause &) = delete;
-    JoinClause & operator=(JoinClause &&) = default;
-    JoinClause & operator=(const JoinClause &) = delete;
-
     /// Add keys
     void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, bool null_safe_comparison = false)
     {
@@ -168,22 +162,6 @@ public:
 
     /// Dump clause
     String dump() const;
-
-    /// Combines two join clauses into a single join clause with `AND` logic.
-    /// Example:
-    /// Expression `t1.a = t2.a AND t1.b = t2.b AND t1.x > 1` corresponds to clause:
-    ///   - keys: (a, b) = (a, b)
-    ///   - filter conditions: [greater(t1.x, 1)]
-    ///   - residual conditions: []
-    /// Expression `t1.a = t2.a AND t1.c = t2.c AND t1.y < 2 AND t1.z + t2.z == 2` corresponds to clause:
-    ///   - keys: (a, c) = (a, c)
-    ///   - filter conditions: [less(t1.y, 2)]
-    ///   - residual conditions: [equals(plus(t1.z, t2.z), 2)]
-    /// Concatenated:
-    ///   - keys: (a, b, a, c) = (a, b, a, c)
-    ///   - filter conditions: [greater(t1.x, 1), less(t1.y, 2)]
-    ///   - residual conditions: [equals(plus(t1.z, t2.z), 2)]
-    static JoinClause concatClauses(const JoinClause& lhs, const JoinClause& rhs);
 
 private:
     ActionsDAG::NodeRawConstPtrs left_key_nodes;

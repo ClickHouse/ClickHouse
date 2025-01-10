@@ -115,7 +115,7 @@ Given the number of days passed since 1 January 0000 in the proleptic Gregorian 
 The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero(713569)", "2023-09-08"}},
-        .category{"Dates and Times"}});
+        .categories{"Dates and Times"}});
 
     factory.registerFunction<FunctionFromDaysSinceYearZero<DateTraits32>>(FunctionDocumentation{
         .description = R"(
@@ -123,7 +123,7 @@ Given the number of days passed since 1 January 0000 in the proleptic Gregorian 
 The calculation is the same as in MySQL's FROM_DAYS() function.
 )",
         .examples{{"typical", "SELECT fromDaysSinceYearZero32(713569)", "2023-09-08"}},
-        .category{"Dates and Times"}});
+        .categories{"Dates and Times"}});
 
     factory.registerAlias("FROM_DAYS", FunctionFromDaysSinceYearZero<DateTraits>::name, FunctionFactory::Case::Insensitive);
 }

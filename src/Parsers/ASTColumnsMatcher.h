@@ -24,7 +24,6 @@ public:
 
     ASTPtr expression;
     ASTPtr transformers;
-
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
@@ -43,7 +42,6 @@ public:
     ASTPtr expression;
     ASTPtr column_list;
     ASTPtr transformers;
-
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
@@ -62,7 +60,6 @@ public:
 
     ASTPtr qualifier;
     ASTPtr transformers;
-
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
@@ -81,7 +78,6 @@ public:
     ASTPtr qualifier;
     ASTPtr column_list;
     ASTPtr transformers;
-
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };

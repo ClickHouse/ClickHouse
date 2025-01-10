@@ -73,7 +73,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
 
         ostr << "PARTITION BY ";
-        partition_by->format(ostr, settings, state, format_frame);
+        partition_by->formatImpl(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -86,7 +86,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
 
         ostr << "ORDER BY ";
-        order_by->format(ostr, settings, state, format_frame);
+        order_by->formatImpl(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -109,7 +109,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
         else
         {
-            frame_begin_offset->format(ostr, settings, state, format_frame);
+            frame_begin_offset->formatImpl(ostr, settings, state, format_frame);
             ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -124,7 +124,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
         else
         {
-            frame_end_offset->format(ostr, settings, state, format_frame);
+            frame_end_offset->formatImpl(ostr, settings, state, format_frame);
             ostr << " "
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -162,7 +162,7 @@ void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings &
 {
     ostr << backQuoteIfNeed(name);
     ostr << " AS (";
-    definition->format(ostr, settings, state, frame);
+    definition->formatImpl(ostr, settings, state, frame);
     ostr << ")";
 }
 

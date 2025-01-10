@@ -47,14 +47,8 @@ protected:
     void setupSignalHandler() override;
     void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
-    virtual void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &) = 0;
-
 private:
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
-
-    /// Add all options names to the IHints so that we can suggest something meaningful
-    /// in case of typo.
-    void addOptionsToHints(const OptionsDescription & options_description);
 
     std::vector<String> cmd_options;
 

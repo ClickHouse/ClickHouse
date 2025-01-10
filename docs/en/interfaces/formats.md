@@ -5,8 +5,6 @@ sidebar_label: View all formats...
 title: Formats for Input and Output Data
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 All format names are case insensitive.
@@ -70,7 +68,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
-| [ProtobufList](#protobuflist)								                                                     | ✔    | ✔     |
+| [ProtobufList](#protobuflist)								    | ✔    | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
@@ -1519,7 +1517,7 @@ Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are b
 Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 
-## PrettyCompactNoEscapes {#prettycompactnoescapes}
+## PrettyCompactNoEscapes {#prettynoescapes}
 
 Differs from [PrettyCompact](#prettycompact) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
@@ -1751,8 +1749,6 @@ Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,an
 
 ## CapnProto {#capnproto}
 
-<CloudNotSupportedBadge/>
-
 CapnProto is a binary message format similar to [Protocol Buffers](https://developers.google.com/protocol-buffers/) and [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift), but not like [JSON](#json) or [MessagePack](https://msgpack.org/).
 
 CapnProto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
@@ -1915,8 +1911,6 @@ something_weird{problem="division by zero"} +Inf -3982045
 
 ## Protobuf {#protobuf}
 
-<CloudNotSupportedBadge/>
-
 Protobuf - is a [Protocol Buffers](https://protobuf.dev/) format.
 
 This format requires an external format schema. The schema is cached between queries.
@@ -2019,13 +2013,9 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
 ## ProtobufSingle {#protobufsingle}
 
-<CloudNotSupportedBadge/>
-
 Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
 
 ## ProtobufList {#protobuflist}
-
-<CloudNotSupportedBadge/>
 
 Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
 
@@ -2282,7 +2272,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_prefer_block_bytes](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_prefer_block_bytes) - Average block bytes output by parquet reader. Default value - `16744704`.
 - [output_format_parquet_write_page_index](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Add a possibility to write page index into parquet files. Need to disable `output_format_parquet_use_custom_encoder` at present. Default value - `true`.
 
-## ParquetMetadata {#data-format-parquet-metadata}
+## ParquetMetadata {data-format-parquet-metadata}
 
 Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
 - num_columns - the number of columns
@@ -2458,8 +2448,6 @@ The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` querie
 Unsupported Arrow data types: `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
-
-Keep in mind that the HALF_FLOAT data type is converted to Float32 while reading. This is needed, because it represents the IEEE-754 16-bit floating point value, not the BFloat16 format (more popular in AI and ML applications) which ClickHouse supports. 
 
 ### Inserting Data {#inserting-data-arrow}
 

@@ -14,6 +14,3 @@ Diagnostics:
             readability-identifier-naming,
             bugprone-reserved-identifier,
         ]
-# Require LLVM 20 (https://github.com/llvm/llvm-project/pull/67749)
-Style:
-  AngledHeaders: [".*"]

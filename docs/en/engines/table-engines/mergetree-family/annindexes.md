@@ -1,17 +1,4 @@
----
-slug: /en/engines/table-engines/mergetree-family/annindexes
-sidebar_label: Vector Similarity Indexes
-description: Approximate Nearest Neighbor Search with Vector Similarity Indexes
-keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
----
-
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
-
-# Approximate Nearest Neighbor Search with Vector Similarity Indexes
-
-<ExperimentalBadge/>
-<PrivatePreviewBadge/>
+# Approximate Nearest Neighbor Search with Vector Similarity Indexes [experimental]
 
 Nearest neighborhood search is the problem of finding the M closest vectors to a given vector in an N-dimensional vector space. The most
 straightforward approach to solve this problem is an exhaustive (brute-force) search which computes the distance between the reference
@@ -134,6 +121,7 @@ FROM table
 WHERE ...                       -- WHERE clause is optional
 ORDER BY Distance(vectors, reference_vector)
 LIMIT N
+SETTINGS enable_analyzer = 0;   -- Temporary limitation, will be lifted
 ```
 
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the

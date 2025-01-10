@@ -287,7 +287,7 @@ value of the rotation.
             {"overflow_int", "SELECT arrayRotateLeft([1, 2, 3, 4, 5], 8)", "[4, 5, 1, 2, 3]"},
 
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
     factory.registerFunction<FunctionArrayRotateRight>(
         FunctionDocumentation{
@@ -314,7 +314,7 @@ value of the rotation.
             {"negative_rotation_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], -3)", "[4, 5, 1, 2, 3]"},
             {"overflow_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], 8)", "[4, 5, 1, 2, 3]"},
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
     factory.registerFunction<FunctionArrayShiftLeft>(
         FunctionDocumentation{
@@ -352,7 +352,7 @@ The default value must be of the same type as the array elements.
              "SELECT arrayShiftLeft(CAST('[1, 2, 3, 4, 5, 6]', 'Array(UInt16)'), 1, 1000)",
              "[2, 3, 4, 5, 6, 1000]"},
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
     factory.registerFunction<FunctionArrayShiftRight>(
         FunctionDocumentation{
@@ -392,7 +392,7 @@ The default value must be of the same type as the array elements.
              "SELECT arrayShiftRight(CAST('[1, 2, 3, 4, 5, 6]', 'Array(UInt16)'), 1, 1000)",
              "[1000, 1, 2, 3, 4, 5]"},
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
 }
 

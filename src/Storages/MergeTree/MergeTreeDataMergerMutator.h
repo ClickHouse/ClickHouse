@@ -66,7 +66,6 @@ public:
     {
         time_t min_age{std::numeric_limits<time_t>::max()};
         size_t num_parts = 0;
-        size_t sum_bytes = 0;
     };
     using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
 
@@ -109,7 +108,7 @@ public:
         bool dry_run = false);
 
     /// Actually the most fresh partition with biggest modification_time
-    String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info, size_t max_total_size_to_merge = 0) const;
+    String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
     /// The result is limited by top_number_of_partitions_to_consider_for_merge

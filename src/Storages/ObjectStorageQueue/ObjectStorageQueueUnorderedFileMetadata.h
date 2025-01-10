@@ -27,6 +27,7 @@ public:
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
     void setProcessedImpl() override;
+    void resetProcessingImpl() override;
 
     void setProcessedImpl(bool remove_processing_nodes_only);
 };

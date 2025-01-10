@@ -253,8 +253,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    QueryPlanOptimizationSettings optimization_settings(context);
-    BuildQueryPipelineSettings build_pipeline_settings(context);
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
+    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 

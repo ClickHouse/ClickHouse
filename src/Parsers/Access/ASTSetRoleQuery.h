@@ -26,11 +26,8 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
-
 }

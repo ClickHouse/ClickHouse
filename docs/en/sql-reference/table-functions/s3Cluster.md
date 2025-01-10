@@ -11,7 +11,7 @@ Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google 
 **Syntax**
 
 ``` sql
-s3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers])
+s3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
@@ -25,7 +25,6 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 - `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
-- `headers` - Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/docs/en/sql-reference/table-functions/s3#accessing-requester-pays-buckets) for example of use.
 
 Arguments can also be passed using [named collections](/docs/en/operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 

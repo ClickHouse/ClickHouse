@@ -49,7 +49,7 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [AvroConfluent](#data-format-avro-confluent)                                            | ✔     | ✗      |
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
 | [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow)                                                | ✔     | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
 | [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
@@ -58,7 +58,7 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
-| [Regexp](#regexp)                                                           | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 
@@ -1111,10 +1111,6 @@ message MessageType {
 ClickHouse在输入和输出protobuf消息采用`length-delimited` 格式。
 这意味着每个消息之前，应该写它的长度作为一个 [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 另请参阅 [如何在流行语言中读取/写入长度分隔的protobuf消息](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
-
-## ProtobufSingle
-
-与 [Protobuf](#protobuf) 相同，但用于存储/解析单个 Protobuf 消息而无需长度定界符。
 
 ## Avro {#data-format-avro}
 

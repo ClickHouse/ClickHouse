@@ -3490,11 +3490,11 @@ def test_block_based_formats_1(rabbitmq_cluster):
 
     data = []
     for message in insert_messages:
-        split = message.split("\n")
-        assert split[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
-        assert split[1] == ""
-        assert split[-1] == ""
-        data += [line.split() for line in split[2:-1]]
+        splitted = message.split("\n")
+        assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+        assert splitted[1] == ""
+        assert splitted[-1] == ""
+        data += [line.split() for line in splitted[2:-1]]
 
     assert data == [
         ["0", "0"],

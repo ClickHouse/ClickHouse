@@ -56,7 +56,7 @@ public:
     bool setProcessing();
     void setProcessed();
     void resetProcessing();
-    void setFailed(const std::string & exception_message, bool reduce_retry_count);
+    void setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status);
 
     virtual void setProcessedAtStartRequests(
         Coordination::Requests & requests,
@@ -68,8 +68,7 @@ public:
 
     struct NodeMetadata
     {
-        std::string file_path;
-        UInt64 last_processed_timestamp = 0;
+        std::string file_path; UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
         std::string processing_id; /// For ephemeral processing node.
@@ -81,6 +80,7 @@ public:
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void setProcessedImpl() = 0;
+    virtual void resetProcessingImpl();
     void setFailedNonRetriable();
     void setFailedRetriable();
 
