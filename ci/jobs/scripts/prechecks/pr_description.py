@@ -3,7 +3,37 @@ import sys
 
 from praktika.info import Info
 
-from ci.workflows.defs import LABEL_CATEGORIES
+LABEL_CATEGORIES = {
+    "pr-backward-incompatible": ["Backward Incompatible Change"],
+    "pr-bugfix": [
+        "Bug Fix",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
+    ],
+    "pr-critical-bugfix": [
+        "Critical Bug Fix (crash, data loss, RBAC) or LOGICAL_ERROR"
+    ],
+    "pr-build": [
+        "Build/Testing/Packaging Improvement",
+        "Build Improvement",
+        "Build/Testing Improvement",
+        "Build",
+        "Packaging Improvement",
+    ],
+    "pr-documentation": [
+        "Documentation (changelog entry is not required)",
+        "Documentation",
+    ],
+    "pr-feature": ["New Feature"],
+    "pr-improvement": ["Improvement"],
+    "pr-not-for-changelog": [
+        "Not for changelog (changelog entry is not required)",
+        "Not for changelog",
+    ],
+    "pr-performance": ["Performance Improvement"],
+    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
+}
 
 
 def normalize_category(cat: str) -> str:

@@ -1,6 +1,5 @@
 from ci.jobs.scripts.prechecks.trusted import can_be_trusted
 
-
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 
