@@ -196,9 +196,10 @@ public:
 class DecimalType : public SQLType
 {
 public:
-    const bool short_notation;
+    const std::optional<DecimalN_DecimalPrecision> short_notation;
     const std::optional<const uint32_t> precision, scale;
-    DecimalType(const bool sn, const std::optional<const uint32_t> p, const std::optional<const uint32_t> s)
+    DecimalType(
+        const std::optional<DecimalN_DecimalPrecision> sn, const std::optional<const uint32_t> p, const std::optional<const uint32_t> s)
         : short_notation(sn), precision(p), scale(s)
     {
     }
@@ -206,9 +207,9 @@ public:
     void typeName(std::string & ret, const bool) const override
     {
         ret += "Decimal";
-        if (short_notation)
+        if (short_notation.has_value())
         {
-            ret += std::to_string(precision.value());
+            ret += DecimalN_DecimalPrecision_Name(short_notation.value()).substr(1);
             ret += "(";
             ret += std::to_string(scale.value());
             ret += ")";

@@ -173,6 +173,8 @@ public:
             || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine();
     }
 
+    bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
+
     bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
 
     bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::MySQL; }

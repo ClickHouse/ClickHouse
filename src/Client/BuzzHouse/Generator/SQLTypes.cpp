@@ -345,28 +345,27 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
         Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
-        bool short_notation = false;
+        std::optional<DecimalN_DecimalPrecision> short_notation = std::nullopt;
         std::optional<uint32_t> precision = std::nullopt;
         std::optional<uint32_t> scale = std::nullopt;
 
-        if ((short_notation = rg.nextBool()))
+        if (rg.nextBool())
         {
-            const DecimalN_DecimalPrecision dp = static_cast<DecimalN_DecimalPrecision>(
-                (rg.nextRandomUInt32() % static_cast<uint32_t>(DecimalN::DecimalPrecision_MAX)) + 1);
-
-            switch (dp)
+            short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(
+                (rg.nextRandomUInt32() % static_cast<uint32_t>(DecimalN::DecimalPrecision_MAX)) + 1));
+            switch (short_notation.value())
             {
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                    precision = std::optional<uint32_t>(32);
+                    precision = std::optional<uint32_t>(9);
                     break;
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                    precision = std::optional<uint32_t>(64);
+                    precision = std::optional<uint32_t>(18);
                     break;
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                    precision = std::optional<uint32_t>(128);
+                    precision = std::optional<uint32_t>(38);
                     break;
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                    precision = std::optional<uint32_t>(256);
+                    precision = std::optional<uint32_t>(78);
                     break;
             }
             scale = std::optional<uint32_t>(rg.nextRandomUInt32() % (precision.value() + 1));
@@ -374,7 +373,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             {
                 DecimalN * dn = dec->mutable_decimaln();
 
-                dn->set_precision(dp);
+                dn->set_precision(short_notation.value());
                 dn->set_scale(scale.value());
             }
         }

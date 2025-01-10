@@ -113,7 +113,13 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
     std::string name;
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
     const uint32_t cte = 10 * static_cast<uint32_t>(!this->ctes.empty());
-    const uint32_t table = 40 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t table = 40
+        * static_cast<uint32_t>(collectionHas<SQLTable>(
+            [&](const SQLTable & tt)
+            {
+                return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
+                    && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine());
+            }));
     const uint32_t view = 20
         * static_cast<uint32_t>(collectionHas<SQLView>(
             [&](const SQLView & vv)
@@ -166,7 +172,12 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
     {
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
+            [&](const SQLTable & tt)
+            {
+                return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
+                    && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine());
+            }));
 
         if (t.db)
         {

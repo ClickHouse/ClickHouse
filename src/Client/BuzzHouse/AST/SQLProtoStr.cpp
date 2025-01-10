@@ -755,16 +755,16 @@ void BottomTypeNameToString(std::string & ret, const uint32_t quote, const bool 
                             switch (dn.precision())
                             {
                                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                                    precision = 32;
+                                    precision = 9;
                                     break;
                                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                                    precision = 64;
+                                    precision = 18;
                                     break;
                                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                                    precision = 128;
+                                    precision = 38;
                                     break;
                                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                                    precision = 256;
+                                    precision = 76;
                                     break;
                             }
                             ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
