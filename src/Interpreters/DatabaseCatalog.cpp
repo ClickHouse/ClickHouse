@@ -1493,7 +1493,7 @@ std::vector<StorageID> DatabaseCatalog::getLoadingDependents(const StorageID & t
 }
 
 std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
-  const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv)
+    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv)
 {
     std::lock_guard lock{databases_mutex};
     checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
@@ -1512,10 +1512,10 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             }
         }
     }
-    return {referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
+    return {
+        referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         old_view_dependencies};
-
 }
 
 void DatabaseCatalog::updateDependencies(
