@@ -78,4 +78,4 @@ SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _d
 
 **See Also**
 
-- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/en/engines/table-engines/#table_engines-virtual_columns)

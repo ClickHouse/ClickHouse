@@ -232,5 +232,5 @@ SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > 
 
 **See Also**
 
-- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/en/engines/table-engines/#table_engines-virtual_columns)
 - [Rename files after processing](/docs/en/operations/settings/settings.md#rename_files_after_processing)

@@ -212,7 +212,7 @@ For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, mult
 
 ## Data Types and Database Table Engines
 
-Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an argument list in brackets. For more information, see the sections [Data types](/docs/en/sql-reference/data-types/index.md), [Table engines](/docs/en/engines/table-engines/index.md), and [CREATE](/docs/en/sql-reference/statements/create/index.md).
+Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an argument list in brackets. For more information, see the sections [Data types](/docs/en/sql-reference/data-types/index.md), [Table engines](/docs/en/engines/table-engines), and [CREATE](/docs/en/sql-reference/statements/create/index.md).
 
 ## Expression Aliases
 
