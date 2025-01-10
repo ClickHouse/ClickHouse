@@ -1,21 +1,28 @@
-import { gradientDescent } from './gradientDescent.js';
+export function mergeModel({parts, workers, maxSourceParts, maxPartSize, insertPartSize}, method, onOption) {
+    // Total number of bytes in all parts (just to keep track of proper units)
+    const B = 1;
 
-export function mergeModel({insertPartSize, parts, workers, maxSourceParts, maxPartSize}, onOption) {
     // We pretend that we merge initial parts that all have 1-byte size
     const finalSize =
         (maxPartSize == null ?
         parts : // Max part size is unlimited - we merge all parts into one big part
         maxPartSize / insertPartSize);
 
-    const x_sum = Math.log(finalSize);
-    const N = workers;
-    const yBar = x_sum - Math.log(N);
+    // Constraints
+    const xSum = Math.log(finalSize);
     const xMax = Math.log(maxSourceParts);
 
-    const B = 1;
+    // Total number of available workers in the pool
+    const N = workers;
+    const yBar = xSum - Math.log(N);
 
     const sumVectors = (vectors) => vectors.reduce((acc, vec) => acc.map((val, index) => val + vec[index]), new Array(vectors[0].length).fill(0));
+
+    // Auxilary y-vector expressed as a function of x-vector:
+    // y[i] = sum(x[k], k=0..i), note that y[-1] = 0
     const y = (x, i) => x.slice(0, i + 1).reduce((acc, val) => acc + val, 0); // Note that y(x, -1) = 0
+
+    // Objective functions for layer below and above yBar
     const Iplus  = (x, i) => B * Math.exp(x[i]);
     const Iminus = (x, i) => B/2 * (
         + Math.exp(yBar - y(x, i - 1))
@@ -23,8 +30,12 @@ export function mergeModel({insertPartSize, parts, workers, maxSourceParts, maxP
         + Math.exp(x[i])
         - 1
     );
+
+    // Total objective function is a sum over all layers
     const I = (x, i) => (y(x, i) >= yBar ? Iplus(x, i) : Iminus(x, i));
     const F = (x) => x.reduce((a, xi, i) => a + I(x, i), 0);
+
+    // Corresponding gradiants
     const grad_Iplus  = (x, i) => x.map(
         (xj, j) => (i == j ? B * Math.exp(xj) : 0)
     );
@@ -39,11 +50,24 @@ export function mergeModel({insertPartSize, parts, workers, maxSourceParts, maxP
     const grad_F = (x) => sumVectors(x.map((xi, i) => grad_I(x, i)));
 
     // TODO: determine step size according to inverse of maximum grad_F
-    let eta = 1e-3; // Step size
+    // let eta = 1e-3; // Step size
 
-    for (let L = 1; L <= 1.1 * x_sum; L++) {
-        let x = gradientDescent(grad_F, L, x_sum, xMax, eta);
+    // Iterate over all reasonable numbers of layers L
+    // It's not obvious but x[i] < 1 cannot be optimal,
+    // because there will be a batter F for lower L, so L > xSum are not interesting
+    let prevFx = Infinity;
+    for (let L = 1; L <= 1.1 * xSum; L++) {
+        // Skip unfeasible problems
+        if (xMax * L < xSum)
+            continue;
+
+        let x = method(grad_F, L, xSum, xMax /*,eta*/);
         let Fx = F(x);
+
+        // Stop if Fx begins to increase, this increase both write amplification and avg part count
+        if (Fx > prevFx)
+            return;
         onOption(L, x, Fx);
+        prevFx = Fx;
     }
 }

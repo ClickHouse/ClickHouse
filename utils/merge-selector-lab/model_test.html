@@ -32,6 +32,12 @@
                         <label for="maxPartSize">Average final part size:</label>
                         <input type="text" class="form-control form-control-sm" id="maxPartSize" placeholder="Unlimited">
                     </div>
+                    <div class="form-group col-md-4">
+                        <label for="method">Select Method:</label>
+                        <select class="form-control form-control-sm" id="method">
+                            <!-- Methods will be populated dynamically -->
+                        </select>
+                    </div>
                     <div class="form-group col-md-8">
                         <label for="layerBases">Bases (number of parts to merge on every level):</label>
                         <input type="text" class="form-control form-control-sm" id="layerBases" value="[3,3,3,3,3]">
@@ -94,7 +100,7 @@
             import { customScenario } from './customScenario.js';
             import { floatLayerMerges } from './floatLayerMerges.js';
             import { mergeModel } from './mergeModel.js';
-            import { projectedGradientDescent, nesterovAcceleratedPGD } from './gradientDescent.js';
+            import { projectedGradientDescent, nesterovAcceleratedPGD, subgradientMethod } from './gradientDescent.js';
             import { delayMs, parseHumanReadableSize } from './util.js';
 
             function readPartSize() {
@@ -107,13 +113,24 @@
             }
 
             const methods = {
+                "Subgradient Method": subgradientMethod,
                 "Projected GD": projectedGradientDescent,
                 "Accelerated PGD": nesterovAcceleratedPGD,
             };
 
-            function selectMethod()
-            {
-                // TODO: rewrite it to choose method that is choosen in form
+            // Populate methods dropdown
+            const methodSelect = document.getElementById('method');
+            for (const [name] of Object.entries(methods)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                methodSelect.appendChild(option);
+            }
+
+            function selectMethod() {
+                const selectedMethodName = document.getElementById('method').value;
+                // TODO: Return the selected method implementation from the methods object
+                return methods[selectedMethodName];
             }
 
             function readParams() {
@@ -134,6 +151,9 @@
                 const solveButton = document.getElementById('solveButton');
                 solveButton.textContent = '⏳';
                 solveButton.disabled = true;
+
+                const startTime = performance.now(); // Start timing
+
                 await delayMs(32);
 
                 const {insertPartSize, parts, workers, maxSourceParts, maxPartSize, method} = readParams();
@@ -184,6 +204,10 @@
                             row.style('background-color', '#d4edda');
                         }
                     });
+
+                const endTime = performance.now(); // End timing
+                console.log(`Solve execution time: ${(endTime - startTime).toFixed(2)} ms`); // Log time
+
                 solveButton.textContent = 'Solve';
                 solveButton.disabled = false;
             });

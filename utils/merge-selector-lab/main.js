@@ -13,7 +13,6 @@ import { floatLayerMerges } from './floatLayerMerges.js';
 import { factorizeNumber, allFactorPermutations } from './factorization.js';
 import { clickHousePartsInserter } from './clickHousePartsInserter.js';
 import { getOptimalBases } from './getOptimalBases.js';
-import { gradientDescent } from './gradientDescent.js';
 import { delayMs } from './util.js';
 
 async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
@@ -286,37 +285,6 @@ async function custom()
 
     const mt = await customScenario(scenario, signals);
     simContainer.update({mt}, true);
-}
-
-function solverTest()
-{
-    // let n = 16; // Given constant n
-    // const f = (x) => x.reduce((a, xi) => a + Math.exp(xi), 0);
-    // const gradF = (x) => x.map(xi => Math.exp(xi));
-
-    const n = 101; // B / b
-    const Ni = 1;
-    const Ai = (xi) => Math.exp(xi) * (Ni + 0.5) - 0.5;
-    const f = (x) => x.reduce((a, xi) => a + Ai(xi), 0);
-    const diffAi = (xi) => Math.exp(xi) * (Ni + 0.5);
-    const gradF = (x) => x.map(xi => diffAi(xi));
-
-    let eta = 1e-3; // Step size
-    let fopt = Infinity;
-    let Lopt = 1;
-    let xopt = [];
-    for (let L = 1; L <= 2 * Math.log(n); L++) {
-        let x = gradientDescent(gradF, L, n, eta);
-        let fx = f(x);
-        if (fx < fopt) {
-            fopt = fx;
-            xopt = x;
-            Lopt = L;
-        }
-        console.log("OPTION", {L, x, fx});
-    }
-
-    console.log("OPTIMAL", {Lopt, xopt, fopt});
 }
 
 async function periodicArrivals()

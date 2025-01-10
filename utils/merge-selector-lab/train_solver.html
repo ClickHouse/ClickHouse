@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Merge Selector Lab</title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+    </head>
+    <body>
+        <div class="container-fluid">
+            <form id="param-form" class="p-3">
+                <div class="row">
+                    <div class="form-group col-md-4">
+                        <label for="minPartSize">Min part size:</label>
+                        <input type="text" class="form-control form-control-sm" id="minPartSize" placeholder="Minimum size" value="64KB">
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="maxPartSize">Max part size:</label>
+                        <input type="text" class="form-control form-control-sm" id="maxPartSize" placeholder="Maximum size" value="256GB">
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="maxWorkers">Max workers:</label>
+                        <input type="text" class="form-control form-control-sm" id="maxWorkers" placeholder="Maximum workers" value="32768">
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col">
+                        <button type="button" class="btn btn-primary" id="trainButton">Train</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="container-fluid">
+            <div class="p-3" id="options-container">
+                <table class="table table-bordered table-sm" id="options-table">
+                    <thead>
+                        <tr>
+                            <th>WA</th>
+                            <th>Integral, parts&times;sec</th>
+                            <th>Bases, parts</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="container-fluid bg-primary text-white">
+            <div class="p-3" id="metrics-container"></div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-12" id="util-container"></div>
+            </div>
+        </div>
+
+        <div class="container-fluid bg-primary text-white">
+            <div class="p-3" id="rewind-container"></div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-12" id="time-container"></div>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="p-3" id="var-container"></div>
+        </div>
+
+        <script type="module">
+            import { MergeTree } from './MergeTree.js';
+            import { SimulationContainer } from './SimulationContainer.js';
+            import { sequenceInserter } from './sequenceInserter.js';
+            import { customScenario } from './customScenario.js';
+            import { floatLayerMerges } from './floatLayerMerges.js';
+            import { subgradientMethod } from './gradientDescent.js';
+            import { mergeModel } from './mergeModel.js';
+            import { ModelSolver } from './ModelSolver.js';
+            import { delayMs, parseHumanReadableSize } from './util.js';
+
+            function readSize(name) {
+                return parseHumanReadableSize(document.getElementById(name).value);
+            }
+
+            function readParams() {
+                let params = {
+                    minPartSize: readSize('minPartSize'),
+                    maxPartSize: readSize('maxPartSize'),
+                    maxWorkers: readSize('maxWorkers'),
+                };
+                console.log("PARAMS", params);
+                return params;
+            }
+
+            document.getElementById('trainButton').addEventListener('click', async () => {
+                const trainButton = document.getElementById('trainButton');
+                trainButton.textContent = '⏳';
+                trainButton.disabled = true;
+
+                const startTime = performance.now(); // Start timing
+
+                await delayMs(32);
+
+                const {minPartSize, maxPartSize, maxWorkers} = readParams();
+
+                let solver = new ModelSolver(mergeModel);
+                await solver.train(minPartSize, maxPartSize, maxWorkers, subgradientMethod,
+                    async function onProgress({progress}) {
+                        // TODO: add a progress bar for training and update its value here based on `progress` value
+                        await delayMs(1);
+                    });
+
+                const endTime = performance.now(); // End timing
+                console.log(`Solve execution time: ${(endTime - startTime).toFixed(2)} ms`); // Log time
+
+                trainButton.textContent = 'Train';
+                trainButton.disabled = false;
+            });
+        </script>
+    </body>
+</html>
