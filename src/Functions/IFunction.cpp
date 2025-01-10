@@ -202,7 +202,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 "is expected to return Nullable result, got {}",
                 getName(),
                 result_type->getName());
-        
+
         /// If any of the input arguments is null literal, the result is null constant.
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }
