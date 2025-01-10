@@ -5872,6 +5872,9 @@ Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
+    DECLARE(Bool, validate_enum_literals_in_opearators, false, R"(
+If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
+)", 0) \
     \
     DECLARE(UInt64, max_autoincrement_series, 1000, R"(
 The limit on the number of series created by the `generateSeriesID` function.

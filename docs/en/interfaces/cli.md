@@ -427,7 +427,7 @@ Print version and exit.
 
 **`--connection <name>`**
 
-The name of preconfigured connection details from the configuration file. See [Connection credentials]{#connection-credentials}.
+The name of preconfigured connection details from the configuration file. See [Connection credentials](#connection-credentials).
 
 **`-d [ --database ] <database>`**
 
@@ -485,7 +485,7 @@ The database user to connect as.
 
 Default value: default
 
-Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings]{#connection_string}.
+Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
 
 ### Query Options {#command-line-options-query}
 
