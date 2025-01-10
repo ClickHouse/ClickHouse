@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
+    extern const SettingsBool validate_enum_literals_in_opearators;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
@@ -3464,7 +3465,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & settings = scope.context->getSettingsRef();
 
             auto result_block = getSetElementsForConstantValue(
-                first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type, settings[Setting::transform_null_in]);
+                first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type,
+                GetSetElementParams{
+                    .transform_null_in = settings[Setting::transform_null_in],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_opearators],
+                });
+
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
