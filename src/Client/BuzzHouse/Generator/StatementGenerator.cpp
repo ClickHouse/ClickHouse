@@ -189,8 +189,12 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     {
         TableEngine * te = cv->mutable_engine();
         const uint32_t nopt = rg.nextSmallNumber();
-        const bool has_with_cols
-            = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() >= next.ncols; });
+        const bool has_with_cols = collectionHas<SQLTable>(
+            [&next](const SQLTable & t)
+            {
+                return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
+                    && t.numberOfInsertableColumns() >= next.ncols;
+            });
         const bool has_tables = has_with_cols || !tables.empty();
         const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
 
@@ -232,8 +236,13 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             const SQLTable & t = has_with_cols
-                ? rg.pickRandomlyFromVector(
-                        filterCollection<SQLTable>([&next](const SQLTable & tt) { return tt.numberOfInsertableColumns() >= next.ncols; }))
+                ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(
+                                                [&next](const SQLTable & tt)
+                                                {
+                                                    return (!tt.db || tt.db->attached == DetachStatus::ATTACHED)
+                                                        && tt.attached == DetachStatus::ATTACHED
+                                                        && tt.numberOfInsertableColumns() >= next.ncols;
+                                                }))
                       .get()
                 : rg.pickValueRandomlyFromMap(this->tables);
 
