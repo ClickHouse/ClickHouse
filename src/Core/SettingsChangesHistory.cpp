@@ -626,6 +626,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
             {"allow_experimental_reverse_key", false, false, "New setting"},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
         }
     },
     {"24.11",
