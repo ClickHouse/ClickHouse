@@ -160,9 +160,24 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool insert_succeeded, const std::string & exception_message = {});
+    void prepareCommitRequests(
+        Coordination::Requests & requests,
+        bool insert_succeeded,
+        StoredObjects & successful_files,
+        const std::string & exception_message = {});
+
+    /// Do some work after Processed/Failed files were successfully committed to keeper.
+    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
 
 private:
+    Chunk generateImpl();
+    /// Log to system.s3(azure)_queue_log.
+    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    /// Commit processed files.
+    /// This method is only used for SELECT query, not for streaming to materialized views.
+    /// Which is defined by passing a flag commit_once_processed.
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
+
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
@@ -182,7 +197,6 @@ private:
     const bool commit_once_processed;
 
     LoggerPtr log;
-    Source::ReaderHolder reader;
 
     enum class FileState
     {
@@ -201,13 +215,7 @@ private:
         std::string exception_during_read;
     };
     std::vector<ProcessedFile> processed_files;
-
-    Chunk generateImpl();
-    void applyActionAfterProcessing(const String & path);
-    void appendLogElement(
-        const std::string & filename,
-        ObjectStorageQueueMetadata::FileStatus & file_status_,
-        bool processed);
+    Source::ReaderHolder reader;
 };
 
 }

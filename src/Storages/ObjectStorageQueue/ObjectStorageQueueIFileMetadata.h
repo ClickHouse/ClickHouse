@@ -5,7 +5,13 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
+/// A base class to work with single file metadata in keeper.
+/// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
 {
 public:
@@ -53,19 +59,48 @@ public:
 
     virtual ~ObjectStorageQueueIFileMetadata();
 
-    bool setProcessing();
-    void setProcessed();
-    void resetProcessing();
-    void setFailed(const std::string & exception_message, bool reduce_retry_count);
+    /// Get path from current file metadata.
+    const std::string & getPath() const { return path; }
+    /// Get maximum number of retries for file processing.
+    size_t getMaxTries() const { return max_loading_retries; }
+    /// Get file status.
+    /// File status is an in-memory processing info of the file, containing:
+    /// number of processed rows, processing time, exception, etc.
+    FileStatusPtr getFileStatus() { return file_status; }
 
-    virtual void setProcessedAtStartRequests(
+    virtual bool useBucketsForProcessing() const { return false; }
+    virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
+
+    /// Try set file as Processing.
+    bool trySetProcessing();
+    /// Reset processing
+    /// (file will not be set neither as Failed nor Processed,
+    /// simply Processing state will be cancelled).
+    void resetProcessing();
+
+    /// Prepare keeper requests, required to set file as Processed.
+    void prepareProcessedRequests(Coordination::Requests & requests);
+    /// Prepare keeper requests, required to set file as Failed.
+    void prepareFailedRequests(
+        Coordination::Requests & requests,
+        const std::string & exception_message,
+        bool reduce_retry_count);
+    void prepareResetProcessingRequests(Coordination::Requests & requests);
+
+    /// Do some work after prepared requests to set file as Processed succeeded.
+    void finalizeProcessed();
+    /// Do some work after prepared requests to set file as Failed succeeded.
+    void finalizeFailed(const std::string & exception_message);
+
+    /// Set a starting point for processing.
+    /// Done on table creation, when we want to tell the table
+    /// that processing must be started from certain point,
+    /// instead of from scratch.
+    virtual void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) = 0;
 
-    FileStatusPtr getFileStatus() { return file_status; }
-    const std::string & getPath() const { return path; }
-    size_t getMaxTries() const { return max_loading_retries; }
-
+    /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
         std::string file_path;
@@ -80,9 +115,8 @@ public:
 
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-    virtual void setProcessedImpl() = 0;
-    void setFailedNonRetriable();
-    void setFailedRetriable();
+    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
+    void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
     const std::string node_name;
