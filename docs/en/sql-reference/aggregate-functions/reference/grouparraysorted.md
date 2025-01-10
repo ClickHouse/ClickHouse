@@ -1,9 +1,10 @@
 ---
+title: groupArraySorted
 slug: /en/sql-reference/aggregate-functions/reference/grouparraysorted
 sidebar_position: 146
 ---
 
- # groupArraySorted {#groupArraySorted}
+ # groupArraySorted
 
  Returns an array with the first N items in ascending order.
 

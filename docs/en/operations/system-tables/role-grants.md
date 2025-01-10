@@ -1,4 +1,5 @@
 ---
+title: role_grants
 slug: /en/operations/system-tables/role-grants
 ---
 # role_grants 

@@ -1,4 +1,5 @@
 ---
+title: first_value
 slug: /en/sql-reference/aggregate-functions/reference/first_value
 sidebar_position: 137
 ---

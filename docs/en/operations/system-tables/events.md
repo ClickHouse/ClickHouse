@@ -1,4 +1,5 @@
 ---
+title: events
 slug: /en/operations/system-tables/events
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

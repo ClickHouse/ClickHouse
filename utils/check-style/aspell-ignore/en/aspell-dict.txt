@@ -1045,6 +1045,8 @@ TablesLoaderBackgroundThreadsActive
 TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
+TableOfContentsJSON
+TableOfContents
 TargetSpecific
 Telegraf
 TemplateIgnoreSpaces
@@ -1337,6 +1339,7 @@ azureBlobStorage
 azureBlobStorageCluster
 backend
 backoff
+backtick
 backticks
 backupview
 balancer
@@ -2478,6 +2481,7 @@ protocol
 proxied
 pseudorandom
 pseudorandomize
+pseudoterminal
 psql
 ptrs
 punycodeDecode
@@ -2662,6 +2666,7 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
+sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
@@ -2731,6 +2736,7 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
+sqlreference
 sqrt
 src
 srcReplicas

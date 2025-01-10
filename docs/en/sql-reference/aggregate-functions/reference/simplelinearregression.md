@@ -1,4 +1,5 @@
 ---
+title: simpleLinearRegression
 slug: /en/sql-reference/aggregate-functions/reference/simplelinearregression
 sidebar_position: 183
 ---

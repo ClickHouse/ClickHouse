@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/bitmap-functions
 sidebar_position: 25
 sidebar_label: Bitmap
+title: Bitmap Functions
 ---
 
 # Bitmap Functions

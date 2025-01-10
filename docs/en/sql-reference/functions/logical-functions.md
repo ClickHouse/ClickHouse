@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/logical-functions
 sidebar_position: 110
 sidebar_label: Logical
+title: Logical Functions
 ---
 
 # Logical Functions

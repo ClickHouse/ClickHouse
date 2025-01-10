@@ -1,4 +1,5 @@
 ---
+title: current_roles
 slug: /en/operations/system-tables/current-roles
 ---
 # current_roles

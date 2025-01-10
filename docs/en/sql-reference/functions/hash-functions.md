@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/hash-functions
 sidebar_position: 85
 sidebar_label: Hash
+title: Hash Functions
 ---
 
 # Hash Functions
@@ -706,7 +707,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n <= 32768.
+It is efficient only if n &lt;= 32768.
 
 **Example**
 

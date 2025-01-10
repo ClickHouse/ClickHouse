@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/comparison-functions
 sidebar_position: 35
 sidebar_label: Comparison
+title: Comparison Functions
 ---
 
 # Comparison Functions

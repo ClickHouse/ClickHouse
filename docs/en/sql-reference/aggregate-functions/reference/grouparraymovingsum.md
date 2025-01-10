@@ -1,4 +1,5 @@
 ---
+title: groupArrayMovingSum
 slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingsum
 sidebar_position: 144
 ---

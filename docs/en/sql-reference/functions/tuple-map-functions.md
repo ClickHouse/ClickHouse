@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/tuple-map-functions
 sidebar_position: 120
 sidebar_label: Maps
+title: Maps Functions
 ---
 
 ## map
@@ -210,7 +211,7 @@ Same as `extractKeyValuePairs` but supports escaping.
 
 Supported escape sequences: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c &lt;= 31).
 
 This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
 input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
@@ -612,7 +613,7 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func` — [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` — [Lambda function](/docs/en/sql-reference/functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -654,7 +655,7 @@ mapFilter(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`  - [Lambda function](/docs/en/sql-reference/functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -771,7 +772,7 @@ Result:
 Returns 1 if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than 0. Otherwise, it returns 0.
 
 :::note
-`mapExists` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions).
+`mapExists` is a [higher-order function](/docs/en/sql-reference/functions/#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -796,7 +797,7 @@ Result:
 Returns 1 if `func(key, value)` returns something other than 0 for all key-value pairs in `map`. Otherwise, it returns 0.
 
 :::note
-Note that the `mapAll` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions).
+Note that the `mapAll` is a [higher-order function](/docs/en/sql-reference/functions/#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -857,7 +858,7 @@ mapPartialSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/en/sql-reference/functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
@@ -918,7 +919,7 @@ mapPartialReverseSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/en/sql-reference/functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 

@@ -1,0 +1,170 @@
+[
+    {
+        "title": "Arithmetic Functions",
+        "slug": "/en/sql-reference/functions/arithmetic-functions"
+    },
+    {
+        "title": "Array Functions",
+        "slug": "/en/sql-reference/functions/array-functions"
+    },
+    {
+        "title": "Bit Function",
+        "slug": "/en/sql-reference/functions/bit-functions"
+    },
+    {
+        "title": "Bitmap Functions",
+        "slug": "/en/sql-reference/functions/bitmap-functions"
+    },
+    {
+        "title": "Comparison Functions",
+        "slug": "/en/sql-reference/functions/comparison-functions"
+    },
+    {
+        "title": "Conditional Functions",
+        "slug": "/en/sql-reference/functions/conditional-functions"
+    },
+    {
+        "title": "Date Time Functions",
+        "slug": "/en/sql-reference/functions/date-time-functions"
+    },
+    {
+        "title": "Dictionary Functions",
+        "slug": "/en/sql-reference/functions/ext-dict-functions"
+    },
+    {
+        "title": "Distance Functions",
+        "slug": "/en/sql-reference/functions/distance-functions"
+    },
+    {
+        "title": "Embedded Dictionaries Functions",
+        "slug": "/en/sql-reference/functions/ym-dict-functions"
+    },
+    {
+        "title": "Encoding Functions",
+        "slug": "/en/sql-reference/functions/encoding-functions"
+    },
+    {
+        "title": "Encryption Functions",
+        "slug": "/en/sql-reference/functions/encryption-functions"
+    },
+    {
+        "title": "File Functions",
+        "slug": "/en/sql-reference/functions/files"
+    },
+    {
+        "title": "Hash Functions",
+        "slug": "/en/sql-reference/functions/hash-functions"
+    },
+    {
+        "title": "IN functions",
+        "slug": "/en/sql-reference/functions/in-functions"
+    },
+    {
+        "title": "IP Address Functions",
+        "slug": "/en/sql-reference/functions/ip-address-functions"
+    },
+    {
+        "title": "Introspection Functions",
+        "slug": "/en/sql-reference/functions/introspection"
+    },
+    {
+        "title": "JSON functions",
+        "slug": "/en/sql-reference/functions/json-functions"
+    },
+    {
+        "title": "Logical Functions",
+        "slug": "/en/sql-reference/functions/logical-functions"
+    },
+    {
+        "title": "Machine Learning Functions",
+        "slug": "/en/sql-reference/functions/machine-learning-functions"
+    },
+    {
+        "title": "Maps Functions",
+        "slug": "/en/sql-reference/functions/tuple-map-functions"
+    },
+    {
+        "title": "Math Functions",
+        "slug": "/en/sql-reference/functions/math-functions"
+    },
+    {
+        "title": "NLP Functions",
+        "slug": "/en/sql-reference/functions/nlp-functions"
+    },
+    {
+        "title": "Null Functions",
+        "slug": "/en/sql-reference/functions/functions-for-nulls"
+    },
+    {
+        "title": "Other Functions",
+        "slug": "/en/sql-reference/functions/other-functions"
+    },
+    {
+        "title": "Random Functions",
+        "slug": "/en/sql-reference/functions/random-functions"
+    },
+    {
+        "title": "Regular Functions",
+        "slug": "/en/sql-reference/functions/regular-functions"
+    },
+    {
+        "title": "Rounding Functions",
+        "slug": "/en/sql-reference/functions/rounding-functions"
+    },
+    {
+        "title": "String Functions",
+        "slug": "/en/sql-reference/functions/string-functions"
+    },
+    {
+        "title": "String Replacement Functions",
+        "slug": "/en/sql-reference/functions/string-replace-functions"
+    },
+    {
+        "title": "String Search Functions",
+        "slug": "/en/sql-reference/functions/string-search-functions"
+    },
+    {
+        "title": "String Splitting Functions",
+        "slug": "/en/sql-reference/functions/splitting-merging-functions"
+    },
+    {
+        "title": "Time Series Functions",
+        "slug": "/en/sql-reference/functions/time-series-functions"
+    },
+    {
+        "title": "Time Window Functions",
+        "slug": "/en/sql-reference/functions/time-window-functions"
+    },
+    {
+        "title": "Tuple Functions",
+        "slug": "/en/sql-reference/functions/tuple-functions"
+    },
+    {
+        "title": "Type Conversion Functions",
+        "slug": "/en/sql-reference/functions/type-conversion-functions"
+    },
+    {
+        "title": "ULID Functions",
+        "slug": "/en/sql-reference/functions/ulid-functions"
+    },
+    {
+        "title": "URL Functions",
+        "slug": "/en/sql-reference/functions/url-functions"
+    },
+    {
+        "title": "UUID Functions",
+        "slug": "/en/sql-reference/functions/uuid-functions"
+    },
+    {
+        "title": "User Defined Functions",
+        "slug": "/en/sql-reference/functions/udf"
+    },
+    {
+        "title": "arrayJoin Function",
+        "slug": "/en/sql-reference/functions/array-join"
+    },
+    {
+        "title": "uniqTheta Functions",
+        "slug": "/en/sql-reference/functions/uniqtheta-functions"
+    }
+]

@@ -1,4 +1,5 @@
 ---
+title: replicated_fetches
 slug: /en/operations/system-tables/replicated_fetches
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

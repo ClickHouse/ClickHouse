@@ -1,0 +1,382 @@
+[
+    {
+        "title": "asynchronous_insert_log",
+        "slug": "/en/operations/system-tables/asynchronous_insert_log"
+    },
+    {
+        "title": "asynchronous_inserts",
+        "slug": "/en/operations/system-tables/asynchronous_inserts"
+    },
+    {
+        "title": "asynchronous_loader",
+        "slug": "/en/operations/system-tables/asynchronous_loader"
+    },
+    {
+        "title": "asynchronous_metric_log",
+        "slug": "/en/operations/system-tables/asynchronous_metric_log"
+    },
+    {
+        "title": "asynchronous_metrics",
+        "slug": "/en/operations/system-tables/asynchronous_metrics"
+    },
+    {
+        "title": "azure_queue_settings",
+        "slug": "/en/operations/system-tables/azure_queue_settings"
+    },
+    {
+        "title": "backup_log",
+        "slug": "/en/operations/system-tables/backup_log"
+    },
+    {
+        "title": "blob_storage_log",
+        "slug": "/en/operations/system-tables/blob_storage_log"
+    },
+    {
+        "title": "build_options",
+        "slug": "/en/operations/system-tables/build_options"
+    },
+    {
+        "title": "clusters",
+        "slug": "/en/operations/system-tables/clusters"
+    },
+    {
+        "title": "columns",
+        "slug": "/en/operations/system-tables/columns"
+    },
+    {
+        "title": "contributors",
+        "slug": "/en/operations/system-tables/contributors"
+    },
+    {
+        "title": "crash_log",
+        "slug": "/en/operations/system-tables/crash-log"
+    },
+    {
+        "title": "current_roles",
+        "slug": "/en/operations/system-tables/current-roles"
+    },
+    {
+        "title": "dashboards",
+        "slug": "/en/operations/system-tables/dashboards"
+    },
+    {
+        "title": "data_skipping_indices",
+        "slug": "/en/operations/system-tables/data_skipping_indices"
+    },
+    {
+        "title": "data_type_families",
+        "slug": "/en/operations/system-tables/data_type_families"
+    },
+    {
+        "title": "database_engines",
+        "slug": "/en/operations/system-tables/database_engines"
+    },
+    {
+        "title": "databases",
+        "slug": "/en/operations/system-tables/databases"
+    },
+    {
+        "title": "detached_parts",
+        "slug": "/en/operations/system-tables/detached_parts"
+    },
+    {
+        "title": "detached_tables",
+        "slug": "/en/operations/system-tables/detached_tables"
+    },
+    {
+        "title": "dictionaries",
+        "slug": "/en/operations/system-tables/dictionaries"
+    },
+    {
+        "title": "disks",
+        "slug": "/en/operations/system-tables/disks"
+    },
+    {
+        "title": "distributed_ddl_queue",
+        "slug": "/en/operations/system-tables/distributed_ddl_queue"
+    },
+    {
+        "title": "distribution_queue",
+        "slug": "/en/operations/system-tables/distribution_queue"
+    },
+    {
+        "title": "dns_cache",
+        "slug": "/en/operations/system-tables/dns_cache"
+    },
+    {
+        "title": "dropped_tables",
+        "slug": "/en/operations/system-tables/dropped_tables"
+    },
+    {
+        "title": "dropped_tables_parts",
+        "slug": "/en/operations/system-tables/dropped_tables_parts"
+    },
+    {
+        "title": "enabled_roles",
+        "slug": "/en/operations/system-tables/enabled-roles"
+    },
+    {
+        "title": "error_log",
+        "slug": "/en/operations/system-tables/error_log"
+    },
+    {
+        "title": "errors",
+        "slug": "/en/operations/system-tables/errors"
+    },
+    {
+        "title": "events",
+        "slug": "/en/operations/system-tables/events"
+    },
+    {
+        "title": "functions",
+        "slug": "/en/operations/system-tables/functions"
+    },
+    {
+        "title": "grants",
+        "slug": "/en/operations/system-tables/grants"
+    },
+    {
+        "title": "graphite_retentions",
+        "slug": "/en/operations/system-tables/graphite_retentions"
+    },
+    {
+        "title": "information_schema",
+        "slug": "/en/operations/system-tables/information_schema"
+    },
+    {
+        "title": "jemalloc_bins",
+        "slug": "/en/operations/system-tables/jemalloc_bins"
+    },
+    {
+        "title": "kafka_consumers",
+        "slug": "/en/operations/system-tables/kafka_consumers"
+    },
+    {
+        "title": "licenses",
+        "slug": "/en/operations/system-tables/licenses"
+    },
+    {
+        "title": "merge_tree_settings",
+        "slug": "/en/operations/system-tables/merge_tree_settings"
+    },
+    {
+        "title": "merges",
+        "slug": "/en/operations/system-tables/merges"
+    },
+    {
+        "title": "metric_log",
+        "slug": "/en/operations/system-tables/metric_log"
+    },
+    {
+        "title": "metrics",
+        "slug": "/en/operations/system-tables/metrics"
+    },
+    {
+        "title": "moves",
+        "slug": "/en/operations/system-tables/moves"
+    },
+    {
+        "title": "mutations",
+        "slug": "/en/operations/system-tables/mutations"
+    },
+    {
+        "title": "numbers",
+        "slug": "/en/operations/system-tables/numbers"
+    },
+    {
+        "title": "numbers_mt",
+        "slug": "/en/operations/system-tables/numbers_mt"
+    },
+    {
+        "title": "one",
+        "slug": "/en/operations/system-tables/one"
+    },
+    {
+        "title": "opentelemetry_span_log",
+        "slug": "/en/operations/system-tables/opentelemetry_span_log"
+    },
+    {
+        "title": "part_log",
+        "slug": "/en/operations/system-tables/part_log"
+    },
+    {
+        "title": "parts",
+        "slug": "/en/operations/system-tables/parts"
+    },
+    {
+        "title": "parts_columns",
+        "slug": "/en/operations/system-tables/parts_columns"
+    },
+    {
+        "title": "processes",
+        "slug": "/en/operations/system-tables/processes"
+    },
+    {
+        "title": "processors_profile_log",
+        "slug": "/en/operations/system-tables/processors_profile_log"
+    },
+    {
+        "title": "projections",
+        "slug": "/en/operations/system-tables/projections"
+    },
+    {
+        "title": "query_cache",
+        "slug": "/en/operations/system-tables/query_cache"
+    },
+    {
+        "title": "query_log",
+        "slug": "/en/operations/system-tables/query_log"
+    },
+    {
+        "title": "query_metric_log",
+        "slug": "/en/operations/system-tables/query_metric_log"
+    },
+    {
+        "title": "query_thread_log",
+        "slug": "/en/operations/system-tables/query_thread_log"
+    },
+    {
+        "title": "query_views_log",
+        "slug": "/en/operations/system-tables/query_views_log"
+    },
+    {
+        "title": "quota_limits",
+        "slug": "/en/operations/system-tables/quota_limits"
+    },
+    {
+        "title": "quota_usage",
+        "slug": "/en/operations/system-tables/quota_usage"
+    },
+    {
+        "title": "quotas",
+        "slug": "/en/operations/system-tables/quotas"
+    },
+    {
+        "title": "quotas_usage",
+        "slug": "/en/operations/system-tables/quotas_usage"
+    },
+    {
+        "title": "replicas",
+        "slug": "/en/operations/system-tables/replicas"
+    },
+    {
+        "title": "replicated_fetches",
+        "slug": "/en/operations/system-tables/replicated_fetches"
+    },
+    {
+        "title": "replication_queue",
+        "slug": "/en/operations/system-tables/replication_queue"
+    },
+    {
+        "title": "resources",
+        "slug": "/en/operations/system-tables/resources"
+    },
+    {
+        "title": "role_grants",
+        "slug": "/en/operations/system-tables/role-grants"
+    },
+    {
+        "title": "roles",
+        "slug": "/en/operations/system-tables/roles"
+    },
+    {
+        "title": "row_policies",
+        "slug": "/en/operations/system-tables/row_policies"
+    },
+    {
+        "title": "s3_queue_settings",
+        "slug": "/en/operations/system-tables/s3_queue_settings"
+    },
+    {
+        "title": "scheduler",
+        "slug": "/en/operations/system-tables/scheduler"
+    },
+    {
+        "title": "schema_inference_cache",
+        "slug": "/en/operations/system-tables/schema_inference_cache"
+    },
+    {
+        "title": "server_settings",
+        "slug": "/en/operations/system-tables/server_settings"
+    },
+    {
+        "title": "session_log",
+        "slug": "/en/operations/system-tables/session_log"
+    },
+    {
+        "title": "settings",
+        "slug": "/en/operations/system-tables/settings"
+    },
+    {
+        "title": "settings_changes",
+        "slug": "/en/operations/system-tables/settings_changes"
+    },
+    {
+        "title": "settings_profile_elements",
+        "slug": "/en/operations/system-tables/settings_profile_elements"
+    },
+    {
+        "title": "settings_profiles",
+        "slug": "/en/operations/system-tables/settings_profiles"
+    },
+    {
+        "title": "stack_trace",
+        "slug": "/en/operations/system-tables/stack_trace"
+    },
+    {
+        "title": "storage_policies",
+        "slug": "/en/operations/system-tables/storage_policies"
+    },
+    {
+        "title": "symbols",
+        "slug": "/en/operations/system-tables/symbols"
+    },
+    {
+        "title": "table_engines",
+        "slug": "/en/operations/system-tables/table_engines"
+    },
+    {
+        "title": "tables",
+        "slug": "/en/operations/system-tables/tables"
+    },
+    {
+        "title": "text_log",
+        "slug": "/en/operations/system-tables/text_log"
+    },
+    {
+        "title": "time_zones",
+        "slug": "/en/operations/system-tables/time_zones"
+    },
+    {
+        "title": "trace_log",
+        "slug": "/en/operations/system-tables/trace_log"
+    },
+    {
+        "title": "user_processes",
+        "slug": "/en/operations/system-tables/user_processes"
+    },
+    {
+        "title": "users",
+        "slug": "/en/operations/system-tables/users"
+    },
+    {
+        "title": "view_refreshes",
+        "slug": "/en/operations/system-tables/view_refreshes"
+    },
+    {
+        "title": "workloads",
+        "slug": "/en/operations/system-tables/workloads"
+    },
+    {
+        "title": "zookeeper",
+        "slug": "/en/operations/system-tables/zookeeper"
+    },
+    {
+        "title": "zookeeper_connection",
+        "slug": "/en/operations/system-tables/zookeeper_connection"
+    },
+    {
+        "title": "zookeeper_log",
+        "slug": "/en/operations/system-tables/zookeeper_log"
+    }
+]

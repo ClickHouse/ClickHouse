@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/other-functions
 sidebar_position: 140
 sidebar_label: Other
+title: Other Functions
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -386,7 +387,7 @@ materialize(x)
 
 **Parameters**
 
-- `x` — A constant. [Constant](../functions/index.md/#constants).
+- `x` — A constant. [Constant](/docs/en/sql-reference/functions//#constants).
 
 **Returned value**
 
@@ -2234,7 +2235,7 @@ Result:
 
 ## filesystemAvailable
 
-Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for the operating system.
+Returns the amount of free space in the filesystem hosting the database persistence. The returned value is always smaller than total free space ([filesystemUnreserved](#filesystemunreserved)) because some space is reserved for the operating system.
 
 **Syntax**
 

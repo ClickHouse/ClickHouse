@@ -1,4 +1,5 @@
 ---
+title: dns_cache
 slug: /en/operations/system-tables/dns_cache
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

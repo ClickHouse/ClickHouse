@@ -2,12 +2,13 @@
 slug: /en/sql-reference/functions/random-functions
 sidebar_position: 145
 sidebar_label: Random Numbers
+title: Random Functions
 ---
 
 # Functions for Generating Random Numbers
 
 All functions in this section accept zero or one arguments. The only use of the argument (if provided) is to prevent [common subexpression
-elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) such that two different executions within a row of the same random
+elimination](/docs/en/sql-reference/functions/#common-subexpression-elimination) such that two different executions within a row of the same random
 function return different random values.
 
 Related content
