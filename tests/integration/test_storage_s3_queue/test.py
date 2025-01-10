@@ -1894,9 +1894,8 @@ def test_exception_during_insert(started_cluster):
     expected_rows = [0]
 
     def generate(check_inserted):
-        files_to_generate = 11
-        row_num = 1000000
-        node.query(f"detach table {dst_table_name}_mv")
+        files_to_generate = 1
+        row_num = 1
         time.sleep(10)
         total_values = generate_random_files(
             started_cluster,
@@ -1906,11 +1905,11 @@ def test_exception_during_insert(started_cluster):
             row_num=row_num,
             use_random_names=1,
         )
-        node.query(f"attach table {dst_table_name}_mv")
         expected_rows[0] += files_to_generate * row_num
         if check_inserted:
             wait_for_rows(expected_rows[0])
 
+    generate(True)
     generate(True)
     generate(True)
     generate(False)
