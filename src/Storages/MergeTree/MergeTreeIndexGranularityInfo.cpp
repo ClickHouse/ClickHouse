@@ -114,6 +114,8 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
     , fixed_index_granularity(index_granularity_)
     , index_granularity_bytes(index_granularity_bytes_)
 {
+    if (fixed_index_granularity == 42)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "fixed_index_granularity={}\n{}", fixed_index_granularity, StackTrace().toString());
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
@@ -126,6 +128,8 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
     , fixed_index_granularity((*storage.getSettings())[MergeTreeSetting::index_granularity])
     , index_granularity_bytes((*storage.getSettings())[MergeTreeSetting::index_granularity_bytes])
 {
+    if (fixed_index_granularity == 42)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "fixed_index_granularity={}\n{}", fixed_index_granularity, StackTrace().toString());
 }
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)

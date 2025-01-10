@@ -138,7 +138,8 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
             std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
 
     size_t marks_file_size = data_part_storage_.getFileSize(marks_file_path);
-    size_t fixed_granularity = index_granularity_info_.fixed_index_granularity;
+    const size_t fixed_granularity = index_granularity_info_.fixed_index_granularity;
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "fixed_granularity={}", fixed_granularity);
 
     if (!index_granularity_info_.mark_type.adaptive && !index_granularity_info_.mark_type.compressed)
     {

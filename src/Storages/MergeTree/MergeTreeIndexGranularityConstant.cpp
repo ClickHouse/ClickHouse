@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include "Common/StackTrace.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,6 +14,8 @@ MergeTreeIndexGranularityConstant::MergeTreeIndexGranularityConstant(size_t cons
     : constant_granularity(constant_granularity_)
     , last_mark_granularity(constant_granularity_)
 {
+    if (last_mark_granularity == 42)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "last_mark_granularity={}\n{}", last_mark_granularity, StackTrace().toString());
 }
 
 MergeTreeIndexGranularityConstant::MergeTreeIndexGranularityConstant(size_t constant_granularity_, size_t last_mark_granularity_, size_t num_marks_without_final_, bool has_final_mark_)
@@ -20,6 +24,8 @@ MergeTreeIndexGranularityConstant::MergeTreeIndexGranularityConstant(size_t cons
     , num_marks_without_final(num_marks_without_final_)
     , has_final_mark(has_final_mark_)
 {
+    if (last_mark_granularity == 42)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "last_mark_granularity={}\n{}", last_mark_granularity, StackTrace().toString());
 }
 
 /// Rows after mark to next mark
@@ -52,6 +58,8 @@ size_t MergeTreeIndexGranularityConstant::getTotalRows() const
 
 void MergeTreeIndexGranularityConstant::appendMark(size_t rows_count)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "row_count={}\n{}", rows_count, StackTrace().toString());
+
     if (has_final_mark)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot append mark after final");
@@ -87,6 +95,8 @@ void MergeTreeIndexGranularityConstant::adjustLastMark(size_t rows_count)
 
 size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size_t end) const
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "begin={} end={}", begin, end);
+
     if (end > getMarksCount())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get marks in range [{}; {}), while size is {}", begin, end, getMarksCount());
 
@@ -101,6 +111,12 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
     }
 
     total_rows += constant_granularity * (end - begin);
+    LOG_DEBUG(
+        getLogger(__PRETTY_FUNCTION__),
+        "last_mark_granularity={} total_rows={}\n{}",
+        last_mark_granularity,
+        total_rows,
+        StackTrace().toString());
     return total_rows;
 }
 

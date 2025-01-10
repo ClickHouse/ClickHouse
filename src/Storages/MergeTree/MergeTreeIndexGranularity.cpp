@@ -30,6 +30,8 @@ size_t MergeTreeIndexGranularity::getRowsCountInRanges(const MarkRanges & ranges
     size_t total = 0;
     for (const auto & range : ranges)
         total += getRowsCountInRange(range);
+
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "total={}", total);
     return total;
 }
 
