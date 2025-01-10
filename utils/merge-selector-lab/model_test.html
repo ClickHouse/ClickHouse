@@ -94,24 +94,8 @@
             import { customScenario } from './customScenario.js';
             import { floatLayerMerges } from './floatLayerMerges.js';
             import { mergeModel } from './mergeModel.js';
-            import { delayMs } from './util.js';
-
-            function parseHumanReadableSize(str) {
-                const sizeInput = str.trim().toUpperCase();
-                if (sizeInput.endsWith('KB')) {
-                    return parseFloat(sizeInput) * 1024;
-                } else if (sizeInput.endsWith('MB')) {
-                    return parseFloat(sizeInput) * 1024 * 1024;
-                } else if (sizeInput.endsWith('GB')) {
-                    return parseFloat(sizeInput) * 1024 * 1024 * 1024;
-                } else if (sizeInput.endsWith('TB')) {
-                    return parseFloat(sizeInput) * 1024 * 1024 * 1024 * 1024;
-                } else if (sizeInput.endsWith('PB')) {
-                    return parseFloat(sizeInput) * 1024 * 1024 * 1024 * 1024 * 1024;
-                } else {
-                    return parseInt(sizeInput);
-                }
-            }
+            import { projectedGradientDescent, nesterovAcceleratedPGD } from './gradientDescent.js';
+            import { delayMs, parseHumanReadableSize } from './util.js';
 
             function readPartSize() {
                 return parseHumanReadableSize(document.getElementById('insertPartSize').value);
@@ -122,6 +106,16 @@
                 return str ? parseHumanReadableSize(str) : null; // No limit
             }
 
+            const methods = {
+                "Projected GD": projectedGradientDescent,
+                "Accelerated PGD": nesterovAcceleratedPGD,
+            };
+
+            function selectMethod()
+            {
+                // TODO: rewrite it to choose method that is choosen in form
+            }
+
             function readParams() {
                 let params = {
                     insertPartSize: readPartSize(),
@@ -130,6 +124,7 @@
                     workers: parseInt(document.getElementById('poolSize').value),
                     maxSourceParts: parseInt(document.getElementById('maxSourceParts').value),
                     maxPartSize: readMaxPartSize(),
+                    method: selectMethod()
                 };
                 console.log("PARAMS", params);
                 return params;
@@ -141,7 +136,7 @@
                 solveButton.disabled = true;
                 await delayMs(32);
 
-                const {insertPartSize, parts, workers, maxSourceParts, maxPartSize} = readParams();
+                const {insertPartSize, parts, workers, maxSourceParts, maxPartSize, method} = readParams();
 
                 const mt0 = new MergeTree();
                 const realB = mt0.mergeDuration(insertPartSize * parts, parts);
@@ -152,7 +147,8 @@
 
                 d3.select('#options-table tbody').html('');
 
-                const solution = mergeModel({insertPartSize, parts, workers, maxSourceParts, maxPartSize},
+                mergeModel({insertPartSize, parts, workers, maxSourceParts, maxPartSize},
+                    method,
                     function onOption(L, x, Fx) {
                         const bases = x.map(xi => Math.exp(xi));
                         const basesStr = '[' + bases.map(base => base.toFixed(2)).join(', ') + ']';
