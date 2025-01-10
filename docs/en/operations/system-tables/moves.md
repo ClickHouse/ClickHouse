@@ -1,4 +1,5 @@
 ---
+title: moves
 slug: /en/operations/system-tables/moves
 ---
 # moves

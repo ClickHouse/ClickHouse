@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/uniqtheta-functions
 sidebar_position: 210
 sidebar_label: uniqTheta
+title: uniqTheta Functions
 ---
 
 # uniqTheta Functions

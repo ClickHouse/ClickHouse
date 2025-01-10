@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/string-functions
 sidebar_position: 170
 sidebar_label: Strings
+title: String Functions
 ---
 
 import VersionBadge from '@theme/badges/VersionBadge';

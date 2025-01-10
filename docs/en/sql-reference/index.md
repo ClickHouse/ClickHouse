@@ -13,9 +13,11 @@ import LinksDeployment from './sql-reference-links.json'
 
 # ClickHouse SQL Reference
 
-ClickHouse supports a declarative query language based on SQL that is identical to the ANSI SQL standard in many cases.
+ClickHouse supports a familiar declarative query language based on SQL that is identical to the ANSI SQL standard in many cases, but offers a host of additional functionality.
 
-Supported queries include GROUP BY, ORDER BY, subqueries in FROM, JOIN clause, IN operator, window functions and scalar subqueries.
+The SQL reference page serves as a comprehensive guide to help users understand and make use of ClickHouse's query language and functionality. It contains information about the supported syntax,
+data types, statements and wide range of input and output formats supported in ClickHouse as well as information on database and table engines and a large number of functions that
+make ClickHouse such an efficient and versatile tool.
 
 <HorizontalDivide />
 

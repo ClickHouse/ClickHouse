@@ -1,4 +1,5 @@
 ---
+title: parts_columns
 slug: /en/operations/system-tables/parts_columns
 ---
 # parts_columns

@@ -1,4 +1,5 @@
 ---
+title: median
 slug: /en/sql-reference/aggregate-functions/reference/median
 sidebar_position: 167
 ---

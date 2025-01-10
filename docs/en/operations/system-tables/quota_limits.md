@@ -1,4 +1,5 @@
 ---
+title: quota_limits
 slug: /en/operations/system-tables/quota_limits
 ---
 # quota_limits

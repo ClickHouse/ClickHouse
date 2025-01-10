@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/hash-functions
 sidebar_position: 85
 sidebar_label: Hash
+title: Hash Functions
 ---
 
 # Hash Functions

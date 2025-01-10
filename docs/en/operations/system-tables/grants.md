@@ -1,4 +1,5 @@
 ---
+title: grants
 slug: /en/operations/system-tables/grants
 ---
 # grants

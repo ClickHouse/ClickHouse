@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/ip-address-functions
 sidebar_position: 95
 sidebar_label: IP Addresses
+title: IP Address Functions
 ---
 
 # Functions for Working with IPv4 and IPv6 Addresses

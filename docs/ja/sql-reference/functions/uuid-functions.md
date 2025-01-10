@@ -18,7 +18,7 @@ generateUUIDv4([expr])
 
 **引数**
 
-- `expr` — クエリ内で関数が複数回呼ばれる場合に[共通部分式の除去](../functions/index.md#common-subexpression-elimination)を回避するための任意の[式](../syntax.md#syntax-expressions)。式の値は返されるUUIDに影響を与えません。省略可能。
+- `expr` — クエリ内で関数が複数回呼ばれる場合に[共通部分式の除去](/docs/ja/sql-reference/functions/#common-subexpression-elimination)を回避するための任意の[式](../syntax.md#syntax-expressions)。式の値は返されるUUIDに影響を与えません。省略可能。
 
 **返される値**
 
@@ -90,7 +90,7 @@ generateUUIDv7([expr])
 
 **引数**
 
-- `expr` — クエリ内で関数が複数回呼ばれる場合に[共通部分式の除去](../functions/index.md#common-subexpression-elimination)を回避するための任意の[式](../syntax.md#syntax-expressions)。式の値は返されるUUIDに影響を与えません。省略可能。
+- `expr` — クエリ内で関数が複数回呼ばれる場合に[共通部分式の除去](/docs/ja/sql-reference/functions/#common-subexpression-elimination)を回避するための任意の[式](../syntax.md#syntax-expressions)。式の値は返されるUUIDに影響を与えません。省略可能。
 
 **返される値**
 

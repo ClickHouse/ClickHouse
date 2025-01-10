@@ -2,6 +2,7 @@
 slug: /en/sql-reference/functions/udf
 sidebar_position: 15
 sidebar_label: UDF
+title: User Defined Functions
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

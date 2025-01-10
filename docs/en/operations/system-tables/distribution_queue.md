@@ -1,4 +1,5 @@
 ---
+title: distribution_queue
 slug: /en/operations/system-tables/distribution_queue
 ---
 # distribution_queue

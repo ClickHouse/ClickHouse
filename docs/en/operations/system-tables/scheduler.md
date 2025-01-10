@@ -1,4 +1,5 @@
 ---
+title: scheduler
 slug: /en/operations/system-tables/scheduler
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

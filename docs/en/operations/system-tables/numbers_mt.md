@@ -1,4 +1,5 @@
 ---
+title: numbers_mt
 slug: /en/operations/system-tables/numbers_mt
 ---
 # numbers_mt

@@ -1,4 +1,5 @@
 ---
+title: zookeeper
 slug: /en/operations/system-tables/zookeeper
 ---
 # zookeeper

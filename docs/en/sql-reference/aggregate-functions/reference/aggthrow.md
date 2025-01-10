@@ -1,4 +1,5 @@
 ---
+title: aggThrow
 slug: /en/sql-reference/aggregate-functions/reference/aggthrow
 sidebar_position: 101
 ---
