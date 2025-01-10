@@ -943,11 +943,14 @@ def _add_build_to_version_history(
     # with some probability we will not silently break this logic
     assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
 
+    commit = get_commit(GitHub(get_best_robot_token()), pr_info.sha)
+    parents = [p.sha for p in commit.parents]
     data = {
         "check_start_time": start_time,
         "pull_request_number": pr_info.number,
         "pull_request_url": pr_info.pr_html_url,
         "commit_sha": pr_info.sha,
+        "parent_commits_sha": parents,
         "commit_url": pr_info.commit_html_url,
         "version": version,
         "docker_tag": docker_tag,
