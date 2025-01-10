@@ -4,7 +4,7 @@ sidebar_position: 15
 sidebar_label: UDF
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 
 # UDFs User Defined Functions
 
