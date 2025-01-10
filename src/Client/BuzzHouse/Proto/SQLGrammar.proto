@@ -2987,7 +2987,7 @@ message TTLExpr {
 
 message TableEngine {
     optional TableEngineOption toption = 1;
-    required TableEngineValues engine = 2;
+    optional TableEngineValues engine = 2;
     repeated TableEngineParam params = 3;
     optional TableKey order = 4;
     optional TableKey partition_by = 5;

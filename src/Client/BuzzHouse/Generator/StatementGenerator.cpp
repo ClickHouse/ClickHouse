@@ -187,33 +187,48 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     est->mutable_table()->set_table(vname);
     if (next.is_materialized)
     {
-        SQLRelation rel(vname);
         TableEngine * te = cv->mutable_engine();
+        const uint32_t nopt = rg.nextSmallNumber();
         const bool has_with_cols
             = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() >= next.ncols; });
         const bool has_tables = has_with_cols || !tables.empty();
+        const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
 
-        next.teng = getNextTableEngine(rg, false);
-        te->set_engine(next.teng);
-
+        if (nopt < 4)
+        {
+            next.teng = getNextTableEngine(rg, false);
+            te->set_engine(next.teng);
+        }
+        else
+        {
+            next.teng = TableEngineValues::MergeTree;
+        }
         assert(this->entries.empty());
         for (uint32_t i = 0; i < next.ncols; i++)
         {
             std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
             entries.push_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
-            rel.cols.push_back(SQLRelationCol(vname, {"c" + std::to_string(i)}));
         }
-        this->levels[this->current_level].rels.push_back(std::move(rel));
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
-        generateEngineDetails(rg, next, true, te);
-        this->levels.clear();
+        if (!has_to)
+        {
+            SQLRelation rel(vname);
+
+            for (uint32_t i = 0; i < next.ncols; i++)
+            {
+                rel.cols.push_back(SQLRelationCol(vname, {"c" + std::to_string(i)}));
+            }
+            this->levels[this->current_level].rels.push_back(std::move(rel));
+            this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+            generateEngineDetails(rg, next, true, te);
+            this->levels.clear();
+        }
         if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
         {
             generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }
         this->entries.clear();
 
-        if ((has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6))
+        if (has_to)
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             const SQLTable & t = has_with_cols
@@ -236,7 +251,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
                 entries.clear();
             }
         }
-        if ((next.is_refreshable = rg.nextBool()))
+        if (!replace && (next.is_refreshable = rg.nextBool()))
         {
             generateNextRefreshableView(rg, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());

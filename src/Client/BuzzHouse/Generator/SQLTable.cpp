@@ -709,7 +709,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
-    if (teng == TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 4)
+    if (te->has_engine() && teng == TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 4)
     {
         ColumnPathList * clist = te->add_params()->mutable_col_list();
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
@@ -731,7 +731,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
     if (b.isMergeTreeFamily())
     {
-        if (!b.is_temp && (supports_cloud_features || replica_setup) && rg.nextSmallNumber() < 4)
+        if (te->has_engine() && !b.is_temp && (supports_cloud_features || replica_setup) && rg.nextSmallNumber() < 4)
         {
             assert(this->ids.empty());
             if (replica_setup)
@@ -748,7 +748,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         }
         generateMergeTreeEngineDetails(rg, b.teng, b.peer_table, add_pkey, te);
     }
-    else if (b.isFileEngine())
+    else if (te->has_engine() && b.isFileEngine())
     {
         const uint32_t noption = rg.nextSmallNumber();
         TableEngineParam * tep = te->add_params();
@@ -766,7 +766,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             tep->set_out(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
         }
     }
-    else if (b.isJoinEngine())
+    else if (te->has_engine() && b.isJoinEngine())
     {
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3))) + 1;
         JoinType jt = static_cast<JoinType>((rg.nextRandomUInt32() % static_cast<uint32_t>(J_FULL)) + 1);
@@ -799,12 +799,12 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             te->set_toption(b.toption.value());
         }
     }
-    else if (b.isSetEngine() && supports_cloud_features && rg.nextSmallNumber() < 5)
+    else if (te->has_engine() && b.isSetEngine() && supports_cloud_features && rg.nextSmallNumber() < 5)
     {
         b.toption = TableEngineOption::TShared;
         te->set_toption(b.toption.value());
     }
-    else if (b.isBufferEngine())
+    else if (te->has_engine() && b.isBufferEngine())
     {
         const bool has_tables = collectionHas<SQLTable>(
             [](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; });
@@ -852,7 +852,8 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
         }
     }
-    else if (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine() || b.isRedisEngine())
+    else if (
+        te->has_engine() && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine() || b.isRedisEngine()))
     {
         IntegrationCall next = IntegrationCall::MinIO;
 
@@ -882,7 +883,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergEngine())
+    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergEngine()))
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
         if (b.isAnyS3Engine() || b.isIcebergEngine())
@@ -900,7 +901,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             }
         }
     }
-    else if (b.isMergeEngine())
+    else if (te->has_engine() && b.isMergeEngine())
     {
         setMergeTableParamter<std::shared_ptr<SQLDatabase>>(rg, 'd');
         te->add_params()->set_regexp(buf);
@@ -908,72 +909,76 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         setMergeTableParamter<SQLTable>(rg, 't');
         te->add_params()->set_svalue(buf);
     }
-    if ((b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
+    if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
         columnPathRef(rg.pickRandomlyFromVector(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
-    const auto & tsettings = allTableSettings.at(b.teng);
-    if (!tsettings.empty() && rg.nextSmallNumber() < 5)
+    if (te->has_engine())
     {
-        svs = te->mutable_settings();
-        generateSettingValues(rg, tsettings, svs);
-    }
-    if (b.isMergeTreeFamily() || b.isAnyS3Engine() || b.toption.has_value())
-    {
-        if (!svs)
+        const auto & tsettings = allTableSettings.at(b.teng);
+
+        if (!tsettings.empty() && rg.nextSmallNumber() < 5)
         {
             svs = te->mutable_settings();
+            generateSettingValues(rg, tsettings, svs);
         }
-        if (b.isMergeTreeFamily())
+        if (b.isMergeTreeFamily() || b.isAnyS3Engine() || b.toption.has_value())
         {
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-            sv->set_property("allow_nullable_key");
-            sv->set_value("1");
-
-            if (!b.hasClickHousePeer())
+            if (!svs)
             {
-                SetValue * sv2 = svs->add_other_values();
-
-                sv2->set_property("allow_experimental_reverse_key");
-                sv2->set_value("1");
+                svs = te->mutable_settings();
             }
-        }
-        else if (b.isAnyS3Engine())
-        {
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-            sv->set_property("input_format_with_names_use_header");
-            sv->set_value("0");
-            if (b.isS3QueueEngine())
-            {
-                SetValue * sv2 = svs->add_other_values();
-
-                sv2->set_property("mode");
-                sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
-            }
-        }
-        if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
-        {
-            //requires keeper storage
-            bool found = false;
-            const auto & ovals = svs->other_values();
-
-            for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
-            {
-                if (it->property() == "storage_policy")
-                {
-                    auto & prop = const_cast<SetValue &>(*it);
-                    prop.set_value("'s3_with_keeper'");
-                    found = true;
-                }
-            }
-            if (!found)
+            if (b.isMergeTreeFamily())
             {
                 SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-                sv->set_property("storage_policy");
-                sv->set_value("'s3_with_keeper'");
+                sv->set_property("allow_nullable_key");
+                sv->set_value("1");
+
+                if (!b.hasClickHousePeer())
+                {
+                    SetValue * sv2 = svs->add_other_values();
+
+                    sv2->set_property("allow_experimental_reverse_key");
+                    sv2->set_value("1");
+                }
+            }
+            else if (b.isAnyS3Engine())
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                sv->set_property("input_format_with_names_use_header");
+                sv->set_value("0");
+                if (b.isS3QueueEngine())
+                {
+                    SetValue * sv2 = svs->add_other_values();
+
+                    sv2->set_property("mode");
+                    sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
+                }
+            }
+            if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
+            {
+                //requires keeper storage
+                bool found = false;
+                const auto & ovals = svs->other_values();
+
+                for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
+                {
+                    if (it->property() == "storage_policy")
+                    {
+                        auto & prop = const_cast<SetValue &>(*it);
+                        prop.set_value("'s3_with_keeper'");
+                        found = true;
+                    }
+                }
+                if (!found)
+                {
+                    SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                    sv->set_property("storage_policy");
+                    sv->set_value("'s3_with_keeper'");
+                }
             }
         }
     }

@@ -2688,24 +2688,27 @@ CONV_FN(TTLExpr, ttl_expr)
 
 CONV_FN(TableEngine, te)
 {
-    const TableEngineValues tengine = te.engine();
+    if (te.has_engine())
+    {
+        const TableEngineValues tengine = te.engine();
 
-    ret += " ENGINE = ";
-    if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
-    {
-        ret += TableEngineOption_Name(te.toption()).substr(1);
-    }
-    ret += TableEngineValues_Name(tengine);
-    ret += "(";
-    for (int i = 0; i < te.params_size(); i++)
-    {
-        if (i != 0)
+        ret += " ENGINE = ";
+        if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
         {
-            ret += ", ";
+            ret += TableEngineOption_Name(te.toption()).substr(1);
         }
-        TableEngineParamToString(ret, te.params(i));
+        ret += TableEngineValues_Name(tengine);
+        ret += "(";
+        for (int i = 0; i < te.params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            TableEngineParamToString(ret, te.params(i));
+        }
+        ret += ")";
     }
-    ret += ")";
     if (te.has_order())
     {
         ret += " ORDER BY ";
@@ -3195,25 +3198,33 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
+    const bool replace = create_view.replace();
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
-    ret += create_view.replace() ? "REPLACE" : "CREATE";
-    ret += " ";
-    if (materialized)
+    if (create_view.replace())
     {
-        ret += "MATERIALIZED ";
+        ret += "REPLACE TABLE";
     }
-    ret += "VIEW ";
+    else
+    {
+        ret += "CREATE ";
+        if (materialized)
+        {
+            ret += "MATERIALIZED ";
+        }
+        ret += "VIEW";
+    }
+    ret += " ";
     ExprSchemaTableToString(ret, create_view.est());
     if (materialized)
     {
-        if (refreshable)
+        if (!replace && refreshable)
         {
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (create_view.has_to())
+        if (!replace && create_view.has_to())
         {
             const CreateMatViewTo & cmvt = create_view.to();
 
@@ -3234,7 +3245,7 @@ CONV_FN(CreateView, create_view)
         {
             ret += " POPULATE";
         }
-        if (refreshable && create_view.empty())
+        if (!replace && refreshable && create_view.empty())
         {
             ret += " EMPTY";
         }
