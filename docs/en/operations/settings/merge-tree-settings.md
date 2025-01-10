@@ -998,7 +998,7 @@ Default value: an empty string
 
 ## default_compression_codec
 
-Specifies the default compression codec to be used if none is defined for a particular column in the table declaration. If a column has a designated compression codec, it will override this default setting.
+Specifies the default compression codec to be used if none is defined for a particular column in the table declaration. If a column has a designated compression codec, it will take priority over this default setting.
 
 Default value: an empty string
 
