@@ -56,7 +56,7 @@ public:
     bool setProcessing();
     void setProcessed();
     void resetProcessing();
-    void setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status);
+    void setFailed(const std::string & exception_message, bool reduce_retry_count);
 
     virtual void setProcessedAtStartRequests(
         Coordination::Requests & requests,
@@ -81,7 +81,6 @@ public:
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void setProcessedImpl() = 0;
-    virtual void resetProcessingImpl();
     void setFailedNonRetriable();
     void setFailedRetriable();
 
