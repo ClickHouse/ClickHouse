@@ -310,7 +310,7 @@ class Result(MetaClasses.Serializable):
 
         # Set log file path if logging is enabled
         log_file = (
-            f"{Settings.TEMP_DIR}/{Utils.normalize_string(name)}.log"
+            f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
             if with_log
             else None
         )
@@ -323,25 +323,25 @@ class Result(MetaClasses.Serializable):
         print(f"> Starting execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
-        for command_ in command:
-            if callable(command_):
-                # If command is a Python function, call it with provided arguments
-                result = command_(*command_args, **command_kwargs)
-                if isinstance(result, bool):
-                    res = result
-                elif result:
-                    error_infos.append(str(result))
-                    res = False
-            else:
-                # Run shell command in a specified directory with logging and verbosity
-                with ContextManager.cd(workdir):
+        with ContextManager.cd(workdir):
+            for command_ in command:
+                if callable(command_):
+                    # If command is a Python function, call it with provided arguments
+                    result = command_(*command_args, **command_kwargs)
+                    if isinstance(result, bool):
+                        res = result
+                    elif result:
+                        error_infos.append(str(result))
+                        res = False
+                else:
+                    # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
                     res = exit_code == 0
 
-            # If fail_fast is enabled, stop on first failure
-            if not res and fail_fast:
-                print(f"Execution stopped due to failure in [{command_}]")
-                break
+                # If fail_fast is enabled, stop on first failure
+                if not res and fail_fast:
+                    print(f"Execution stopped due to failure in [{command_}]")
+                    break
 
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
@@ -545,7 +545,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: Result file [{file}] was not found")
+                result.set_info(f"WARNING: File [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False
@@ -602,7 +602,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "/tmp/praktika/gtest.json"
+    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
 
     @classmethod
     def from_gtest(cls):
