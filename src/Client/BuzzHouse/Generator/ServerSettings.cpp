@@ -1024,8 +1024,7 @@ static std::map<std::string, CHSetting> serverSettings2 = {
     {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
     {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
     //{"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
-    {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}
-};
+    {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {

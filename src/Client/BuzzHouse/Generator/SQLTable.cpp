@@ -473,69 +473,88 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
     {
-        const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
-
-        std::shuffle(entries.begin(), entries.end(), rg.generator);
-        if (teng != TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 3)
+        if (rg.nextSmallNumber() < 3)
         {
-            //Use a single expression for the entire table
-            //See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
-            TableKeyExpr * tke = tkey->add_exprs();
-            Expr * expr = tke->mutable_expr();
-            SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+            //generate a random key
+            const uint32_t nkeys = (rg.nextMediumNumber() % UINT32_C(3)) + UINT32_C(1);
 
-            func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
-            for (size_t i = 0; i < ocols; i++)
+            for (uint32_t i = 0; i < nkeys; i++)
             {
-                columnPathRef(this->entries[i], func_call->add_args()->mutable_expr());
-            }
-            if (allow_asc_desc && rg.nextSmallNumber() < 3)
-            {
-                tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+                TableKeyExpr * tke = tkey->add_exprs();
+
+                generateExpression(rg, tke->mutable_expr());
+                if (allow_asc_desc && rg.nextSmallNumber() < 3)
+                {
+                    tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+                }
             }
         }
         else
         {
-            for (size_t i = 0; i < ocols; i++)
+            const size_t ocols = (rg.nextMediumNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1;
+
+            std::shuffle(entries.begin(), entries.end(), rg.generator);
+            if (teng != TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 3)
             {
+                //Use a single expression for the entire table
+                //See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
                 TableKeyExpr * tke = tkey->add_exprs();
                 Expr * expr = tke->mutable_expr();
-                const ColumnPathChain & entry = this->entries[i];
-                SQLType * tp = entry.getBottomType();
+                SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-                if ((hasType<DateType, false, true, false>(tp) || hasType<DateTimeType, false, true, false>(tp)) && rg.nextBool())
+                func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
+                for (size_t i = 0; i < ocols; i++)
                 {
-                    //Use date functions for partitioning/keys
-                    SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
-
-                    func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(dates_hash));
-                    columnPathRef(entry, func_call->add_args()->mutable_expr());
-                }
-                else if (hasType<IntType, true, true, false>(tp) && rg.nextBool())
-                {
-                    //Use modulo function for partitioning/keys
-                    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-
-                    columnPathRef(entry, bexpr->mutable_lhs());
-                    bexpr->set_op(BinaryOperator::BINOP_PERCENT);
-                    bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
-                        rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
-                }
-                else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
-                {
-                    //Use hash
-                    SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
-
-                    func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
-                    columnPathRef(entry, func_call->add_args()->mutable_expr());
-                }
-                else
-                {
-                    columnPathRef(entry, expr);
+                    columnPathRef(this->entries[i], func_call->add_args()->mutable_expr());
                 }
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
                     tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < ocols; i++)
+                {
+                    TableKeyExpr * tke = tkey->add_exprs();
+                    Expr * expr = tke->mutable_expr();
+                    const ColumnPathChain & entry = this->entries[i];
+                    SQLType * tp = entry.getBottomType();
+
+                    if ((hasType<DateType, false, true, false>(tp) || hasType<DateTimeType, false, true, false>(tp)) && rg.nextBool())
+                    {
+                        //Use date functions for partitioning/keys
+                        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+                        func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(dates_hash));
+                        columnPathRef(entry, func_call->add_args()->mutable_expr());
+                    }
+                    else if (hasType<IntType, true, true, false>(tp) && rg.nextBool())
+                    {
+                        //Use modulo function for partitioning/keys
+                        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+                        columnPathRef(entry, bexpr->mutable_lhs());
+                        bexpr->set_op(BinaryOperator::BINOP_PERCENT);
+                        bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
+                            rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+                    }
+                    else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
+                    {
+                        //Use hash
+                        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+                        func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
+                        columnPathRef(entry, func_call->add_args()->mutable_expr());
+                    }
+                    else
+                    {
+                        columnPathRef(entry, expr);
+                    }
+                    if (allow_asc_desc && rg.nextSmallNumber() < 3)
+                    {
+                        tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+                    }
                 }
             }
         }
