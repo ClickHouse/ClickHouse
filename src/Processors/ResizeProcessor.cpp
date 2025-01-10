@@ -1,4 +1,6 @@
 #include <Processors/ResizeProcessor.h>
+#include "Common/logger_useful.h"
+#include "Interpreters/Squashing.h"
 
 namespace DB
 {
@@ -430,32 +432,37 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     return Status::PortFull;
 }
 
-static size_t getFreeMemory()
+static Int64 getFreeMemory()
 {
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
     {
         if (auto * mem_tracker = memory_tracker_child->getParent())
         {
-            size_t used_memory = mem_tracker->get();
-            size_t hard_limit  = mem_tracker->getSoftLimit();
+            Int64 used_memory = mem_tracker->get();
+            Int64 hard_limit  = mem_tracker->getSoftLimit();
 
-            if (hard_limit == 0)  // No hard limit
-                return std::numeric_limits<size_t>::max();
+            if (hard_limit == 0)  // No hard limit => treat as infinite
+                return std::numeric_limits<Int64>::max();
 
             if (used_memory < hard_limit)
                 return hard_limit - used_memory;
             else
                 return 0;
         }
-        // If no memory tracker, treat as infinite free memory.
-        return std::numeric_limits<size_t>::max();
+        // If no parent memory tracker, treat as infinite.
+        return std::numeric_limits<Int64>::max();
     }
-    return std::numeric_limits<size_t>::max();
+    return std::numeric_limits<Int64>::max();
 }
 
 IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
-    /// 1. Initialize data structures.
+    LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
+              "header.allocBytes={} header.bytes={} num_columns={} chunk_size={}",
+              header.allocatedBytes(), header.bytes(),
+              header.getColumns().size(), chunk_size);
+
+    /// 1. Initialize data structures
     if (!initialized)
     {
         initialized = true;
@@ -471,37 +478,84 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
             output_ports.push_back({.port = &out, .status = OutputStatus::NotActive});
     }
 
-    /// 2. Possibly check memory usage & disable or re-enable some outputs
-    size_t free_memory = getFreeMemory();
-    bool memory_is_low = (free_memory < LOW_MEMORY_THRESHOLD);
+    /// 2. Possibly check memory usage an disable or re-enable some outputs
+    Int64 free_memory = getFreeMemory();
+
+    /// “Memory is low” = we estimate that producing a chunk for all outputs
+    /// might push us over the limit, If chunk_size is 0, the memory_is_low = false
+    bool memory_is_low = (UInt64(free_memory) < chunk_size * total_num_outputs * 2);
+
+    LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE 2"),
+              "memory_is_low: {}, free_memory: {}, chunk_size: {}, total_num_outputs: {}, sum: {}", memory_is_low, free_memory, chunk_size, total_num_outputs, chunk_size * total_num_outputs * 2);
 
     if (memory_is_low)
     {
-        /// disable half of the outputs that are currently enabled.
-        size_t total_enabled = 0;
-        for (size_t i = 0; i < output_ports.size(); ++i)
+        /// If we truly have zero free memory => we must disable some outputs aggressively
+        if (free_memory <= 0)
         {
-            if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
-                ++total_enabled;
-        }
-
-        size_t disable_count = total_enabled / 2;
-        for (size_t i = 0; i < output_ports.size() && disable_count > 0; ++i)
-        {
-            auto & out_info = output_ports[i];
-            if (is_output_enabled[i] &&
-                out_info.status != OutputStatus::Finished &&
-                out_info.status != OutputStatus::Disabled)
+            /// Disable any output that is not finished/disabled and does not currently have data in flight
+            for (size_t i = 0; i < output_ports.size(); ++i)
             {
-                out_info.status = OutputStatus::Disabled;
-                is_output_enabled[i] = false;
-                --disable_count;
+                auto & out_info = output_ports[i];
+                if (is_output_enabled[i]
+                    && out_info.status != OutputStatus::Finished
+                    && out_info.status != OutputStatus::Disabled)
+                {
+                    /// If the port buffer is empty or can easily be dropped, disable it
+                    if (!out_info.port->hasData())
+                    {
+                        out_info.status = OutputStatus::Disabled;
+                        is_output_enabled[i] = false;
+                        LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
+                                  "Disabling output port {} due to no free memory",
+                                  i);
+                    }
+                }
+            }
+        }
+        else
+        {
+            /// We have *some* free memory => let's reduce concurrency proportionally
+            size_t total_enabled = 0;
+            for (size_t i = 0; i < output_ports.size(); ++i)
+            {
+                if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
+                    ++total_enabled;
+            }
+
+            /// Estimate how many outputs we can keep active
+            UInt64 threshold = UInt64(free_memory / 2.5) / chunk_size;
+            size_t working_count = (threshold > total_enabled) ? total_enabled : size_t(threshold);
+
+            /// E.g. if we have 8 total outputs, but we only want 4 active => disable the “extra”
+            size_t free_threads_count = (total_enabled > working_count)
+                ? (total_enabled - working_count) 
+                : 0;
+
+            for (size_t i = 0; i < output_ports.size() && free_threads_count > 0; ++i)
+            {
+                auto & out_info = output_ports[i];
+                if (is_output_enabled[i]
+                    && out_info.status != OutputStatus::Finished
+                    && out_info.status != OutputStatus::Disabled)
+                {
+                    /// If port buffer is empty, we can safely disable it
+                    if (!out_info.port->hasData())
+                    {
+                        out_info.status = OutputStatus::Disabled;
+                        is_output_enabled[i] = false;
+                        --free_threads_count;
+                        LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
+                                  "Disabling output port {} to reduce concurrency",
+                                  i);
+                    }
+                }
             }
         }
     }
     else
     {
-        // Memory is OK, so re-enable any previously disabled outputs (that are not finished).
+        /// Memory is OK, so re-enable any previously disabled outputs (that are not finished).
         for (size_t i = 0; i < output_ports.size(); ++i)
         {
             auto & out_info = output_ports[i];
@@ -510,6 +564,9 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
                 out_info.status = OutputStatus::NeedData;
                 is_output_enabled[i] = true;
                 waiting_outputs.push(i);
+                LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
+                          "Re-enabling output port {} due to sufficient memory",
+                          i);
             }
         }
     }
@@ -594,8 +651,19 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
         inputs_with_data.pop();
 
         auto & in_info = input_ports[in_idx];
+        Port::Data data = in_info.port->pullData();
 
-        out_info.port->pushData(in_info.port->pullData());
+        if (chunk_size == 0) /// This should be done on the first iteration
+        {
+            const auto & info_chunks = data.chunk.getChunkInfos().get<ChunksToSquash>()->chunks;
+            for (const auto & chunk : info_chunks)
+            {
+                LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE 1"), "{}, {}, {}", chunk.dumpStructure(), chunk.bytes(), chunk_size);
+                chunk_size += chunk.bytes(); /// We have a vector of chunks to merge into one chunk as ChunkInfo
+            }                                /// , so we count the cumulative size of that vector as a size of the chunk
+        }
+
+        out_info.port->pushData(std::move(data));
         out_info.status = OutputStatus::NotActive;
         in_info.status = InputStatus::NotActive;
 
@@ -637,7 +705,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
     {
         if (in_info.status != InputStatus::Finished)
         {
-            // We haven't read all data from this input
+            /// We haven't read all data from this input
             in_info.port->setNeeded();
         }
     }

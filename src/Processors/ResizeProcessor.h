@@ -152,6 +152,7 @@ public:
         , header(header_)
         , current_input(inputs.begin())
         , current_output(outputs.begin())
+        , total_num_outputs(num_outputs)
     {
     }
 
@@ -166,6 +167,7 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
+    size_t total_num_outputs = 0;
     std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
@@ -202,7 +204,7 @@ private:
     std::vector<OutputPortWithStatus> output_ports;
 
     std::vector<bool> is_output_enabled;
-    static constexpr size_t LOW_MEMORY_THRESHOLD = 300ULL * 1024 * 1024; /// Need to be exchanged to some real block size
+    UInt64 chunk_size = 0;
 };
 
 }
