@@ -439,18 +439,17 @@ static Int64 getFreeMemory()
         if (auto * mem_tracker = memory_tracker_child->getParent())
         {
             Int64 used_memory = mem_tracker->get();
-            Int64 hard_limit  = mem_tracker->getSoftLimit();
+            Int64 soft_limit = mem_tracker->getSoftLimit();
 
-            if (hard_limit == 0)  // No hard limit => treat as infinite
+            if (soft_limit == 0)  // No limit is set
                 return std::numeric_limits<Int64>::max();
 
-            if (used_memory < hard_limit)
-                return hard_limit - used_memory;
+            // If used > soft_limit, free_memory is 0 or negative
+            if (used_memory < soft_limit)
+                return soft_limit - used_memory;
             else
                 return 0;
         }
-        // If no parent memory tracker, treat as infinite.
-        return std::numeric_limits<Int64>::max();
     }
     return std::numeric_limits<Int64>::max();
 }
@@ -483,13 +482,48 @@ static size_t calculateDesiredActiveOutputs(
     return desired;
 }
 
-IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+// Helper method to count how many outputs are active
+size_t MemoryDependentResizeProcessor::countActiveOutputs() const
 {
-    LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
-              "header.allocBytes={} header.bytes={} num_columns={} chunk_size={}",
-              header.allocatedBytes(), header.bytes(),
-              header.getColumns().size(), chunk_size);
+    size_t active = 0;
+    for (size_t i = 0; i < output_ports.size(); ++i)
+    {
+        if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
+            ++active;
+    }
+    return active;
+}
 
+void MemoryDependentResizeProcessor::disableAllIdleOutputs()
+{
+    size_t disabled_count = 0;
+    for (size_t i = 0; i < output_ports.size(); ++i)
+    {
+        auto & out_info = output_ports[i];
+        if (is_output_enabled[i]
+            && out_info.status != OutputStatus::Finished
+            && out_info.status != OutputStatus::Disabled)
+        {
+            if (!out_info.port->hasData())
+            {
+                out_info.status = OutputStatus::Disabled;
+                is_output_enabled[i] = false;
+                ++disabled_count;
+            }
+        }
+    }
+    if (disabled_count > 0)
+    {
+        LOG_TRACE(getLogger("MemoryDependentResizeProcessor"),
+                  "Disabled {} outputs due to critical memory usage.",
+                  disabled_count);
+    }
+}
+
+IProcessor::Status MemoryDependentResizeProcessor::prepare(
+    const PortNumbers & updated_inputs,
+    const PortNumbers & updated_outputs)
+{
     /// 1. Initialize data structures
     if (!initialized)
     {
@@ -509,58 +543,45 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
     /// 2. Possibly check memory usage an disable or re-enable some outputs
     Int64 free_memory = getFreeMemory();
 
-    /// “Memory is low” = we estimate that producing a chunk for all outputs
-    /// might push us over the limit, If chunk_size is 0, the memory_is_low = false
-    bool memory_is_low = (UInt64(free_memory) < chunk_size * total_num_outputs * 2);
-
-    LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE 2"),
-              "memory_is_low: {}, free_memory: {}, chunk_size: {}, total_num_outputs: {}, sum: {}", memory_is_low, free_memory, chunk_size, total_num_outputs, chunk_size * total_num_outputs * 2);
-
-    if (memory_is_low)
+    size_t active_count = countActiveOutputs();
+    if (free_memory <= 0)
     {
-        /// If we truly have zero free memory => we must disable some outputs aggressively
-        // if (free_memory <= 0)
-        // {
-        //     /// Disable any output that is not finished/disabled and does not currently have data in flight
-        //     for (size_t i = 0; i < output_ports.size(); ++i)
-        //     {
-        //         auto & out_info = output_ports[i];
-        //         if (is_output_enabled[i]
-        //             && out_info.status != OutputStatus::Finished
-        //             && out_info.status != OutputStatus::Disabled)
-        //         {
-        //             /// If the port buffer is empty or can easily be dropped, disable it
-        //             if (!out_info.port->hasData())
-        //             {
-        //                 out_info.status = OutputStatus::Disabled;
-        //                 is_output_enabled[i] = false;
-        //                 LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
-        //                           "Disabling output port {} due to no free memory",
-        //                           i);
-        //             }
-        //         }
-        //     }
-        // }
-        // else
+        if (active_count || active_count <= 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ab");
+        // We are over limit => disable outputs but keep 1 
+        size_t can_disable = (active_count > 1) ? (active_count - 1) : 0;
+
+        for (size_t i = 0; i < output_ports.size() && can_disable > 0; ++i)
         {
-            /// We have *some* free memory => let's reduce concurrency proportionally
-            size_t total_enabled = 0;
-            for (size_t i = 0; i < output_ports.size(); ++i)
+            auto & out_info = output_ports[i];
+            if (is_output_enabled[i]
+                && out_info.status != OutputStatus::Finished
+                && out_info.status != OutputStatus::Disabled)
             {
-                if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
-                    ++total_enabled;
+                /// Only disable if the output port is empty
+                if (!out_info.port->hasData())
+                {
+                    out_info.status = OutputStatus::Disabled;
+                    is_output_enabled[i] = false;
+                    --can_disable;
+                }
             }
+        }
+    }
+    else
+    {
+        // Not critically out of memory => possibly re-enable outputs if they were disabled previously
+        size_t desired_active = calculateDesiredActiveOutputs(
+            free_memory,
+            output_ports.size(),
+            chunk_size,
+            /* concurrency_factor= */ 2.5);
 
-            /// Estimate how many outputs we can keep active
-            UInt64 threshold = UInt64(free_memory / 2.5) / chunk_size;
-            size_t working_count = (threshold > total_enabled) ? total_enabled : size_t(threshold);
-
-            /// E.g. if we have 8 total outputs, but we only want 4 active => disable the “extra”
-            size_t free_threads_count = (total_enabled > working_count)
-                ? (total_enabled - working_count)
-                : 0;
-
-            for (size_t i = 0; i < output_ports.size() && free_threads_count > 0; ++i)
+        if (desired_active < active_count)
+        {
+            // We want to reduce concurrency
+            size_t to_disable = active_count - desired_active;
+            for (size_t i = 0; i < output_ports.size() && to_disable > 0; ++i)
             {
                 auto & out_info = output_ports[i];
                 if (is_output_enabled[i]
@@ -572,29 +593,25 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
                     {
                         out_info.status = OutputStatus::Disabled;
                         is_output_enabled[i] = false;
-                        --free_threads_count;
-                        LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
-                                  "Disabling output port {} to reduce concurrency",
-                                  i);
+                        --to_disable;
                     }
                 }
             }
         }
-    }
-    else
-    {
-        /// Memory is OK, so re-enable any previously disabled outputs (that are not finished).
-        for (size_t i = 0; i < output_ports.size(); ++i)
+        else if (desired_active > active_count)
         {
-            auto & out_info = output_ports[i];
-            if (!is_output_enabled[i] && out_info.status != OutputStatus::Finished)
+            // Re-enable some previously disabled outputs
+            size_t to_reenable = desired_active - active_count;
+            for (size_t i = 0; i < output_ports.size() && to_reenable > 0; ++i)
             {
-                out_info.status = OutputStatus::NeedData;
-                is_output_enabled[i] = true;
-                waiting_outputs.push(i);
-                LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE"),
-                          "Re-enabling output port {} due to sufficient memory",
-                          i);
+                auto & out_info = output_ports[i];
+                if (!is_output_enabled[i] && out_info.status != OutputStatus::Finished && !out_info.port->hasData())
+                {
+                    out_info.status = OutputStatus::NeedData;
+                    is_output_enabled[i] = true;
+                    waiting_outputs.push(i);
+                    --to_reenable;
+                }
             }
         }
     }
@@ -675,6 +692,8 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
             continue; // skip any disabled/finished output
 
         auto & out_info = output_ports[out_idx];
+        if (out_info.port->hasData())
+            continue;
         auto in_idx = inputs_with_data.front();
         inputs_with_data.pop();
 
