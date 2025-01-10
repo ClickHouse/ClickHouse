@@ -128,11 +128,8 @@ namespace
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
 
-                    if (mv_to_dependency)
-                    {
-                        if (mv_to_dependency->getDatabaseName().empty())
-                            mv_to_dependency->database_name = current_database;
-                    }
+                    if (mv_to_dependency && mv_to_dependency->getDatabaseName().empty())
+                        mv_to_dependency->database_name = current_database;
                 }
             }
 
@@ -155,7 +152,7 @@ namespace
                     ApplyWithSubqueryVisitor::visit(select_copy);
 
                     auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy /*select_not_owning_ptr*/, false /*refresheable*/, global_context);
-                    if (!select_query.select_table_id.empty())
+                    if (!select_query.select_table_id.empty() && create.is_materialized_view)
                     {
                         mv_from_dependency = select_query.select_table_id;
                     }
