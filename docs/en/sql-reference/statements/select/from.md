@@ -7,7 +7,7 @@ sidebar_label: FROM
 
 The `FROM` clause specifies the source to read data from:
 
-- [Table](../../../engines/table-engines/index.md)
+- [Table](/docs/en/engines/table-engines)
 - [Subquery](../../../sql-reference/statements/select/index.md) 
 - [Table function](../../../sql-reference/table-functions/index.md#table-functions)
 

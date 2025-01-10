@@ -249,4 +249,4 @@ libhdfs3 support HDFS namenode HA.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/en/engines/table-engines/#table_engines-virtual_columns)

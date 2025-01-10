@@ -302,6 +302,6 @@ As the new engine is experimental, it is not production ready yet. There are few
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/en/engines/table-engines/#table_engines-virtual_columns)
 - [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)
 - [system.kafka_consumers](../../../operations/system-tables/kafka_consumers.md)

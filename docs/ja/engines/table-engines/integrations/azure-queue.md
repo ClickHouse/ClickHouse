@@ -70,4 +70,4 @@ SETTINGS
 - `_path` — ファイルへのパス。
 - `_file` — ファイルの名前。
 
-仮想カラムに関する詳細については[こちら](../../../engines/table-engines/index.md#table_engines-virtual_columns)をご覧ください。
+仮想カラムに関する詳細については[こちら](/docs/en/engines/table-engines/#table_engines-virtual_columns)をご覧ください。

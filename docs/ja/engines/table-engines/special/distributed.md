@@ -266,6 +266,6 @@ Distributed `in`クエリおよび`global in`クエリの処理方法につい�
 
 **関連リンク**
 
-- [仮想カラム](../../../engines/table-engines/index.md#table_engines-virtual_columns) の説明
+- [仮想カラム](/docs/ja/engines/table-engines/#table_engines-virtual_columns) の説明
 - [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) 設定
 - [shardNum()](../../../sql-reference/functions/other-functions.md#shardnum)および[shardCount()](../../../sql-reference/functions/other-functions.md#shardcount)関数

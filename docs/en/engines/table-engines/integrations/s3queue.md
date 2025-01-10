@@ -253,7 +253,7 @@ Example:
 - `_path` — Path to the file.
 - `_file` — Name of the file.
 
-For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
+For more information about virtual columns see [here](/docs/en/engines/table-engines/#table_engines-virtual_columns).
 
 
 ## Wildcards In Path {#wildcards-in-path}

@@ -74,7 +74,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)
 
 テーブルがすでに存在し、`IF NOT EXISTS` が指定されている場合、クエリは何も行いません。
 
-クエリ内の `ENGINE` 句の後に他の句を指定することができます。テーブル作成の詳細なドキュメントについては、[テーブルエンジン](../../../engines/table-engines/index.md#table_engines)の説明を参照してください。
+クエリ内の `ENGINE` 句の後に他の句を指定することができます。テーブル作成の詳細なドキュメントについては、[テーブルエンジン](/docs/ja/engines/table-engines/#table_engines)の説明を参照してください。
 
 :::tip
 ClickHouse Cloud では、以下の2つのステップに分けてください：

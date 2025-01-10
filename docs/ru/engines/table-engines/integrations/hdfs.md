@@ -206,4 +206,4 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 **См. также**
 
--   [Виртуальные колонки](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+-   [Виртуальные колонки](/docs/ru/engines/table-engines/#table_engines-virtual_columns)

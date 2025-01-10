@@ -82,5 +82,5 @@ SELECT * FROM WatchLog;
 
 **関連項目**
 
-- [仮想カラム](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [仮想カラム](/docs/ja/engines/table-engines/#table_engines-virtual_columns)
 - [merge](../../../sql-reference/table-functions/merge.md) テーブル関数

@@ -267,6 +267,6 @@ Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
+- [Virtual columns](/docs/en/engines/table-engines/#table_engines-virtual_columns) description
 - [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting
 - [shardNum()](../../../sql-reference/functions/other-functions.md#shardnum) and [shardCount()](../../../sql-reference/functions/other-functions.md#shardcount) functions

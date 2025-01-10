@@ -7,7 +7,7 @@ sidebar_label: FROM
 
 В секции `FROM` указывается источник, из которого будут читаться данные:
 
--   [Таблица](../../../engines/table-engines/index.md)
+-   [Таблица](/docs/ru/engines/table-engines/)
 -   [Подзапрос](index.md)
 -   [Табличная функция](../../table-functions/index.md#table-functions)
 

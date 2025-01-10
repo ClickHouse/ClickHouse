@@ -7,7 +7,7 @@ sidebar_label: FROM
 
 `FROM` 子句指定从以下数据源中读取数据:
 
--   [表](../../../engines/table-engines/index.md)
+-   [表](/docs/zh/engines/table-engines/)
 -   [子查询](../../../sql-reference/statements/select/index.md)
 -   [表函数](../../../sql-reference/table-functions/index.md#table-functions)
 

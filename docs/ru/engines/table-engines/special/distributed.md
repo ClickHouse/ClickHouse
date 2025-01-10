@@ -147,6 +147,6 @@ logs - имя кластера в конфигурационном файле с
 
 **См. также**
 
--   общее описание [виртуальных столбцов](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+-   общее описание [виртуальных столбцов](/docs/ru/engines/table-engines/#table_engines-virtual_columns)
 -   настройка [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)
 -   функции [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) и [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count)

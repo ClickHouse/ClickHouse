@@ -240,4 +240,4 @@ libhdfs3はHDFS namenode HAをサポートします。
 
 **関連項目**
 
-- [仮想カラム](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [仮想カラム](/docs/en/engines/table-engines/#table_engines-virtual_columns)

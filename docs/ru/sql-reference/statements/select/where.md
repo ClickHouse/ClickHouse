@@ -9,7 +9,7 @@ sidebar_label: WHERE
 
 Результат выражения должен иметь тип `UInt8`.
 
-ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../../../engines/table-engines/index.md).
+ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](/docs/ru/engines/table-engines/).
 
 :::note Примечание
 Существует оптимизация фильтрации под названием [PREWHERE](prewhere.md).

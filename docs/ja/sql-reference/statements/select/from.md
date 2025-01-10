@@ -7,7 +7,7 @@ sidebar_label: FROM
 
 `FROM`句は、データを読み取るためのソースを指定します:
 
-- [テーブル](../../../engines/table-engines/index.md)
+- [テーブル](/docs/ja/engines/table-engines/)
 - [サブクエリ](../../../sql-reference/statements/select/index.md) 
 - [テーブル関数](../../../sql-reference/table-functions/index.md#table-functions)
 

@@ -76,7 +76,7 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 
 If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
 
-There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
+There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](/docs/en/engines/table-engines/#table_engines).
 
 :::tip
 In ClickHouse Cloud please split this into two steps:
