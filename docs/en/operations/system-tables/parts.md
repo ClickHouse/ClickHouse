@@ -1,5 +1,4 @@
 ---
-title: parts
 slug: /en/operations/system-tables/parts
 ---
 # parts {#system_tables-parts}

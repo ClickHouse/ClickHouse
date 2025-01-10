@@ -1,5 +1,4 @@
 ---
-title: quantile
 slug: /en/sql-reference/aggregate-functions/reference/quantile
 sidebar_position: 170
 ---

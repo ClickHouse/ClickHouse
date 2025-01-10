@@ -1,5 +1,4 @@
 ---
-title: azure_queue_settings
 slug: /en/operations/system-tables/azure_queue_settings
 ---
 # azure_queue_settings

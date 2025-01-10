@@ -2,7 +2,6 @@
 slug: /en/sql-reference/functions/ext-dict-functions
 sidebar_position: 50
 sidebar_label: Dictionaries
-title: Dictionary Functions
 ---
 
 # Functions for Working with Dictionaries

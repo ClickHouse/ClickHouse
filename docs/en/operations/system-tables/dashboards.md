@@ -1,5 +1,4 @@
 ---
-title: dashboards
 slug: /en/operations/system-tables/dashboards
 ---
 # dashboards

@@ -2,7 +2,6 @@
 slug: /en/sql-reference/functions/array-join
 sidebar_position: 15
 sidebar_label: arrayJoin
-title: arrayJoin Function
 ---
 
 # arrayJoin function

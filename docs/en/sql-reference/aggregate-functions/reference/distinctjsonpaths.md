@@ -1,5 +1,4 @@
 ---
-title: distinctJSONPaths
 slug: /en/sql-reference/aggregate-functions/reference/distinctjsonpaths
 sidebar_position: 216
 ---

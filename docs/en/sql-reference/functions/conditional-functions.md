@@ -2,7 +2,6 @@
 slug: /en/sql-reference/functions/conditional-functions
 sidebar_position: 40
 sidebar_label: Conditional
-title: Conditional Functions
 ---
 
 # Conditional Functions

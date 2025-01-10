@@ -60,7 +60,7 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 
 ## RELOAD FUNCTIONS
 
-登録されたすべての[実行可能なユーザー定義関数](/docs/zh/sql-reference/functions/#executable-user-defined-functions)またはそれらの1つを設定ファイルからリロードします。
+登録されたすべての[実行可能なユーザー定義関数](../functions/index.md#executable-user-defined-functions)またはそれらの1つを設定ファイルからリロードします。
 
 **構文**
 

@@ -1,5 +1,4 @@
 ---
-title: replicas
 slug: /en/operations/system-tables/replicas
 ---
 # replicas

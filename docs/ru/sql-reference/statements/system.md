@@ -54,7 +54,7 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
 
-Перезагружает все зарегистрированные [исполняемые пользовательские функции](/docs/ru/sql-reference/functions/#executable-user-defined-functions) или одну из них из файла конфигурации.
+Перезагружает все зарегистрированные [исполняемые пользовательские функции](../functions/index.md#executable-user-defined-functions) или одну из них из файла конфигурации.
 
 **Синтаксис**
 

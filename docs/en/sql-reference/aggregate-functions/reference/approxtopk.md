@@ -1,5 +1,4 @@
 ---
-title: approx_top_k
 slug: /en/sql-reference/aggregate-functions/reference/approxtopk
 sidebar_position: 107
 ---

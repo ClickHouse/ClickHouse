@@ -1,9 +1,3 @@
----
-slug: /en/sql-reference/table-functions/loop
-sidebar_position: 101
-sidebar_label: loop
----
-
 # loop
 
 **Syntax**

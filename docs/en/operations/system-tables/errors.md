@@ -1,5 +1,4 @@
 ---
-title: errors
 slug: /en/operations/system-tables/errors
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

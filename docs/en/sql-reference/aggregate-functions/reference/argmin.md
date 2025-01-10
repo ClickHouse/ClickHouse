@@ -1,5 +1,4 @@
 ---
-title: argMin
 slug: /en/sql-reference/aggregate-functions/reference/argmin
 sidebar_position: 110
 ---

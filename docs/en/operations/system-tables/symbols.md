@@ -1,5 +1,4 @@
 ---
-title: symbols
 slug: /en/operations/system-tables/symbols
 ---
 # symbols

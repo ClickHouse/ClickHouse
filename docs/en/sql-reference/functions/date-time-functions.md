@@ -2,7 +2,6 @@
 slug: /en/sql-reference/functions/date-time-functions
 sidebar_position: 45
 sidebar_label: Dates and Times
-title: Date Time Functions
 ---
 
 # Functions for Working with Dates and Times

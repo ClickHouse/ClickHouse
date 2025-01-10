@@ -1,5 +1,4 @@
 ---
-title: avgWeighted
 slug: /en/sql-reference/aggregate-functions/reference/avgweighted
 sidebar_position: 113
 ---

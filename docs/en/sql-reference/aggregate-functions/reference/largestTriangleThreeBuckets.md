@@ -1,5 +1,4 @@
 ---
-title: largestTriangleThreeBuckets
 slug: /en/sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
 sidebar_position: 159
 sidebar_label: largestTriangleThreeBuckets

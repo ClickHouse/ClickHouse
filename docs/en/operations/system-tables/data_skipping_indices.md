@@ -1,5 +1,4 @@
 ---
-title: data_skipping_indices
 slug: /en/operations/system-tables/data_skipping_indices
 ---
 # data_skipping_indices

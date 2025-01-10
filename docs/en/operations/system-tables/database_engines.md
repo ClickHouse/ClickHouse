@@ -1,5 +1,4 @@
 ---
-title: database_engines
 slug: /en/operations/system-tables/database_engines
 ---
 # database_engines

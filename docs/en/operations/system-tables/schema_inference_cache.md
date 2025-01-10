@@ -1,5 +1,4 @@
 ---
-title: schema_inference_cache
 slug: /en/operations/system-tables/schema_inference_cache
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

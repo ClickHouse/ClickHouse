@@ -1,5 +1,4 @@
 ---
-title: columns
 slug: /en/operations/system-tables/columns
 ---
 # columns

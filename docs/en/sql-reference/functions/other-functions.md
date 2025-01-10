@@ -2,7 +2,6 @@
 slug: /en/sql-reference/functions/other-functions
 sidebar_position: 140
 sidebar_label: Other
-title: Other Functions
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -387,7 +386,7 @@ materialize(x)
 
 **Parameters**
 
-- `x` — A constant. [Constant](/docs/en/sql-reference/functions//#constants).
+- `x` — A constant. [Constant](../functions/index.md/#constants).
 
 **Returned value**
 

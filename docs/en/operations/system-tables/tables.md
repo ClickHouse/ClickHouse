@@ -1,5 +1,4 @@
 ---
-title: tables
 slug: /en/operations/system-tables/tables
 ---
 # tables

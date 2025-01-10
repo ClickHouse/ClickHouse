@@ -1,5 +1,4 @@
 ---
-title: jemalloc_bins
 slug: /en/operations/system-tables/jemalloc_bins
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

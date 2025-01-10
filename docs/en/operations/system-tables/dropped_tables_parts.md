@@ -1,5 +1,4 @@
 ---
-title: dropped_tables_parts
 slug: /en/operations/system-tables/dropped_tables_parts
 ---
 # dropped_tables_parts {#system_tables-dropped_tables_parts}

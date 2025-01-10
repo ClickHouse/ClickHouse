@@ -1,5 +1,4 @@
 ---
-title: licenses
 slug: /en/operations/system-tables/licenses
 ---
 # licenses
