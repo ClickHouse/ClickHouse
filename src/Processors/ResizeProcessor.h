@@ -152,13 +152,14 @@ public:
         , header(header_)
         , current_input(inputs.begin())
         , current_output(outputs.begin())
-        , total_num_outputs(num_outputs)
     {
     }
 
     String getName() const override { return "MemoryDependentResize"; }
 
     Status prepare(const PortNumbers &, const PortNumbers &) override;
+
+    size_t countActiveOutputs() const;
 
 private:
     Block header;
@@ -167,7 +168,6 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    size_t total_num_outputs = 0;
     std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;

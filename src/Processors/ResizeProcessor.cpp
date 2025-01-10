@@ -494,32 +494,6 @@ size_t MemoryDependentResizeProcessor::countActiveOutputs() const
     return active;
 }
 
-void MemoryDependentResizeProcessor::disableAllIdleOutputs()
-{
-    size_t disabled_count = 0;
-    for (size_t i = 0; i < output_ports.size(); ++i)
-    {
-        auto & out_info = output_ports[i];
-        if (is_output_enabled[i]
-            && out_info.status != OutputStatus::Finished
-            && out_info.status != OutputStatus::Disabled)
-        {
-            if (!out_info.port->hasData())
-            {
-                out_info.status = OutputStatus::Disabled;
-                is_output_enabled[i] = false;
-                ++disabled_count;
-            }
-        }
-    }
-    if (disabled_count > 0)
-    {
-        LOG_TRACE(getLogger("MemoryDependentResizeProcessor"),
-                  "Disabled {} outputs due to critical memory usage.",
-                  disabled_count);
-    }
-}
-
 IProcessor::Status MemoryDependentResizeProcessor::prepare(
     const PortNumbers & updated_inputs,
     const PortNumbers & updated_outputs)
@@ -544,26 +518,50 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(
     Int64 free_memory = getFreeMemory();
 
     size_t active_count = countActiveOutputs();
-    if (free_memory <= 0)
-    {
-        if (active_count || active_count <= 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ab");
-        // We are over limit => disable outputs but keep 1 
-        size_t can_disable = (active_count > 1) ? (active_count - 1) : 0;
 
-        for (size_t i = 0; i < output_ports.size() && can_disable > 0; ++i)
+    bool memory_is_critically_low = false;
+
+    if (free_memory <= 0)
+        memory_is_critically_low = true;
+    else
+    {
+        // Calculate threshold based on chunk size, concurrency factor, and active outputs
+        if (active_count == 0)
+            active_count = 1; // Ensure at least one active output is considered
+
+        size_t local_chunk_size = (chunk_size == 0) ? 64 * 1024 : chunk_size;  
+        double concurrency_factor = 1.5;
+        double safety_factor      = 1.5;  // Optional safety margin
+
+        double threshold = static_cast<double>(local_chunk_size) 
+                           * concurrency_factor 
+                           * safety_factor 
+                           * active_count;
+
+        if (static_cast<double>(free_memory) < threshold)
+            memory_is_critically_low = true;
+    }
+
+    if (memory_is_critically_low)
+    {
+        // Critical memory condition: aggressively reduce concurrency
+        if (active_count > 1)
         {
-            auto & out_info = output_ports[i];
-            if (is_output_enabled[i]
-                && out_info.status != OutputStatus::Finished
-                && out_info.status != OutputStatus::Disabled)
+            size_t can_disable = active_count - 1; // Keep at least one active output
+
+            for (size_t i = 0; i < output_ports.size() && can_disable > 0; ++i)
             {
-                /// Only disable if the output port is empty
-                if (!out_info.port->hasData())
+                auto & out_info = output_ports[i];
+                if (is_output_enabled[i]
+                    && out_info.status != OutputStatus::Finished
+                    && out_info.status != OutputStatus::Disabled)
                 {
-                    out_info.status = OutputStatus::Disabled;
-                    is_output_enabled[i] = false;
-                    --can_disable;
+                    if (!out_info.port->hasData())
+                    {
+                        out_info.status = OutputStatus::Disabled;
+                        is_output_enabled[i] = false;
+                        --can_disable;
+                    }
                 }
             }
         }
@@ -575,7 +573,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(
             free_memory,
             output_ports.size(),
             chunk_size,
-            /* concurrency_factor= */ 2.5);
+            /* concurrency_factor= */ 3.5);
 
         if (desired_active < active_count)
         {
@@ -700,7 +698,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(
         auto & in_info = input_ports[in_idx];
         Port::Data data = in_info.port->pullData();
 
-        if (chunk_size == 0) /// This should be done on the first iteration
+        if (chunk_size == 0) /// This should be done only on the first iteration
         {
             const auto & info_chunks = data.chunk.getChunkInfos().get<ChunksToSquash>()->chunks;
             for (const auto & chunk : info_chunks)
