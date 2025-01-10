@@ -2625,9 +2625,27 @@ message CreateFunction {
     required LambdaExpr lexpr = 2;
 }
 
-message Decimal {
+message DecimalN {
+    enum DecimalPrecision {
+        D32 = 1;
+        D64 = 2;
+        D128 = 3;
+        D256 = 4;
+    }
+    required DecimalPrecision precision = 1;
+    required uint32 scale = 2;
+}
+
+message DecimalSimple {
     optional uint32 precision = 1;
     optional uint32 scale = 2;
+}
+
+message Decimal {
+    oneof decimal_oneof {
+        DecimalN decimaln = 1;
+        DecimalSimple decimal_simple = 2;
+    }
 }
 
 message ColumnPathList {

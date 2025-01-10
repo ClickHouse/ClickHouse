@@ -196,22 +196,36 @@ public:
 class DecimalType : public SQLType
 {
 public:
+    const bool short_notation;
     const std::optional<const uint32_t> precision, scale;
-    DecimalType(const std::optional<const uint32_t> p, const std::optional<const uint32_t> s) : precision(p), scale(s) { }
+    DecimalType(const bool sn, const std::optional<const uint32_t> p, const std::optional<const uint32_t> s)
+        : short_notation(sn), precision(p), scale(s)
+    {
+    }
 
     void typeName(std::string & ret, const bool) const override
     {
         ret += "Decimal";
-        if (precision.has_value())
+        if (short_notation)
         {
-            ret += "(";
             ret += std::to_string(precision.value());
-            if (scale.has_value())
-            {
-                ret += ",";
-                ret += std::to_string(scale.value());
-            }
+            ret += "(";
+            ret += std::to_string(scale.value());
             ret += ")";
+        }
+        else
+        {
+            if (precision.has_value())
+            {
+                ret += "(";
+                ret += std::to_string(precision.value());
+                if (scale.has_value())
+                {
+                    ret += ",";
+                    ret += std::to_string(scale.value());
+                }
+                ret += ")";
+            }
         }
     }
     void MySQLtypeName(RandomGenerator &, std::string & ret, const bool escape) const override

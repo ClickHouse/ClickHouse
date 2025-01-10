@@ -745,19 +745,50 @@ void BottomTypeNameToString(std::string & ret, const uint32_t quote, const bool 
                 {
                     case BottomTypeNameType::kDecimal: {
                         const Decimal & dec = btn.decimal();
-                        ret += "Decimal";
-                        if (dec.has_precision())
-                        {
-                            const uint32_t precision = std::max<uint32_t>(1, dec.precision() % 77);
 
-                            ret += "(";
-                            ret += std::to_string(precision);
-                            if (dec.has_scale())
+                        ret += "Decimal";
+                        if (dec.has_decimaln())
+                        {
+                            uint32_t precision = 0;
+                            const DecimalN & dn = dec.decimaln();
+
+                            switch (dn.precision())
                             {
-                                ret += ",";
-                                ret += std::to_string(dec.scale() % (precision + 1));
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                                    precision = 32;
+                                    break;
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                                    precision = 64;
+                                    break;
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                                    precision = 128;
+                                    break;
+                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                                    precision = 256;
+                                    break;
                             }
+                            ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
+                            ret += "(";
+                            ret += std::to_string(dn.scale() % (precision + 1));
                             ret += ")";
+                        }
+                        else if (dec.has_decimal_simple())
+                        {
+                            const DecimalSimple & ds = dec.decimal_simple();
+
+                            if (ds.has_precision())
+                            {
+                                const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
+
+                                ret += "(";
+                                ret += std::to_string(precision);
+                                if (ds.has_scale())
+                                {
+                                    ret += ",";
+                                    ret += std::to_string(ds.scale() % (precision + 1));
+                                }
+                                ret += ")";
+                            }
                         }
                     }
                     break;
