@@ -267,6 +267,7 @@ void DisksClient::switchToDisk(const String & disk_, const std::optional<String>
         {
             disks_with_paths.at(disk_).setPath(path_.value());
         }
+        LOG_INFO(&Poco::Logger::get("DisksClient"), "Switching to disk {} with path {}", disk_, path_.value());
         current_disk = disk_;
     }
     else
@@ -347,8 +348,9 @@ void DisksClient::addDisk(String disk_name, std::optional<String> path)
     }
     auto disk_with_path = DiskWithPath{disk, path};
 
-    // This should be the noexcept block of code not to break the invariants in program. We hope there is no room for exception here.
-    try
+    LOG_INFO(&Poco::Logger::get("DisksClient"), "Adding disk {} with path {}", disk_name, path.value_or(""));
+
+    // This block of code should not throw exceptions to preserve the program's invariants. We hope that no exceptions occur here.
     {
         created_disks.emplace(disk_name, disk);
         postponed_disks.erase(disk_name);

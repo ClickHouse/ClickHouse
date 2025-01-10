@@ -46,6 +46,13 @@ public:
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
             if (!disk_to.getDisk()->existsDirectory(target_location))
             {
+                LOG_INFO(
+                    &Poco::Logger::get("DisksClient"),
+                    "Copying file from disk {}, file path {} to disk {}, file path {}",
+                    disk_from.getDisk()->getName(),
+                    path_from,
+                    disk_to.getDisk()->getName(),
+                    target_location);
                 disk_from.getDisk()->copyFile(
                     path_from,
                     *disk_to.getDisk(),
@@ -76,6 +83,14 @@ public:
             {
                 disk_to.getDisk()->createDirectory(target_location);
             }
+            LOG_INFO(
+                &Poco::Logger::get("DisksClient"),
+                "Copying directory content from disk {}, directory path {} to disk {}, directory path {}",
+                disk_from.getDisk()->getName(),
+                path_from,
+                disk_to.getDisk()->getName(),
+                target_location);
+
             disk_from.getDisk()->copyDirectoryContent(
                 path_from,
                 disk_to.getDisk(),

@@ -25,6 +25,7 @@ public:
 
         String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
 
+        LOG_INFO(&Poco::Logger::get("DisksClient"), "Creating directory {} on disk {}", path, disk.getDisk()->getName());
         if (recursive)
             disk.getDisk()->createDirectories(path);
         else

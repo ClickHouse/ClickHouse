@@ -40,7 +40,7 @@ public:
 
     std::vector<String> listAllFilesByPath(const String & any_path) const;
 
-    //If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
+    // If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
     std::vector<String> getAllFilesByPattern(const String & pattern, bool ignore_exception) const;
 
     DiskPtr getDisk() const { return disk; }
@@ -85,7 +85,7 @@ public:
     std::vector<String> getUninitializedDiskNames() const;
     std::vector<String> getAllDiskNames() const;
 
-    //If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
+    // If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
     std::vector<String> getAllFilesByPatternFromInitializedDisks(const String & pattern, bool ignore_exception) const;
 
     void addDisk(String disk_name, std::optional<String> path);
