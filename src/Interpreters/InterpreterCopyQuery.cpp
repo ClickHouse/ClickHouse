@@ -1,7 +1,10 @@
 #include <memory>
 #include <ucontext.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/InterpreterCopyQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -20,6 +23,12 @@
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsSeconds lock_acquire_timeout;
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -27,26 +36,52 @@ extern const int BAD_ARGUMENTS;
 
 BlockIO InterpreterCopyQuery::execute()
 {
-    auto* ast_copy = query_ptr->as<ASTCopyQuery>();
-    if (ast_copy->type == ASTCopyQuery::QueryType::COPY_TO)
+    auto ast_copy = query_ptr->as<ASTCopyQuery &>();
+    if (ast_copy.type == ASTCopyQuery::QueryType::COPY_TO)
     {
-        auto ast_table_func = ast_copy->file;
+        auto ast_table_func = ast_copy.file;
         if (!ast_table_func)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Copy should contain valid file argument");
 
-        if (!ast_copy->data)
+        if (!ast_copy.data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Copy should contain valid select");
 
-        auto table_function = TableFunctionFactory::instance().get(ast_table_func, getContext());
+        auto current_context = getContext();
+        auto table_function = TableFunctionFactory::instance().get(ast_table_func, current_context);
         if (!table_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such table function in copy command");
 
-        auto table_storage = table_function->execute(ast_table_func, getContext(), table_function->getName());
+        if (ast_copy.data && table_function->needStructureHint())
+        {
+            Block header_block;
+            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+            if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(ast_copy.data, current_context, select_query_options);
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter_select{ast_copy.data, current_context, select_query_options};
+                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
+                header_block = tmp_pipeline.getHeader();
+            }
+
+            ColumnsDescription structure_hint{header_block.getNamesAndTypesList()};
+            table_function->setStructureHint(structure_hint);
+        }
+
+        const auto & function_name = table_function->getName();
+        auto table_storage = table_function->execute(ast_table_func, current_context, function_name);
+
+        const Settings & settings = getContext()->getSettingsRef();
+        auto table_lock = table_storage->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+
         auto storage_metadata = table_storage->getInMemoryMetadataPtr();
         auto sink = table_storage->write(std::make_shared<ASTInsertQuery>(), storage_metadata, getContext(), false);
 
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-        InterpreterSelectWithUnionQuery interpreter_select(ast_copy->data, getContext(), select_query_options);
+        InterpreterSelectWithUnionQuery interpreter_select(ast_copy.data, getContext(), select_query_options);
         auto pipeline = interpreter_select.buildQueryPipeline();
 
         Chain out;
@@ -60,12 +95,13 @@ BlockIO InterpreterCopyQuery::execute()
 
         BlockIO res;
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        res.pipeline.addStorageHolder(table_storage);
         return res;
     }
     else
     {
         InterpreterInsertQuery interpreter_insert(
-            ast_copy->data,
+            ast_copy.data,
             getContext(),
             /* allow_materialized */ false,
             /* no_squash */ false,
