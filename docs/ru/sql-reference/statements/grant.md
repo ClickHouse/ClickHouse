@@ -467,7 +467,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### SOURCES {#grant-sources}
 
-Разрешает использовать внешние источники данных. Применяется к [движкам таблиц](../../engines/table-engines/index.md) и [табличным функциям](../table-functions/index.md#table-functions).
+Разрешает использовать внешние источники данных. Применяется к [движкам таблиц](/docs/ru/engines/table-engines) и [табличным функциям](../table-functions/index.md#table-functions).
 
 - `SOURCES`. Уровень: `GROUP`
     - `AZURE`. Уровень: `GLOBAL`

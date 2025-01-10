@@ -522,7 +522,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 ### SOURCES
 
-Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
+Allows using external data sources. Applies to [table engines](/docs/en/engines/table-engines) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
     - `AZURE`. Level: `GLOBAL`
@@ -595,7 +595,7 @@ Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLE
 
 ### TABLE ENGINE
 
-Allows using a specified table engine when creating a table. Applies to [table engines](../../engines/table-engines/index.md).
+Allows using a specified table engine when creating a table. Applies to [table engines](/docs/en/engines/table-engines).
 
 **Examples**
 

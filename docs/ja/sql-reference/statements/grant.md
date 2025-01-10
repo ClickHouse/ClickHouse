@@ -513,7 +513,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### SOURCES
 
-外部データソースの使用を許可します。[テーブルエンジン](../../engines/table-engines/index.md)および[テーブル関数](../../sql-reference/table-functions/index.md#table-functions)に適用されます。
+外部データソースの使用を許可します。[テーブルエンジン](/docs/ja/engines/table-engines)および[テーブル関数](../../sql-reference/table-functions/index.md#table-functions)に適用されます。
 
 - `SOURCES`. レベル: `GROUP`
     - `AZURE`. レベル: `GLOBAL`
@@ -583,7 +583,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### TABLE ENGINE
 
-テーブルを作成する際に指定されたテーブルエンジンを使用することを許可します。[テーブルエンジン](../../engines/table-engines/index.md)に適用されます。
+テーブルを作成する際に指定されたテーブルエンジンを使用することを許可します。[テーブルエンジン](/docs/ja/engines/table-engines)に適用されます。
 
 **例**
 

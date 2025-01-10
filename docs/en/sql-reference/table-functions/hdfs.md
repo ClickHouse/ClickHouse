@@ -124,4 +124,4 @@ SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 **See Also**
 
-- [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/en/engines/table-engines/#table_engines-virtual_columns)

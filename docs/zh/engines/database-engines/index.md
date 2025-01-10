@@ -8,7 +8,7 @@ sidebar_position: 27
 
 数据库引擎允许您处理数据表。
 
-默认情况下，ClickHouse使用[Atomic](../../engines/database-engines/atomic.md)数据库引擎。它提供了可配置的[table engines](../../engines/table-engines/index.md)和[SQL dialect](../../sql-reference/syntax.md)。
+默认情况下，ClickHouse使用[Atomic](../../engines/database-engines/atomic.md)数据库引擎。它提供了可配置的[table engines](/docs/zh/engines/table-engines)和[SQL dialect](../../sql-reference/syntax.md)。
 
 您还可以使用以下数据库引擎：
 

@@ -122,4 +122,4 @@ SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 **関連項目**
 
-- [バーチャルカラム](../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [バーチャルカラム](/docs/ja/engines/table-engines/#table_engines-virtual_columns)

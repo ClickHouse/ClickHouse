@@ -7,7 +7,7 @@ toc_title: はじめに
 
 # データベースエンジン
 
-データベースエンジンを使用すると、テーブルを操作できます。デフォルトでは、ClickHouse は [Atomic](../../engines/database-engines/atomic.md) データベースエンジンを使用し、これにより設定可能な[テーブルエンジン](../../engines/table-engines/index.md)や[SQL 方言](../../sql-reference/syntax.md)を提供します。
+データベースエンジンを使用すると、テーブルを操作できます。デフォルトでは、ClickHouse は [Atomic](../../engines/database-engines/atomic.md) データベースエンジンを使用し、これにより設定可能な[テーブルエンジン](/docs/ja/engines/table-engines)や[SQL 方言](../../sql-reference/syntax.md)を提供します。
 
 以下は利用可能なデータベースエンジンの完全なリストです。詳細はリンク先をご参照ください:
 
