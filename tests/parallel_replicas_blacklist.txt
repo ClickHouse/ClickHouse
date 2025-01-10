@@ -370,6 +370,8 @@
 03274_prewarm_primary_index_cache
 03270_processors_profile_log_3
 03252_merge_tree_min_bytes_to_seek
+03262_filter_push_down_view
+01283_max_threads_simple_query_optimization
 
     # NOT BUGS
     Not a bug
