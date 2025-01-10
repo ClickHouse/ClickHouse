@@ -25,17 +25,15 @@ public:
 
         String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
 
-        LOG_INFO(&Poco::Logger::get("DisksClient"), "Creating directory {} on disk {}", path, disk.getDisk()->getName());
         if (recursive)
         {
             LOG_INFO(
-                &Poco::Logger::get("DisksClient"), "Creating directory '{}' on disk '{}' recursively", path, disk.getDisk()->getName());
+                &Poco::Logger::get("CommandMkDir"), "Creating directory '{}' on disk '{}' recursively", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectories(path);
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("DisksClient"), "Creating directory '{}' on disk '{}'", path, disk.getDisk()->getName());
-
+            LOG_INFO(&Poco::Logger::get("CommandMkDir"), "Creating directory '{}' on disk '{}'", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectory(path);
         }
     }

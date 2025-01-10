@@ -30,11 +30,11 @@ public:
         }
         else if (disk.getDisk()->existsFile(disk.getRelativeFromRoot(path)))
         {
-            LOG_INFO(&Poco::Logger::get("CommandTouch"), "File already exists at path: {}", disk.getRelativeFromRoot(path));
+            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "File already exists at path: {}", disk.getRelativeFromRoot(path));
         }
         else if (disk.getDisk()->existsDirectory(disk.getRelativeFromRoot(path)))
         {
-            LOG_INFO(&Poco::Logger::get("CommandTouch"), "Directory already exists at path: {}", disk.getRelativeFromRoot(path));
+            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "Directory already exists at path: {}", disk.getRelativeFromRoot(path));
         }
     }
 };

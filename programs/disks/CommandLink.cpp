@@ -26,7 +26,7 @@ public:
         const String & path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
         LOG_INFO(
-            &Poco::Logger::get("DisksClient"),
+            &Poco::Logger::get("CommandLink"),
             "Creating hard link from '{}' to '{}' at disk '{}'",
             path_from,
             path_to,
