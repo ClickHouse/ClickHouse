@@ -54,6 +54,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool input_format_parquet_use_metadata_cache;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 input_format_parquet_metadata_cache_max_entries;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -700,8 +710,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 void ParquetBlockInputFormat::setStorageRelatedUniqueKey(const ServerSettings & server_settings, const Settings & settings, const String & key_)
 {
     metadata_cache.key = key_;
-    metadata_cache.use_cache = settings.input_format_parquet_use_metadata_cache;
-    metadata_cache.max_entries = server_settings.input_format_parquet_metadata_cache_max_entries;
+    metadata_cache.use_cache = settings[Setting::input_format_parquet_use_metadata_cache];
+    metadata_cache.max_entries = server_settings[ServerSetting::input_format_parquet_metadata_cache_max_entries];
 }
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
