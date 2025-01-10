@@ -1744,7 +1744,8 @@ def _upload_build_profile_data(
             SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
             FORMAT Regexp"""
 
-    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+        binary_sizes_file = profiles_dir / "binary_sizes.txt"
+
         print(
             "::notice ::Log Uploading binary sizes data, path: %s, size: %s, query: %s",
             binary_sizes_file,
