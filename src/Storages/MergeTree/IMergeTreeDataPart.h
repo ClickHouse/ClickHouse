@@ -27,8 +27,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 
-#include <city.h>
-
 
 namespace zkutil
 {
@@ -85,8 +83,6 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
-
-    using uint128 = CityHash_v1_0_2::uint128;
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
