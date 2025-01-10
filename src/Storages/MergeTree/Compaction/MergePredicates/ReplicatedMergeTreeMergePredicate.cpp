@@ -20,8 +20,9 @@ namespace MergeTreeSetting
 
 using MergeCore = DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>;
 
-ReplicatedMergeTreeBaseMergePredicate::ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_)
-    : queue(queue_)
+ReplicatedMergeTreeBaseMergePredicate::ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_, std::optional<PartitionIdsHint> partition_ids_hint_)
+    : MergeCore(std::move(partition_ids_hint_))
+    , queue(queue_)
 {
 }
 
@@ -46,7 +47,7 @@ std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::
 }
 
 ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
-    : ReplicatedMergeTreeBaseMergePredicate(queue_)
+    : ReplicatedMergeTreeBaseMergePredicate(queue_, std::nullopt)
 {
     /// Use only information that can be quickly accessed locally without querying ZooKeeper
     virtual_parts_ptr = &queue_.virtual_parts;
@@ -54,8 +55,8 @@ ReplicatedMergeTreeLocalMergePredicate::ReplicatedMergeTreeLocalMergePredicate(R
 }
 
 ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_)
-    : ReplicatedMergeTreeBaseMergePredicate(queue_)
+    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> partition_ids_hint_)
+    : ReplicatedMergeTreeBaseMergePredicate(queue_, std::move(partition_ids_hint_))
 {
     /// Order of actions is important, DO NOT CHANGE.
     /// For explanation check DistributedMergePredicate.
@@ -68,7 +69,7 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
     /// Load current quorum status.
     auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
 
-    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint_));
+    committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint));
 
     std::tie(merges_version, std::ignore) = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
@@ -221,7 +222,7 @@ bool ReplicatedMergeTreeZooKeeperMergePredicate::isMutationFinished(
         if (checked_partitions_cache.contains(partition_id))
             continue;
 
-        if (committing_blocks && !committing_blocks->contains(partition_id))
+        if (partition_ids_hint && !partition_ids_hint->contains(partition_id))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Committing blocks were not loaded for partition {}, it's a bug", partition_id);
 
         auto partition_it = committing_blocks->find(partition_id);

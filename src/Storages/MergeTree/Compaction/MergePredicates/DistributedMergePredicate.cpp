@@ -5,7 +5,7 @@
 namespace DB
 {
 
-CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, const std::optional<PartitionIdsHint> & partition_ids_hint)
+CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint)
 {
     CommittingBlocks committing_blocks;
 
@@ -29,18 +29,15 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
     for (size_t i = 0; i < partitions.size(); ++i)
     {
         auto & response = locks_children[i];
-        if (response.error == Coordination::Error::ZNONODE)
-        {
-            if (!partition_ids_hint.has_value())
-                throw Coordination::Exception::fromPath(response.error, paths[i]);
+        if (response.error != Coordination::Error::ZOK && !partition_ids_hint)
+            throw Coordination::Exception::fromPath(response.error, paths[i]);
 
+        if (response.error != Coordination::Error::ZOK)
+        {
+            /// Probably a wrong hint was provided (it's ok if a user passed non-existing partition to OPTIMIZE)
+            partition_ids_hint->erase(partitions[i]);
             continue;
         }
-
-        chassert(response.error == Coordination::Error::ZOK);
-
-        auto [_, is_inserted] = committing_blocks.insert({partitions[i], {}});
-        chassert(is_inserted);
 
         Strings partition_block_numbers = locks_children[i].names;
         for (const String & entry : partition_block_numbers)

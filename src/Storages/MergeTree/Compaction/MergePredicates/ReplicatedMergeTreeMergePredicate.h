@@ -9,7 +9,7 @@ namespace DB
 class ReplicatedMergeTreeBaseMergePredicate : public DistributedMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>
 {
 public:
-    explicit ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_);
+    explicit ReplicatedMergeTreeBaseMergePredicate(const ReplicatedMergeTreeQueue & queue_, std::optional<PartitionIdsHint> partition_ids_hint_);
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
@@ -37,7 +37,7 @@ public:
 class ReplicatedMergeTreeZooKeeperMergePredicate final : public ReplicatedMergeTreeBaseMergePredicate
 {
 public:
-    ReplicatedMergeTreeZooKeeperMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint_);
+    ReplicatedMergeTreeZooKeeperMergePredicate(ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> partition_ids_hint_);
     ~ReplicatedMergeTreeZooKeeperMergePredicate() override = default;
 
     /// Returns true if part is needed for some REPLACE_RANGE entry.

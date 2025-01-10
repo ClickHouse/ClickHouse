@@ -21,13 +21,18 @@ class DistributedMergePredicate : public IMergePredicate
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
             return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
 
-        if (committing_blocks_ptr && !committing_blocks_ptr->contains(info.partition_id))
+        if (partition_ids_hint && !partition_ids_hint->contains(info.partition_id))
             return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.partition_id));
 
         return {};
     }
 
 public:
+    explicit DistributedMergePredicate(std::optional<PartitionIdsHint> partition_ids_hint_)
+        : partition_ids_hint(std::move(partition_ids_hint_))
+    {
+    }
+
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
     {
         /// A sketch of a proof of why this method actually works:
@@ -138,6 +143,9 @@ public:
     }
 
 protected:
+    /// A list of partitions that can be used in the merge predicate
+    std::optional<PartitionIdsHint> partition_ids_hint;
+
     /// A snapshot of active parts that would appear if the replica executes all log entries in its queue.
     const VirtualPartsT * prev_virtual_parts_ptr = nullptr;
     const VirtualPartsT * virtual_parts_ptr = nullptr;
