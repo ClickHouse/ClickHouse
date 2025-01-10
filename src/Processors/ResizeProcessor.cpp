@@ -529,7 +529,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
 
             /// E.g. if we have 8 total outputs, but we only want 4 active => disable the “extra”
             size_t free_threads_count = (total_enabled > working_count)
-                ? (total_enabled - working_count) 
+                ? (total_enabled - working_count)
                 : 0;
 
             for (size_t i = 0; i < output_ports.size() && free_threads_count > 0; ++i)
