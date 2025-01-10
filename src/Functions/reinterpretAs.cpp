@@ -114,7 +114,7 @@ public:
         return to_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         auto from_type = arguments[0].type;
 
@@ -136,9 +136,9 @@ public:
                 ColumnFixedString * dst_concrete = assert_cast<ColumnFixedString *>(dst.get());
 
                 if (src.isFixedAndContiguous() && src.sizeOfValueIfFixed() == dst_concrete->getN())
-                    executeContiguousToFixedString(src, *dst_concrete, dst_concrete->getN(), input_rows_count);
+                    executeContiguousToFixedString(src, *dst_concrete, dst_concrete->getN());
                 else
-                    executeToFixedString(src, *dst_concrete, dst_concrete->getN(), input_rows_count);
+                    executeToFixedString(src, *dst_concrete, dst_concrete->getN());
 
                 result = std::move(dst);
 
@@ -156,7 +156,7 @@ public:
                 MutableColumnPtr dst = result_type->createColumn();
 
                 ColumnString * dst_concrete = assert_cast<ColumnString *>(dst.get());
-                executeToString(src, *dst_concrete, input_rows_count);
+                executeToString(src, *dst_concrete);
 
                 result = std::move(dst);
 
@@ -174,11 +174,12 @@ public:
 
                     const auto & data_from = col_from->getChars();
                     const auto & offsets_from = col_from->getOffsets();
+                    size_t size = offsets_from.size();
                     auto & vec_res = col_res->getData();
-                    vec_res.resize_fill(input_rows_count);
+                    vec_res.resize_fill(size);
 
                     size_t offset = 0;
-                    for (size_t i = 0; i < input_rows_count; ++i)
+                    for (size_t i = 0; i < size; ++i)
                     {
                         size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1);
                         if constexpr (std::endian::native == std::endian::little)
@@ -208,6 +209,7 @@ public:
 
                     const auto& data_from = col_from_fixed->getChars();
                     size_t step = col_from_fixed->getN();
+                    size_t size = data_from.size() / step;
                     auto & vec_res = col_res->getData();
 
                     size_t offset = 0;
@@ -215,11 +217,11 @@ public:
                     size_t index = data_from.size() - copy_size;
 
                     if (sizeof(ToFieldType) <= step)
-                        vec_res.resize(input_rows_count);
+                        vec_res.resize(size);
                     else
-                        vec_res.resize_fill(input_rows_count);
+                        vec_res.resize_fill(size);
 
-                    for (size_t i = 0; i < input_rows_count; ++i)
+                    for (size_t i = 0; i < size; ++i)
                     {
                         if constexpr (std::endian::native == std::endian::little)
                             memcpy(&vec_res[i], &data_from[offset], copy_size);
@@ -249,11 +251,12 @@ public:
                     auto & from = column_from->getData();
                     auto & to = column_to->getData();
 
-                    to.resize_fill(input_rows_count);
+                    size_t size = from.size();
+                    to.resize_fill(size);
 
                     static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
 
-                    for (size_t i = 0; i < input_rows_count; ++i)
+                    for (size_t i = 0; i < size; ++i)
                     {
                         if constexpr (std::endian::native == std::endian::little)
                             memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
@@ -304,13 +307,14 @@ private:
             type.isDecimal();
     }
 
-    static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n, size_t input_rows_count)
+    static void NO_INLINE executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
+        size_t rows = src.size();
         ColumnFixedString::Chars & data_to = dst.getChars();
-        data_to.resize_fill(n * input_rows_count);
+        data_to.resize_fill(n * rows);
 
         ColumnFixedString::Offset offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < rows; ++i)
         {
             std::string_view data = src.getDataAt(i).toView();
 
@@ -323,10 +327,11 @@ private:
         }
     }
 
-    static void NO_INLINE executeContiguousToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n, size_t input_rows_count)
+    static void NO_INLINE executeContiguousToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
+        size_t rows = src.size();
         ColumnFixedString::Chars & data_to = dst.getChars();
-        data_to.resize(n * input_rows_count);
+        data_to.resize(n * rows);
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         memcpy(data_to.data(), src.getRawData().data(), data_to.size());
@@ -335,14 +340,15 @@ private:
 #endif
     }
 
-    static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst, size_t input_rows_count)
+    static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
     {
+        size_t rows = src.size();
         ColumnString::Chars & data_to = dst.getChars();
         ColumnString::Offsets & offsets_to = dst.getOffsets();
-        offsets_to.resize(input_rows_count);
+        offsets_to.resize(rows);
 
         ColumnString::Offset offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < rows; ++i)
         {
             StringRef data = src.getDataAt(i);
 

@@ -10,7 +10,6 @@ CREATE TABLE Customers
 
 INSERT INTO Customers VALUES ('Theodore','Diaz','Skilled Manual','Bachelors',28), ('Stephanie','Cox','Management','Bachelors',33), ('Peter','Nara','Skilled Manual','Graduate Degree',26), ('Latoya','Shen','Professional','Graduate Degree',25), ('Joshua','Lee','Professional','Partial College',26), ('Edward','Hernandez','Skilled Manual','High School',36), ('Dalton','Wood','Professional','Partial College',42), ('Christine','Nara','Skilled Manual','Partial College',33), ('Cameron','Rodriguez','Professional','Partial College',28), ('Angel','Stewart','Professional','Partial College',46);
 
-set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 print '-- test Query only has table name: --';
 Customers;
@@ -32,7 +31,7 @@ print '-- Query has second Column selection --';
 Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName;
 
 print '-- Query has second Column selection with extra column --';
-Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;-- { serverError UNKNOWN_IDENTIFIER }
+Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;-- { serverError 47 }
 
 print '-- Query with desc sort --';
 Customers | project FirstName | take 5 | sort by FirstName desc;
@@ -90,5 +89,5 @@ StormEvents | where startswith "W" | summarize Count=count() by State; -- { clie
 
 SET max_query_size = 55;
 SET dialect='kusto';
-Customers | where Education contains 'degree' | order by LastName; -- { serverError SYNTAX_ERROR }
+Customers | where Education contains 'degree' | order by LastName; -- { serverError 62 }
 SET max_query_size=262144;

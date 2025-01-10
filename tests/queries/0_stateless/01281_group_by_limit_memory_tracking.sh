@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-random-settings, no-object-storage, no-msan
+# Tags: no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-random-settings, no-s3-storage, no-msan
 # Tag no-fasttest: max_memory_usage_for_user can interfere another queries running concurrently
 
 # Regression for MemoryTracker that had been incorrectly accounted
@@ -41,7 +41,6 @@ function execute_group_by()
         # this is to enable two level group by
         # (using threads to enable it makes the query use non constant amount of memory)
         "--max_bytes_before_external_group_by=$((1<<40))"
-        "--max_bytes_ratio_before_external_group_by=0"
         "--collect_hash_table_stats_during_aggregation=0"
     )
     execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5 LIMIT 10'

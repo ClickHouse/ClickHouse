@@ -9,37 +9,26 @@ namespace DB
 /// Writes data part in compact format.
 class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
-    using Base = MergeTreeDataPartWriterOnDisk;
-
 public:
     MergeTreeDataPartWriterCompact(
-        const String & data_part_name_,
-        const String & logger_name_,
-        const SerializationByName & serializations_,
-        MutableDataPartStoragePtr data_part_storage_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const MergeTreeSettingsPtr & storage_settings_,
+        const MergeTreeMutableDataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc,
+        const Statistics & stats_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        MergeTreeIndexGranularityPtr index_granularity_);
+        const MergeTreeIndexGranularity & index_granularity);
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) override;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) override;
     void finish(bool sync) override;
-    void cancel() noexcept override;
-
-    size_t getNumberOfOpenStreams() const override { return 1; }
 
 private:
     /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
-    void fillDataChecksums(MergeTreeDataPartChecksums & checksums);
+    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
     void finishDataSerialization(bool sync);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
@@ -53,7 +42,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
 
     Block header;
 

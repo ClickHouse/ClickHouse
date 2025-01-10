@@ -22,8 +22,7 @@ public:
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        bool use_average_block_sizes = false,
-        bool apply_virtual_row_conversions_ = true);
+        bool use_average_block_sizes = false);
 
     void addInput();
 
@@ -32,7 +31,7 @@ public:
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
+    const MergedData & getMergedData() const { return merged_data; }
 
 private:
     Block header;
@@ -47,8 +46,6 @@ private:
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf = nullptr;
-
-    bool apply_virtual_row_conversions;
 
     /// Chunks currently being merged.
     Inputs current_inputs;

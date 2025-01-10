@@ -1,5 +1,4 @@
--- Tags: no-object-storage, no-fasttest
--- no-fasttest: It can be slow
+-- Tags: no-s3-storage
 
 drop table if exists data_01643;
 

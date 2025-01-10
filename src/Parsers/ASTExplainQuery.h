@@ -40,6 +40,8 @@ public:
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
+
+        UNREACHABLE();
     }
 
     static ExplainKind fromString(const String & str)
@@ -112,30 +114,30 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
 
         if (ast_settings)
         {
-            ostr << ' ';
-            ast_settings->format(ostr, settings, state, frame);
+            settings.ostr << ' ';
+            ast_settings->formatImpl(settings, state, frame);
         }
 
         if (query)
         {
-            ostr << settings.nl_or_ws;
-            query->format(ostr, settings, state, frame);
+            settings.ostr << settings.nl_or_ws;
+            query->formatImpl(settings, state, frame);
         }
         if (table_function)
         {
-            ostr << settings.nl_or_ws;
-            table_function->format(ostr, settings, state, frame);
+            settings.ostr << settings.nl_or_ws;
+            table_function->formatImpl(settings, state, frame);
         }
         if (table_override)
         {
-            ostr << settings.nl_or_ws;
-            table_override->format(ostr, settings, state, frame);
+            settings.ostr << settings.nl_or_ws;
+            table_override->formatImpl(settings, state, frame);
         }
     }
 

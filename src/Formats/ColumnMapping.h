@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
-
-struct FormatSettings;
 
 /// Used for input text formats with headers/structure to map columns from input
 /// and columns in header by names.

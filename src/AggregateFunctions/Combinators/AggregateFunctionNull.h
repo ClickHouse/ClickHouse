@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
@@ -8,10 +9,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <absl/container/inlined_vector.h>
-
-#include <array>
 
 #include "config.h"
 
@@ -157,18 +154,9 @@ public:
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
     {
-        AggregateDataPtrs nested_places(places.begin(), places.end());
-        for (auto & nested_place : nested_places)
-            nested_place = nestedPlace(nested_place);
-
-        nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -459,7 +447,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// This container stores the columns we really pass to the nested function.
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
 
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
@@ -479,7 +467,7 @@ public:
         }
 
         this->setFlag(place);
-        this->nested_function->add(this->nestedPlace(place), nested_columns.data(), row_num, arena);
+        this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
     }
 
     void addBatchSinglePlace(
@@ -492,9 +480,9 @@ public:
     {
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
         std::vector<const UInt8 *> nullable_filters;
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
 
-        std::unique_ptr<UInt8[]> final_flags;
+        std::unique_ptr<UInt8[]> final_flags = nullptr;
         const UInt8 * final_flags_ptr = nullptr;
 
         if (if_argument_pos >= 0)
@@ -578,7 +566,7 @@ public:
 
         this->setFlag(place);
         this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_flags_ptr, arena, -1);
+            row_begin, row_end, this->nestedPlace(place), nested_columns, final_flags_ptr, arena, -1);
     }
 
 

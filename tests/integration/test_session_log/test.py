@@ -1,12 +1,10 @@
 import os
-import random
-import sys
-import threading
-import time
-
 import grpc
 import pymysql.connections
 import pytest
+import random
+import sys
+import threading
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
@@ -14,8 +12,8 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
 if grpc_protocol_pb2_dir not in sys.path:
     sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-import clickhouse_grpc_pb2_grpc
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+
 
 POSTGRES_SERVER_PORT = 5433
 MYSQL_SERVER_PORT = 9001
@@ -59,19 +57,6 @@ def next_session_id():
     session_id = session_id_counter
     session_id_counter += 1
     return str(session_id)
-
-
-user_counter = 0
-
-
-def create_unique_user(prefix):
-    global user_counter
-    user_counter += 1
-    user_name = f"{prefix}_{os.getppid()}_{user_counter}"
-    instance.query(
-        f"CREATE USER {user_name} IDENTIFIED WITH plaintext_password BY 'pass'"
-    )
-    return user_name
 
 
 def grpc_query(query, user_, pass_, raise_exception):
@@ -132,50 +117,6 @@ def mysql_query(query, user_, pass_, raise_exception):
         assert raise_exception
 
 
-def wait_for_corresponding_login_success_and_logout(user, expected_login_count):
-    # The client can exit sooner than the server records its disconnection and closes the session.
-    # When the client disconnects, two processes happen at the same time and are in the race condition:
-    # - the client application exits and returns control to the shell;
-    # - the server closes the session and records the logout event to the session log.
-    # We cannot expect that after the control is returned to the shell, the server records the logout event.
-    sql = f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '{user}' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '{user}' AND type = 'Logout')"
-    logins_and_logouts = instance.query(sql)
-    while int(logins_and_logouts) != expected_login_count:
-        time.sleep(0.1)
-        logins_and_logouts = instance.query(sql)
-
-
-def check_session_log(user):
-    instance.query("SYSTEM FLUSH LOGS")
-    login_success_records = instance.query(
-        f"SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='{user}' AND type = 'LoginSuccess'"
-    )
-    assert login_success_records == f"{user}\t1\t1\n"
-    logout_records = instance.query(
-        f"SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='{user}' AND type = 'Logout'"
-    )
-    assert logout_records == f"{user}\t1\t1\n"
-    login_failure_records = instance.query(
-        f"SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='{user}' AND type = 'LoginFailure'"
-    )
-    assert login_failure_records == f"{user}\t1\t1\n"
-
-    wait_for_corresponding_login_success_and_logout(user, 1)
-
-
-def session_log_test(prefix, query_function):
-    user = create_unique_user(prefix)
-    wrong_user = "wrong_" + user
-
-    query_function("SELECT 1", user, "pass", False)
-    query_function("SELECT 2", user, "wrong_pass", True)
-    query_function("SELECT 3", wrong_user, "pass", True)
-
-    check_session_log(user)
-
-    instance.query(f"DROP USER {user}")
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -190,21 +131,78 @@ def started_cluster():
 
 
 def test_grpc_session(started_cluster):
-    session_log_test("grpc", grpc_query)
+    grpc_query("SELECT 1", "grpc_user", "pass", False)
+    grpc_query("SELECT 2", "grpc_user", "wrong_pass", True)
+    grpc_query("SELECT 3", "wrong_grpc_user", "pass", True)
+
+    instance.query("SYSTEM FLUSH LOGS")
+    login_success_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='grpc_user' AND type = 'LoginSuccess'"
+    )
+    assert login_success_records == "grpc_user\t1\t1\n"
+    logout_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='grpc_user' AND type = 'Logout'"
+    )
+    assert logout_records == "grpc_user\t1\t1\n"
+    login_failure_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='grpc_user' AND type = 'LoginFailure'"
+    )
+    assert login_failure_records == "grpc_user\t1\t1\n"
+    logins_and_logouts = instance.query(
+        f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'grpc_user' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'grpc_user' AND type = 'Logout')"
+    )
+    assert logins_and_logouts == "1\n"
 
 
 def test_mysql_session(started_cluster):
-    session_log_test("mysql", mysql_query)
+    mysql_query("SELECT 1", "mysql_user", "pass", False)
+    mysql_query("SELECT 2", "mysql_user", "wrong_pass", True)
+    mysql_query("SELECT 3", "wrong_mysql_user", "pass", True)
+
+    instance.query("SYSTEM FLUSH LOGS")
+    login_success_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='mysql_user' AND type = 'LoginSuccess'"
+    )
+    assert login_success_records == "mysql_user\t1\t1\n"
+    logout_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='mysql_user' AND type = 'Logout'"
+    )
+    assert logout_records == "mysql_user\t1\t1\n"
+    login_failure_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='mysql_user' AND type = 'LoginFailure'"
+    )
+    assert login_failure_records == "mysql_user\t1\t1\n"
+    logins_and_logouts = instance.query(
+        f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'mysql_user' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'mysql_user' AND type = 'Logout')"
+    )
+    assert logins_and_logouts == "1\n"
 
 
 def test_postgres_session(started_cluster):
-    session_log_test("postgres", postgres_query)
+    postgres_query("SELECT 1", "postgres_user", "pass", False)
+    postgres_query("SELECT 2", "postgres_user", "wrong_pass", True)
+    postgres_query("SELECT 3", "wrong_postgres_user", "pass", True)
+
+    instance.query("SYSTEM FLUSH LOGS")
+    login_success_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='postgres_user' AND type = 'LoginSuccess'"
+    )
+    assert login_success_records == "postgres_user\t1\t1\n"
+    logout_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='postgres_user' AND type = 'Logout'"
+    )
+    assert logout_records == "postgres_user\t1\t1\n"
+    login_failure_records = instance.query(
+        "SELECT user, client_port <> 0,  client_address <> toIPv6('::') FROM system.session_log WHERE user='postgres_user' AND type = 'LoginFailure'"
+    )
+    assert login_failure_records == "postgres_user\t1\t1\n"
+    logins_and_logouts = instance.query(
+        f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'postgres_user' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'postgres_user' AND type = 'Logout')"
+    )
+    assert logins_and_logouts == "1\n"
 
 
 def test_parallel_sessions(started_cluster):
-    user = create_unique_user("parallel")
-    wrong_user = "wrong_" + user
-
     thread_list = []
     for _ in range(10):
         # Sleep time does not significantly matter here,
@@ -214,7 +212,7 @@ def test_parallel_sessions(started_cluster):
                 target=function,
                 args=(
                     f"SELECT sleep({random.uniform(0.03, 0.04)})",
-                    user,
+                    "parallel_user",
                     "pass",
                     False,
                 ),
@@ -225,7 +223,7 @@ def test_parallel_sessions(started_cluster):
                 target=function,
                 args=(
                     f"SELECT sleep({random.uniform(0.03, 0.04)})",
-                    user,
+                    "parallel_user",
                     "wrong_pass",
                     True,
                 ),
@@ -236,7 +234,7 @@ def test_parallel_sessions(started_cluster):
                 target=function,
                 args=(
                     f"SELECT sleep({random.uniform(0.03, 0.04)})",
-                    wrong_user,
+                    "wrong_parallel_user",
                     "pass",
                     True,
                 ),
@@ -249,38 +247,41 @@ def test_parallel_sessions(started_cluster):
 
     instance.query("SYSTEM FLUSH LOGS")
     port_0_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log WHERE user = '{user}'"
+        f"SELECT COUNT(*) FROM system.session_log WHERE user = 'parallel_user'"
     )
     assert port_0_sessions == "90\n"
 
     port_0_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log WHERE user = '{user}' AND client_port = 0"
+        f"SELECT COUNT(*) FROM system.session_log WHERE user = 'parallel_user' AND client_port = 0"
     )
     assert port_0_sessions == "0\n"
 
     address_0_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log WHERE user = '{user}' AND client_address = toIPv6('::')"
+        f"SELECT COUNT(*) FROM system.session_log WHERE user = 'parallel_user' AND client_address = toIPv6('::')"
     )
     assert address_0_sessions == "0\n"
 
     grpc_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log WHERE user = '{user}' AND interface = 'gRPC'"
+        f"SELECT COUNT(*) FROM system.session_log WHERE user = 'parallel_user' AND interface = 'gRPC'"
     )
     assert grpc_sessions == "30\n"
 
     mysql_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log WHERE user = '{user}' AND interface = 'MySQL'"
+        f"SELECT COUNT(*) FROM system.session_log WHERE user = 'parallel_user' AND interface = 'MySQL'"
     )
     assert mysql_sessions == "30\n"
 
     postgres_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log WHERE user = '{user}' AND interface = 'PostgreSQL'"
+        f"SELECT COUNT(*) FROM system.session_log WHERE user = 'parallel_user' AND interface = 'PostgreSQL'"
     )
     assert postgres_sessions == "30\n"
 
-    wait_for_corresponding_login_success_and_logout(user, 30)
+    logins_and_logouts = instance.query(
+        f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'parallel_user' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'parallel_user' AND type = 'Logout')"
+    )
+    assert logins_and_logouts == "30\n"
 
     logout_failure_sessions = instance.query(
-        f"SELECT COUNT(*) FROM system.session_log  WHERE user = '{user}' AND type = 'LoginFailure'"
+        f"SELECT COUNT(*) FROM system.session_log  WHERE user = 'parallel_user' AND type = 'LoginFailure'"
     )
     assert logout_failure_sessions == "30\n"

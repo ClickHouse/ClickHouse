@@ -4,7 +4,7 @@
 
 namespace DB
 {
-    enum class FileSegmentState : uint8_t
+    enum class FileSegmentState
     {
         DOWNLOADED,
         /**
@@ -38,24 +38,22 @@ namespace DB
         DETACHED,
     };
 
-    enum class FileSegmentKind : uint8_t
+    enum class FileSegmentKind
     {
         /**
-         * Represents data cached from S3 or other backing storage.
-         * It is kept in the cache after usage and can be evicted on demand, unless there are some holders.
+         * `Regular` file segment is still in cache after usage, and can be evicted
+         * (unless there're some holders).
          */
         Regular,
 
         /**
-         * Represents temporary data without backing storage, but written to the cache from outside.
-         * Ephemeral file segments are kept while they are in use, but then can be removed immediately after releasing.
-         * Also, corresponding files are removed during cache loading.
-         * Ephemeral file segments have no bound, and a single segment can have an arbitrary size.
+         * Temporary` file segment is removed right after releasing.
+         * Also corresponding files are removed during cache loading (if any).
          */
-        Ephemeral,
+        Temporary,
     };
 
-    enum class FileCacheQueueEntryType : uint8_t
+    enum class FileCacheQueueEntryType
     {
         None,
         LRU,

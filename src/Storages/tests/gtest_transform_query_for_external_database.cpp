@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Storages/MemorySettings.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -106,7 +105,7 @@ private:
                 context,
                 table_name,
                 std::make_shared<StorageMemory>(
-                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}, MemorySettings{}));
+                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
 
@@ -371,21 +370,17 @@ TEST(TransformQueryForExternalDatabase, Null)
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
-          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NOT NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
-          R"(SELECT "field" FROM "test"."table")");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
-          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNotNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
-          R"(SELECT "field" FROM "test"."table")");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
 }
 
 TEST(TransformQueryForExternalDatabase, ToDate)

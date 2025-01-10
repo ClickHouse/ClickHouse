@@ -2,7 +2,6 @@
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -51,7 +50,6 @@ StorageSQLite::StorageSQLite(
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -73,7 +71,6 @@ StorageSQLite::StorageSQLite(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    storage_metadata.setComment(comment);
 }
 
 
@@ -144,7 +141,7 @@ public:
 
     String getName() const override { return "SQLiteSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         WriteBufferFromOwnString sqlbuf;
@@ -214,7 +211,7 @@ void registerStorageSQLite(StorageFactory & factory)
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
-                                     table_name, args.columns, args.constraints, args.comment, args.getContext());
+                                     table_name, args.columns, args.constraints, args.getContext());
     },
     {
         .supports_schema_inference = true,

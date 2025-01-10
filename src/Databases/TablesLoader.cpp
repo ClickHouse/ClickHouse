@@ -137,7 +137,7 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.empty())
@@ -190,8 +190,7 @@ void TablesLoader::removeUnresolvableDependencies()
                 table_id);
         }
 
-        size_t num_dependencies;
-        size_t num_dependents;
+        size_t num_dependencies, num_dependents;
         all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
@@ -200,7 +199,7 @@ void TablesLoader::removeUnresolvableDependencies()
         return true; /// Exclude this dependency.
     };
 
-    all_loading_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
+    all_loading_dependencies.removeTablesIf(need_exclude_dependency);
 
     if (all_loading_dependencies.getNumberOfTables() != metadata.parsed_tables.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be loaded is not as expected. It's a bug");

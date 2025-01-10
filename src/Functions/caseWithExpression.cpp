@@ -93,12 +93,13 @@ public:
 
         auto fun_array = FunctionFactory::instance().get("array", context);
 
-        src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count, /* dry_run = */ false);
-        dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
+        src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count);
+        dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count);
 
         /// Execute transform.
         ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-        return FunctionFactory::instance().get("transform", context)->build(transform_args)->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
+        return FunctionFactory::instance().get("transform", context)->build(transform_args)
+            ->execute(transform_args, result_type, input_rows_count);
     }
 
 private:

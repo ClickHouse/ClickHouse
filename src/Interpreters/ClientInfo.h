@@ -38,7 +38,6 @@ public:
         POSTGRESQL = 5,
         LOCAL = 6,
         TCP_INTERSERVER = 7,
-        PROMETHEUS = 8,
     };
 
     enum class HTTPMethod : uint8_t
@@ -110,26 +109,13 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
-    std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const
+    String getLastForwardedFor() const
     {
         if (forwarded_for.empty())
             return {};
         String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
         boost::trim(last);
-        try
-        {
-            return Poco::Net::SocketAddress{last};
-        }
-        catch (const Poco::InvalidArgumentException &)
-        {
-            return Poco::Net::SocketAddress{last, 0};
-        }
-    }
-
-    String getLastForwardedForHost() const
-    {
-        auto addr = getLastForwardedFor();
-        return addr ? addr->host().toString() : "";
+        return last;
     }
 
     /// Common
@@ -141,18 +127,8 @@ public:
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
-    UInt64 obsolete_count_participating_replicas{0};
+    UInt64 count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
-
-    enum class BackgroundOperationType : uint8_t
-    {
-        NOT_A_BACKGROUND_OPERATION = 0,
-        MERGE = 1,
-        MUTATION = 2,
-    };
-
-    /// It's ClientInfo and context created for background operation (not real query)
-    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
@@ -179,5 +155,5 @@ private:
 };
 
 String toString(ClientInfo::Interface interface);
-String toString(ClientInfo::HTTPMethod method);
+
 }

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-
-import os
-import random
-import time
-from multiprocessing.dummy import Pool
-
+##!/usr/bin/env python3
 import pytest
+from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
+from multiprocessing.dummy import Pool
 from kazoo.client import KazooClient, KazooRetry
 from kazoo.handlers.threading import KazooTimeoutError
-
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
+import random
+import string
+import os
+import time
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -136,7 +135,11 @@ def started_cluster():
 
 
 def get_fake_zk(node, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def get_genuine_zk(node, timeout=30.0):

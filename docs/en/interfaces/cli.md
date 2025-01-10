@@ -8,7 +8,7 @@ import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_nati
 
 ## clickhouse-client
 
-ClickHouse provides a native command-line client: `clickhouse-client`. The client supports [command-line options](#command-line-options) and [configuration files](#configuration_files).
+ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 
 [Install](../getting-started/install.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
@@ -37,10 +37,11 @@ The client can be used in interactive and non-interactive (batch) mode.
 
 ### Interactive
 
-To connect to your ClickHouse Cloud service or any ClickHouse server using TLS and passwords, specify port `9440` (or `--secure`) and provide your username and password:
+To connect to your ClickHouse Cloud service, or any ClickHouse server using TLS and passwords, interactively use `--secure`, port 9440, and provide your username and password:
 
 ```bash
 clickhouse-client --host <HOSTNAME> \
+                  --secure \
                   --port 9440 \
                   --user <USERNAME> \
                   --password <PASSWORD>
@@ -61,6 +62,7 @@ This example is appropriate for ClickHouse Cloud, or any ClickHouse server using
 
 ```bash
 clickhouse-client --host HOSTNAME.clickhouse.cloud \
+  --secure \
   --port 9440 \
   --user default \
   --password PASSWORD \
@@ -153,8 +155,46 @@ Format a query as usual, then place the values that you want to pass from the ap
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
-$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
+
+## Configuring {#interfaces_cli_configuration}
+
+You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
+
+- From the Command Line
+
+    Command-line options override the default values and settings in configuration files.
+
+- Configuration files.
+
+    Settings in the configuration files override the default values.
+
+### Command Line Options {#command-line-options}
+
+- `--host, -h` – The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
+- `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
+- `--user, -u` – The username. Default value: default.
+- `--password` – The password. Default value: empty string.
+- `--ask-password` - Prompt the user to enter a password.
+- `--query, -q` – The query to process when using non-interactive mode. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
+- `--queries-file` – file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--queries-file  queries1.sql --queries-file  queries2.sql`. Cannot be used simultaneously with `--query`.
+- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
+- `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
+- `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
+- `--format, -f` – Use the specified default format to output the result.
+- `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
+- `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
+- `--stacktrace` – If specified, also print the stack trace if an exception occurs.
+- `--config-file` – The name of the configuration file.
+- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+- `--history_file` — Path to a file containing command history.
+- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+- `--hardware-utilization` — Print hardware utilization information in progress bar.
+- `--print-profile-events` – Print `ProfileEvents` packets.
+- `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
+
+Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 
 
 ## Aliases {#cli_aliases}
@@ -298,10 +338,10 @@ clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
 Connect to one of provides hosts: `192.168.1.15`, `192.168.1.25`.
 
 ``` bash
-clickhouse-client clickhouse://192.168.1.15,192.168.1.25
+clickhouse-client clickhouse://192.168.1.15,192.168.1.25 
 ```
 
-## Configuration Files {#configuration_files}
+### Configuration Files {#configuration_files}
 
 `clickhouse-client` uses the first existing file of the following:
 
@@ -326,7 +366,7 @@ Example of a config file:
 ```
 
 Or the same config in a YAML format:
-
+ 
 ```yaml
 user: username
 password: 'password'
@@ -336,29 +376,7 @@ openSSL:
     caConfig: '/etc/ssl/cert.pem'
 ```
 
-### Connection credentials {#connection-credentials}
-
-If you frequently connect to the same ClickHouse server, you can save the connection details including credentials in
-the configuration file like this:
-
-```xml
-<config>
-    <connections_credentials>
-        <name>production</name>
-        <hostname>127.0.0.1</hostname>
-        <port>9000</port>
-        <secure>1</secure>
-        <user>default</user>
-        <password></password>
-        <database></database>
-
-        <!-- You can use colors and macros, see clickhouse-client.xml for more documentation. -->
-        <prompt>\e[31m[PRODUCTION]\e[0m {user}@{display_name}</prompt>
-    </connections_credentials>
-</config>
-```
-
-## Query ID Format {#query-id-format}
+### Query ID Format {#query-id-format}
 
 In interactive mode `clickhouse-client` shows query ID for every query. By default, the ID is formatted like this:
 
@@ -384,215 +402,3 @@ If the configuration above is applied, the ID of a query is shown in the followi
 ```response
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
-
-## Command-Line Options {#command-line-options}
-
-All command-line options can be specified directly on the command line or as defaults in the [configuration file](#configuration_files).
-
-### General Options {#command-line-options-general}
-
-**`-c [ -C, --config, --config-file ] <path-to-file>`**
-
-The location of the configuration file for the client, if it is not at one of the default locations. See [Configuration Files](#configuration_files).
-
-**`--help`**
-
-Print usage summary and exit. Combine with `--verbose` to display all possible options including query settings.
-
-**`--history_file <path-to-file>`**
-
- Path to a file containing the command history.
-
-**`--history_max_entries`**
-
-Maximum number of entries in the history file.
-
-Default value: 1000000 (1 million)
-
-**`--prompt <prompt>`**
-
-Specify a custom prompt.
-
-Default value: The `display_name` of the server.
-
-**`--verbose`**
-
-Increase output verbosity.
-
-**`-V [ --version ]`**
-
-Print version and exit.
-
-### Connection Options {#command-line-options-connection}
-
-**`--connection <name>`**
-
-The name of preconfigured connection details from the configuration file. See [Connection credentials](#connection-credentials).
-
-**`-d [ --database ] <database>`**
-
-Select the database to default to for this connection.
-
-Default value: the current database from the server settings (`default` by default).
-
-**`-h [ --host ] <host>`**
-
-The hostname of the ClickHouse server to connect to. Can either be a hostname or an IPv4 or IPv6 address. Multiple hosts can be passed via multiple arguments.
-
-Default value: localhost
-
-**`--jwt <value>`**
-
-Use JSON Web Token (JWT) for authentication.
-
-Server JWT authorization is only available in ClickHouse Cloud.
-
-**`--no-warnings`**
-
-Disable showing warnings from `system.warnings` when the client connects to the server.
-
-**`--password <password>`**
-
-The password of the database user. You can also specify the password for a connection in the configuration file. If you do not specify the password, the client will ask for it.
-
-**`--port <port>`**
-
-The port the server is accepting connections on. The default ports are 9440 (TLS) and 9000 (no TLS).
-
-Note: The client uses the native protocol and not HTTP(S).
-
-Default value: 9440 if `--secure` is specified, 9000 otherwise. Always defaults to 9440 if the hostname ends in `.clickhouse.cloud`.
-
-**`-s [ --secure ]`**
-
-Whether to use TLS.
-
-Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud.
-
-You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
-
-**`--ssh-key-file <path-to-file>`**
-
-File containing the SSH private key for authenticate with the server.
-
-**`--ssh-key-passphrase <value>`**
-
-Passphrase for the SSH private key specified in `--ssh-key-file`.
-
-**`-u [ --user ] <username>`**
-
-The database user to connect as.
-
-Default value: default
-
-Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
-
-### Query Options {#command-line-options-query}
-
-**`--param_<name>=<value>`**
-
-Substitution value for a parameter of a [query with parameters](#cli-queries-with-parameters).
-
-**`-q [ --query ] <query>`**
-
-The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple comma-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
-
-A single query can also be specified without a parameter:
-```bash
-$ clickhouse-client "SELECT 1"
-1
-```
-
-Cannot be used together with `--queries-file`.
-
-**`--queries-file <path-to-file>`**
-
-Path to a file containing queries. `--queries-file` can be specified multiple times, e.g. `--queries-file  queries1.sql --queries-file  queries2.sql`.
-
-Cannot be used together with `--query`.
-
-**`-m [ --multiline ]`**
-
-If specified, allow multiline queries (do not send the query on Enter). Queries will be sent only when they are ended with a semicolon.
-
-### Query Settings {#command-line-options-query-settings}
-
-Query settings can be specified as command-line options in the client, for example:
-```bash
-$ clickhouse-client --max_threads 1
-```
-
-See [Core Settings](../operations/settings/settings.md) for a list of settings.
-
-### Formatting Options {#command-line-options-formatting}
-
-**`-f [ --format ] <format>`**
-
-Use the specified format to output the result.
-
-See [Formats for Input and Output Data](formats.md) for a list of supported formats.
-
-Default value: TabSeparated
-
-**`--pager <command>`**
-
-Pipe all output into this command. Typically `less` (e.g., `less -S` to display wide result sets) or similar.
-
-**`-E [ --vertical ]`**
-
-Use the [Vertical format](../interfaces/formats.md#vertical) to output the result. This is the same as `–-format Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
-
-### Execution Details {#command-line-options-execution-details}
-
-**`--enable-progress-table-toggle`**
-
-Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with progress table printing enabled.
-
-Default value: enabled
-
-**`--hardware-utilization`**
-
-Print hardware utilization information in progress bar.
-
-**`--memory-usage`**
-
-If specified, print memory usage to `stderr` in non-interactive mode.
-
-Possible values:
-- `none` - do not print memory usage
-- `default` - print number of bytes
-- `readable` - print memory usage in human-readable format
-
-**`--print-profile-events`**
-
-Print `ProfileEvents` packets.
-
-**`--progress`**
-
-Print progress of query execution.
-
-Possible values:
-- `tty|on|1|true|yes` - outputs to the terminal in interactive mode
-- `err` - outputs to `stderr` in non-interactive mode
-- `off|0|false|no` - disables progress printing
-
-Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.
-
-**`--progress-table`**
-
-Print a progress table with changing metrics during query execution.
-
-Possible values:
-- `tty|on|1|true|yes` - outputs to the terminal in interactive mode
-- `err` - outputs to `stderr` non-interactive mode
-- `off|0|false|no` - disables the progress table
-
-Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.
-
-**`--stacktrace`**
-
-Print stack traces of exceptions.
-
-**`-t [ --time ]`**
-
-Print query execution time to `stderr` in non-interactive mode (for benchmarks).

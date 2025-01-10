@@ -18,8 +18,11 @@ RUN apt-get update --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install \
+    numpy \
+    pyodbc \
+    deepdiff \
+    sqlglot
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
@@ -35,8 +38,12 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 
 ENV TZ=Europe/Amsterdam
+ENV MAX_RUN_TIME=9000
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ARG sqllogic_test_repo="https://github.com/gregrahn/sqllogictest.git"
 
 RUN git clone --recursive ${sqllogic_test_repo}
+
+COPY run.sh /
+CMD ["/bin/bash", "/run.sh"]

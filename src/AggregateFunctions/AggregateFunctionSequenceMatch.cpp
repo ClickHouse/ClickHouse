@@ -6,19 +6,14 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include "Functions/array/length.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
 #include <bitset>
-#include <cstddef>
-#include <iterator>
 #include <stack>
-#include <vector>
 
 
 namespace DB
@@ -189,7 +184,7 @@ public:
     }
 
 private:
-    enum class PatternActionType : uint8_t
+    enum class PatternActionType
     {
         SpecificEvent,
         AnyEvent,
@@ -382,8 +377,8 @@ protected:
         return active_states.back();
     }
 
-    template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, std::vector<T> * best_matched_events = nullptr) const
+    template <typename EventEntry>
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -396,29 +391,6 @@ protected:
         using backtrack_info = std::tuple<decltype(action_it), EventEntry, EventEntry>;
         std::stack<backtrack_info> back_stack;
 
-        std::vector<T> current_matched_events;
-        std::vector<decltype(action_it)> current_matched_actions;
-
-        const auto do_push_event = [&]
-        {
-            back_stack.emplace(action_it, events_it, base_it);
-
-            current_matched_events.push_back(events_it->first);
-            current_matched_actions.push_back(action_it);
-            if (best_matched_events->size() < current_matched_events.size())
-            {
-                best_matched_events->assign(current_matched_events.begin(), current_matched_events.end());
-            }
-        };
-
-        const auto do_revert_event_if_needed = [&]
-        {
-            if (current_matched_actions.size() > 0 && current_matched_actions.back() >= action_it)
-            {
-                current_matched_events.pop_back();
-                current_matched_actions.pop_back();
-            }
-        };
         /// backtrack if possible
         const auto do_backtrack = [&]
         {
@@ -431,9 +403,6 @@ protected:
                 base_it = std::get<2>(top);
 
                 back_stack.pop();
-
-                if constexpr (remember_matched_events)
-                    do_revert_event_if_needed();
 
                 if (events_it != events_end)
                     return true;
@@ -449,9 +418,6 @@ protected:
             {
                 if (events_it->second.test(action_it->extra))
                 {
-                    if constexpr (remember_matched_events)
-                        do_push_event();
-
                     /// move to the next action and events
                     base_it = events_it;
                     ++action_it, ++events_it;
@@ -552,16 +518,6 @@ protected:
         return action_it == action_end;
     }
 
-    template <typename EventEntry>
-    std::vector<T> backtrackingMatchEvents(EventEntry & events_it, const EventEntry events_end) const
-    {
-
-        std::vector<T> best_matched_events;
-        backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
-
-        return best_matched_events;
-    }
-
     /// Splits the pattern into deterministic parts separated by non-deterministic fragments
     /// (time constraints and Kleene stars), and tries to match the deterministic parts in their specified order,
     /// ignoring the non-deterministic fragments.
@@ -621,7 +577,7 @@ protected:
     }
 
 private:
-    enum class DFATransition : uint8_t
+    enum class DFATransition : char
     {
         ///   .-------.
         ///   |       |
@@ -704,56 +660,6 @@ public:
             (this->couldMatchDeterministicParts(events_begin, events_end) && this->backtrackingMatch(events_it, events_end)) :
             this->dfaMatch(events_it, events_end));
         output.push_back(match);
-    }
-};
-
-template <typename T, typename Data>
-class AggregateFunctionSequenceMatchEvents final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEvents<T, Data>>
-{
-public:
-    AggregateFunctionSequenceMatchEvents(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEvents<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeArray>(arguments[0])) {}
-
-    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEvents<T, Data>>::AggregateFunctionSequenceBase;
-
-    String getName() const override { return "sequenceMatchEvents"; }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-    {
-        this->data(place).sort();
-        auto result_vec = getEvents(place);
-        size_t size = result_vec.size();
-
-        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        offsets_to.push_back(offsets_to.back() + size);
-        if (size)
-        {
-            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-
-            for (auto it : result_vec)
-            {
-                data_to.push_back(it);
-            }
-        }
-    }
-
-private:
-    std::vector<T> getEvents(ConstAggregateDataPtr __restrict place) const
-    {
-        std::vector<T> res;
-        const auto & data_ref = this->data(place);
-
-        const auto events_begin = std::begin(data_ref.events_list);
-        const auto events_end = std::end(data_ref.events_list);
-        auto events_it = events_begin;
-
-        res = this->backtrackingMatchEvents(events_it, events_end);
-
-        return res;
     }
 };
 
@@ -841,7 +747,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
     WhichDataType which(argument_types.front().get());
     if (which.isDateTime())
         return std::make_shared<AggregateFunction<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types, params, pattern);
-    if (which.isDate())
+    else if (which.isDate())
         return std::make_shared<AggregateFunction<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types, params, pattern);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -855,7 +761,6 @@ void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("sequenceMatch", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>);
     factory.registerFunction("sequenceCount", createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>);
-    factory.registerFunction("sequenceMatchEvents", createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>);
 }
 
 }

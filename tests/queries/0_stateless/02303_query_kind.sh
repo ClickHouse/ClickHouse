@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 opts=(
-    "--enable_analyzer=1"
+    "--allow_experimental_analyzer=1"
 )
 
 function run_query()

@@ -159,7 +159,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -211,14 +211,6 @@ public:
 
     bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
 
-    bool isClientForDisk() const
-    {
-        return client_configuration.for_disk_s3;
-    }
-
-    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
-    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
-
 private:
     friend struct ::MockS3::Client;
 
@@ -269,9 +261,6 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
-
-    template <typename RequestResult>
-    RequestResult processRequestResult(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

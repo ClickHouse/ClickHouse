@@ -52,12 +52,9 @@ public:
 
     void addObject(ObjectStorageKey key, size_t size);
 
-    ObjectKeyWithMetadata popLastObject();
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);
-    /// This method was deleted from public fork recently by Azat
-    void createFromSingleObject(ObjectStorageKey object_key, size_t bytes_size, size_t ref_count_, bool is_read_only_);
 
     void serialize(WriteBuffer & buf, bool sync) const;
     std::string serializeToString() const;

@@ -5,6 +5,7 @@
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -17,7 +18,6 @@
 namespace DB
 {
 
-struct MaterializedPostgreSQLSettings;
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
@@ -45,7 +45,7 @@ public:
     void stopLoading() override;
 
     DatabaseTablesIteratorPtr
-    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 

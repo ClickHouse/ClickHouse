@@ -1,20 +1,15 @@
 #pragma once
 
-#include <base/defines.h>
-
 #include <memory>
 
+#include <base/defines.h>
+
+#include <Poco/Channel.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 
-namespace Poco
-{
-class Channel;
-class Logger;
-using LoggerPtr = std::shared_ptr<Logger>;
-}
+using LoggerPtr = Poco::LoggerPtr;
 
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 using LoggerRawPtr = Poco::Logger *;
 
 /** RAII wrappers around Poco/Logger.h.
@@ -26,12 +21,12 @@ using LoggerRawPtr = Poco::Logger *;
   * Then it must be destroyed when underlying table is destroyed.
   */
 
-/** Get Logger with specified name. If the Logger does not exist, it is created.
+/** Get Logger with specified name. If the Logger does not exists, it is created.
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
   */
 LoggerPtr getLogger(const std::string & name);
 
-/** Get Logger with specified name. If the Logger does not exist, it is created.
+/** Get Logger with specified name. If the Logger does not exists, it is created.
   * This overload was added for specific purpose, when logger is constructed from constexpr string.
   * Logger is destroyed only during program shutdown.
   */
@@ -64,7 +59,3 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   * Otherwise, returns false.
   */
 bool hasLogger(const std::string & name);
-
-void disableLogging();
-
-bool isLoggingEnabled();

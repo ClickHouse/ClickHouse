@@ -65,7 +65,7 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
@@ -148,10 +148,6 @@ private:
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
-    /// Unfinished mutations that are required for AlterConversions.
-    Int64 num_data_mutations_to_apply = 0;
-    Int64 num_metadata_mutations_to_apply = 0;
-
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
 
@@ -179,7 +175,7 @@ private:
             const Names & deduplicate_by_columns,
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
-            PreformattedMessage & out_disable_reason,
+            String & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
@@ -189,7 +185,6 @@ private:
     /// If not force, then take merges selector and check that part is not participating in background operations.
     MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
-    ActionLock stopMergesAndWaitForPartition(String partition_id);
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
@@ -207,15 +202,16 @@ private:
         bool aggressive,
         const String & partition_id,
         bool final,
-        PreformattedMessage & disable_reason,
+        String & disable_reason,
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
+
     MergeMutateSelectedEntryPtr selectPartsToMutate(
-        const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
+        const StorageMetadataPtr & metadata_snapshot, String & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// For current mutations queue, returns maximum version of mutation for a part,
@@ -249,7 +245,7 @@ private:
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
     /// in mutation entries.
-    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name);
+    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message);
 
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
@@ -311,20 +307,8 @@ private:
         ContextPtr context;
     };
 
-    struct MutationsSnapshot : public IMutationsSnapshot
-    {
-        MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
-
-        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
-        MutationsByVersion mutations_by_version;
-
-        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
-    };
-
-    MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
+protected:
+    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

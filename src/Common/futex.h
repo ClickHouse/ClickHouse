@@ -40,12 +40,12 @@ inline void futexWakeAll(std::atomic<UInt32> & address)
      futexWake(&address, INT_MAX);
 }
 
-constexpr UInt32 lowerHalf(UInt64 value)
+inline constexpr UInt32 lowerHalf(UInt64 value)
 {
     return static_cast<UInt32>(value & 0xffffffffull);
 }
 
-constexpr UInt32 upperHalf(UInt64 value)
+inline constexpr UInt32 upperHalf(UInt64 value)
 {
     return static_cast<UInt32>(value >> 32ull);
 }

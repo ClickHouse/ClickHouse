@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-shared-merge-tree
+# Tags: no-ordinary-database
 # Tag no-ordinary-database: requires UUID
-# Tag no-shared-merge-tree -- unrelated test
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +15,7 @@ if [[ $($CLICKHOUSE_CLIENT -q "select count()>0 from system.clusters where clust
     cluster=test_cluster_database_replicated
 fi
 
-$CLICKHOUSE_CLIENT -m --distributed_ddl_output_mode=none -q "
+$CLICKHOUSE_CLIENT -nm --distributed_ddl_output_mode=none -q "
     drop table if exists rmt1;
     drop table if exists rmt2;
 
@@ -47,7 +46,7 @@ part_name='%'
 
 # wait while there be at least one 'No active replica has part all_0_1_1 or covering part' in logs
 for _ in {0..50}; do
-    no_active_repilica_messages=$($CLICKHOUSE_CLIENT -m -q "
+    no_active_repilica_messages=$($CLICKHOUSE_CLIENT -nm -q "
         system flush logs;
 
         select count()
@@ -57,8 +56,7 @@ for _ in {0..50}; do
             (
                 (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
                 (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
-            )
-        SETTINGS max_rows_to_read = 0;
+            );
     ")
     if [[ $no_active_repilica_messages -gt 0 ]]; then
         break
@@ -67,7 +65,7 @@ for _ in {0..50}; do
     sleep 1
 done
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -nm -q "
     system start pulling replication log rmt2;
     system flush logs;
 
@@ -80,6 +78,5 @@ $CLICKHOUSE_CLIENT -m -q "
             (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
             (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
         )
-    group by level
-    SETTINGS max_rows_to_read = 0;
+    group by level;
 "

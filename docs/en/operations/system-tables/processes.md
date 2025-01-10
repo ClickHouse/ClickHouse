@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/processes
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # processes
-
-<SystemTableCloud/>
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
 

@@ -28,8 +28,9 @@ Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB
 )",
         .examples{
             {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)", ""}},
-        .category{"Other"}
-    });
+        .categories{"OtherFunctions"}
+    },
+    FunctionFactory::CaseSensitive);
 }
 
 }

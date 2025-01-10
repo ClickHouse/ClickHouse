@@ -526,7 +526,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
-                logger.debug("Building row. c:%s t:%s", c, t)
+                logger.debug("Builging row. c:%s t:%s", c, t)
                 if c is None:
                     res_row.append("NULL")
                     continue

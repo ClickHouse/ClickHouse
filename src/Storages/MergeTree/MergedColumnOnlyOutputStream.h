@@ -17,22 +17,24 @@ public:
     MergedColumnOnlyOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
-        const NamesAndTypesList & columns_list_,
-        const MergeTreeIndices & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc,
-        CompressionCodecPtr default_codec,
-        MergeTreeIndexGranularityPtr index_granularity_ptr,
-        size_t part_uncompressed_bytes,
-        WrittenOffsetColumns * offset_columns = nullptr);
+        const Block & header_,
+        CompressionCodecPtr default_codec_,
+        const MergeTreeIndices & indices_to_recalc_,
+        const Statistics & stats_to_recalc_,
+        WrittenOffsetColumns * offset_columns_ = nullptr,
+        const MergeTreeIndexGranularity & index_granularity = {},
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
+    Block getHeader() const { return header; }
     void write(const Block & block) override;
 
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
-    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
     void finish(bool sync);
-    void cancel() noexcept override;
+
+private:
+    Block header;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;

@@ -63,11 +63,6 @@ struct AggregateFunctionBoundingRatioData
         {
             *this = other;
         }
-        else if (other.empty)
-        {
-            // if other.empty = true, other.x/other.y may be uninitialized values,
-            // so don't use them to update this->state
-        }
         else
         {
             if (other.left.x < left.x)

@@ -10,11 +10,9 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/DecimalFunctions.h>
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 
 #include <array>
@@ -88,7 +86,7 @@ public:
                 {mandatory_argument_names_year_month_day[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
                 {mandatory_argument_names_year_month_day[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
             };
-            validateFunctionArguments(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, args);
         }
         else
         {
@@ -96,7 +94,7 @@ public:
                 {mandatory_argument_names_year_dayofyear[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
                 {mandatory_argument_names_year_dayofyear[1], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
             };
-            validateFunctionArguments(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, args);
         }
 
         return std::make_shared<typename Traits::ReturnDataType>();
@@ -194,7 +192,7 @@ public:
             {mandatory_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"}
         };
 
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<typename Traits::ReturnDataType>();
     }
@@ -358,7 +356,7 @@ public:
             {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         /// Optional timezone argument
         std::string timezone;
@@ -441,7 +439,7 @@ public:
             {optional_argument_names[2], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         if (arguments.size() >= mandatory_argument_names.size() + 1)
         {
@@ -573,7 +571,7 @@ public:
             {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         /// Optional timezone argument
         std::string timezone;
@@ -653,7 +651,7 @@ public:
             {optional_argument_names[0], static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         /// Optional precision argument
         auto precision = DEFAULT_PRECISION;
@@ -680,7 +678,7 @@ public:
 
         Columns converted_arguments = convertMandatoryArguments<DataTypeFloat64>(arguments, mandatory_argument_names);
 
-        auto res_column = ColumnDateTime64::create(input_rows_count, precision);
+        auto res_column = ColumnDateTime64::create(input_rows_count, static_cast<UInt32>(precision));
         auto & result_data = res_column->getData();
 
         const auto & yyyymmddhhmmss_data = typeid_cast<const ColumnFloat64 &>(*converted_arguments[0]).getData();
@@ -725,7 +723,7 @@ public:
 
 REGISTER_FUNCTION(MakeDate)
 {
-    factory.registerFunction<FunctionMakeDate<DateTraits>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionMakeDate<DateTraits>>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionMakeDate<Date32Traits>>();
     factory.registerFunction<FunctionMakeDateTime>();
     factory.registerFunction<FunctionMakeDateTime64>();
@@ -737,7 +735,7 @@ Converts a number containing the year, month and day number to a Date.
 This functions is the opposite of function `toYYYYMMDD()`.
 The output is undefined if the input does not encode a valid Date value.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
     factory.registerFunction<FunctionYYYYYMMDDToDate<Date32Traits>>(
@@ -745,7 +743,7 @@ The output is undefined if the input does not encode a valid Date value.
             .description = R"(
 Like function `YYYYMMDDToDate()` but produces a Date32.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>(
@@ -755,7 +753,7 @@ Converts a number containing the year, month, day, hour, minute and second numbe
 The output is undefined if the input does not encode a valid DateTime value.
 This functions is the opposite of function `toYYYYMMDD()`.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime64>(
@@ -764,7 +762,7 @@ This functions is the opposite of function `toYYYYMMDD()`.
 Like function `YYYYMMDDhhmmssToDate()` but produces a DateTime64.
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
 }
