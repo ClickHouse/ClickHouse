@@ -710,7 +710,17 @@ Default value: 0 — Disabled.
 
 ## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
 
-Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
+Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset. If enabled, merges picked based on `min_age_to_force_merge_seconds` will ignore `max_bytes_to_merge_at_max_space_in_pool`.
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
+
+Whether merges picked based on `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only`, should be limited by `max_bytes_to_merge_at_max_space_in_pool`.
 
 Possible values:
 
