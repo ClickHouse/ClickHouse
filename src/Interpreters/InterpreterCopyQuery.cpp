@@ -1,4 +1,5 @@
 #include <memory>
+#include <ucontext.h>
 #include <Interpreters/InterpreterCopyQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -36,21 +37,20 @@ BlockIO InterpreterCopyQuery::execute()
         if (!ast_copy->data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Copy should contain valid select");
 
-        auto context_lock = context.lock();
-        auto table_function = TableFunctionFactory::instance().get(ast_table_func, context_lock);
+        auto table_function = TableFunctionFactory::instance().get(ast_table_func, getContext());
         if (!table_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such table function in copy command");
 
-        auto table_storage = table_function->execute(ast_table_func, context_lock, table_function->getName());
+        auto table_storage = table_function->execute(ast_table_func, getContext(), table_function->getName());
         auto storage_metadata = table_storage->getInMemoryMetadataPtr();
-        auto sink = table_storage->write(std::make_shared<ASTInsertQuery>(), storage_metadata, context_lock, false);
+        auto sink = table_storage->write(std::make_shared<ASTInsertQuery>(), storage_metadata, getContext(), false);
 
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-        InterpreterSelectWithUnionQuery interpreter_select(ast_copy->data, context_lock, select_query_options);
+        InterpreterSelectWithUnionQuery interpreter_select(ast_copy->data, getContext(), select_query_options);
         auto pipeline = interpreter_select.buildQueryPipeline();
 
         Chain out;
-        out.addInterpreterContext(context_lock);
+        out.addInterpreterContext(getContext());
         out.addSource(std::move(sink));
         pipeline.addChain(std::move(out));
 
