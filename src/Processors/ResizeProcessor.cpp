@@ -573,7 +573,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(
             free_memory,
             output_ports.size(),
             chunk_size,
-            /* concurrency_factor= */ 3.5);
+            /* concurrency_factor= */ 4);
 
         if (desired_active < active_count)
         {
