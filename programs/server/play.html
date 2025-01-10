@@ -14,7 +14,7 @@
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
-    There should not be any animations.
+    There should not be any animations except the progress bar.
     No unexpected changes in positions of elements while the page is loading.
     Navigation by keyboard should work.
     64-bit numbers must display correctly.
@@ -602,7 +602,6 @@
 
         clear();
 
-        let stopping = false; // TODO
         let response, reply;
         try {
             controller = new AbortController();
@@ -610,7 +609,14 @@
 
             let format = response.headers.get('X-ClickHouse-Format');
 
-            if (format == 'JSONEachRowWithProgress') {
+            if (!response.ok) {
+                reply = await response.text();
+                if (posted_request_num != request_num) { return; }
+                renderError(reply);
+                document.getElementById('hourglass').style.display = 'none';
+                document.getElementById('progress').style.display = 'none';
+                return;
+            } else if (format == 'JSONEachRowWithProgress') {
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 
@@ -619,10 +625,6 @@
                     const { done, value } = await reader.read();
                     if (posted_request_num != request_num) { return; }
                     if (done) break;
-                    if (stopping) {
-                        stopped = true;
-                        break;
-                    }
 
                     let new_content = decoder.decode(value, { stream: true });
                     buffer += new_content;
@@ -633,10 +635,6 @@
 
                     let cont = true;
                     for (line of lines.slice(0, -1)) {
-                        if (stopping) {
-                            stopped = true;
-                            break;
-                        }
                         const data = JSON.parse(line);
                         cont = update(data, fragment);
                         if (!cont) { break; }
@@ -665,10 +663,6 @@
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    if (stopping) {
-                        stopped = true;
-                        break;
-                    }
 
                     let new_content = decoder.decode(value, { stream: true });
                     reply += new_content;
@@ -703,9 +697,9 @@
 
         if (posted_request_num != request_num) { return; }
 
-        const elapsed_msec = performance.now() - last_query_start;
+        const elapsed_msec = performance.now() - last_query_start; // TODO
 
-        /// The query is saved in browser history (in state JSON object)
+        /// The query is saved in browser history (in a state JSON object)
         /// as well as in URL fragment identifier.
         if (query != previous_query) {
             const state = {
@@ -747,7 +741,7 @@
             clear();
             return;
         }
-        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec); // TODO
+        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
     };
 
     if (window.location.hash) {
@@ -899,7 +893,7 @@
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) { // TODO
             renderGraph(response);
         } else {
             renderTable(response);
