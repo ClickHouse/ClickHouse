@@ -384,7 +384,7 @@ private:
             RemoteFunc * rfunc = tfunc->mutable_remote();
 
             rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-            rfunc->set_rdatabase("d" + std::to_string(t.db->dname));
+            rfunc->set_rdatabase(t.db ? ("d" + std::to_string(t.db->dname)) : "default");
             rfunc->set_rtable("t" + std::to_string(t.tname));
             rfunc->set_user(sc.user);
             rfunc->set_password(sc.password);

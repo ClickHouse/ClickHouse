@@ -229,13 +229,20 @@ public:
             }
         }
     }
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool escape) const override
+    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override
     {
-        std::string next;
-
-        typeName(next, escape);
-        std::transform(next.begin(), next.end(), next.begin(), [](unsigned char c) { return std::toupper(c); });
-        ret += next;
+        ret += "DECIMAL";
+        if (precision.has_value())
+        {
+            ret += "(";
+            ret += std::to_string(precision.value());
+            if (scale.has_value())
+            {
+                ret += ",";
+                ret += std::to_string(scale.value());
+            }
+            ret += ")";
+        }
     }
     void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override { MySQLtypeName(rg, ret, escape); }
     void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override { MySQLtypeName(rg, ret, escape); }

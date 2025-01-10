@@ -775,9 +775,11 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         switch (jt)
         {
             case JoinType::J_LEFT:
-            case JoinType::J_INNER:
             case JoinType::J_RIGHT:
                 tep->set_join_const(static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ANTI)) + 1));
+                break;
+            case JoinType::J_INNER:
+                tep->set_join_const(static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ALL)) + 1));
                 break;
             case JoinType::J_FULL:
                 tep->set_join_const(JoinConst::J_ALL);
@@ -1266,7 +1268,9 @@ int StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, c
         static_cast<ConstraintDef_ConstraintType>((rg.nextRandomUInt32() % static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX)) + 1));
     addTableRelation(rg, false, "", t);
     this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+    this->allow_in_expression_alias = false;
     this->generateWherePredicate(rg, cdef->mutable_expr());
+    this->allow_in_expression_alias = true;
     this->levels.clear();
     to_add.insert(crname);
     return 0;

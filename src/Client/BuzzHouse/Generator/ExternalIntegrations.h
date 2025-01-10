@@ -75,7 +75,7 @@ public:
 
     virtual bool performQuery(const std::string &) { return false; }
 
-    virtual std::string getTableName(uint32_t) { return std::string(); }
+    virtual std::string getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return std::string(); }
 
     virtual void columnTypeAsString(RandomGenerator &, SQLType *, std::string &) const { }
 
@@ -86,16 +86,10 @@ public:
         const bool can_shuffle,
         std::vector<ColumnPathChain> & entries) override
     {
-        const std::string str_tname = getTableName(tname);
+        const std::string str_tname = getTableName(db, tname);
 
         buf.resize(0);
         buf += "DROP TABLE IF EXISTS ";
-        if (db)
-        {
-            buf += "d";
-            buf += std::to_string(db->dname);
-            buf += ".";
-        }
         buf += str_tname;
         buf += ";";
 
@@ -105,12 +99,6 @@ public:
 
             buf.resize(0);
             buf += "CREATE TABLE ";
-            if (db)
-            {
-                buf += "d";
-                buf += std::to_string(db->dname);
-                buf += ".";
-            }
             buf += str_tname;
             buf += "(";
 
@@ -146,14 +134,7 @@ public:
         assert(t.hasDatabasePeer());
         buf.resize(0);
         buf += "DROP TABLE IF EXISTS ";
-
-        if (t.hasClickHousePeer() && t.db)
-        {
-            buf += "d";
-            buf += std::to_string(t.db->dname);
-            buf += ".";
-        }
-        buf += getTableName(t.tname);
+        buf += getTableName(t.db, t.tname);
         buf += ";";
         return performQuery(buf);
     }
@@ -198,7 +179,10 @@ public:
 
                 assert(newt.has_est() && !newt.has_table_as());
                 ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
-                est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+                if (t.db)
+                {
+                    est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+                }
                 newt.set_create_opt(CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace);
 
                 buf.resize(0);
@@ -222,13 +206,7 @@ public:
         buf.resize(0);
         truncateStatement(buf);
         buf += " ";
-        if (t.hasClickHousePeer() && t.db)
-        {
-            buf += "d";
-            buf += std::to_string(t.db->dname);
-            buf += ".";
-        }
-        buf += getTableName(t.tname);
+        buf += getTableName(t.db, t.tname);
         buf += ";";
         (void)performQuery(buf);
     }
@@ -240,7 +218,7 @@ class MySQLIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_MYSQL && USE_MYSQL
 private:
-    const bool is_clickhouse = false;
+    const bool is_clickhouse;
     MYSQL * mysql_connection = nullptr;
 
 public:
@@ -303,11 +281,17 @@ public:
         }
     }
 
-    std::string getTableName(const uint32_t tname) override
+    std::string getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname) override
     {
         std::string res;
 
-        if (!is_clickhouse)
+        if (is_clickhouse && db)
+        {
+            res += "d";
+            res += std::to_string(db->dname);
+            res += ".";
+        }
+        else if (!is_clickhouse)
         {
             res += "test.";
         }
@@ -332,13 +316,7 @@ public:
         {
             buf.resize(0);
             buf += "OPTIMIZE TABLE ";
-            if (t.db)
-            {
-                buf += "d";
-                buf += std::to_string(t.db->dname);
-                buf += ".";
-            }
-            buf += getTableName(t.tname);
+            buf += getTableName(t.db, t.tname);
             buf += " FINAL;";
             (void)performQuery(buf);
         }
@@ -491,7 +469,7 @@ public:
         }
     }
 
-    std::string getTableName(const uint32_t tname) override { return "test.t" + std::to_string(tname); }
+    std::string getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname) override { return "test.t" + std::to_string(tname); }
 
     void truncateStatement(std::string & outbuf) override { outbuf += "TRUNCATE"; }
 
@@ -583,7 +561,7 @@ public:
         te->add_params()->set_svalue(tname);
     }
 
-    std::string getTableName(const uint32_t tname) override { return "t" + std::to_string(tname); }
+    std::string getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname) override { return "t" + std::to_string(tname); }
 
     void truncateStatement(std::string & outbuf) override { outbuf += "DELETE FROM"; }
 
