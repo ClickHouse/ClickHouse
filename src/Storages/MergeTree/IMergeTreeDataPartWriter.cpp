@@ -107,7 +107,7 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
         if (column_desc.codec)
             return column_desc.codec;
 
-        auto default_compression_codec_mergetree_settings = storage_settings->default_compression_codec.toString();
+        auto default_compression_codec_mergetree_settings = storage_settings->default_compression_codec.value;
         if (!default_compression_codec_mergetree_settings.empty())
             return CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
