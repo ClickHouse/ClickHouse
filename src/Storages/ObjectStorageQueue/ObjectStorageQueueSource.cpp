@@ -38,12 +38,10 @@ namespace ObjectStorageQueueSetting
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
