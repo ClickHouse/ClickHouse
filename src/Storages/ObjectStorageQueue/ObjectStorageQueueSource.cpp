@@ -687,8 +687,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 log,
                 max_block_size,
                 context->getSettingsRef()[Setting::max_parsing_threads].value,
-                /* need_only_count */ false,
-                /* read_all_column */ false);
+                /* need_only_count */ false);
 
             if (!reader)
             {

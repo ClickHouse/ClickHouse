@@ -246,16 +246,12 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        std::lock_guard lock(initialize_mutex);
-
         createIterator(nullptr);
 
         Pipes pipes;
         auto context = getContext();
         const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
-        size_t estimated_keys_count = 0;
-        for (const auto & iter : iterator_wrapper)
-            estimated_keys_count += !iter.empty() ? iter[0]->estimatedKeysCount() : 0;
+        size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
         if (estimated_keys_count > 1)
             num_streams = std::min(num_streams, estimated_keys_count);
@@ -268,140 +264,14 @@ public:
 
         const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
 
-        auto paths = configuration->getPaths();
-        std::sort(
-            paths.begin(),
-            paths.end(),
-            [](const auto & path_left, const auto & path_right) -> bool
-            {
-                int left_prior = -1;
-                if (path_left.meta)
-                    left_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_left.meta)->type);
-
-                int right_prior = -1;
-                if (path_right.meta)
-                    right_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_right.meta)->type);
-
-                return std::tie(left_prior, path_left.filename) < std::tie(right_prior, path_right.filename);
-            });
-
         for (size_t i = 0; i < num_streams; ++i)
         {
-            Pipes sources;
-            std::vector<std::string> sources_filenames;
-            std::vector<std::function<ProcessorPtr(const Block &)>> equality_delete_transforms;
-            std::vector<std::vector<std::shared_ptr<StorageObjectStorageSource>>> positional_delete_sources;
-            for (size_t path_iterator = 0; path_iterator < paths.size(); ++path_iterator)
-            {
-                const auto & path = paths[path_iterator];
-                sources_filenames.push_back(path.filename);
-                configuration->setPaths({path});
+            auto source = std::make_shared<StorageObjectStorageSource>(
+                getName(), object_storage, configuration, info, format_settings,
+                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
 
-                if (!path.meta)
-                {
-                    auto source = std::make_shared<StorageObjectStorageSource>(
-                        getName(),
-                        object_storage,
-                        configuration,
-                        info,
-                        format_settings,
-                        context,
-                        max_block_size,
-                        iterator_wrapper[path_iterator][0],
-                        max_parsing_threads,
-                        need_only_count,
-                        false);
-                    if (filter_actions_dag)
-                        source->setKeyCondition(filter_actions_dag->clone(), context);
-                    sources.emplace_back(std::move(source));
-                    configuration->setPaths(paths);
-                    continue;
-                }
-
-                auto data_type = std::static_pointer_cast<DataFileMeta>(path.meta)->type;
-                switch (data_type)
-                {
-                    case DataFileMeta::DataFileType::DATA_FILE: {
-                        auto source = std::make_shared<StorageObjectStorageSource>(
-                            getName(),
-                            object_storage,
-                            configuration,
-                            info,
-                            format_settings,
-                            context,
-                            max_block_size,
-                            iterator_wrapper[path_iterator][0],
-                            max_parsing_threads,
-                            need_only_count,
-                            false);
-                        if (filter_actions_dag)
-                            source->setKeyCondition(filter_actions_dag->clone(), context);
-                        sources.emplace_back(std::move(source));
-                        break;
-                    }
-                    case DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE: {
-                        ReadFromFormatInfo read_from_format_info;
-
-                        if (positional_delete_sources.empty())
-                            positional_delete_sources.resize(sources.size());
-
-                        for (size_t source_id = 0; source_id < sources.size(); ++source_id)
-                        {
-                            auto source = std::make_shared<StorageObjectStorageSource>(
-                                getName(),
-                                object_storage,
-                                configuration,
-                                read_from_format_info,
-                                format_settings,
-                                context,
-                                max_block_size,
-                                iterator_wrapper[path_iterator][source_id],
-                                max_parsing_threads,
-                                false,
-                                true);
-
-                            positional_delete_sources[source_id].push_back(source);
-                        }
-                        break;
-                    }
-                    case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE: {
-                        auto source = std::make_shared<StorageObjectStorageSource>(
-                            getName(),
-                            object_storage,
-                            configuration,
-                            ReadFromFormatInfo{},
-                            format_settings,
-                            context,
-                            max_block_size,
-                            iterator_wrapper[path_iterator][0],
-                            max_parsing_threads,
-                            false,
-                            true);
-
-                        equality_delete_transforms.push_back(
-                            [source](const Block & in_header) -> ProcessorPtr
-                            { return std::make_shared<EqualityDeleteTransform<StorageObjectStorageSource>>(in_header, source); });
-                        break;
-                    }
-                }
-            }
-            if (!positional_delete_sources.empty())
-            {
-                for (size_t source_id = 0; source_id < sources.size(); ++source_id)
-                {
-                    sources[source_id].addSimpleTransform(
-                        [source_id, positional_delete_sources, sources_filenames](const Block & in_header) -> ProcessorPtr
-                        { return std::make_shared<PositionalDeleteTransform<StorageObjectStorageSource>>(in_header, positional_delete_sources[source_id], sources_filenames[source_id]); });
-                }
-            }
-            auto pipe = Pipe::unitePipes(std::move(sources));
-            if (pipe.empty())
-                pipe = Pipe(std::make_shared<NullSource>(info.source_header));
-
-            for (const auto & transform : equality_delete_transforms)
-                pipe.addSimpleTransform(transform);
-
-            pipes.push_back(std::move(pipe));
+            source->setKeyCondition(filter_actions_dag, context);
+            pipes.emplace_back(std::move(source));
         }
 
         auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -412,13 +282,12 @@ public:
             processors.emplace_back(processor);
 
         pipeline.init(std::move(pipe));
-        configuration->setPaths(paths);
     }
 
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
-    std::vector<std::vector<std::shared_ptr<StorageObjectStorageSource::IIterator>>> iterator_wrapper;
+    std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
@@ -428,58 +297,16 @@ private:
     const size_t max_block_size;
     size_t num_streams;
     const bool distributed_processing;
-    inline static std::mutex initialize_mutex;
 
     void createIterator(const ActionsDAG::Node * predicate)
     {
-        std::lock_guard lock(initialize_mutex);
-
-        if (!iterator_wrapper.empty())
+        if (iterator_wrapper)
             return;
         auto context = getContext();
-        auto paths = configuration->getPaths();
-        std::sort(
-            paths.begin(),
-            paths.end(),
-            [](const auto & path_left, const auto & path_right) -> bool
-            {
-                int left_prior = -1;
-                if (path_left.meta)
-                    left_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_left.meta)->type);
 
-                int right_prior = -1;
-                if (path_right.meta)
-                    right_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_right.meta)->type);
-
-                return std::tie(left_prior, path_left.filename) < std::tie(right_prior, path_right.filename);
-            });
-
-        int num_data_files = 0;
-        for (const auto & path : paths)
-        {
-            auto old_paths = configuration->getPaths();
-            configuration->setPaths({path});
-
-            if (!path.meta || std::static_pointer_cast<DataFileMeta>(path.meta)->type == DataFileMeta::DataFileType::DATA_FILE)
-                num_data_files++;
-
-            int num_iterators = (path.meta && std::static_pointer_cast<DataFileMeta>(path.meta)->type == DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE) ? num_data_files : 1;
-            iterator_wrapper.push_back({});
-            for (int i = 0; i < num_iterators; ++i)
-            {
-                iterator_wrapper.back().push_back(StorageObjectStorageSource::createFileIterator(
-                    configuration,
-                    configuration->getQuerySettings(context),
-                    object_storage,
-                    distributed_processing,
-                    context,
-                    predicate,
-                    virtual_columns,
-                    nullptr,
-                    context->getFileProgressCallback()));
-            }
-            configuration->setPaths(old_paths);
-        }
+        iterator_wrapper = StorageObjectStorageSource::createFileIterator(
+            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
+            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
 }

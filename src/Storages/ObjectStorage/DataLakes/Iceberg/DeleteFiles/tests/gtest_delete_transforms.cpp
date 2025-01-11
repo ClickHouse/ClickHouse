@@ -18,6 +18,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include "Processors/Executors/StreamingFormatExecutor.h"
+#include "Processors/Formats/IInputFormat.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h"
 
 
@@ -26,14 +27,17 @@ using namespace DB;
 namespace
 {
 
-class ChunksSource : public ISource
+class ChunksSource : public IInputFormat
 {
 public:
-    ChunksSource(Block header_, Chunks chunks_) : ISource(header_), chunks(std::move(chunks_)), it(chunks.begin()), header(header_) { }
+    ChunksSource(Block header_, Chunks chunks_)
+        : IInputFormat(header_, nullptr), chunks(std::move(chunks_)), it(chunks.begin()), header(header_)
+    {
+    }
 
     String getName() const override { return "ChunksSource"; }
 
-    Chunk generate() override
+    Chunk read() override
     {
         if (it != chunks.end())
         {
@@ -43,8 +47,6 @@ public:
         }
         return {};
     }
-
-    const Block & getHeader() const { return header; }
 
 private:
     Chunks chunks;
@@ -57,8 +59,8 @@ std::shared_ptr<ChunksSource> makePositionalDeleteSource(const std::vector<std::
     Block header;
     auto filename_column_type = std::make_shared<DataTypeString>();
     auto positions_column_type = std::make_shared<DataTypeInt64>();
-    header.insert(ColumnWithTypeAndName(filename_column_type, PositionalDeleteTransform<ChunksSource>::filename_column_name));
-    header.insert(ColumnWithTypeAndName(positions_column_type, PositionalDeleteTransform<ChunksSource>::positions_column_name));
+    header.insert(ColumnWithTypeAndName(filename_column_type, PositionalDeleteTransform::filename_column_name));
+    header.insert(ColumnWithTypeAndName(positions_column_type, PositionalDeleteTransform::positions_column_name));
 
     Chunks chunks;
     for (const auto & batch : values)
@@ -158,7 +160,7 @@ TEST(IcebergDeletesTest, PositionalDeleteSimple)
     pipeline_builder.init(Pipe(source));
     pipeline_builder.addSimpleTransform(
         [delete_file](const Block & block) -> SimpleTransformPtr
-        { return std::make_shared<PositionalDeleteTransform<ChunksSource>>(block, std::vector{delete_file}, "a"); });
+        { return std::make_shared<PositionalDeleteTransform>(block, std::vector<std::shared_ptr<IInputFormat>>{delete_file}, "a"); });
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromOwnString out_buf;
@@ -200,7 +202,7 @@ TEST(IcebergDeletesTest, ChunkCached)
     pipeline_builder.init(Pipe(source));
     pipeline_builder.addSimpleTransform(
         [delete_file](const Block & block) -> SimpleTransformPtr
-        { return std::make_shared<PositionalDeleteTransform<ChunksSource>>(block, std::vector{delete_file}, "a"); });
+        { return std::make_shared<PositionalDeleteTransform>(block, std::vector<std::shared_ptr<IInputFormat>>{delete_file}, "a"); });
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromOwnString out_buf;
@@ -241,8 +243,7 @@ TEST(IcebergDeletesTest, EqualityDeleteSimple)
     QueryPipelineBuilder pipeline_builder;
     pipeline_builder.init(Pipe(source));
     pipeline_builder.addSimpleTransform(
-        [delete_file](const Block & block) -> SimpleTransformPtr
-        { return std::make_shared<EqualityDeleteTransform<ChunksSource>>(block, delete_file); });
+        [delete_file](const Block & block) -> SimpleTransformPtr { return std::make_shared<EqualityDeleteTransform>(block, delete_file); });
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromOwnString out_buf;

@@ -7,6 +7,7 @@
 #include "Common/Exception.h"
 #include <Common/PODArray.h>
 #include "Columns/IColumn.h"
+#include "Processors/Formats/IInputFormat.h"
 
 namespace DB::ErrorCodes
 {
@@ -16,7 +17,6 @@ extern const int LOGICAL_ERROR;
 namespace DB
 {
 
-template <typename Source>
 class PositionalDeleteTransform : public ISimpleTransform
 {
 public:
@@ -24,8 +24,10 @@ public:
     static constexpr const char * filename_column_name = "file_path";
 
     PositionalDeleteTransform(
-        const Block & header_, std::vector<std::shared_ptr<Source>> delete_file_sources_, const std::string & source_filename_)
-        : ISimpleTransform(header_, header_, false), delete_file_sources(delete_file_sources_), source_filename(cropPrefix(source_filename_))
+        const Block & header_, std::vector<std::shared_ptr<IInputFormat>> delete_file_sources_, const std::string & source_filename_)
+        : ISimpleTransform(header_, header_, false)
+        , delete_file_sources(delete_file_sources_)
+        , source_filename(cropPrefix(source_filename_))
     {
         unprocessed_delete_chunk.resize(delete_file_sources_.size());
         filename_column_index.resize(delete_file_sources_.size());
@@ -49,13 +51,13 @@ protected:
                 auto delete_chunk = readNextDeleteChunk(delete_source_id);
                 if (!delete_chunk)
                     break;
+
                 int position_index = getPositionColumnIndex(delete_source_id);
                 int filename_index = getFilenameColumnIndex(delete_source_id);
 
                 auto position_column = delete_chunk.getColumns()[position_index];
                 auto filename_column = delete_chunk.getColumns()[filename_index];
-
-                auto last_filename = filename_column->getDataAt(delete_chunk.getNumRows() - 1).toString();
+                auto last_filename = std::filesystem::path(filename_column->getDataAt(delete_chunk.getNumRows() - 1).toString()).filename();
                 if (cropPrefix(std::move(last_filename)) < source_filename)
                     break;
 
@@ -63,7 +65,7 @@ protected:
                 if (last_position < chunk_rows_iterator)
                     break;
 
-                auto first_filename = filename_column->getDataAt(0).toString();
+                auto first_filename = std::filesystem::path(filename_column->getDataAt(0).toString()).filename();
                 if (cropPrefix(std::move(first_filename)) > source_filename)
                 {
                     unprocessed_delete_chunk[delete_source_id] = std::move(delete_chunk);
@@ -81,7 +83,7 @@ protected:
                 for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
                 {
                     auto position_to_delete = position_column->get64(i);
-                    auto filename_to_delete = filename_column->getDataAt(i).toString();
+                    auto filename_to_delete = std::filesystem::path(filename_column->getDataAt(i).toString()).filename();
                     if (cropPrefix(std::move(filename_to_delete)) == source_filename)
                     {
                         if (position_to_delete - chunk_rows_iterator < chunk.getNumRows())
@@ -111,7 +113,7 @@ protected:
     }
 
 private:
-    std::vector<std::shared_ptr<Source>> delete_file_sources;
+    std::vector<std::shared_ptr<IInputFormat>> delete_file_sources;
     String description;
     Block header;
 
@@ -122,7 +124,7 @@ private:
     std::vector<std::optional<int>> position_column_index;
     std::string source_filename;
 
-    Chunk readNextDeleteChunk(int source_id)
+    Chunk readNextDeleteChunk(size_t source_id)
     {
         if (unprocessed_delete_chunk[source_id])
         {
@@ -130,7 +132,7 @@ private:
             unprocessed_delete_chunk[source_id] = std::nullopt;
             return result;
         }
-        return delete_file_sources[source_id]->generate();
+        return delete_file_sources[source_id]->read();
     }
 
     std::string cropPrefix(std::string path) const
@@ -144,9 +146,10 @@ private:
     {
         if (!filename_column_index[delete_source_id])
         {
-            for (size_t i = 0; i < delete_file_sources[delete_source_id]->getHeader().getNames().size(); ++i)
+            const auto & delete_header = delete_file_sources[delete_source_id]->getOutputs().back().getHeader();
+            for (size_t i = 0; i < delete_header.getNames().size(); ++i)
             {
-                if (delete_file_sources[delete_source_id]->getHeader().getNames()[i] == filename_column_name)
+                if (delete_header.getNames()[i] == filename_column_name)
                 {
                     filename_column_index[delete_source_id] = i;
                     break;
@@ -162,9 +165,10 @@ private:
     {
         if (!position_column_index[delete_source_id])
         {
-            for (size_t i = 0; i < delete_file_sources[delete_source_id]->getHeader().getNames().size(); ++i)
+            const auto & delete_header = delete_file_sources[delete_source_id]->getOutputs().back().getHeader();
+            for (size_t i = 0; i < delete_header.getNames().size(); ++i)
             {
-                if (delete_file_sources[delete_source_id]->getHeader().getNames()[i] == positions_column_name)
+                if (delete_header.getNames()[i] == positions_column_name)
                 {
                     position_column_index[delete_source_id] = i;
                     break;

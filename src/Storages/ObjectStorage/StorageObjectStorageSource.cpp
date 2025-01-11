@@ -18,13 +18,22 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Common/DateLUT.h"
 #include <Common/parseGlobs.h>
 #include "Columns/ColumnLowCardinality.h"
 #include "Core/ColumnsWithTypeAndName.h"
 #include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
+#include "Disks/ObjectStorages/IObjectStorage.h"
 #include "Interpreters/Cache/FileCache.h"
 #include "Interpreters/Cache/FileCacheKey.h"
+#include "Processors/Formats/IInputFormat.h"
+#include "Processors/ISource.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/PositionalDeleteTransform.h"
 #include <Processors/Formats/ISchemaReader.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+
+#include <string>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -68,8 +77,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
     size_t max_parsing_threads_,
-    bool need_only_count_,
-    bool read_all_columns_)
+    bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
@@ -78,7 +86,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , read_all_columns(read_all_columns_)
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
@@ -297,8 +304,81 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         log,
         max_block_size,
         max_parsing_threads,
-        need_only_count,
-        read_all_columns);
+        need_only_count);
+}
+
+std::shared_ptr<IInputFormat> StorageObjectStorageSource::getInputFormat(
+    std::unique_ptr<ReadBuffer> & read_buf,
+    std::unique_ptr<ReadBuffer> & read_buf_schema,
+    Block& initial_header,
+    ObjectStoragePtr object_storage,
+    ConfigurationPtr configuration,
+    ReadFromFormatInfo & read_from_format_info,
+    const std::optional<FormatSettings> & format_settings,
+    ObjectInfoPtr object_info,
+    ContextPtr context_,
+    const LoggerPtr & log,
+    size_t max_block_size,
+    size_t max_parsing_threads,
+    bool need_only_count,
+    bool read_all_columns)
+{
+    CompressionMethod compression_method;
+
+    if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+    {
+        compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+        const auto & archive_reader = object_info_in_archive->archive_reader;
+        read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+        if (read_all_columns)
+            read_buf_schema = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+    }
+    else
+    {
+        compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+        read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+        if (read_all_columns)
+            read_buf_schema = createReadBuffer(*object_info, object_storage, context_, log);
+    }
+
+    if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
+    {
+        Block sample_header;
+        for (const auto & [name, type] : *initial_schema)
+        {
+            sample_header.insert({type->createColumn(), type, name});
+        }
+        initial_header = sample_header;
+    }
+
+    if (read_all_columns)
+    {
+        auto schema_reader = FormatFactory::instance().getSchemaReader(configuration->format, *read_buf_schema, context_);
+        auto columns_with_names = schema_reader->readSchema();
+        ColumnsWithTypeAndName initial_header_data;
+        for (const auto & elem : columns_with_names)
+        {
+            initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
+        }
+        initial_header = Block(initial_header_data);
+    }
+
+    auto input_format = FormatFactory::instance().getInput(
+        configuration->format,
+        *read_buf,
+        initial_header,
+        context_,
+        max_block_size,
+        format_settings,
+        need_only_count ? 1 : max_parsing_threads,
+        std::nullopt,
+        true /* is_remote_fs */,
+        compression_method,
+        need_only_count);
+
+    input_format->setSerializationHints(read_from_format_info.serialization_hints);
+
+    return input_format;
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -314,15 +394,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const LoggerPtr & log,
     size_t max_block_size,
     size_t max_parsing_threads,
-    bool need_only_count,
-    bool read_all_columns)
+    bool need_only_count)
 {
-    static std::mutex initialize_mutex;
-
     ObjectInfoPtr object_info;
     StorageObjectStorage::QuerySettings query_settings;
     {
-        std::lock_guard lock(initialize_mutex);
         query_settings = configuration->getQuerySettings(context_);
     }
 
@@ -345,13 +421,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<ReadBuffer> read_buf_schema;
+    Block initial_header = read_from_format_info.format_header;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
         if (!schema_cache)
             return std::nullopt;
-
-        std::lock_guard lock(initialize_mutex);
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
@@ -371,7 +446,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::optional<size_t> num_rows_from_cache
         = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
 
-    Block initial_header = read_from_format_info.format_header;
     if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
@@ -384,62 +458,22 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        std::lock_guard lock(initialize_mutex);
-
-        CompressionMethod compression_method;
-        if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
-        {
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-            const auto & archive_reader = object_info_in_archive->archive_reader;
-            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
-            if (read_all_columns)
-                read_buf_schema = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
-        }
-        else
-        {
-            compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-            read_buf = createReadBuffer(*object_info, object_storage, context_, log);
-            if (read_all_columns)
-                read_buf_schema = createReadBuffer(*object_info, object_storage, context_, log);
-        }
-
-        if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
-        {
-            Block sample_header;
-            for (const auto & [name, type] : *initial_schema)
-            {
-                sample_header.insert({type->createColumn(), type, name});
-            }
-            initial_header = sample_header;
-        }
-
-        if (read_all_columns)
-        {
-            auto schema_reader = FormatFactory::instance().getSchemaReader(configuration->format, *read_buf_schema, context_);
-            auto columns_with_names = schema_reader->readSchema();
-            ColumnsWithTypeAndName initial_header_data;
-            for (const auto & elem : columns_with_names)
-            {
-                initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
-            }
-            initial_header = Block(initial_header_data);
-        }
-
-        auto input_format = FormatFactory::instance().getInput(
-            configuration->format,
-            *read_buf,
+        auto input_format = getInputFormat(
+            read_buf,
+            read_buf_schema,
             initial_header,
-            context_,
-            max_block_size,
+            object_storage,
+            configuration,
+            read_from_format_info,
             format_settings,
-            need_only_count ? 1 : max_parsing_threads,
-            std::nullopt,
-            true /* is_remote_fs */,
-            compression_method,
-            need_only_count);
-
-        input_format->setSerializationHints(read_from_format_info.serialization_hints);
-
+            object_info,
+            context_,
+            log,
+            max_block_size,
+            max_parsing_threads,
+            need_only_count,
+            false
+        );
         if (key_condition_)
             input_format->setKeyCondition(key_condition_);
 
@@ -469,14 +503,80 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         source = input_format;
     }
-
-    if (!read_all_columns)
+       
+    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// from chunk read by IInputFormat.
+    builder.addSimpleTransform([&](const Block & header)
     {
-        /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-        /// from chunk read by IInputFormat.
-        builder.addSimpleTransform([&](const Block & header)
+        return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
+    });
+
+    const auto & positional_delete_objects = file_iterator->getPositionalDeleteObjects();
+    const auto & equality_delete_objects = file_iterator->getEqualityDeleteObjects();
+
+    std::vector<std::shared_ptr<IInputFormat>> delete_sources;
+
+    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf;
+    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_schema;
+    std::vector<Block> delete_block;
+
+    for (const auto & positional_delete_object_info : positional_delete_objects)
+    {
+        delete_read_buf.push_back(nullptr);
+        delete_read_buf_schema.push_back(nullptr);
+        delete_block.push_back({});
+
+        auto delete_format = getInputFormat(
+            delete_read_buf.back(),
+            delete_read_buf_schema.back(),
+            delete_block.back(),
+            object_storage,
+            configuration,
+            read_from_format_info,
+            format_settings,
+            positional_delete_object_info,
+            context_,
+            log,
+            max_block_size,
+            max_parsing_threads,
+            need_only_count,
+            true
+        );
+
+        delete_sources.push_back(std::move(delete_format));
+    }
+
+    builder.addSimpleTransform([&, delete_sources](const Block & header)
+    {
+        return std::make_shared<PositionalDeleteTransform>(header, delete_sources, object_info->getFileName());
+    });
+
+    for (const auto & positional_delete_object_info : equality_delete_objects)
+    {
+        delete_read_buf.push_back(nullptr);
+        delete_read_buf_schema.push_back(nullptr);
+        delete_block.push_back({});
+
+        auto delete_format = getInputFormat(
+            delete_read_buf.back(),
+            delete_read_buf_schema.back(),
+            delete_block.back(),
+            object_storage,
+            configuration,
+            read_from_format_info,
+            format_settings,
+            positional_delete_object_info,
+            context_,
+            log,
+            max_block_size,
+            max_parsing_threads,
+            need_only_count,
+            true
+        );
+
+        builder.addSimpleTransform([&, delete_format](const Block & header)
         {
-            return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
+            return std::make_shared<EqualityDeleteTransform>(header, delete_format);
         });
     }
 
@@ -486,7 +586,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 
     return ReaderHolder(
-        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader), std::move(initial_header));
+        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader), std::move(initial_header), std::move(delete_read_buf), std::move(delete_read_buf_schema));
 }
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
@@ -795,13 +895,37 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
-    , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
 {
+
+    for (auto key : configuration->getPaths())
+    {
+        auto object_info = std::make_shared<ObjectInfo>(key.filename);
+        DataFileMeta::DataFileType file_type = key.meta ? std::static_pointer_cast<DataFileMeta>(key.meta)->type : DataFileMeta::DataFileType::DATA_FILE;
+        switch (file_type)
+        {
+            case DataFileMeta::DataFileType::DATA_FILE: 
+            {
+                keys.push_back(key);
+                break;
+            }
+            case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE: 
+            {
+                equality_delete_objects.push_back(object_info);
+                break;
+            }
+            case DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE: 
+            {
+                positional_delete_objects.push_back(object_info);
+                break;
+            }
+        }
+    }
+
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
-        for (auto && key : keys)
+        for (auto && key : configuration->getPaths())
         {
             auto object_info = std::make_shared<ObjectInfo>(key.filename);
             read_keys_->emplace_back(object_info);
@@ -843,13 +967,17 @@ StorageObjectStorageSource::ReaderHolder::ReaderHolder(
     std::shared_ptr<ISource> source_,
     std::unique_ptr<QueryPipeline> pipeline_,
     std::unique_ptr<PullingPipelineExecutor> reader_,
-    Block header_)
+    Block header_,
+    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_,
+    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_schema_)
     : object_info(std::move(object_info_))
     , read_buf(std::move(read_buf_))
     , source(std::move(source_))
     , pipeline(std::move(pipeline_))
     , reader(std::move(reader_))
     , header(std::move(header_))
+    , delete_read_buf(std::move(delete_read_buf_))
+    , delete_read_buf_schema(std::move(delete_read_buf_schema_))
 {
 }
 
@@ -863,6 +991,8 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
     source = std::move(other.source);
     read_buf = std::move(other.read_buf);
     object_info = std::move(other.object_info);
+    delete_read_buf = std::move(other.delete_read_buf);
+    delete_read_buf_schema = std::move(other.delete_read_buf_schema);
     return *this;
 }
 

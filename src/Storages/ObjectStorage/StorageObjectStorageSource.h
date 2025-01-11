@@ -40,8 +40,7 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads_,
-        bool need_only_count_,
-        bool read_all_columns_);
+        bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
 
@@ -85,7 +84,6 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    const bool read_all_columns;
     const size_t max_parsing_threads;
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
@@ -96,6 +94,8 @@ protected:
     size_t total_rows_in_file = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
+    static constexpr const char * file_type_attribute = "file_type";
+
     struct ReaderHolder : private boost::noncopyable
     {
     public:
@@ -105,7 +105,9 @@ protected:
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_,
-            Block header_);
+            Block header_,
+            std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_,
+            std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_schema_);
 
         ReaderHolder() = default;
         ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
@@ -127,11 +129,30 @@ protected:
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
         Block header;
+        std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf;
+        std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_schema;
     };
 
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+
+    static std::shared_ptr<IInputFormat> getInputFormat(
+        std::unique_ptr<ReadBuffer> & read_buf,
+        std::unique_ptr<ReadBuffer> & read_buf_schema,
+        Block & initial_header,
+        ObjectStoragePtr object_storage,
+        ConfigurationPtr configuration,
+        ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ObjectInfoPtr object_info,
+        ContextPtr context_,
+        const LoggerPtr & log,
+        size_t max_block_size,
+        size_t max_parsing_threads,
+        bool need_only_count,
+        bool read_all_columns
+    );
 
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
@@ -147,8 +168,7 @@ protected:
         const LoggerPtr & log,
         size_t max_block_size,
         size_t max_parsing_threads,
-        bool need_only_count,
-        bool read_all_columns);
+        bool need_only_count);
 
     ReaderHolder createReader();
 
@@ -169,9 +189,22 @@ public:
 
     ObjectInfoPtr next(size_t processor);
 
+    const std::vector<ObjectInfoPtr> & getPositionalDeleteObjects() const
+    {
+        return positional_delete_objects;
+    }
+
+    const std::vector<ObjectInfoPtr> & getEqualityDeleteObjects() const
+    {
+        return equality_delete_objects;
+    }
+
 protected:
     virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
     LoggerPtr logger;
+
+    std::vector<ObjectInfoPtr> positional_delete_objects;
+    std::vector<ObjectInfoPtr> equality_delete_objects;
 };
 
 class StorageObjectStorageSource::ReadTaskIterator : public IIterator
@@ -260,7 +293,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const StorageObjectStorage::Configuration::Paths keys;
+    StorageObjectStorage::Configuration::Paths keys;
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
 };

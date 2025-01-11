@@ -7,6 +7,7 @@
 #include <Common/PODArray.h>
 #include "Columns/IColumn.h"
 #include "Core/Field.h"
+#include "Processors/Formats/IInputFormat.h"
 #include "base/types.h"
 
 
@@ -21,7 +22,7 @@ namespace DB
 class EqualityDeleteKey
 {
 public:
-    EqualityDeleteKey(const Columns & data_, int row_) : data(data_), row(row_) { }
+    EqualityDeleteKey(const Columns & data_, size_t row_) : data(data_), row(row_) { }
 
     bool operator==(const EqualityDeleteKey & key) const
     {
@@ -44,7 +45,7 @@ public:
 
 private:
     Columns data;
-    int row;
+    size_t row;
 
     friend struct EqualityDeleteKeyHasher;
 };
@@ -65,12 +66,11 @@ struct EqualityDeleteKeyHasher
     }
 };
 
-template <typename Source>
 class EqualityDeleteTransform : public ISimpleTransform
 {
 public:
-    EqualityDeleteTransform(const Block & header, std::shared_ptr<Source> delete_file_source_)
-        : ISimpleTransform(header, header, false), delete_header(delete_file_source_->getHeader())
+    EqualityDeleteTransform(const Block & header, std::shared_ptr<IInputFormat> delete_file_source_)
+        : ISimpleTransform(header, header, false), delete_header(delete_file_source_->getOutputs().back().getHeader())
     {
         for (size_t i = 0; i < header.getNames().size(); ++i)
         {
@@ -126,7 +126,7 @@ private:
     String description;
     std::unordered_set<EqualityDeleteKey, EqualityDeleteKeyHasher> delete_values;
     Block delete_header;
-    std::unordered_map<std::string, int> column_to_index;
+    std::unordered_map<std::string, size_t> column_to_index;
 };
 
 }
