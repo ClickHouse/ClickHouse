@@ -503,7 +503,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         source = input_format;
     }
-       
+
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
     builder.addSimpleTransform([&](const Block & header)
@@ -904,17 +904,17 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         DataFileMeta::DataFileType file_type = key.meta ? std::static_pointer_cast<DataFileMeta>(key.meta)->type : DataFileMeta::DataFileType::DATA_FILE;
         switch (file_type)
         {
-            case DataFileMeta::DataFileType::DATA_FILE: 
+            case DataFileMeta::DataFileType::DATA_FILE:
             {
                 keys.push_back(key);
                 break;
             }
-            case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE: 
+            case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE:
             {
                 equality_delete_objects.push_back(object_info);
                 break;
             }
-            case DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE: 
+            case DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE:
             {
                 positional_delete_objects.push_back(object_info);
                 break;
