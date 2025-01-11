@@ -412,7 +412,7 @@ class CommonJobConfigs:
     INSTALL_TEST = JobConfig(
         job_name_keyword="install",
         digest=DigestConfig(
-            include_paths=["./tests/ci/install_check.py"],
+            include_paths=["./tests/ci/install_check.py --download"],
             docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
         ),
         run_command='install_check.py "$CHECK_NAME"',

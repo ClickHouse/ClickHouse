@@ -19,7 +19,7 @@ from tee_popen import TeePopen
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
-TEMP_PATH = Path(TEMP)
+TEMP_PATH = Path("./ci/tmp" if TEMP == "./tmp" else TEMP)  # hack for praktika ci
 LOGS_PATH = TEMP_PATH / "tests_logs"
 
 
@@ -209,7 +209,7 @@ def parse_args() -> argparse.Namespace:
         "check_name",
         help="check name, used to download the packages",
     )
-    parser.add_argument("--download", default=True, help=argparse.SUPPRESS)
+    parser.add_argument("--download", default=False, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-download",
         dest="download",

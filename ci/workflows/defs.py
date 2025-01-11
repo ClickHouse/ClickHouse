@@ -159,6 +159,18 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/install-deb-test",
+        path="docker/test/install/deb",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/install-rpm-test",
+        path="docker/test/install/rpm",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/sqlancer-test",
         path="./ci/docker/sqlancer-test",
         platforms=Docker.Platforms.arm_amd,
@@ -208,14 +220,6 @@ DOCKERS = [
 #     "name": "clickhouse/kerberos-kdc",
 #     "dependent": []
 # },
-# "docker/test/install/deb": {
-#     "name": "clickhouse/install-deb-test",
-#     "dependent": []
-# },
-# "docker/test/install/rpm": {
-#     "name": "clickhouse/install-rpm-test",
-#     "dependent": []
-# },
 # "docker/test/integration/nginx_dav": {
 #     "name": "clickhouse/nginx-dav",
 #     "dependent": []
@@ -249,6 +253,7 @@ class JobNames:
     DOCKER_SERVER = "Docker server"
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
+    INSTALL_CHECK = "Install check"
 
 
 class ToolSet:
@@ -803,4 +808,27 @@ class Jobs:
         run_in_docker="clickhouse/sqlancer-test",
         requires=[ArtifactNames.CH_ARM_RELEASE],
         timeout=3600,
+    )
+    # TODO: add tgz and rpm
+    install_check_job = Job.Config(
+        name=JobNames.INSTALL_CHECK,
+        runs_on=["..."],
+        command="python3 ./tests/ci/install_check.py dummy_check_name --no-rpm --no-tgz",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./tests/ci/install_check.py"],
+        ),
+        timeout=900,
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_RELEASE,
+            BuildTypes.ARM_RELEASE,
+        ],
+        runs_on=[
+            [RunnerLabels.STYLE_CHECK_AMD],
+            [RunnerLabels.STYLE_CHECK_ARM],
+        ],
+        requires=[
+            [ArtifactNames.DEB_AMD_RELEASE],
+            [ArtifactNames.DEB_ARM_RELEASE],
+        ],
     )

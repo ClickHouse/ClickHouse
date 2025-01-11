@@ -2,7 +2,7 @@
 
 set -exu
 
-TMP_PATH="./ci/tmp/"
+TMP_PATH=$(readlink -f ./ci/tmp/)
 PID_FILE="$TMP_PATH/clickhouse-server.pid"
 CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 
