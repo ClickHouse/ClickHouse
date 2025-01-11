@@ -16,6 +16,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool allow_impersonate_user;
+}
+
 
 BlockIO InterpreterExecuteAsQuery::execute()
 {
@@ -28,7 +33,7 @@ void InterpreterExecuteAsQuery::setImpersonateUser(const ASTExecuteAsQuery & que
 {
     auto session_context = getContext()->getSessionContext();
     const auto targetusername = query.targetuser->names[0];
-    if (!getContext()->getGlobalContext()->getServerSettings().allow_impersonate_user)
+    if (!getContext()->getGlobalContext()->getServerSettings()[ServerSetting::allow_impersonate_user])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IMPERSONATE feature is disabled, set allow_impersonate_user to 1 to enable");
     getContext()->checkAccess(AccessType::IMPERSONATE, targetusername);
     session_context->switchImpersonateUser(RolesOrUsersSet{*query.targetuser, session_context->getAccessControl()});
