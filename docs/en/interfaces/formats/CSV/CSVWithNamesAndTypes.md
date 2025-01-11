@@ -6,7 +6,7 @@ keywords : [CSVWithNamesAndTypes]
 
 ## Description
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/docs/en/interfaces/formats/TabSeparatedWithNamesAndTypes).
 
 ## Example Usage
 

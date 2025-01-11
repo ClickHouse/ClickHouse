@@ -12,7 +12,7 @@ Schemas are cached once resolved.
 
 ## Data Types Matching {#data_types-matching-1}
 
-The data types matching for the ClickHouse format are the same as for [Avro](#data-format-avro).
+The data types matching for the ClickHouse format are the same as for [Avro](/docs/en/interfaces/formats/Avro).
 
 ## Example Usage
 

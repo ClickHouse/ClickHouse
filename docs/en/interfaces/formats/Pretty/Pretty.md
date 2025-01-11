@@ -14,7 +14,7 @@ Each result block is output as a separate table. This is necessary so that block
 
 ## Example Usage
 
-Example (shown for the [PrettyCompact](#prettycompact) format):
+Example (shown for the [PrettyCompact](/docs/en/interfaces/formats/PrettyCompact) format):
 
 ``` sql
 SELECT * FROM t_null
@@ -26,7 +26,7 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Rows are not escaped in Pretty\* formats. Example is shown for the [PrettyCompact](#prettycompact) format:
+Rows are not escaped in Pretty\* formats. Example is shown for the [PrettyCompact](/docs/en/interfaces/formats/PrettyCompact) format:
 
 ``` sql
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
@@ -41,7 +41,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message “Showed first 10 000” is printed.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when ‘extremes’ is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](#prettycompact) format):
+The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when ‘extremes’ is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](/docs/en/interfaces/formats/PrettyCompact) format):
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact

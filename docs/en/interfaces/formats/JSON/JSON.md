@@ -81,7 +81,7 @@ ClickHouse supports [NULL](/docs/en/sql-reference/syntax.md), which is displayed
 
 # See Also
 
-- [JSONEachRow](#jsoneachrow) format
+- [JSONEachRow](/docs/en/interfaces/formats/JSONEachRow) format
 - [output_format_json_array_of_rows](/docs/en/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting
 
 For JSON input format, if setting [input_format_json_validate_types_from_metadata](/docs/en/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to 1,

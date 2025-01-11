@@ -6,7 +6,7 @@ keywords : [CustomSeparatedWithNames]
 
 ## Description
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/docs/en/interfaces/formats/TabSeparatedWithNames).
 
 ## Example Usage
 

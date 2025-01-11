@@ -6,7 +6,7 @@ keywords : [RowBinaryWithDefaults]
 
 ## Description
 
-Similar to [RowBinary](#rowbinary), but with an extra byte before each column that indicates if default value should be used.
+Similar to [RowBinary](/docs/en/interfaces/formats/RowBinary), but with an extra byte before each column that indicates if default value should be used.
 
 ## Example Usage
 

@@ -6,7 +6,7 @@ keywords : [RowBinaryWithNamesAndTypes]
 
 ## Description
 
-Similar to [RowBinary](#rowbinary), but with added header:
+Similar to [RowBinary](/docs/en/interfaces/formats/RowBinary), but with added header:
 
 - [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
 - N `String`s specifying column names

@@ -6,7 +6,7 @@ keywords : [PrettySpaceNoEscapesMonoBlock]
 
 ## Description
 
-Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+Differs from [PrettySpaceNoEscapes](/docs/en/interfaces/formats/PrettySpaceNoEscapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
 ## Example Usage
 

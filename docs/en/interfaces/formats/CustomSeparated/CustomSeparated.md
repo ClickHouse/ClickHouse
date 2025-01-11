@@ -6,7 +6,7 @@ keywords : [CustomSeparated]
 
 ## Description
 
-Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
+Similar to [Template](/docs/en/interfaces/formats/Template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
 - [format_custom_field_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_field_delimiter)
 - [format_custom_row_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_before_delimiter)
 - [format_custom_row_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_after_delimiter)
@@ -18,7 +18,7 @@ note:::
 It does not use escaping rules settings and delimiters from format strings.
 :::
 
-There is also the `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
+There is also the `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](/docs/en/interfaces/formats/TemplateIgnoreSpaces).
 
 ## Example Usage
 

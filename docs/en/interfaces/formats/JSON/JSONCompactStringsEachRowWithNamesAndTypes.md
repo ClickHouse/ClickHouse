@@ -6,7 +6,7 @@ keywords : [JSONCompactStringsEachRowWithNamesAndTypes]
 
 ## Description
 
-Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/docs/en/interfaces/formats/TabSeparatedRawWithNamesAndTypes).
 
 ## Example Usage
 

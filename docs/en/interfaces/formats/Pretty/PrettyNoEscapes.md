@@ -6,7 +6,7 @@ keywords : [PrettyNoEscapes]
 
 ## Description
 
-Differs from [Pretty](#pretty) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+Differs from [Pretty](/docs/en/interfaces/formats/Pretty) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
 ## Example Usage
 
