@@ -52,9 +52,7 @@
             --logo-color: #FFF;
             --border-color-selected: #F80;
 
-            --progress-background-color: var(--background-color);
-            --progress-foreground-color: #080;
-
+            --progress-foreground-color: #0C4;
             --progress: 0%;
         }
 
@@ -80,7 +78,7 @@
             --logo-color: #444;
             --border-color-selected: #FF0;
 
-            --progress-foreground-color: #080;
+            --progress-foreground-color: #FF0;
         }
 
         *
@@ -103,7 +101,7 @@
         html
         {
             /* The fonts that have full support for hinting. */
-            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
         }
@@ -133,12 +131,6 @@
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
                Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
-            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
-        }
-
-        .monospace-table
-        {
-            /* Liberation is worse than DejaVu for block drawing characters. */
             font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
         }
 
@@ -256,9 +248,9 @@
 
             grid-area: progress-bar;
             background: linear-gradient(to right,
-                var(--progress-background-color) 0%,
+                transparent 0%,
                 var(--progress-foreground-color) var(--progress),
-                var(--progress-background-color) var(--progress));
+                transparent var(--progress));
         }
 
         #theme
@@ -333,6 +325,11 @@
             filter: var(--table-hover-filter);
         }
 
+        .tr-selected
+        {
+            filter: var(--table-hover-filter);
+        }
+
         #error
         {
             background: var(--error-color);
@@ -345,7 +342,6 @@
         {
             white-space: pre-wrap;
             max-width: none;
-            filter: var(--table-hover-filter);
             outline: 2px solid var(--border-color-selected);
         }
 
@@ -498,8 +494,8 @@
         </div>
     </div>
     <div id="data_div">
-        <table class="monospace-table shadow" id="data-table"></table>
-        <pre class="monospace-table shadow" id="data-unparsed"></pre>
+        <table class="monospace shadow" id="data-table"></table>
+        <pre class="monospace shadow" id="data-unparsed"></pre>
     </div>
     <div id="chart"></div>
     <svg id="graph" fill="none"></svg>
@@ -974,6 +970,7 @@
 
     document.getElementById('query').addEventListener('focus', e => {
         current_selected_cell?.classList.remove('td-selected');
+        current_selected_cell?.parentElement.classList.remove('tr-selected');
         current_selected_cell = null;
     });
 
@@ -1004,7 +1001,9 @@
         e.preventDefault();
 
         cell.classList.remove('td-selected');
+        cell.parentElement.classList.remove('tr-selected');
         new_cell.classList.add('td-selected');
+        new_cell.parentElement.classList.add('tr-selected');
         new_cell.scrollIntoView({ block: 'nearest' });
         current_selected_cell = new_cell;
     });
@@ -1153,8 +1152,10 @@
 
             td.onclick = () => {
                 current_selected_cell?.classList.remove('td-selected');
+                current_selected_cell?.parentElement.classList.remove('tr-selected');
                 current_selected_cell = td;
                 current_selected_cell.classList.add('td-selected')
+                current_selected_cell.parentElement.classList.add('tr-selected')
                 current_selected_cell.scrollIntoView({ block: 'nearest' });
             };
 
