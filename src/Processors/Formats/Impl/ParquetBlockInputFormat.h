@@ -350,7 +350,6 @@ private:
     {
         String key;
         bool use_cache = false;
-        UInt64 max_entries{0};
         UInt64 max_size_bytes{0};
     } metadata_cache;
 };
