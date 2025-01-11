@@ -1,5 +1,3 @@
-#include <memory>
-#include <ucontext.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterCopyQuery.h>
@@ -19,6 +17,8 @@
 #include "Common/Exception.h"
 #include "Interpreters/InterpreterInsertQuery.h"
 #include "Parsers/ASTInsertQuery.h"
+
+#include <memory>
 
 namespace DB
 {
