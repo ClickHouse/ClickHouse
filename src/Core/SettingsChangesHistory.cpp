@@ -98,6 +98,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_opearators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -144,10 +145,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"},
             {"filesystem_cache_prefer_bigger_buffer_size", true, true, "New setting"},
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
-            {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
-        }
-    },
-    {"24.10",
             {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
             {"push_external_roles_in_interserver_queries", false, true, "New setting."},
