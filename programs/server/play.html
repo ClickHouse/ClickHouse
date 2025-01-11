@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <title>ClickHouse Query</title>
 
     <!-- Code Style:
@@ -35,17 +35,18 @@
             --background-color-rotate: 215;
             --background-color: oklch(96% 0.0296 var(--background-color-rotate));
             --element-background-color: #FFF;
-            --bar-color: #F8F4F0; /* Light bar in background of table cells. */
+            --bar-color: #FF8; /* Light bar in background of table cells. */
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
             --text-color: #000;
+            --text-color-active: #000;
             --button-active-color: #FE0;
             --button-active-text-color: #000;
             --misc-text-color: #888;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
-            --table-header-color: #F8F8F8;
-            --table-hover-filter: brightness(0.95);
+            --table-header-color: #EEE;
+            --table-hover-filter: brightness(0.9);
             --null-color: #A88;
             --link-color: #06D;
             --logo-color: #FFF;
@@ -65,6 +66,7 @@
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
+            --text-color-active: #FFF;
             --button-color: rgb(250 255 105);
             --button-text-color: #000;
             --button-active-color: #FE0;
@@ -72,7 +74,7 @@
             --misc-text-color: #888;
             --error-color: #400;
             --table-header-color: #102020;
-            --table-hover-filter: brightness(1.2);
+            --table-hover-filter: contrast(0.9) brightness(2);
             --null-color: #A88;
             --link-color: #4BDAF7;
             --logo-color: #444;
@@ -152,6 +154,11 @@
             font-size: 11pt;
             padding: 0.25rem;
             background-color: var(--element-background-color);
+        }
+
+        input:focus, textarea:focus
+        {
+            color: var(--text-color-active);
         }
 
         #query
@@ -321,11 +328,6 @@
             filter: var(--table-hover-filter);
         }
 
-        tr:hover
-        {
-            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
-        }
-
         #error
         {
             background: var(--error-color);
@@ -475,7 +477,7 @@
 <body>
     <div id="controls">
         <div id="inputs">
-            <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+            <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
         </div>
         <div id="query_div">
             <textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea>
@@ -612,7 +614,19 @@
             if (!response.ok) {
                 reply = await response.text();
                 if (posted_request_num != request_num) { return; }
-                renderError(reply);
+
+                let has_exception = false;
+                for (line of reply.split('\n')) {
+                    if (line.startsWith(`{"exception":`)) {
+                        update(JSON.parse(line));
+                        has_exception = true;
+                        break;
+                    }
+                }
+                if (!has_exception) {
+                    renderError(reply);
+                }
+
                 document.getElementById('hourglass').style.display = 'none';
                 document.getElementById('progress').style.display = 'none';
                 return;
