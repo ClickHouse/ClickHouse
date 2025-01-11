@@ -147,21 +147,27 @@ DOCKERS = [
     #     platforms=[Docker.Platforms.AMD],
     #     depends_on=[],
     # ),
-    # Docker.Config(
-    #     name="clickhouse/mysql-golang-client",
-    #     path="./docker/test/integration/mysql_golang_client",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/mysql-java-client",
-    #     path="./docker/test/integration/mysql_java_client",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
+    Docker.Config(
+        name="clickhouse/mysql-golang-client",
+        path="./docker/test/integration/mysql_golang_client",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/mysql-java-client",
+        path="./docker/test/integration/mysql_java_client",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     Docker.Config(
         name="clickhouse/mysql-js-client",
         path="./docker/test/integration/mysql_js_client",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/dotnet-client",
+        path="./docker/test/integration/dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -417,9 +423,7 @@ ARTIFACTS = [
         ]
     ),
     Artifact.Config(
-        name=ArtifactNames.FUZZERS,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/fuzzers/*"
+        name=ArtifactNames.FUZZERS, type=Artifact.Type.S3, path=f"{TEMP_DIR}/fuzzers/*"
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
