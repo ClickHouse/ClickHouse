@@ -912,6 +912,7 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
+        case TypeIndex::UUID:    F(UUID); break;
         #undef F
 
         #define D(source_type) \
