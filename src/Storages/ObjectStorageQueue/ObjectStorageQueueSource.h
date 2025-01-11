@@ -1,12 +1,13 @@
 #pragma once
 #include "config.h"
 
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ObjectStorageQueueLog.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace Poco { class Logger; }
@@ -23,14 +24,15 @@ public:
     using Source = StorageObjectStorageSource;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
+    using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
     struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
             const Source::ObjectInfo & object_info,
-            ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_);
+            FileMetadataPtr file_metadata_);
 
-        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata;
+        FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -39,6 +41,8 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             std::unique_ptr<Source::GlobIterator> glob_iterator_,
+            ObjectStoragePtr object_storage_,
+            bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
@@ -66,7 +70,9 @@ public:
         using Processor = ObjectStorageQueueMetadata::Processor;
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
+        const ObjectStoragePtr object_storage;
         const std::unique_ptr<Source::GlobIterator> glob_iterator;
+        const bool file_deletion_on_processed_enabled;
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -93,15 +99,33 @@ public:
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
+    struct CommitSettings
+    {
+        size_t max_processed_files_before_commit;
+        size_t max_processed_rows_before_commit;
+        size_t max_processed_bytes_before_commit;
+        size_t max_processing_time_sec_before_commit;
+    };
+
+    struct ProcessingProgress
+    {
+        std::atomic<size_t> processed_files = 0;
+        std::atomic<size_t> processed_rows = 0;
+        std::atomic<size_t> processed_bytes = 0;
+        Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
+    };
+    using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
+
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
         ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
+        ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        const ObjectStorageQueueSettings & queue_settings_,
+        const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -120,17 +144,33 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool success, const std::string & exception_message = {});
+    void prepareCommitRequests(
+        Coordination::Requests & requests,
+        bool insert_succeeded,
+        StoredObjects & successful_files,
+        const std::string & exception_message = {});
+
+    /// Do some work after Processed/Failed files were successfully committed to keeper.
+    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
 
 private:
+    Chunk generateImpl();
+    /// Log to system.s3(azure)_queue_log.
+    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    /// Commit processed files.
+    /// This method is only used for SELECT query, not for streaming to materialized views.
+    /// Which is defined by passing a flag commit_once_processed.
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
+
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
     const ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
+    const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    const ObjectStorageQueueSettings queue_settings;
+    const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
 
@@ -142,24 +182,24 @@ private:
 
     LoggerPtr log;
 
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
+    enum class FileState
+    {
+        Processing,
+        ErrorOnRead,
+        Cancelled,
+        Processed,
+    };
+    struct ProcessedFile
+    {
+        explicit ProcessedFile(FileMetadataPtr metadata_)
+            : state(FileState::Processing), metadata(metadata_) {}
 
+        FileState state;
+        FileMetadataPtr metadata;
+        std::string exception_during_read;
+    };
+    std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
-
-    size_t processed_rows_from_file = 0;
-    size_t total_processed_rows = 0;
-    size_t total_processed_bytes = 0;
-
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-
-    Chunk generateImpl();
-    void applyActionAfterProcessing(const String & path);
-    void appendLogElement(
-        const std::string & filename,
-        ObjectStorageQueueMetadata::FileStatus & file_status_,
-        size_t processed_rows,
-        bool processed);
 };
 
 }

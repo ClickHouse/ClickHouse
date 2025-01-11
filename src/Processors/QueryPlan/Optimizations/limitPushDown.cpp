@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -35,7 +36,7 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
     return updated;
 }
 
-size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -63,6 +64,12 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
         return 0;
 
+    if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
+    {
+        distinct->updateLimitHint(limit->getLimitForSorting());
+        return 0;
+    }
+
     if (typeid_cast<const SortingStep *>(child.get()))
         return 0;
 
@@ -85,7 +92,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         return 0;
 
     /// Input stream for Limit have changed.
-    limit->updateInputStream(transforming->getInputStreams().front());
+    limit->updateInputHeader(transforming->getInputHeaders().front());
 
     parent.swap(child);
     return 2;

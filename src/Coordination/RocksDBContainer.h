@@ -1,8 +1,6 @@
 #pragma once
 #include <base/StringRef.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
-#include <Common/SipHash.h>
 #include <Disks/DiskLocal.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>

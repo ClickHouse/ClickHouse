@@ -2,9 +2,9 @@
 
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Storages/MergeTree/SimpleMergeSelector.h>
-#include <Storages/MergeTree/AllMergeSelector.h>
-#include <Storages/MergeTree/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/AllMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
 
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
@@ -47,6 +48,16 @@ namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
 }
+namespace ProfileEvents
+{
+
+    extern const Event MergerMutatorsGetPartsForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorPrepareRangesForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorSelectPartsForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorRangesForMergeCount;
+    extern const Event MergerMutatorPartsInRangesForMergeCount;
+    extern const Event MergerMutatorSelectRangePartsCount;
+}
 
 namespace DB
 {
@@ -59,12 +70,20 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_parts_to_merge_at_once;
     extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
     extern const MergeTreeSettingsInt64 merge_with_ttl_timeout;
+    extern const MergeTreeSettingsUInt64 merge_selector_blurry_base_scale_factor;
+    extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsBool enable_max_bytes_limit_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
+    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
+    extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
+    extern const MergeTreeSettingsFloat merge_selector_base;
+    extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
 }
 
 namespace ErrorCodes
@@ -180,7 +199,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     if (res == SelectPartsDecision::SELECTED)
         return res;
 
-    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
+    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info, max_total_size_to_merge);
     if (!best_partition_id_to_optimize.empty())
     {
         return selectAllPartsToMergeWithinPartition(
@@ -208,6 +227,7 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
 {
     PartitionIdsHint res;
     MergeTreeData::DataPartsVector data_parts = getDataPartsToSelectMergeFrom(txn);
+
     if (data_parts.empty())
         return res;
 
@@ -249,7 +269,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
         if (status == SelectPartsDecision::SELECTED)
             res.insert(all_partition_ids[i]);
         else
-            LOG_TEST(log, "Nothing to merge in partition {}: {}", all_partition_ids[i], out_disable_reason.text);
+            LOG_TEST(log, "Nothing to merge in partition {} with max_total_size_to_merge = {} (looked up {} ranges): {}",
+                all_partition_ids[i], ReadableSize(max_total_size_to_merge), ranges_per_partition[i].size(), out_disable_reason.text);
     }
 
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
@@ -265,6 +286,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
 MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectMergeFrom(
     const MergeTreeTransactionPtr & txn, const PartitionIdsHint * partitions_hint) const
 {
+
+    Stopwatch get_data_parts_for_merge_timer;
     auto res = getDataPartsToSelectMergeFrom(txn);
     if (!partitions_hint)
         return res;
@@ -273,6 +296,8 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectM
     {
         return !partitions_hint->contains(part->info.partition_id);
     });
+
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
     return res;
 }
 
@@ -350,6 +375,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
     const MergeTreeTransactionPtr & txn,
     PreformattedMessage & out_disable_reason) const
 {
+    Stopwatch ranges_for_merge_timer;
     MergeSelectingInfo res;
 
     res.current_time = std::time(nullptr);
@@ -432,6 +458,8 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
         auto & partition_info = partitions_info[partition_id];
         partition_info.min_age = std::min(partition_info.min_age, part_info.age);
+        ++partition_info.num_parts;
+        partition_info.sum_bytes += part_info.size;
 
         ++res.parts_selected_precondition;
 
@@ -450,6 +478,10 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         prev_part = &part;
     }
 
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, res.parts_selected_precondition);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, res.parts_ranges.size());
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
+
     return res;
 }
 
@@ -464,18 +496,23 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
     PreformattedMessage & out_disable_reason,
     bool dry_run)
 {
+    Stopwatch select_parts_from_ranges_timer;
     const auto data_settings = data.getSettings();
     IMergeSelector::PartsRange parts_to_merge;
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
+        TTLDeleteMergeSelector::Params params_drop
+        {
+            .merge_due_times = next_delete_ttl_merge_times_by_partition,
+            .current_time = current_time,
+            .merge_cooldown_time = (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
+            .only_drop_parts = true,
+            .dry_run = dry_run
+        };
+
         /// TTL delete is preferred to recompression
-        TTLDeleteMergeSelector drop_ttl_selector(
-                next_delete_ttl_merge_times_by_partition,
-                current_time,
-                (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
-                /*only_drop_parts*/ true,
-                dry_run);
+        TTLDeleteMergeSelector drop_ttl_selector(params_drop);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         parts_to_merge = drop_ttl_selector.select(parts_ranges, (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
@@ -485,12 +522,15 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         }
         else if (!(*data_settings)[MergeTreeSetting::ttl_only_drop_parts])
         {
-            TTLDeleteMergeSelector delete_ttl_selector(
-                next_delete_ttl_merge_times_by_partition,
-                current_time,
-                (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
-                /*only_drop_parts*/ false,
-                dry_run);
+            TTLDeleteMergeSelector::Params params_delete
+            {
+                .merge_due_times = next_delete_ttl_merge_times_by_partition,
+                .current_time = current_time,
+                .merge_cooldown_time = (*data_settings)[MergeTreeSetting::merge_with_ttl_timeout],
+                .only_drop_parts = false,
+                .dry_run = dry_run
+            };
+            TTLDeleteMergeSelector delete_ttl_selector(params_delete);
 
             parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
@@ -499,12 +539,16 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         if (parts_to_merge.empty() && metadata_snapshot->hasAnyRecompressionTTL())
         {
-            TTLRecompressMergeSelector recompress_ttl_selector(
-                    next_recompress_ttl_merge_times_by_partition,
-                    current_time,
-                    (*data_settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout],
-                    metadata_snapshot->getRecompressionTTLs(),
-                    dry_run);
+            TTLRecompressMergeSelector::Params params
+            {
+                .merge_due_times = next_recompress_ttl_merge_times_by_partition,
+                .current_time = current_time,
+                .merge_cooldown_time = (*data_settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout],
+                .recompression_ttls = metadata_snapshot->getRecompressionTTLs(),
+                .dry_run = dry_run,
+            };
+
+            TTLRecompressMergeSelector recompress_ttl_selector(params);
 
             parts_to_merge = recompress_ttl_selector.select(parts_ranges, max_total_size_to_merge);
             if (!parts_to_merge.empty())
@@ -514,17 +558,38 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
     if (parts_to_merge.empty())
     {
-        SimpleMergeSelector::Settings merge_settings;
-        /// Override value from table settings
-        merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
-        if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
-            merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
+        auto merge_selector_algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
 
-        if (aggressive)
-            merge_settings.base = 1;
+        std::any merge_settings;
+        if (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE
+            || merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
+        {
+            SimpleMergeSelector::Settings simple_merge_settings;
+            /// Override value from table settings
+            simple_merge_settings.window_size = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
+            simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
+            simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = (*data_settings)[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
+            simple_merge_settings.base = (*data_settings)[MergeTreeSetting::merge_selector_base];
+            simple_merge_settings.min_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::min_parts_to_merge_at_once];
 
-        parts_to_merge = SimpleMergeSelector(merge_settings)
-                            .select(parts_ranges, max_total_size_to_merge);
+            if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
+                simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
+
+            if (aggressive)
+                simple_merge_settings.base = 1;
+
+            if (merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
+            {
+                simple_merge_settings.parts_to_throw_insert = (*data_settings)[MergeTreeSetting::parts_to_throw_insert];
+                simple_merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
+                simple_merge_settings.use_blurry_base = simple_merge_settings.blurry_base_scale_factor != 0;
+                simple_merge_settings.enable_stochastic_sliding = true;
+            }
+
+            merge_settings = simple_merge_settings;
+        }
+
+        parts_to_merge = MergeSelectorFactory::instance().get(merge_selector_algorithm, merge_settings)->select(parts_ranges, max_total_size_to_merge);
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
@@ -532,7 +597,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         if (parts_to_merge.empty())
         {
-            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors)");
+            ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
+            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
             return SelectPartsDecision::CANNOT_SELECT;
         }
     }
@@ -545,13 +611,16 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         parts.push_back(part);
     }
 
-    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {} in {}ms", parts.size(), parts.front()->name, parts.back()->name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, parts.size());
+
     future_part->assign(std::move(parts));
+    ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
     return SelectPartsDecision::SELECTED;
 }
 
 String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
-    const PartitionsInfo & partitions_info) const
+    const PartitionsInfo & partitions_info, size_t max_total_size_to_merge) const
 {
     const auto & data_settings = data.getSettings();
     if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
@@ -570,14 +639,37 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
         return {};
     }
 
+    const auto is_partition_invalid = [&](const auto & partition)
+    {
+        if (partition.num_parts == 1)
+            return true;
+
+        if (!max_total_size_to_merge || !(*data_settings)[MergeTreeSetting::enable_max_bytes_limit_for_min_age_to_force_merge])
+            return false;
+
+        return partition.sum_bytes > max_total_size_to_merge;
+    };
+
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
         partitions_info.end(),
-        [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
+        [&](const auto & e1, const auto & e2)
+        {
+            // If one partition cannot be used for some reason (e.g. it has only single part, or it's size greater than limit), always select the other partition.
+            if (is_partition_invalid(e1.second))
+                return true;
+
+            if (is_partition_invalid(e2.second))
+                return false;
+
+            // If both partitions have more than one part, select the older partition.
+            return e1.second.min_age < e2.second.min_age;
+        });
 
     assert(best_partition_it != partitions_info.end());
 
-    if (static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+    if ((static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+        || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;

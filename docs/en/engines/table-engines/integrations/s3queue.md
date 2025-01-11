@@ -12,7 +12,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 
 ``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
     [mode = '',]
     [after_processing = 'keep',]
@@ -69,6 +69,8 @@ SETTINGS
 
 ## Settings {#settings}
 
+To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
+
 ### mode {#mode}
 
 Possible values:
@@ -120,7 +122,7 @@ Default value: `0`.
 
 ### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
-Minimal timeout before next polling (in milliseconds).
+Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
 
 Possible values:
 
@@ -130,7 +132,7 @@ Default value: `1000`.
 
 ### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
 
-Maximum timeout before next polling (in milliseconds).
+Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
 
 Possible values:
 
@@ -140,7 +142,7 @@ Default value: `10000`.
 
 ### s3queue_polling_backoff_ms {#polling_backoff_ms}
 
-Polling backoff (in milliseconds).
+Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
 
 Possible values:
 
@@ -190,6 +192,25 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
+## S3 role-based access
+
+The s3Queue table engine supports role-based access.
+Refer to the documentation [here](https://clickhouse.com/docs/en/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+
+Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
+```sql
+CREATE TABLE s3_table
+(
+    ts DateTime,
+    value UInt64
+)
+ENGINE = S3Queue(
+                'https://<your_bucket>/*.csv', 
+                extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/<your_role>')
+                ,'CSV')
+SETTINGS 
+    ...
+```
 
 ## S3Queue Ordered mode {#ordered-mode}
 

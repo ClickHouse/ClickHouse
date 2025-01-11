@@ -315,7 +315,13 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI.StatusNames.CI
+        S3Helper(),
+        pr_info.number,
+        pr_info.sha,
+        pr_info.head_ref,
+        test_results,
+        [],
+        CI.StatusNames.CI,
     )
 
 
@@ -552,7 +558,7 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         CI.StatusNames.PR_CHECK,
         "Checks correctness of the PR's body",
-        lambda x: x == "PR Check",
+        lambda x: x == CI.StatusNames.PR_CHECK,
     ),
     CheckDescription(
         CI.StatusNames.SYNC,
@@ -711,7 +717,7 @@ CHECK_DESCRIPTIONS = [
     ),
     CheckDescription(
         "ClickBench",
-        "Runs [ClickBench](https://github.com/ClickHouse/ClickBench/) with instant-attach table",
+        'Runs <a href="https://github.com/ClickHouse/ClickBench/">ClickBench</a> with instant-attach table',
         lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(

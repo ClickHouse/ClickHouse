@@ -476,7 +476,7 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
     if (indices_loaded)
         return;
 
-    if (disk->exists(index_file_path))
+    if (disk->existsFile(index_file_path))
     {
         CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)));
         indices.read(index_in);
@@ -697,7 +697,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true
+        .supports_settings = true,
+        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)

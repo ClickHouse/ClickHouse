@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/metrics
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # metrics
+
+<SystemTableCloud/>
 
 Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
 
@@ -736,6 +740,14 @@ Number of sessions (connections) to ZooKeeper. Should be no more than one, becau
 ### ZooKeeperWatch
 
 Number of watches (event subscriptions) in ZooKeeper.
+
+### ConcurrencyControlAcquired
+
+Total number of acquired CPU slots.
+
+### ConcurrencyControlSoftLimit
+
+Value of soft limit on number of CPU slots.
 
 **See Also**
 

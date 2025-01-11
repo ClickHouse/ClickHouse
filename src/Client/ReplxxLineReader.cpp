@@ -293,6 +293,7 @@ void ReplxxLineReader::setLastIsDelimiter(bool flag)
 ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
+    UInt32 history_max_entries_,
     bool multiline_,
     bool ignore_shell_suspend,
     Patterns extenders_,
@@ -312,6 +313,8 @@ ReplxxLineReader::ReplxxLineReader(
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
+
+    rx.set_max_history_size(static_cast<int>(history_max_entries_));
 
     if (!history_file_path.empty())
     {
@@ -359,7 +362,7 @@ ReplxxLineReader::ReplxxLineReader(
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
 
-    /// By default C-p/C-n binded to COMPLETE_NEXT/COMPLETE_PREV,
+    /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
@@ -381,9 +384,9 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
 
-    /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
+    /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
-    /// it also binded to M-p/M-n).
+    /// it also bound to M-p/M-n).
     rx.bind_key(Replxx::KEY::meta('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_NEXT, code); });
     rx.bind_key(Replxx::KEY::meta('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_PREVIOUS, code); });
     /// By default M-BACKSPACE is KILL_TO_WHITESPACE_ON_LEFT, while in readline it is backward-kill-word

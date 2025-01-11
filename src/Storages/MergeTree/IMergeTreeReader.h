@@ -18,6 +18,7 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
+    using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
@@ -80,8 +81,10 @@ protected:
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
-    /// Stores states for IDataType::deserializeBinaryBulk
+    /// Stores states for IDataType::deserializeBinaryBulk for regular columns.
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
+    /// The same as above, but for subcolumns.
+    DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map_for_subcolumns;
 
     /// Actual column names and types of columns in part,
     /// which may differ from table metadata.
