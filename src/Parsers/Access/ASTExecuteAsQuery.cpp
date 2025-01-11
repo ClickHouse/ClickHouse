@@ -24,13 +24,13 @@ ASTPtr ASTExecuteAsQuery::clone() const
 }
 
 
-void ASTExecuteAsQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTExecuteAsQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    settings.ostr << "EXECUTE AS";
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_keyword : "");
+    ostr << "EXECUTE AS";
+    ostr << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << " ";
-    targetuser->format(settings);
+    ostr << " ";
+    targetuser->format(ostr, settings);
 }
 }

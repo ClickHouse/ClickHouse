@@ -1674,7 +1674,7 @@ void Context::setCurrentRolesDefault()
     setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
 }
 
-void Context::switchImpersonateUser(const RolesOrUsersSet & users )
+void Context::switchImpersonateUser(const RolesOrUsersSet & users)
 {
     auto new_user_uuid = *(users.ids.begin());
     setUser(new_user_uuid);
