@@ -218,12 +218,24 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         std::lock_guard lock(mutex);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
 
+        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
+
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
             txn->commit();
 
+        LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
-        LOG_TRACE(log, "Rename {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
+
+        if (db_disk->existsFile(getDetachedPermanentlyFlagPath(table_metadata_path)))
+        {
+            const fs::path metadata_detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
+            const fs::path metadata_dropped_detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path_drop);
+
+            LOG_TRACE(
+                log, "Rename detached flag from {} to {} for removing.", metadata_detached_flag_path, metadata_dropped_detached_flag_path);
+            db_disk->replaceFile(metadata_detached_flag_path, metadata_dropped_detached_flag_path);
+        }
 
         table_name_to_path.erase(table_name);
     }

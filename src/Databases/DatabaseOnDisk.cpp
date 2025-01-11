@@ -287,7 +287,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
 {
     try
     {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        const fs::path detached_permanently_flag = getDetachedPermanentlyFlagPath(table_metadata_path);
         db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
@@ -295,6 +295,11 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
         e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
+}
+
+fs::path DatabaseOnDisk::getDetachedPermanentlyFlagPath(const String & table_metadata_path)
+{
+    return fs::path(table_metadata_path + detached_suffix);
 }
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -325,7 +330,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 
     auto table = detachTable(query_context, table_name);
 
-    fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
+    const fs::path detached_permanently_flag = getDetachedPermanentlyFlagPath(getObjectMetadataPath(table_name));
     try
     {
         db_disk->createFile(detached_permanently_flag);
@@ -420,7 +425,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
 
     if (db_disk->existsFile(table_metadata_path))
     {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        const fs::path detached_permanently_flag = getDetachedPermanentlyFlagPath(table_metadata_path);
 
         if (db_disk->existsFile(detached_permanently_flag))
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,

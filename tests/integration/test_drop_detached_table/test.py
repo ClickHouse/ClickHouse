@@ -92,6 +92,10 @@ def create_replicated_table(node, table_name):
     )
 
 
+def create_table(node, table_name):
+    node.query(f"CREATE TABLE {table_name} (key UInt64) ENGINE=MergeTree ORDER BY key")
+
+
 def create_distributed_table(node, table_name):
     node.query(
         "CREATE TABLE aux_table_for_dist (key UInt64) ENGINE=MergeTree ORDER BY key"
@@ -122,6 +126,48 @@ def check_no_table_in_detached_table(node, table_name: str):
         f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
     )
     assert_eq_with_retry(instance=node, query=query, expectation="0")
+
+
+def test_drop_table_with_detached_flag(start_cluster):
+    table_name = "test_table"
+    create_table(replica1, table_name)
+
+    disk_path = replica1.query("select path from system.disks").strip()
+    metadata_path = replica1.query(
+        f"SELECT metadata_path FROM system.tables WHERE table='{table_name}'"
+    ).split()[0]
+
+    replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+
+    assert (
+        "1"
+        == replica1.exec_in_container(
+            ["bash", "-c", f"ls -1 {disk_path}{metadata_path} | wc -l"]
+        ).strip()
+    )
+    assert (
+        "1"
+        == replica1.exec_in_container(
+            ["bash", "-c", f"ls -1 {disk_path}{metadata_path}.detached | wc -l"]
+        ).strip()
+    )
+
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC;"
+    )
+
+    assert (
+        "0"
+        == replica1.exec_in_container(
+            ["bash", "-c", f"ls -1 {disk_path}{metadata_path} | wc -l"]
+        ).strip()
+    )
+    assert (
+        "0"
+        == replica1.exec_in_container(
+            ["bash", "-c", f"ls -1 {disk_path}{metadata_path}.detached | wc -l"]
+        ).strip()
+    )
 
 
 def test_drop_replicated_table(start_cluster):

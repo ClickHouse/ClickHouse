@@ -81,6 +81,8 @@ public:
     virtual void
     removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
 
+    static fs::path getDetachedPermanentlyFlagPath(const String & table_metadata_path);
+
     void removeDetachedTableInfo(const StorageID & table_id);
 
 protected:
