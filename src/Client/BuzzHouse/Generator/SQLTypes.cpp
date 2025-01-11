@@ -352,7 +352,11 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         if (rg.nextBool())
         {
             short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(
-                (rg.nextRandomUInt32() % static_cast<uint32_t>(DecimalN::DecimalPrecision_MAX)) + 1));
+                (rg.nextRandomUInt32()
+                 % static_cast<uint32_t>(
+                     (allowed_types & set_no_decimal_limit) ? DecimalN::DecimalPrecision_MAX
+                                                            : DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128))
+                + 1));
             switch (short_notation.value())
             {
                 case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
@@ -383,7 +387,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
 
             if (rg.nextBool())
             {
-                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % 77) + 1);
+                precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 77 : 65)) + 1);
                 if (dec)
                 {
                     ds->set_precision(precision.value());

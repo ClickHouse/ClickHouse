@@ -1005,7 +1005,8 @@ int StatementGenerator::addTableColumn(
     if (t.isMySQLEngine() || t.hasMySQLPeer())
     {
         this->next_type_mask &= ~(
-            allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
+            allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
+            | set_no_decimal_limit);
     }
     if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
     {
