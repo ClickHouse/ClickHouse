@@ -1,7 +1,7 @@
 from praktika import Artifact, Docker, Job, Secret
 from praktika.utils import MetaClasses, Utils
 
-TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == SettingsTEMP_DIR
+TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == Settings.TEMP_DIR
 
 
 class RunnerLabels:
@@ -141,24 +141,24 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    Docker.Config(
-        name="clickhouse/kerberos-kdc",
-        path="./docker/test/integration/kerberos_kdc",
-        platforms=[Docker.Platforms.AMD],
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/mysql-golang-client",
-        path="./docker/test/integration/mysql_golang_client",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/mysql-java-client",
-        path="./docker/test/integration/mysql_java_client",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
+    # Docker.Config(
+    #     name="clickhouse/kerberos-kdc",
+    #     path="./docker/test/integration/kerberos_kdc",
+    #     platforms=[Docker.Platforms.AMD],
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/mysql-golang-client",
+    #     path="./docker/test/integration/mysql_golang_client",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/mysql-java-client",
+    #     path="./docker/test/integration/mysql_java_client",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     Docker.Config(
         name="clickhouse/mysql-js-client",
         path="./docker/test/integration/mysql_js_client",
@@ -264,6 +264,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch"
+    FUZZERS = "fuzzers"
 
 
 class JobNames:
@@ -345,6 +346,8 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
+    FUZZERS = "FUZZERS"
+
     PERF_REPORTS_AMD_1_3 = "PERF_REPORTS_AMD_1_3"
     PERF_REPORTS_AMD_2_3 = "PERF_REPORTS_AMD_2_3"
     PERF_REPORTS_AMD_1_3_WITH_RELEASE = "PERF_REPORTS_AMD_1_3_WITH_RELEASE"
@@ -412,6 +415,11 @@ ARTIFACTS = [
             ArtifactNames.DEB_AMD_MSAM,
             ArtifactNames.DEB_AMD_UBSAN,
         ]
+    ),
+    Artifact.Config(
+        name=ArtifactNames.FUZZERS,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/fuzzers/*"
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
@@ -537,6 +545,7 @@ class Jobs:
             BuildTypes.RISCV64,
             BuildTypes.S390X,
             BuildTypes.LOONGARCH64,
+            BuildTypes.FUZZERS,
         ],
         provides=[
             [
@@ -603,6 +612,7 @@ class Jobs:
             [ArtifactNames.CH_RISCV64],
             [ArtifactNames.CH_S390X],
             [ArtifactNames.CH_LOONGARCH64],
+            [ArtifactNames.FUZZERS],
         ],
         runs_on=[
             [RunnerLabels.BUILDER_AMD],
@@ -628,6 +638,7 @@ class Jobs:
             [RunnerLabels.BUILDER_ARM],  # BuildTypes.RISCV64,
             [RunnerLabels.BUILDER_AMD],  # BuildTypes.S390X,
             [RunnerLabels.BUILDER_ARM],  # BuildTypes.LOONGARCH64
+            [RunnerLabels.BUILDER_ARM],  # BuildTypes.FUZZERS
         ],
     )
 
