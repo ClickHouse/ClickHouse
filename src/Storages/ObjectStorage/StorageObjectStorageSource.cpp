@@ -1,4 +1,5 @@
 #include "StorageObjectStorageSource.h"
+#include <memory>
 #include <optional>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -19,19 +20,27 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include "Common/DateLUT.h"
+#include "Common/tests/gtest_global_context.h"
 #include <Common/parseGlobs.h>
 #include "Columns/ColumnLowCardinality.h"
 #include "Core/ColumnsWithTypeAndName.h"
+#include "Core/Field.h"
 #include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
 #include "Disks/ObjectStorages/IObjectStorage.h"
+#include "Interpreters/ActionsDAG.h"
 #include "Interpreters/Cache/FileCache.h"
 #include "Interpreters/Cache/FileCacheKey.h"
+#include "Parsers/ASTFunction.h"
+#include "Parsers/ASTIdentifier.h"
+#include "Parsers/ASTLiteral.h"
 #include "Processors/Formats/IInputFormat.h"
 #include "Processors/ISource.h"
+#include "Storages/MergeTree/KeyCondition.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/PositionalDeleteTransform.h"
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
 #include <string>
 
@@ -543,6 +552,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true
         );
 
+
+        {
+            ASTPtr where_ast = makeASTFunction("equals", 
+                std::make_shared<ASTIdentifier>(PositionalDeleteTransform::filename_column_name), 
+                std::make_shared<ASTLiteral>(Field(object_info->getPath())));
+
+            auto syntax_result = TreeRewriter(context_).analyze(where_ast, delete_block.back().getNamesAndTypesList());
+
+            ExpressionAnalyzer analyzer(where_ast, syntax_result, context_);
+            const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
+            delete_format->setKeyCondition(actions, context_);
+        }
         delete_sources.push_back(std::move(delete_format));
     }
 
@@ -898,7 +919,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , ignore_non_existent_files(ignore_non_existent_files_)
 {
 
-    for (auto key : configuration->getPaths())
+    for (const auto & key : configuration->getPaths())
     {
         auto object_info = std::make_shared<ObjectInfo>(key.filename);
         DataFileMeta::DataFileType file_type = key.meta ? std::static_pointer_cast<DataFileMeta>(key.meta)->type : DataFileMeta::DataFileType::DATA_FILE;

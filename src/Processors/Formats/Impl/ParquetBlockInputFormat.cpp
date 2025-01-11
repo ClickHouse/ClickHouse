@@ -497,6 +497,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , max_decoding_threads(max_decoding_threads_)
     , max_io_threads(max_io_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , header(header_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
     , previous_block_missing_values(getPort().getHeader().columns())
 {

@@ -1,4 +1,5 @@
 #pragma once
+#include "Processors/Port.h"
 #include "config.h"
 #if USE_PARQUET
 
@@ -71,6 +72,11 @@ public:
     const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
+
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context) override 
+    {
+        setKeyConditionImpl(filter_actions_dag, context, header);
+    }
 
 private:
     Chunk read() override;
@@ -322,6 +328,7 @@ private:
     std::mutex mutex;
     // Wakes up the read() call, if any.
     std::condition_variable condvar;
+    Block header;
 
     std::vector<RowGroupBatchState> row_group_batches;
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;
