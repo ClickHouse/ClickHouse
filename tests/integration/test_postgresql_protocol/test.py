@@ -62,7 +62,6 @@ def test_psql_client(started_cluster):
         "query2.sql",
         "query3.sql",
         "query4.sql",
-        "query5.sql",
     ]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
@@ -215,6 +214,36 @@ def test_prepared_statement(started_cluster):
     cur.execute("DEALLOCATE select_test;")
     with pytest.raises(Exception) as exc:
         cur.execute("EXECUTE select_test(1);")
+
+
+def test_copy_command(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+
+    cur.execute("drop table if exists test;")
+    cur.execute("drop table if exists test_recreated;")
+
+    cur.execute("create table test (x UInt32) engine=Memory();")
+    cur.execute("insert into test values (42);")
+    cur.execute("insert into test values (43);")
+
+    cur.execute("copy test to file('test.csv', 'CSV', 'x UInt32');")
+    cur.execute("copy test to file('test.csv', 'CSV', 'x UInt32');")
+    cur.execute("drop table if exists test;")
+
+    cur.execute("create table test_recreated (x UInt32) engine=Memory();")
+    cur.execute("copy test_recreated from file('test.csv', 'CSV', 'x UInt32');")
+    result = cur.execute("select * from test_recreated order by x;")
+
+    assert cur.fetchall() == [(42,), (43,)]
 
 
 def test_java_client(started_cluster):
