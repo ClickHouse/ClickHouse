@@ -604,7 +604,8 @@
         let response, reply;
         try {
             controller = new AbortController();
-            response = await fetch(url, { method: "POST", body: query, signal: controller.signal });
+            response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
+                headers: { 'Authorization': 'never' } });
 
             let format = response.headers.get('X-ClickHouse-Format');
 
