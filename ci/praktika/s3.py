@@ -88,7 +88,7 @@ class S3:
         return res
 
     @classmethod
-    def run_command_with_retries(cls, command, retries=Settings.MAX_RETRIES_S3):
+    def run_command_with_retries(cls, command, retries=Settings.MAX_RETRIES_S3) -> bool:
         i = 0
         res = False
         while not res and i < retries:
@@ -120,7 +120,7 @@ class S3:
     @classmethod
     def copy_file_from_s3(
         cls, s3_path, local_path, recursive=False, include_pattern=""
-    ):
+    ) -> bool:
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
             pass

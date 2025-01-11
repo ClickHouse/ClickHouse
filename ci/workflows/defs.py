@@ -158,6 +158,12 @@ DOCKERS = [
         platforms=[Docker.Platforms.ARM],
         depends_on=[],
     ),
+    Docker.Config(
+        name="clickhouse/libfuzzer",
+        path="./docker/docs/builder",
+        platforms=[Docker.Platforms.ARM],
+        depends_on=[],
+    ),
 ]
 
 # TODO:
@@ -246,6 +252,7 @@ class JobNames:
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server"
     SQL_TEST = "SQLTest"
+    LIBFUZZER = "libFuzzer"
 
 
 class ToolSet:
@@ -786,6 +793,14 @@ class Jobs:
                 "./ci/jobs/sqltest_job.py",
             ],
         ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
+    )
+    libfuzzer = Job.Config(
+        name=JobNames.LIBFUZZER,
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="python3 ./ci/jobs/libfuzzer_runner.py",
         requires=[ArtifactNames.CH_ARM_RELEASE],
         run_in_docker="clickhouse/stateless-test",
         timeout=10800,
