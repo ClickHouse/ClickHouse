@@ -106,6 +106,8 @@
 
     CANNOT_PARSE_TEXT
 02771_ignore_data_skipping_indices
+    minor: Object('json')   Cannot parse string 'str' as Int8: syntax error at begin of string. Note: there are toInt8OrZero and toInt8OrNull functions, which returns zero/NULL instead of throwing exception.: While executing Remote. (CANNOT_PARSE_TEXT) (in query: SELECT * FROM t_json_race WHERE 0 IN (SELECT sleep(0.05)) FORMAT Null
+01825_type_json_schema_race_long
 
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
@@ -276,6 +278,7 @@
 03031_filter_float64_logical_error
     DB::Exception: Method read is not supported by storage Set: While processing x IN (_data_11099353983780129364_3343188837740940051). (NOT_IMPLEMENTED) (version 25.1.1.568) (from [::1]:49284) (comment: 00116_storage_set.sql) (in query: SELECT * FROM tab PREWHERE x IN (set) WHERE x IN (set) LIMIT 1 settings enable_analyzer=0;)
 00116_storage_set
+
 
     EXPLAIN / PLAN / ProfileEvents
 02725_agg_projection_resprect_PK
