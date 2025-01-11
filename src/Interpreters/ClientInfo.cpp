@@ -98,6 +98,12 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         writeVarUInt(obsolete_count_participating_replicas, out);
         writeVarUInt(number_of_current_replica, out);
     }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS)
+    {
+        writeVarUInt(script_query_number, out);
+        writeVarUInt(script_line_number, out);
+    }
 }
 
 
@@ -187,6 +193,12 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         collaborate_with_initiator = static_cast<bool>(value);
         readVarUInt(obsolete_count_participating_replicas, in);
         readVarUInt(number_of_current_replica, in);
+    }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS)
+    {
+        readVarUInt(script_query_number, in);
+        readVarUInt(script_line_number, in);
     }
 }
 
