@@ -1054,9 +1054,20 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     NamesAndTypesList all_output_columns;
     bool check_columns = false;
     if (create.hasTargetTableID(ViewTarget::To))
-     {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-                create.getTargetTableID(ViewTarget::To), getContext()))
+    {
+        StoragePtr to_table;
+        try
+        {
+            to_table = DatabaseCatalog::instance().getTable(
+                create.getTargetTableID(ViewTarget::To), getContext());
+        }
+        catch (...)
+        {
+            if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
+                throw;
+        }
+
+        if (to_table)
         {
             all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList();
             check_columns = true;
