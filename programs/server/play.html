@@ -62,7 +62,7 @@
             --background-color-rotate: 250;
             --background-color: oklch(15% 0.0296 var(--background-color-rotate));
             --element-background-color: #000;
-            --bar-color: #182838;
+            --bar-color: #221800;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -305,6 +305,11 @@
             border: 1px solid var(--border-color);
             white-space: pre;
             vertical-align: top;
+        }
+
+        td u
+        {
+            text-decoration-color: var(--misc-text-color);
         }
 
         .right
@@ -950,6 +955,17 @@
         td.className = column_is_number[name] ? 'right' : 'left';
         if (is_null) {
             td.className += ' null';
+        }
+
+        if (column_is_number[name]) {
+            if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
+                let i = 0;
+                console.log(text.split('').reverse());
+                td.innerHTML = text.split('').reverse().map(c => {
+                    if (i > 0 && i % 3 == 0) { c = `<u>${c}</u>`; }; ++i; return c;
+                }).reverse().join('');
+                return td;
+            }
         }
 
         td.appendChild(node);
