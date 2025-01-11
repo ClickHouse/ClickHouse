@@ -1143,7 +1143,7 @@ private:
                 {
                     if (left.second == CompareType::equals && equal_set.contains(left.first))
                         continue;
-                    
+
                     if (path.contains(left.first))
                         continue;
 
