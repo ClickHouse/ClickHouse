@@ -161,7 +161,7 @@
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
             min-width: 100%;
             max-width: 100%;
-            border-top: 0;
+            margin-top: -1px; /* To compensate the border. */
         }
 
         #inputs
@@ -174,14 +174,10 @@
             width: 70%;
         }
 
-        #user
+        #user, #password
         {
-            width: 15%;
-        }
-
-        #password
-        {
-            width: 15%;
+            width: calc(15% + 1px);
+            margin-left: -1px;
         }
 
         #run_div
