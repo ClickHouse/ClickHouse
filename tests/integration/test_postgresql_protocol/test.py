@@ -233,11 +233,15 @@ def test_copy_command(started_cluster):
     cur.execute("insert into test values (43);")
 
     cur.execute(f"copy test to file('test{file_index}.csv', 'CSV', 'x UInt32');")
-    cur.execute(f"copy (select * from test) to file('test{file_index + 1}.csv', 'CSV', 'x UInt32');")
+    cur.execute(
+        f"copy (select * from test) to file('test{file_index + 1}.csv', 'CSV', 'x UInt32');"
+    )
     cur.execute("drop table if exists test;")
 
     cur.execute("create table test_recreated (x UInt32) engine=Memory();")
-    cur.execute(f"copy test_recreated from file('test{file_index}.csv', 'CSV', 'x UInt32');")
+    cur.execute(
+        f"copy test_recreated from file('test{file_index}.csv', 'CSV', 'x UInt32');"
+    )
     result = cur.execute("select * from test_recreated order by x;")
 
     assert cur.fetchall() == [(42,), (43,)]
