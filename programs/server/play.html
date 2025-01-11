@@ -687,7 +687,6 @@
             }
         } catch (e) {
             if (posted_request_num != request_num) { return; }
-            console.log(e);
             if (e instanceof TypeError) {
                 reply = "Network error";
             } else if (e.name === 'AbortError') {
@@ -955,7 +954,6 @@
         if (column_is_number[name]) {
             if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
                 let i = 0;
-                console.log(text.split('').reverse());
                 td.innerHTML = text.split('').reverse().map(c => {
                     if (i > 0 && i % 3 == 0) { c = `<u>${c}</u>`; }; ++i; return c;
                 }).reverse().join('');
