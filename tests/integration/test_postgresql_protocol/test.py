@@ -4,6 +4,7 @@ import datetime
 import decimal
 import logging
 import os
+import random
 import uuid
 
 import psycopg
@@ -57,12 +58,7 @@ def started_cluster():
 def test_psql_client(started_cluster):
     node = cluster.instances["node"]
 
-    for query_file in [
-        "query1.sql",
-        "query2.sql",
-        "query3.sql",
-        "query4.sql",
-    ]:
+    for query_file in ["query1.sql", "query2.sql", "query3.sql", "query4.sql"]:
         started_cluster.copy_file_to_container(
             started_cluster.postgres_id,
             os.path.join(SCRIPT_DIR, "queries", query_file),
@@ -227,6 +223,7 @@ def test_copy_command(started_cluster):
         database="",
     )
     cur = ch.cursor()
+    file_index = random.randint(0, 100000000)
 
     cur.execute("drop table if exists test;")
     cur.execute("drop table if exists test_recreated;")
@@ -235,12 +232,12 @@ def test_copy_command(started_cluster):
     cur.execute("insert into test values (42);")
     cur.execute("insert into test values (43);")
 
-    cur.execute("copy test to file('test.csv', 'CSV', 'x UInt32');")
-    cur.execute("copy test to file('test.csv', 'CSV', 'x UInt32');")
+    cur.execute(f"copy test to file('test{file_index}.csv', 'CSV', 'x UInt32');")
+    cur.execute(f"copy (select * from test) to file('test{file_index + 1}.csv', 'CSV', 'x UInt32');")
     cur.execute("drop table if exists test;")
 
     cur.execute("create table test_recreated (x UInt32) engine=Memory();")
-    cur.execute("copy test_recreated from file('test.csv', 'CSV', 'x UInt32');")
+    cur.execute(f"copy test_recreated from file('test{file_index}.csv', 'CSV', 'x UInt32');")
     result = cur.execute("select * from test_recreated order by x;")
 
     assert cur.fetchall() == [(42,), (43,)]
