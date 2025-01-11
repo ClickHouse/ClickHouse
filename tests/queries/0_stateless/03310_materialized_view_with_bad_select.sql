@@ -19,7 +19,7 @@ SET allow_materialized_view_with_bad_select = 0;
 -- Insert into existing bad MV is still possible
 INSERT INTO src VALUES (2, 2);
 
-SELECT * FROM dst;
+SELECT * FROM dst ORDER BY ALL;
 
 -- Re-creating it is not
 DROP TABLE mv;
