@@ -8,7 +8,7 @@ keywords : [CapnProto]
 
 CapnProto is a binary message format similar to [Protocol Buffers](https://developers.google.com/protocol-buffers/) and [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift), but not like [JSON](/docs/en/interfaces/formats/JSON) or [MessagePack](https://msgpack.org/).
 CapnProto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
-See also [Format Schema](#formatschema).
+See also [Format Schema](/en/interfaces/formats/#formatschema).
 
 ## Data Types Matching {#data_types-matching-capnproto}
 
