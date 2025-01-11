@@ -162,11 +162,13 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     kind = *maybe_kind;
 }
 
-void SerializationInfo::toJSON(Poco::JSON::Object & object) const
+Poco::JSON::Object SerializationInfo::toJSON() const
 {
+    Poco::JSON::Object object;
     object.set(KEY_KIND, ISerialization::kindToString(kind));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
+    return object;
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -274,8 +276,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     Poco::JSON::Array column_infos;
     for (const auto & [name, info] : *this)
     {
-        Poco::JSON::Object info_json;
-        info->toJSON(info_json);
+        auto info_json = info->toJSON();
         info_json.set(KEY_NAME, name);
         column_infos.add(std::move(info_json)); /// NOLINT
     }

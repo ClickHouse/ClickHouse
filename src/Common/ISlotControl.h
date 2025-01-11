@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <limits>
 #include <memory>
 #include <base/types.h>

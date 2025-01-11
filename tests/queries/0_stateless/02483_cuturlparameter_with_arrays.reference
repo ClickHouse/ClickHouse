@@ -31,33 +31,33 @@ SELECT
     FORMAT Vertical;
 Row 1:
 ──────
-cutURLParame⋯b&c=d', []): http://bigmir.net/?a=b&c=d
-cutURLParame⋯=d', ['a']): http://bigmir.net/?c=d
-cutURLParame⋯['a', 'c']): http://bigmir.net/?
-cutURLParame⋯=d', ['c']): http://bigmir.net/?a=b
-cutURLParame⋯['a', 'e']): http://bigmir.net/?c=d#
-cutURLParame⋯['c', 'e']): http://bigmir.net/?a#
-cutURLParame⋯=f', ['e']): http://bigmir.net/?a&c=d#
-cutURLParame⋯['b', 'g']): http://bigmir.net/?a=b&c=d#e=f
-cutURLParame⋯['a', 'e']): http://bigmir.net/?c=d#e
-cutURLParame⋯['c', 'g']): http://bigmir.net/?a=b#e
-cutURLParame⋯['e', 'g']): http://bigmir.net/?a=b&c=d#e
-cutURLParame⋯est', 'e']): http://bigmir.net/?a=b&c=d#test?g=h
-cutURLParame⋯est', 'g']): http://bigmir.net/?a=b&c=d#test?e=f
-cutURLParame⋯b&c=d', []): //bigmir.net/?a=b&c=d
-cutURLParame⋯=d', ['a']): //bigmir.net/?c=d
-cutURLParame⋯['a', 'c']): //bigmir.net/?
-cutURLParame⋯['a', 'e']): //bigmir.net/?c=d#
-cutURLParame⋯=f', ['a']): //bigmir.net/?a&c=d#e=f
-cutURLParame⋯['a', 'c']): //bigmir.net/?a#e=f
-cutURLParame⋯['a', 'e']): //bigmir.net/?a&c=d#
-cutURLParame⋯['c', 'g']): //bigmir.net/?a=b#e=f
-cutURLParame⋯['a', 'c']): //bigmir.net/?#e
-cutURLParame⋯['a', 'e']): //bigmir.net/?c=d#e
-cutURLParame⋯['c', 'e']): //bigmir.net/?a=b#e&g=h
-cutURLParame⋯['e', 'g']): //bigmir.net/?a=b&c=d#e
-cutURLParame⋯est', 'e']): //bigmir.net/?a=b&c=d#test?g=h
-cutURLParame⋯est', 'g']): //bigmir.net/?a=b&c=d#test?e=f
+cutURLParameter('http://bigmir.net/?a=b&c=d', []):                         http://bigmir.net/?a=b&c=d
+cutURLParameter('http://bigmir.net/?a=b&c=d', ['a']):                      http://bigmir.net/?c=d
+cutURLParameter('http://bigmir.net/?a=b&c=d', ['a', 'c']):                 http://bigmir.net/?
+cutURLParameter('http://bigmir.net/?a=b&c=d', ['c']):                      http://bigmir.net/?a=b
+cutURLParameter('http://bigmir.net/?a=b&c=d#e=f', ['a', 'e']):             http://bigmir.net/?c=d#
+cutURLParameter('http://bigmir.net/?a&c=d#e=f', ['c', 'e']):               http://bigmir.net/?a#
+cutURLParameter('http://bigmir.net/?a&c=d#e=f', ['e']):                    http://bigmir.net/?a&c=d#
+cutURLParameter('http://bigmir.net/?a=b&c=d#e=f&g=h', ['b', 'g']):         http://bigmir.net/?a=b&c=d#e=f
+cutURLParameter('http://bigmir.net/?a=b&c=d#e', ['a', 'e']):               http://bigmir.net/?c=d#e
+cutURLParameter('http://bigmir.net/?a=b&c=d#e&g=h', ['c', 'g']):           http://bigmir.net/?a=b#e
+cutURLParameter('http://bigmir.net/?a=b&c=d#e&g=h', ['e', 'g']):           http://bigmir.net/?a=b&c=d#e
+cutURLParameter('http://bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'e']): http://bigmir.net/?a=b&c=d#test?g=h
+cutURLParameter('http://bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'g']): http://bigmir.net/?a=b&c=d#test?e=f
+cutURLParameter('//bigmir.net/?a=b&c=d', []):                              //bigmir.net/?a=b&c=d
+cutURLParameter('//bigmir.net/?a=b&c=d', ['a']):                           //bigmir.net/?c=d
+cutURLParameter('//bigmir.net/?a=b&c=d', ['a', 'c']):                      //bigmir.net/?
+cutURLParameter('//bigmir.net/?a=b&c=d#e=f', ['a', 'e']):                  //bigmir.net/?c=d#
+cutURLParameter('//bigmir.net/?a&c=d#e=f', ['a']):                         //bigmir.net/?a&c=d#e=f
+cutURLParameter('//bigmir.net/?a&c=d#e=f', ['a', 'c']):                    //bigmir.net/?a#e=f
+cutURLParameter('//bigmir.net/?a&c=d#e=f', ['a', 'e']):                    //bigmir.net/?a&c=d#
+cutURLParameter('//bigmir.net/?a=b&c=d#e=f&g=h', ['c', 'g']):              //bigmir.net/?a=b#e=f
+cutURLParameter('//bigmir.net/?a=b&c=d#e', ['a', 'c']):                    //bigmir.net/?#e
+cutURLParameter('//bigmir.net/?a=b&c=d#e', ['a', 'e']):                    //bigmir.net/?c=d#e
+cutURLParameter('//bigmir.net/?a=b&c=d#e&g=h', ['c', 'e']):                //bigmir.net/?a=b#e&g=h
+cutURLParameter('//bigmir.net/?a=b&c=d#e&g=h', ['e', 'g']):                //bigmir.net/?a=b&c=d#e
+cutURLParameter('//bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'e']):      //bigmir.net/?a=b&c=d#test?g=h
+cutURLParameter('//bigmir.net/?a=b&c=d#test?e=f&g=h', ['test', 'g']):      //bigmir.net/?a=b&c=d#test?e=f
 SELECT
     cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), []),
     cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), ['a']),
@@ -89,30 +89,30 @@ SELECT
     FORMAT Vertical;
 Row 1:
 ──────
-cutURLParame⋯&c=d'), []): http://bigmir.net/?a=b&c=d
-cutURLParame⋯d'), ['a']): http://bigmir.net/?c=d
-cutURLParame⋯['a', 'c']): http://bigmir.net/?
-cutURLParame⋯d'), ['c']): http://bigmir.net/?a=b
-cutURLParame⋯['a', 'e']): http://bigmir.net/?c=d#
-cutURLParame⋯['c', 'e']): http://bigmir.net/?a#
-cutURLParame⋯f'), ['e']): http://bigmir.net/?a&c=d#
-cutURLParame⋯['b', 'g']): http://bigmir.net/?a=b&c=d#e=f
-cutURLParame⋯['a', 'e']): http://bigmir.net/?c=d#e
-cutURLParame⋯['c', 'g']): http://bigmir.net/?a=b#e
-cutURLParame⋯['e', 'g']): http://bigmir.net/?a=b&c=d#e
-cutURLParame⋯est', 'e']): http://bigmir.net/?a=b&c=d#test?g=h
-cutURLParame⋯est', 'g']): http://bigmir.net/?a=b&c=d#test?e=f
-cutURLParame⋯&c=d'), []): //bigmir.net/?a=b&c=d
-cutURLParame⋯d'), ['a']): //bigmir.net/?c=d
-cutURLParame⋯['a', 'c']): //bigmir.net/?
-cutURLParame⋯['a', 'e']): //bigmir.net/?c=d#
-cutURLParame⋯f'), ['a']): //bigmir.net/?a&c=d#e=f
-cutURLParame⋯['a', 'c']): //bigmir.net/?a#e=f
-cutURLParame⋯['a', 'e']): //bigmir.net/?a&c=d#
-cutURLParame⋯['c', 'g']): //bigmir.net/?a=b#e=f
-cutURLParame⋯['a', 'c']): //bigmir.net/?#e
-cutURLParame⋯['a', 'e']): //bigmir.net/?c=d#e
-cutURLParame⋯['c', 'e']): //bigmir.net/?a=b#e&g=h
-cutURLParame⋯['e', 'g']): //bigmir.net/?a=b&c=d#e
-cutURLParame⋯est', 'e']): //bigmir.net/?a=b&c=d#test?g=h
-cutURLParame⋯est', 'g']): //bigmir.net/?a=b&c=d#test?e=f
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), []):                         http://bigmir.net/?a=b&c=d
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), ['a']):                      http://bigmir.net/?c=d
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), ['a', 'c']):                 http://bigmir.net/?
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d'), ['c']):                      http://bigmir.net/?a=b
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#e=f'), ['a', 'e']):             http://bigmir.net/?c=d#
+cutURLParameter(materialize('http://bigmir.net/?a&c=d#e=f'), ['c', 'e']):               http://bigmir.net/?a#
+cutURLParameter(materialize('http://bigmir.net/?a&c=d#e=f'), ['e']):                    http://bigmir.net/?a&c=d#
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#e=f&g=h'), ['b', 'g']):         http://bigmir.net/?a=b&c=d#e=f
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#e'), ['a', 'e']):               http://bigmir.net/?c=d#e
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#e&g=h'), ['c', 'g']):           http://bigmir.net/?a=b#e
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#e&g=h'), ['e', 'g']):           http://bigmir.net/?a=b&c=d#e
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'e']): http://bigmir.net/?a=b&c=d#test?g=h
+cutURLParameter(materialize('http://bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'g']): http://bigmir.net/?a=b&c=d#test?e=f
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d'), []):                              //bigmir.net/?a=b&c=d
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d'), ['a']):                           //bigmir.net/?c=d
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d'), ['a', 'c']):                      //bigmir.net/?
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e=f'), ['a', 'e']):                  //bigmir.net/?c=d#
+cutURLParameter(materialize('//bigmir.net/?a&c=d#e=f'), ['a']):                         //bigmir.net/?a&c=d#e=f
+cutURLParameter(materialize('//bigmir.net/?a&c=d#e=f'), ['a', 'c']):                    //bigmir.net/?a#e=f
+cutURLParameter(materialize('//bigmir.net/?a&c=d#e=f'), ['a', 'e']):                    //bigmir.net/?a&c=d#
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e=f&g=h'), ['c', 'g']):              //bigmir.net/?a=b#e=f
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e'), ['a', 'c']):                    //bigmir.net/?#e
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e'), ['a', 'e']):                    //bigmir.net/?c=d#e
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e&g=h'), ['c', 'e']):                //bigmir.net/?a=b#e&g=h
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#e&g=h'), ['e', 'g']):                //bigmir.net/?a=b&c=d#e
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'e']):      //bigmir.net/?a=b&c=d#test?g=h
+cutURLParameter(materialize('//bigmir.net/?a=b&c=d#test?e=f&g=h'), ['test', 'g']):      //bigmir.net/?a=b&c=d#test?e=f

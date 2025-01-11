@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-fasttest, no-shared-merge-tree
+-- Tags: no-replicated-database, no-fasttest
 -- Tag no-replicated-database: different number of replicas
 
 create table rmt1 (n int, m int, k int) engine=ReplicatedMergeTree('/test/02446/{database}/rmt', '1') order by n

@@ -1,5 +1,3 @@
-SET output_format_pretty_fallback_to_vertical = 0;
-
 -- Testing integer formats
 select printf('%%d: %d', 123);
 select printf('%%d: %d', -123);

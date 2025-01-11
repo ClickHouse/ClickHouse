@@ -59,7 +59,7 @@ function check_replication_consistency()
         ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null ||:
     done
 
-    # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
+    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
         sleep 1;

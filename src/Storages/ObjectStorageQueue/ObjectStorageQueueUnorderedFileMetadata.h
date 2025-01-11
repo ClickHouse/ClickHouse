@@ -20,13 +20,13 @@ public:
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }
 
-    void prepareProcessedAtStartRequests(
+    void setProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
+    void setProcessedImpl() override;
 };
 
 }

@@ -106,7 +106,6 @@ struct MergeListElement : boost::noncopyable
     std::atomic<MergeAlgorithm> merge_algorithm;
 
     ThreadGroupPtr thread_group;
-    CurrentMetrics::Increment num_parts_metric_increment;
 
     MergeListElement(
         const StorageID & table_id_,

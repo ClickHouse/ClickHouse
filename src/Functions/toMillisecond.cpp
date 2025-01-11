@@ -22,7 +22,7 @@ Returns the millisecond component (0-999) of a date with time.
             .returned_value="The millisecond in the minute (0 - 59) of the given date/time",
             .examples{
                 {"toMillisecond", "SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3)", "456"}},
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
             );
 

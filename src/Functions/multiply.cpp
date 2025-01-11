@@ -18,8 +18,8 @@ struct MultiplyImpl
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
-            using CastA = std::conditional_t<is_floating_point<B>, B, A>;
-            using CastB = std::conditional_t<is_floating_point<A>, A, B>;
+            using CastA = std::conditional_t<std::is_floating_point_v<B>, B, A>;
+            using CastB = std::conditional_t<std::is_floating_point_v<A>, A, B>;
 
             return static_cast<Result>(static_cast<CastA>(a)) * static_cast<Result>(static_cast<CastB>(b));
         }
