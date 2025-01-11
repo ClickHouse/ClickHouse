@@ -364,7 +364,7 @@ Limit on total number of concurrently executed queries. Note that limits on `INS
 See also: 
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries) 
-- [`max_concurrent_queries_for_all_users`](#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_all_users`](/docs/en/operations/settings/settings/#max_concurrent_queries_for_all_users)
 
 :::note
 
@@ -418,8 +418,8 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries`](#max_concurrent_queries) 
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](#max_concurrent_queries_for_user)
-- [`max_concurrent_queries_for_all_users`](#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_user`](/docs/en/operations/settings/settings#max_concurrent_select_queries)
+- [`max_concurrent_queries_for_all_users`](/docs/en/operations/settings/settings#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
 :::
@@ -493,7 +493,7 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
 :::note
 The value `0` means that you can drop partitions without any restrictions.
 
-This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max-table-size-to-drop)
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max_table_size_to_drop)
 :::
 
 **Example**
@@ -805,8 +805,8 @@ A value of `0` means unlimited.
 :::
 
 See also:
-- [`max_temporary_data_on_disk_size_for_user`](#max_temporary_data_on_disk_for_user)
-- [`max_temporary_data_on_disk_size_for_query`](#max_temporary_data_on_disk_size_for_query)
+- [`max_temporary_data_on_disk_size_for_user`](/docs/en/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
+- [`max_temporary_data_on_disk_size_for_query`](/docs/en/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
 
 Type: UInt64
 
@@ -3208,7 +3208,7 @@ Default: 0
 ## distributed_ddl
 
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
-Works only if [ZooKeeper](#server-settings_zookeeper) is enabled.
+Works only if [ZooKeeper](/docs/en/operations/server-configuration-parameters/settings#zookeeper) is enabled.
 
 The configurable settings within `<distributed_ddl>` include:
 
@@ -3333,7 +3333,7 @@ Default: `4194304`.
 
 ## total_memory_tracker_sample_probability
 
-Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
 
 Possible values:
 

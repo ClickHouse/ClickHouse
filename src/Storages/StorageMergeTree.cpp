@@ -2511,7 +2511,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
         bool noop;
-        if (part->isStoredOnDisk() && !part->getDataPartStorage().existsFile(checksums_path))
+        if (!part->getDataPartStorage().existsFile(checksums_path))
         {
             try
             {

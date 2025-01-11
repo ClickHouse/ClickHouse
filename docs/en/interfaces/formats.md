@@ -70,7 +70,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
-| [ProtobufList](#protobuflist)								    | ✔    | ✔     |
+| [ProtobufList](#protobuflist)								                                                     | ✔    | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
@@ -1519,7 +1519,7 @@ Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are b
 Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 
-## PrettyCompactNoEscapes {#prettynoescapes}
+## PrettyCompactNoEscapes {#prettycompactnoescapes}
 
 Differs from [PrettyCompact](#prettycompact) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
@@ -2282,7 +2282,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_prefer_block_bytes](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_prefer_block_bytes) - Average block bytes output by parquet reader. Default value - `16744704`.
 - [output_format_parquet_write_page_index](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_max_block_size) - Add a possibility to write page index into parquet files. Need to disable `output_format_parquet_use_custom_encoder` at present. Default value - `true`.
 
-## ParquetMetadata {data-format-parquet-metadata}
+## ParquetMetadata {#data-format-parquet-metadata}
 
 Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
 - num_columns - the number of columns
@@ -2927,6 +2927,7 @@ Outputs the following columns:
    - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
 
 Example: find compilation units that have the most function definitions (including template instantiations and functions from included header files):
+
 ```sql
 SELECT
     unit_name,
