@@ -52,7 +52,7 @@
             --logo-color: #FFF;
             --border-color-selected: #F80;
 
-            --progress-foreground-color: #0C4;
+            --progress-color: #0C4;
             --progress: 0%;
         }
 
@@ -78,7 +78,7 @@
             --logo-color: #444;
             --border-color-selected: #FF0;
 
-            --progress-foreground-color: #FF0;
+            --progress-color: #FF0;
         }
 
         *
@@ -237,6 +237,11 @@
             color: var(--misc-text-color);
         }
 
+        #stats b
+        {
+            color: var(--progress-color);
+        }
+
         #progress
         {
             display: none;
@@ -247,7 +252,7 @@
             grid-area: progress-bar;
             background: linear-gradient(to right,
                 transparent 0%,
-                var(--progress-foreground-color) var(--progress),
+                var(--progress-color) var(--progress),
                 transparent var(--progress));
         }
 
@@ -521,846 +526,874 @@
 
 <script type="text/javascript">
 
-    /// Incremental request number. When response is received,
-    /// if its request number does not equal to the current request number, response will be ignored.
-    /// This is to avoid race conditions.
-    let request_num = 0;
+/// Incremental request number. When response is received,
+/// if its request number does not equal to the current request number, response will be ignored.
+/// This is to avoid race conditions.
+let request_num = 0;
 
-    /// Save query in history only if it is different.
-    let previous_query = '';
+/// Save query in history only if it is different.
+let previous_query = '';
 
-    /// Start of the last query
-    let last_query_start = 0;
+/// Start of the last query
+let last_query_start = 0;
 
-    const current_url = new URL(window.location);
-    const opened_locally = location.protocol == 'file:';
+const current_url = new URL(window.location);
+const opened_locally = location.protocol == 'file:';
 
-    /// Run query instantly after page is loaded if the run parameter is present.
-    const run_immediately = current_url.searchParams.has("run");
+/// Run query instantly after page is loaded if the run parameter is present.
+const run_immediately = current_url.searchParams.has("run");
 
-    const server_address = current_url.searchParams.get('url');
-    if (server_address) {
-        document.getElementById('url').value = server_address;
-    } else if (!opened_locally) {
-        /// Substitute the address of the server where the page is served.
-        document.getElementById('url').value = location.origin;
+const server_address = current_url.searchParams.get('url');
+if (server_address) {
+    document.getElementById('url').value = server_address;
+} else if (!opened_locally) {
+    /// Substitute the address of the server where the page is served.
+    document.getElementById('url').value = location.origin;
+}
+
+/// Substitute username if it's specified in the query string
+const user_from_url = current_url.searchParams.get('user');
+if (user_from_url) {
+    document.getElementById('user').value = user_from_url;
+}
+
+const pass_from_url = current_url.searchParams.get('password');
+if (pass_from_url) {
+    document.getElementById('password').value = pass_from_url;
+    /// Browsers don't allow manipulating history for the 'file:' protocol.
+    if (!opened_locally) {
+        let replaced_pass = current_url.searchParams;
+        replaced_pass.delete('password');
+        window.history.replaceState(null, '',
+            window.location.origin + window.location.pathname + '?'
+            + replaced_pass.toString() + window.location.hash);
+    }
+}
+
+function queryToColor(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = hash & hash;
     }
 
-    /// Substitute username if it's specified in the query string
-    const user_from_url = current_url.searchParams.get('user');
-    if (user_from_url) {
-        document.getElementById('user').value = user_from_url;
+    /// Limited range to avoid violet colors.
+    return 50 + Math.abs(hash % 200);
+}
+
+let controller = null;
+async function postImpl(posted_request_num, query)
+{
+    const user = document.getElementById('user').value;
+    const password = document.getElementById('password').value;
+
+    const server_address = document.getElementById('url').value;
+
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        /// Ask server to allow cross-domain requests.
+        'add_http_cors_header=1';
+    if (user) {
+        url += '&user=' + encodeURIComponent(user);
     }
-
-    const pass_from_url = current_url.searchParams.get('password');
-    if (pass_from_url) {
-        document.getElementById('password').value = pass_from_url;
-        /// Browsers don't allow manipulating history for the 'file:' protocol.
-        if (!opened_locally) {
-            let replaced_pass = current_url.searchParams;
-            replaced_pass.delete('password');
-            window.history.replaceState(null, '',
-                window.location.origin + window.location.pathname + '?'
-                + replaced_pass.toString() + window.location.hash);
-        }
+    if (password) {
+        url += '&password=' + encodeURIComponent(password);
     }
+    url += '&default_format=JSONEachRowWithProgress' +
+        '&enable_http_compression=1' +
+        '&extremes=1';
 
-    function queryToColor(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash = hash & hash;
-        }
+    last_query_start = performance.now();
 
-        /// Limited range to avoid violet colors.
-        return 50 + Math.abs(hash % 200);
-    }
+    document.getElementById('check-mark').style.display = 'none';
+    document.getElementById('hourglass').style.display = 'inline-block';
 
-    let controller = null;
-    async function postImpl(posted_request_num, query)
-    {
-        const user = document.getElementById('user').value;
-        const password = document.getElementById('password').value;
+    clear();
 
-        const server_address = document.getElementById('url').value;
+    let response, reply;
+    try {
+        controller = new AbortController();
+        response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
+            /*headers: { 'Authorization': 'never' }*/ });
 
-        let url = server_address +
-            (server_address.indexOf('?') >= 0 ? '&' : '?') +
-            /// Ask server to allow cross-domain requests.
-            'add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password) +
-            '&default_format=JSONEachRowWithProgress' +
-            '&enable_http_compression=1' +
-            '&extremes=1';
+        let format = response.headers.get('X-ClickHouse-Format');
 
-        last_query_start = performance.now();
-
-        document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline-block';
-
-        clear();
-
-        let response, reply;
-        try {
-            controller = new AbortController();
-            response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
-                headers: { 'Authorization': 'never' } });
-
-            let format = response.headers.get('X-ClickHouse-Format');
-
-            if (!response.ok) {
-                reply = await response.text();
-                if (posted_request_num != request_num) { return; }
-
-                let has_exception = false;
-                for (line of reply.split('\n')) {
-                    if (line.startsWith(`{"exception":`)) {
-                        update(JSON.parse(line));
-                        has_exception = true;
-                        break;
-                    }
-                }
-                if (!has_exception) {
-                    renderError(reply);
-                }
-
-                document.getElementById('hourglass').style.display = 'none';
-                document.getElementById('progress').style.display = 'none';
-                return;
-            } else if (format == 'JSONEachRowWithProgress') {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                let buffer = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (posted_request_num != request_num) { return; }
-                    if (done) break;
-
-                    let new_content = decoder.decode(value, { stream: true });
-                    buffer += new_content;
-                    reply += new_content;
-
-                    let lines = buffer.split('\n');
-                    let fragment = document.createDocumentFragment();
-
-                    let cont = true;
-                    for (line of lines.slice(0, -1)) {
-                        const data = JSON.parse(line);
-                        cont = update(data, fragment);
-                        if (!cont) { break; }
-                    };
-
-                    if (fragment.hasChildNodes()) {
-                        document.getElementById('tbody').appendChild(fragment);
-                    }
-
-                    if (!cont)
-                    {
-                        controller.abort();
-                        break;
-                    }
-                    buffer = lines[lines.length - 1];
-                }
-            } else if (format == 'JSONCompactColumns') {
-                reply = await response.text();
-                if (posted_request_num != request_num) { return; }
-                renderChart(JSON.parse(reply));
-            } else {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                let buffer = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    let new_content = decoder.decode(value, { stream: true });
-                    reply += new_content;
-
-                    if (posted_request_num != request_num) { return; }
-                    updateRaw(new_content);
-                }
-            }
-        } catch (e) {
+        if (!response.ok) {
+            reply = await response.text();
             if (posted_request_num != request_num) { return; }
-            if (e instanceof TypeError) {
-                reply = "Network error";
-            } else if (e.name === 'AbortError') {
-                reply = "Query was cancelled";
-            } else {
-                reply = e.toString();
+
+            let has_exception = false;
+            for (line of reply.split('\n')) {
+                if (line.startsWith(`{"exception":`)) {
+                    update(JSON.parse(line));
+                    has_exception = true;
+                    break;
+                }
             }
-            renderError(reply);
+            if (!has_exception) {
+                renderError(reply);
+            }
+
             document.getElementById('hourglass').style.display = 'none';
             document.getElementById('progress').style.display = 'none';
             return;
+        } else if (format == 'JSONEachRowWithProgress') {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (posted_request_num != request_num) { return; }
+                if (done) break;
+
+                let new_content = decoder.decode(value, { stream: true });
+                buffer += new_content;
+                reply += new_content;
+
+                let lines = buffer.split('\n');
+                let fragment = document.createDocumentFragment();
+
+                let cont = true;
+                for (line of lines.slice(0, -1)) {
+                    const data = JSON.parse(line);
+                    cont = update(data, fragment);
+                    if (!cont) { break; }
+                };
+
+                if (fragment.hasChildNodes()) {
+                    document.getElementById('tbody').appendChild(fragment);
+                }
+
+                if (!cont)
+                {
+                    controller.abort();
+                    break;
+                }
+                buffer = lines[lines.length - 1];
+            }
+        } else if (format == 'JSONCompactColumns') {
+            reply = await response.text();
+            if (posted_request_num != request_num) { return; }
+            renderChart(JSON.parse(reply));
+        } else {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                let new_content = decoder.decode(value, { stream: true });
+                reply += new_content;
+
+                if (posted_request_num != request_num) { return; }
+                updateRaw(new_content);
+            }
         }
-
-        if (extremes['min'] && extremes['max']) {
-            renderExtremes();
-        }
-
-        document.getElementById('check-mark').style.display = 'inline-block';
-        document.getElementById('hourglass').style.display = 'none';
-        document.getElementById('progress').style.display = 'none';
-
-        document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
-
+    } catch (e) {
         if (posted_request_num != request_num) { return; }
 
-        const elapsed_msec = performance.now() - last_query_start; // TODO
-
-        /// The query is saved in browser history (in a state JSON object)
-        /// as well as in URL fragment identifier.
-        if (query != previous_query) {
-            const state = {
-                query: query,
-                status: response.status,
-                response: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
-                elapsed_msec: elapsed_msec,
-            };
-            const title = "ClickHouse Query: " + query;
-
-            let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-            if (run_immediately) {
-                history_url += "&run=1";
-            }
-            if (server_address != location.origin) {
-                /// Save server's address in URL if it's not identical to the address of the play UI.
-                history_url += '&url=' + encodeURIComponent(server_address);
-            }
-            history_url += '#' + window.btoa(query);
-
-            if (previous_query == '') {
-                history.replaceState(state, title, history_url);
-            } else {
-                history.pushState(state, title, history_url);
-            }
-            document.title = title;
-            previous_query = query;
-        }
-    }
-
-    let query_area = document.getElementById('query');
-
-    window.onpopstate = function(event) {
-        if (!event.state) {
-            return;
-        }
-        query_area.value = event.state.query;
-        if (!event.state.response) {
-            clear();
-            return;
-        }
-        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
-    };
-
-    if (window.location.hash) {
-        query_area.value = window.atob(window.location.hash.substr(1));
-    }
-
-    let in_flight = false;
-    async function post()
-    {
-        ++request_num;
-        let query = query_area.value;
-        in_flight = true;
-        document.getElementById('run').innerText = 'Stop';
-        await postImpl(request_num, query);
-        document.getElementById('run').innerText = 'Run';
-        in_flight = false;
-    }
-
-    async function cancel()
-    {
-        controller.abort();
-        document.getElementById('run').innerText = 'Run';
-    }
-
-    document.getElementById('run').onclick = function(e)
-    {
-        if (in_flight) {
-            cancel();
+        console.log(e);
+        if (e instanceof TypeError) {
+            reply = "Network error";
+        } else if (e.name === 'AbortError') {
+            reply = "Query was cancelled";
         } else {
-            post();
+            reply = e.toString();
         }
+        renderError(reply);
+        document.getElementById('hourglass').style.display = 'none';
+        document.getElementById('progress').style.display = 'none';
+        return;
     }
 
-    document.addEventListener('keydown', event => {
-        /// Firefox has code 13 for Enter and Chromium has code 10.
-        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-            post();
-        }
-    });
+    if (extremes['min'] && extremes['max']) {
+        renderExtremes();
+    }
 
-    /// Pressing Tab in textarea will increase indentation.
-    /// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
+    document.getElementById('check-mark').style.display = 'inline-block';
+    document.getElementById('hourglass').style.display = 'none';
+    document.getElementById('progress').style.display = 'none';
 
-    let user_prefers_tab_navigation = false;
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
-    [...document.querySelectorAll('input')].map(elem => {
-        elem.onkeydown = (e) => {
-            if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
+    if (posted_request_num != request_num) { return; }
+
+    const elapsed_msec = performance.now() - last_query_start; // TODO
+
+    /// The query is saved in browser history (in a state JSON object)
+    /// as well as in URL fragment identifier.
+    if (query != previous_query) {
+        const state = {
+            query: query,
+            status: response.status,
+            response: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
+            elapsed_msec: elapsed_msec,
         };
-    });
+        const title = "ClickHouse Query: " + query;
 
-    query_area.onkeydown = (e) => {
-        if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
-            let elem = e.target;
-            let selection_start = elem.selectionStart;
-            let selection_end = elem.selectionEnd;
-
-            elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
-            elem.selectionStart = selection_start + 4;
-            elem.selectionEnd = selection_start + 4;
-
-            e.preventDefault();
-            return false;
-        } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
-            // If the user presses Enter, and the previous line starts with spaces,
-            // then we will insert the same number of spaces.
-            const elem = e.target;
-            if (elem.selectionStart !== elem.selectionEnd) {
-                // If there is a selection, then we will not insert spaces.
-                return;
-            }
-            const cursor_pos = elem.selectionStart;
-
-            const elem_value = elem.value;
-            const text_before_cursor = elem_value.substring(0, cursor_pos);
-            const text_after_cursor = elem_value.substring(cursor_pos);
-            const prev_lines = text_before_cursor.split('\n');
-            const prev_line = prev_lines.pop();
-            const lead_spaces = prev_line.match(/^\s*/)[0];
-            if (!lead_spaces) {
-                return;
-            }
-
-            // Add leading spaces to the current line.
-            elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
-            elem.selectionStart = cursor_pos + lead_spaces.length + 1;
-            elem.selectionEnd = elem.selectionStart;
-
-            e.preventDefault();
-            return false;
+        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        if (run_immediately) {
+            history_url += "&run=1";
         }
-    };
-
-    function clearElement(id)
-    {
-        let elem = document.getElementById(id);
-        while (elem.firstChild) {
-            elem.removeChild(elem.lastChild);
+        if (server_address != location.origin) {
+            /// Save server's address in URL if it's not identical to the address of the play UI.
+            history_url += '&url=' + encodeURIComponent(server_address);
         }
-        elem.style.display = 'none';
+        history_url += '#' + window.btoa(query);
+
+        if (previous_query == '') {
+            history.replaceState(state, title, history_url);
+        } else {
+            history.pushState(state, title, history_url);
+        }
+        document.title = title;
+        previous_query = query;
     }
+}
 
-    function clear()
-    {
-        clearElement('data-table');
-        clearElement('graph');
-        clearElement('chart');
-        clearElement('data-unparsed');
-        clearElement('error');
+let query_area = document.getElementById('query');
 
-        document.getElementById('check-mark').display = 'none';
-        document.getElementById('hourglass').display = 'none';
-        document.getElementById('stats').innerText = '';
-        document.getElementById('logo-container').style.display = 'block';
-
-        extremes = {};
+window.onpopstate = function(event) {
+    if (!event.state) {
+        return;
     }
-
-    function formatReadable(number = 0, decimals = 2, units = []) {
-        const k = 1000;
-        const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
-        const unit = units[i];
-        const dm = unit ? decimals : 0;
-        return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
-    }
-
-    function formatReadableBytes(bytes) {
-        const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
-
-        return formatReadable(bytes, 2, units);
-    }
-
-    function formatReadableRows(rows) {
-        const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
-
-        return formatReadable(rows, 2, units);
-    }
-
-    function renderResult(response)
-    {
+    query_area.value = event.state.query;
+    if (!event.state.response) {
         clear();
-
-        let stats = document.getElementById('stats');
-        const seconds = response.statistics.elapsed.toFixed(3);
-        const rows = response.statistics.rows_read;
-        const bytes = response.statistics.bytes_read;
-        const formatted_bytes = formatReadableBytes(bytes);
-        const formatted_rows = formatReadableRows(rows);
-        stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
-
-        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) { // TODO
-            renderGraph(response);
-        } else {
-            renderTable(response);
-        }
+        return;
     }
+    renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
+};
 
-    function renderCell(name, value)
-    {
-        let td = document.createElement('td');
+if (window.location.hash) {
+    query_area.value = window.atob(window.location.hash.substr(1));
+}
 
-        let is_null = (value === null);
-        let is_link = false;
+let in_flight = false;
+async function post()
+{
+    ++request_num;
+    let query = query_area.value;
+    in_flight = true;
+    document.getElementById('run').innerText = 'Stop';
+    await postImpl(request_num, query);
+    document.getElementById('run').innerText = 'Run';
+    in_flight = false;
+}
 
-        /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-        let text;
-        if (is_null) {
-            text = 'ᴺᵁᴸᴸ';
-        } else if (typeof(value) === 'object') {
-            text = JSON.stringify(value);
-        } else {
-            text = value;
+async function cancel()
+{
+    controller.abort();
+    document.getElementById('run').innerText = 'Run';
+}
 
-            /// If it looks like URL, create a link. This is for convenience.
-            if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/)) {
-                is_link = true;
-            }
-        }
-
-        let node = document.createTextNode(text);
-        if (is_link) {
-            let link = document.createElement('a');
-            link.appendChild(node);
-            link.href = text;
-            link.setAttribute('target', '_blank');
-            node = link;
-        }
-
-        td.className = column_is_number[name] ? 'right' : 'left';
-        if (is_null) {
-            td.className += ' null';
-        }
-
-        if (column_is_number[name]) {
-            if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
-                let i = 0;
-                td.innerHTML = text.split('').reverse().map(c => {
-                    if (i > 0 && i % 3 == 0) { c = `<u>${c}</u>`; }; ++i; return c;
-                }).reverse().join('');
-                return td;
-            }
-        }
-
-        td.appendChild(node);
-        return td;
+document.getElementById('run').onclick = function(e)
+{
+    if (in_flight) {
+        cancel();
+    } else {
+        post();
     }
+}
 
-    document.getElementById('query').addEventListener('focus', e => {
-        current_selected_cell?.classList.remove('td-selected');
-        current_selected_cell?.parentElement.classList.remove('tr-selected');
-        current_selected_cell = null;
-    });
+document.addEventListener('keydown', event => {
+    /// Firefox has code 13 for Enter and Chromium has code 10.
+    if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+        post();
+    }
+});
 
-    document.addEventListener('keydown', e => {
-        let cell = current_selected_cell;
-        if (!cell) { return; }
+/// Pressing Tab in textarea will increase indentation.
+/// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
 
-        const row = cell.parentElement;
-        const table = row.parentElement;
-        let cell_index = cell.cellIndex;
-        let row_index = row.rowIndex;
+let user_prefers_tab_navigation = false;
 
-        switch(e.key) {
-            case 'ArrowUp': --row_index; break;
-            case 'ArrowDown': ++row_index; break;
-            case 'ArrowLeft': --cell_index; break;
-            case 'ArrowRight': ++cell_index; break;
-            default:
-                return;
-        }
+[...document.querySelectorAll('input')].map(elem => {
+    elem.onkeydown = (e) => {
+        if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
+    };
+});
 
-        /// The first cell in each row is the row number.
-        if (row_index < 0 || cell_index <= 0) { return; }
+query_area.onkeydown = (e) => {
+    if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
+        let elem = e.target;
+        let selection_start = elem.selectionStart;
+        let selection_end = elem.selectionEnd;
 
-        let new_cell = table.rows[row_index]?.cells[cell_index];
-        if (!new_cell) { return; }
+        elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+        elem.selectionStart = selection_start + 4;
+        elem.selectionEnd = selection_start + 4;
 
         e.preventDefault();
-
-        cell.classList.remove('td-selected');
-        cell.parentElement.classList.remove('tr-selected');
-        new_cell.classList.add('td-selected');
-        new_cell.parentElement.classList.add('tr-selected');
-        new_cell.scrollIntoView({ block: 'nearest' });
-        current_selected_cell = new_cell;
-    });
-
-    function renderTableTransposed(response)
-    {
-        let tbody = document.createElement('tbody');
-        for (let col_idx in response.meta) {
-            let tr = document.createElement('tr');
-            {
-                let th = document.createElement('th');
-                th.className = 'right';
-                th.style.width = '0';
-                th.appendChild(document.createTextNode(response.meta[col_idx].name));
-                tr.appendChild(th);
-            }
-            for (let row_idx in response.data)
-            {
-                let cell = response.data[row_idx][col_idx];
-                const td = renderCell(cell, col_idx, {is_transposed: true});
-                tr.appendChild(td);
-            }
-            if (response.data.length == 0 && col_idx == 0)
-            {
-                /// If the result is empty, show this fact with a style.
-                let td = document.createElement('td');
-                td.rowSpan = response.meta.length;
-                td.className = 'empty-result';
-                let div = document.createElement('div');
-                div.appendChild(document.createTextNode("empty result"));
-                div.className = 'empty-result';
-                td.appendChild(div);
-                tr.appendChild(td);
-            }
-            tbody.appendChild(tr);
+        return false;
+    } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
+        // If the user presses Enter, and the previous line starts with spaces,
+        // then we will insert the same number of spaces.
+        const elem = e.target;
+        if (elem.selectionStart !== elem.selectionEnd) {
+            // If there is a selection, then we will not insert spaces.
+            return;
         }
-        let table = document.getElementById('data-table');
-        table.appendChild(tbody);
-        table.style.display = 'table';
-    }
+        const cursor_pos = elem.selectionStart;
 
-    let extremes = {};
-
-    function update(json, fragment) {
-        if (json.progress) {
-            updateProgress(json.progress);
-            return true;
-        } else if (json.meta) {
-            appendHeader(json.meta);
-            return true;
-        } else if (json.row) {
-            return appendRow(json.row, fragment);
-        } else if (json.min) {
-            extremes['min'] = json.min;
-            return true;
-        } else if (json.max) {
-            extremes['max'] = json.max;
-            return true;
-        } else if (json.exception) {
-            renderError(json.exception);
-            return true;
-        }
-    }
-
-    function updateRaw(data) {
-        const fragment = document.createTextNode(data);
-        let container = document.getElementById('data-unparsed');
-        container.appendChild(fragment);
-        /// inline-block make width adjust to the size of content.
-        container.style.display = 'inline-block';
-        /// TODO: no extremes when the format is unknown
-    }
-
-    function updateProgress(progress) {
-        let stats = document.getElementById('stats');
-        const rows = progress.read_rows;
-        const bytes = progress.read_bytes;
-        const total_rows = progress.total_rows_to_read;
-        const formatted_bytes = formatReadableBytes(bytes);
-        const formatted_rows = formatReadableRows(rows);
-        stats.innerText = `${total_rows ? (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, ' : ''}Read ${formatted_rows} rows, ${formatted_bytes}`;
-
-        if (rows && total_rows) {
-            document.getElementById('progress').style.display = 'block';
-            document.documentElement.style.setProperty('--progress', (100 * rows / total_rows) + '%');
-        }
-    }
-
-    let row_idx = 0;
-    let column_is_number = {};
-
-    function appendHeader(meta) {
-        if (meta.length == 0) { return; }
-
-        let thead = document.createElement('thead');
-
-        let th = document.createElement('th');
-        th.className = 'row-number';
-        th.appendChild(document.createTextNode('№'));
-        thead.appendChild(th);
-
-        meta.forEach(elem => {
-            let th = document.createElement('th');
-            const name = document.createTextNode(elem.name);
-            th.appendChild(name);
-            thead.appendChild(th);
-
-            column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
-        });
-
-        let table = document.getElementById('data-table');
-        while (table.firstChild) {
-            table.removeChild(table.lastChild);
-        }
-        let tbody = document.createElement('tbody');
-        tbody.id = 'tbody';
-        table.appendChild(thead);
-        table.appendChild(tbody);
-        table.style.display = 'table';
-
-        row_idx = 0;
-    }
-
-    const max_rows = 10_000;
-    const max_cells = 100_000;
-
-    let current_selected_cell = null;
-    function appendRow(row, fragment) {
-        ++row_idx;
-
-        if (row_idx > max_rows || row_idx * Object.keys(row).length > max_cells) {
-            return false;
+        const elem_value = elem.value;
+        const text_before_cursor = elem_value.substring(0, cursor_pos);
+        const text_after_cursor = elem_value.substring(cursor_pos);
+        const prev_lines = text_before_cursor.split('\n');
+        const prev_line = prev_lines.pop();
+        const lead_spaces = prev_line.match(/^\s*/)[0];
+        if (!lead_spaces) {
+            return;
         }
 
+        // Add leading spaces to the current line.
+        elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
+        elem.selectionStart = cursor_pos + lead_spaces.length + 1;
+        elem.selectionEnd = elem.selectionStart;
+
+        e.preventDefault();
+        return false;
+    }
+};
+
+function clearElement(id)
+{
+    let elem = document.getElementById(id);
+    while (elem.firstChild) {
+        elem.removeChild(elem.lastChild);
+    }
+    elem.style.display = 'none';
+}
+
+function clear()
+{
+    clearElement('data-table');
+    clearElement('graph');
+    clearElement('chart');
+    clearElement('data-unparsed');
+    clearElement('error');
+
+    document.getElementById('check-mark').display = 'none';
+    document.getElementById('hourglass').display = 'none';
+    document.getElementById('stats').innerText = '';
+    document.getElementById('logo-container').style.display = 'block';
+
+    extremes = {};
+}
+
+function formatReadable(number = 0, decimals = 2, units = []) {
+    const k = 1000;
+    const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
+    const unit = units[i];
+    const dm = unit ? decimals : 0;
+    return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
+}
+
+function formatReadableBytes(bytes) {
+    const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
+
+    return formatReadable(bytes, 2, units);
+}
+
+function formatReadableRows(rows) {
+    const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
+
+    return formatReadable(rows, 2, units);
+}
+
+function renderResult(response)
+{
+    clear();
+
+    let stats = document.getElementById('stats');
+    const seconds = response.statistics.elapsed.toFixed(3);
+    const rows = response.statistics.rows_read;
+    const bytes = response.statistics.bytes_read;
+    const formatted_bytes = formatReadableBytes(bytes);
+    const formatted_rows = formatReadableRows(rows);
+    stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+
+    /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
+    if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) { // TODO
+        renderGraph(response);
+    } else {
+        renderTable(response);
+    }
+}
+
+function renderCell(name, value)
+{
+    let td = document.createElement('td');
+
+    let is_null = (value === null);
+    let is_link = false;
+
+    /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+    let text;
+    if (is_null) {
+        text = 'ᴺᵁᴸᴸ';
+    } else if (typeof(value) === 'object') {
+        text = JSON.stringify(value);
+    } else {
+        text = value;
+
+        /// If it looks like URL, create a link. This is for convenience.
+        if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/)) {
+            is_link = true;
+        }
+    }
+
+    let node = document.createTextNode(text);
+    if (is_link) {
+        let link = document.createElement('a');
+        link.appendChild(node);
+        link.href = text;
+        link.setAttribute('target', '_blank');
+        node = link;
+    }
+
+    td.className = column_is_number[name] ? 'right' : 'left';
+    if (is_null) {
+        td.className += ' null';
+    }
+
+    if (column_is_number[name]) {
+        if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
+            let i = 0;
+            td.innerHTML = text.split('').reverse().map(c => {
+                if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
+            }).reverse().join('');
+            return td;
+        }
+    }
+
+    td.appendChild(node);
+    return td;
+}
+
+document.getElementById('query').addEventListener('focus', e => {
+    current_selected_cell?.classList.remove('td-selected');
+    current_selected_cell?.parentElement.classList.remove('tr-selected');
+    current_selected_cell = null;
+});
+
+document.addEventListener('keydown', e => {
+    let cell = current_selected_cell;
+    if (!cell) { return; }
+
+    const row = cell.parentElement;
+    const table = row.parentElement;
+    let cell_index = cell.cellIndex;
+    let row_index = row.rowIndex;
+
+    switch(e.key) {
+        case 'ArrowUp': --row_index; break;
+        case 'ArrowDown': ++row_index; break;
+        case 'ArrowLeft': --cell_index; break;
+        case 'ArrowRight': ++cell_index; break;
+        default:
+            return;
+    }
+
+    /// The first cell in each row is the row number.
+    if (row_index < 0 || cell_index <= 0) { return; }
+
+    let new_cell = table.rows[row_index]?.cells[cell_index];
+    if (!new_cell) { return; }
+
+    e.preventDefault();
+
+    cell.classList.remove('td-selected');
+    cell.parentElement.classList.remove('tr-selected');
+    new_cell.classList.add('td-selected');
+    new_cell.parentElement.classList.add('tr-selected');
+    new_cell.scrollIntoView({ block: 'nearest' });
+    current_selected_cell = new_cell;
+});
+
+function renderTableTransposed(response)
+{
+    let tbody = document.createElement('tbody');
+    for (let col_idx in response.meta) {
         let tr = document.createElement('tr');
-
-        let td = document.createElement('td');
-        td.className = 'row-number';
-        td.appendChild(document.createTextNode(row_idx));
-        tr.appendChild(td);
-
-        let col_idx = 0;
-        for (let [name, value] of Object.entries(row)) {
-            const td = renderCell(name, value);
-            ++col_idx;
-
-            td.onclick = () => {
-                current_selected_cell?.classList.remove('td-selected');
-                current_selected_cell?.parentElement.classList.remove('tr-selected');
-                current_selected_cell = td;
-                current_selected_cell.classList.add('td-selected')
-                current_selected_cell.parentElement.classList.add('tr-selected')
-                current_selected_cell.scrollIntoView({ block: 'nearest' });
-            };
-
+        {
+            let th = document.createElement('th');
+            th.className = 'right';
+            th.style.width = '0';
+            th.appendChild(document.createTextNode(response.meta[col_idx].name));
+            tr.appendChild(th);
+        }
+        for (let row_idx in response.data)
+        {
+            let cell = response.data[row_idx][col_idx];
+            const td = renderCell(cell, col_idx, {is_transposed: true});
             tr.appendChild(td);
         }
+        if (response.data.length == 0 && col_idx == 0)
+        {
+            /// If the result is empty, show this fact with a style.
+            let td = document.createElement('td');
+            td.rowSpan = response.meta.length;
+            td.className = 'empty-result';
+            let div = document.createElement('div');
+            div.appendChild(document.createTextNode("empty result"));
+            div.className = 'empty-result';
+            td.appendChild(div);
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+    let table = document.getElementById('data-table');
+    table.appendChild(tbody);
+    table.style.display = 'table';
+}
 
-        fragment.appendChild(tr);
+let extremes = {};
+
+function update(json, fragment) {
+    if (json.progress) {
+        updateProgress(json.progress);
+        return true;
+    } else if (json.meta) {
+        appendHeader(json.meta);
+        return true;
+    } else if (json.row) {
+        return appendRow(json.row, fragment);
+    } else if (json.min) {
+        extremes['min'] = json.min;
+        return true;
+    } else if (json.max) {
+        extremes['max'] = json.max;
+        return true;
+    } else if (json.exception) {
+        renderError(json.exception);
         return true;
     }
+}
 
-    function renderExtremes() {
-        let col_idx = 0;
-        for (const name of Object.keys(extremes.min)) {
-            ++col_idx;
-            if (column_is_number[name]
-                && extremes.min[name] !== undefined && extremes.max[name] !== undefined
-                && +extremes.max[name] > +extremes.min[name]) {
-                let table = document.getElementById('data-table');
-                for (let row of table.rows) {
-                    let cell = row.cells[col_idx];
-                    let value = +cell.innerText;
-                    if (value > 0) {
-                        const ratio = 100 * value / extremes.max[name];
+function updateRaw(data) {
+    const fragment = document.createTextNode(data);
+    let container = document.getElementById('data-unparsed');
+    container.appendChild(fragment);
+    /// inline-block make width adjust to the size of content.
+    container.style.display = 'inline-block';
+    /// TODO: no extremes when the format is unknown
+}
 
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                                var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
-                    }
+function updateProgress(progress) {
+    let stats = document.getElementById('stats');
+    const rows = progress.read_rows;
+    const bytes = progress.read_bytes;
+    const total_rows = progress.total_rows_to_read;
+    const elapsed_ns = progress.elapsed_ns;
+
+    let formatted_rows = formatReadableRows(rows);
+    let formatted_bytes = formatReadableBytes(bytes);
+
+    const rps = rows * 1_000_000_000 / elapsed_ns;
+    const bps = bytes * 1_000_000_000 / elapsed_ns;
+
+    let formatted_rps = formatReadableRows(rps) + '/sec';
+    let formatted_bps = formatReadableBytes(bps) + '/sec';
+
+    if (rows >= 1e11) { formatted_rows = `<b>${formatted_rows}<\/b>`; }
+    if (bytes >= 1e12) { formatted_bytes = `<b>${formatted_bytes}<\/b>`; }
+    if (rps >= 1e10) { formatted_rps = `<b>${formatted_rps}<\/b>`; }
+    if (bps >= 1e10) { formatted_bps = `<b>${formatted_bps}<\/b>`; }
+
+    let text = '';
+
+    if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
+
+    text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
+
+    if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
+
+    stats.innerHTML = text;
+
+    if (rows && total_rows) {
+        document.getElementById('progress').style.display = 'block';
+        document.documentElement.style.setProperty('--progress', (100 * rows / total_rows) + '%');
+    }
+}
+
+let row_idx = 0;
+let column_is_number = {};
+
+function appendHeader(meta) {
+    if (meta.length == 0) { return; }
+
+    let thead = document.createElement('thead');
+
+    let th = document.createElement('th');
+    th.className = 'row-number';
+    th.appendChild(document.createTextNode('№'));
+    thead.appendChild(th);
+
+    meta.forEach(elem => {
+        let th = document.createElement('th');
+        const name = document.createTextNode(elem.name);
+        th.appendChild(name);
+        thead.appendChild(th);
+
+        column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
+    });
+
+    let table = document.getElementById('data-table');
+    while (table.firstChild) {
+        table.removeChild(table.lastChild);
+    }
+    let tbody = document.createElement('tbody');
+    tbody.id = 'tbody';
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    table.style.display = 'table';
+
+    row_idx = 0;
+}
+
+const max_rows = 10_000;
+const max_cells = 100_000;
+
+let current_selected_cell = null;
+function appendRow(row, fragment) {
+    ++row_idx;
+
+    if (row_idx > max_rows || row_idx * Object.keys(row).length > max_cells) {
+        return false;
+    }
+
+    let tr = document.createElement('tr');
+
+    let td = document.createElement('td');
+    td.className = 'row-number';
+    td.appendChild(document.createTextNode(row_idx));
+    tr.appendChild(td);
+
+    let col_idx = 0;
+    for (let [name, value] of Object.entries(row)) {
+        const td = renderCell(name, value);
+        ++col_idx;
+
+        td.onclick = () => {
+            current_selected_cell?.classList.remove('td-selected');
+            current_selected_cell?.parentElement.classList.remove('tr-selected');
+            current_selected_cell = td;
+            current_selected_cell.classList.add('td-selected')
+            current_selected_cell.parentElement.classList.add('tr-selected')
+            current_selected_cell.scrollIntoView({ block: 'nearest' });
+        };
+
+        tr.appendChild(td);
+    }
+
+    fragment.appendChild(tr);
+    return true;
+}
+
+function renderExtremes() {
+    let col_idx = 0;
+    for (const name of Object.keys(extremes.min)) {
+        ++col_idx;
+        if (column_is_number[name]
+            && extremes.min[name] !== undefined && extremes.max[name] !== undefined
+            && +extremes.max[name] > +extremes.min[name]) {
+            let table = document.getElementById('data-table');
+            for (let row of table.rows) {
+                let cell = row.cells[col_idx];
+                let value = +cell.innerText;
+                if (value > 0) {
+                    const ratio = 100 * value / extremes.max[name];
+
+                    cell.style.cssText = `
+                        background-size: 100% 50%;
+                        background-position: center;
+                        background-repeat: no-repeat;
+                        background: linear-gradient(to right,
+                            var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                            var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
                 }
             }
         }
     }
+}
 
-    function renderTable(response)
-    {
-        // TODO
-        if (response.data.length <= 1 && response.meta.length >= 5) {
-            renderTableTransposed(response)
-            return;
+function renderTable(response)
+{
+    // TODO
+    if (response.data.length <= 1 && response.meta.length >= 5) {
+        renderTableTransposed(response)
+        return;
+    }
+
+    // TODO display timings
+}
+
+function renderError(message)
+{
+    document.getElementById('error').innerText = message ? message : "No response.";
+    document.getElementById('error').style.display = 'block';
+    document.getElementById('logo-container').style.display = 'none';
+}
+
+/// Huge JS libraries should be loaded only if needed.
+function loadJS(src, integrity) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        if (integrity) {
+            script.crossOrigin = 'anonymous';
+            script.integrity = integrity;
+        } else {
+            console.warn('no integrity for', src)
         }
+        script.addEventListener('load', function() { resolve(true); });
+        document.head.appendChild(script);
+    });
+}
 
-        // TODO display timings
-    }
+let load_dagre_promise;
+function loadDagre() {
+    if (load_dagre_promise) { return load_dagre_promise; }
 
-    function renderError(message)
-    {
-        document.getElementById('error').innerText = message ? message : "No response.";
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('logo-container').style.display = 'none';
-    }
+    load_dagre_promise = Promise.all([
+        loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
+                'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
+        loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
+                'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
+        loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
+                'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
+        loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
+                'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
+    ]);
 
-    /// Huge JS libraries should be loaded only if needed.
-    function loadJS(src, integrity) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            if (integrity) {
-                script.crossOrigin = 'anonymous';
-                script.integrity = integrity;
-            } else {
-                console.warn('no integrity for', src)
-            }
-            script.addEventListener('load', function() { resolve(true); });
-            document.head.appendChild(script);
-        });
-    }
+    return load_dagre_promise;
+}
 
-    let load_dagre_promise;
-    function loadDagre() {
-        if (load_dagre_promise) { return load_dagre_promise; }
+async function renderGraph(response)
+{
+    await loadDagre();
 
-        load_dagre_promise = Promise.all([
-            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-        ]);
+    /// https://github.com/dagrejs/dagre-d3/issues/131
+    const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
 
-        return load_dagre_promise;
-    }
+    let graph = graphlibDot.read(dot);
+    graph.graph().rankdir = 'TB';
 
-    async function renderGraph(response)
-    {
-        await loadDagre();
+    let render = new dagreD3.render();
 
-        /// https://github.com/dagrejs/dagre-d3/issues/131
-        const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
+    let svg = document.getElementById('graph');
+    svg.style.display = 'block';
 
-        let graph = graphlibDot.read(dot);
-        graph.graph().rankdir = 'TB';
+    render(d3.select("#graph"), graph);
 
-        let render = new dagreD3.render();
+    svg.style.width = graph.graph().width;
+    svg.style.height = graph.graph().height;
+}
 
-        let svg = document.getElementById('graph');
-        svg.style.display = 'block';
+let load_uplot_promise;
+function loadUplot() {
+    if (load_uplot_promise) { return load_uplot_promise; }
+    load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
+        'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+    return load_uplot_promise;
+}
 
-        render(d3.select("#graph"), graph);
+let uplot;
+async function renderChart(json)
+{
+    await loadUplot();
+    clear();
 
-        svg.style.width = graph.graph().width;
-        svg.style.height = graph.graph().height;
-    }
+    let chart = document.getElementById('chart');
+    chart.style.display = 'block';
 
-    let load_uplot_promise;
-    function loadUplot() {
-        if (load_uplot_promise) { return load_uplot_promise; }
-        load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
-        return load_uplot_promise;
-    }
+    let paths = uPlot.paths.stepped({align:  1});
 
-    let uplot;
-    async function renderChart(json)
-    {
-        await loadUplot();
-        clear();
+    const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
+        ? ["#F80", "#FED", "#c7d0d9", "#2c3235"]
+        : ["#888", "#045", "#2c3235", "#c7d0d9"];
 
+    const opts = {
+        width: chart.clientWidth,
+        height: chart.clientHeight,
+        scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
+        axes: [ { stroke: axes_color,
+                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                { stroke: axes_color,
+                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+        series: [ { label: "x" },
+                    { label: "y", stroke: line_color, fill: fill_color,
+                    drawStyle: 0, lineInterpolation: 1, paths } ],
+        padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+    };
+
+    uplot = new uPlot(opts, json, chart);
+}
+
+function resizeChart() {
+    if (uplot) {
         let chart = document.getElementById('chart');
-        chart.style.display = 'block';
+        uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
+    }
+}
 
-        let paths = uPlot.paths.stepped({align:  1});
+function redrawChart() {
+    if (uplot && document.getElementById('chart').style.display == 'block') {
+        renderChart(uplot.data);
+    }
+}
 
-        const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-            ? ["#F80", "#FED", "#c7d0d9", "#2c3235"]
-            : ["#888", "#045", "#2c3235", "#c7d0d9"];
+new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
 
-        const opts = {
-            width: chart.clientWidth,
-            height: chart.clientHeight,
-            scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
-            axes: [ { stroke: axes_color,
-                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                      ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                    { stroke: axes_color,
-                        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-            series: [ { label: "x" },
-                      { label: "y", stroke: line_color, fill: fill_color,
-                        drawStyle: 0, lineInterpolation: 1, paths } ],
-            padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
-        };
+/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+let theme = current_url.searchParams.get('theme');
+if (['dark', 'light'].indexOf(theme) === -1) {
+    theme = window.localStorage.getItem('theme');
+}
+if (!theme) {
+    theme = 'light';
+}
 
-        uplot = new uPlot(opts, json, chart);
+function setColorTheme(new_theme, update_preference) {
+    theme = new_theme;
+    if (update_preference) {
+        window.localStorage.setItem('theme', theme);
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+    redrawChart();
+}
+
+if (theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+} else {
+    /// Obtain system-level user preference
+    const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+    if (media_query_list.matches) {
+        setColorTheme('dark');
     }
 
-    function resizeChart() {
-        if (uplot) {
-            let chart = document.getElementById('chart');
-            uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
-        }
-    }
+    /// There is a rumor that on some computers, the theme is changing automatically on day/night.
+    media_query_list.addEventListener('change', function(e) {
+        setColorTheme(e.matches ? 'dark' : 'light');
+    });
+}
 
-    function redrawChart() {
-        if (uplot && document.getElementById('chart').style.display == 'block') {
-            renderChart(uplot.data);
-        }
-    }
+if (run_immediately) {
+    post();
+}
 
-    new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
+document.getElementById('toggle-light').onclick = function() {
+    setColorTheme('light', true);
+}
 
-    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-    let theme = current_url.searchParams.get('theme');
-    if (['dark', 'light'].indexOf(theme) === -1) {
-        theme = window.localStorage.getItem('theme');
-    }
-    if (!theme) {
-        theme = 'light';
-    }
-
-    function setColorTheme(new_theme, update_preference) {
-        theme = new_theme;
-        if (update_preference) {
-            window.localStorage.setItem('theme', theme);
-        }
-        document.documentElement.setAttribute('data-theme', theme);
-        redrawChart();
-    }
-
-    if (theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-    } else {
-        /// Obtain system-level user preference
-        const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
-        if (media_query_list.matches) {
-            setColorTheme('dark');
-        }
-
-        /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-        media_query_list.addEventListener('change', function(e) {
-            setColorTheme(e.matches ? 'dark' : 'light');
-        });
-    }
-
-    if (run_immediately) {
-        post();
-    }
-
-    document.getElementById('toggle-light').onclick = function() {
-        setColorTheme('light', true);
-    }
-
-    document.getElementById('toggle-dark').onclick = function() {
-        setColorTheme('dark', true);
-    }
+document.getElementById('toggle-dark').onclick = function() {
+    setColorTheme('dark', true);
+}
 </script>
 </html>
