@@ -33,7 +33,7 @@
                         <input type="text" class="form-control form-control-sm" id="maxPartSize" placeholder="Unlimited">
                     </div>
                     <div class="form-group col-md-4">
-                        <label for="method">Select Method:</label>
+                        <label for="method">Method:</label>
                         <select class="form-control form-control-sm" id="method">
                             <!-- Methods will be populated dynamically -->
                         </select>
@@ -101,6 +101,7 @@
             import { floatLayerMerges } from './floatLayerMerges.js';
             import { mergeModel } from './mergeModel.js';
             import { projectedGradientDescent, nesterovAcceleratedPGD, subgradientMethod } from './gradientDescent.js';
+            import { ModelSolver } from './ModelSolver.js';
             import { delayMs, parseHumanReadableSize } from './util.js';
 
             function readPartSize() {
@@ -112,10 +113,37 @@
                 return str ? parseHumanReadableSize(str) : null; // No limit
             }
 
+            // Fetches a JSON file from URI and returns a string
+            async function fetchText(uri) {
+                try {
+                    const response = await fetch(uri);
+                    if (!response.ok) {
+                        throw { message: `HTTP error! Status: ${response.status}` };
+                    }
+                    const text = await response.text();
+                    return text;
+                } catch (error) {
+                    console.error(`Failed to fetch JSON from URI: ${uri}`, error);
+                    throw error;
+                }
+            }
+
+            async function loadSolver(modelName) {
+                let solver = new ModelSolver(mergeModel);
+                let jsonString = await fetchText(`solvers/${modelName}.json`);
+                solver.deserializeData(jsonString);
+                let result = function(params, onOption) {
+                    solver.mergeModel(params, onOption);
+                };
+                result.precomputed = true;
+                return result;
+            }
+
             const methods = {
                 "Subgradient Method": subgradientMethod,
                 "Projected GD": projectedGradientDescent,
                 "Accelerated PGD": nesterovAcceleratedPGD,
+                "Precomputed": await loadSolver("solver-64KB_256GB_32768"),
             };
 
             // Populate methods dropdown
@@ -129,7 +157,6 @@
 
             function selectMethod() {
                 const selectedMethodName = document.getElementById('method').value;
-                // TODO: Return the selected method implementation from the methods object
                 return methods[selectedMethodName];
             }
 
@@ -167,7 +194,15 @@
 
                 d3.select('#options-table tbody').html('');
 
-                mergeModel({insertPartSize, parts, workers, maxSourceParts, maxPartSize},
+                function solve(params, method, onOption) {
+                    if ('precomputed' in method) {
+                        method(params, onOption);
+                    } else {
+                        mergeModel(params, method, onOption);
+                    }
+                }
+
+                solve({insertPartSize, parts, workers, maxSourceParts, maxPartSize},
                     method,
                     function onOption(L, x, Fx) {
                         const bases = x.map(xi => Math.exp(xi));

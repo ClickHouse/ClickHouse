@@ -35,7 +35,7 @@ export function mergeModel({parts, workers, maxSourceParts, maxPartSize, insertP
     const I = (x, i) => (y(x, i) >= yBar ? Iplus(x, i) : Iminus(x, i));
     const F = (x) => x.reduce((a, xi, i) => a + I(x, i), 0);
 
-    // Corresponding gradiants
+    // Corresponding gradients
     const grad_Iplus  = (x, i) => x.map(
         (xj, j) => (i == j ? B * Math.exp(xj) : 0)
     );

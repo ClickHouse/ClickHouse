@@ -23,6 +23,11 @@
                 width: 0;
                 transition: width 0.1s linear; /* Smooth progress */
             }
+            #downloadButton {
+                display: none;
+                margin-top: 1rem;
+                width: 100%;
+            }
         </style>
     </head>
     <body>
@@ -48,6 +53,7 @@
                             <span id="trainButtonText">Train</span>
                             <div class="progress-fill"></div>
                         </button>
+                        <button type="button" class="btn btn-success" id="downloadButton">Download</button>
                     </div>
                 </div>
             </form>
@@ -82,10 +88,12 @@
                 const trainButton = document.getElementById('trainButton');
                 const progressFill = trainButton.querySelector('.progress-fill');
                 const trainButtonText = document.getElementById('trainButtonText');
+                const downloadButton = document.getElementById('downloadButton');
 
                 trainButton.disabled = true;
                 trainButtonText.textContent = 'Training...';
                 progressFill.style.width = '0%';
+                downloadButton.style.display = 'none';
 
                 const { minPartSize, maxPartSize, maxWorkers } = readParams();
 
@@ -97,9 +105,30 @@
                         trainButtonText.textContent = `Training: ${progress}% — ${runs_done}/${runs_total}`;
                         await delayMs(1);
                     });
+                console.log(solver.data);
 
                 trainButtonText.textContent = 'Train Again';
                 trainButton.disabled = false;
+
+                // Show the download button
+                downloadButton.style.display = 'block';
+
+                // Set up download functionality
+                downloadButton.addEventListener('click', () => {
+                    const data = solver.serializeData();
+                    const blob = new Blob([data], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    let params = [
+                        document.getElementById('minPartSize').value,
+                        document.getElementById('maxPartSize').value,
+                        document.getElementById('maxWorkers').value,
+                    ];
+                    link.download = `solver-${params.join('_')}.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                }, { once: true });
             });
         </script>
     </body>

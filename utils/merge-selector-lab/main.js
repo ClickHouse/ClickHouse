@@ -12,7 +12,6 @@ import { integerLayerMerges } from './integerLayerMerges.js';
 import { floatLayerMerges } from './floatLayerMerges.js';
 import { factorizeNumber, allFactorPermutations } from './factorization.js';
 import { clickHousePartsInserter } from './clickHousePartsInserter.js';
-import { getOptimalBases } from './getOptimalBases.js';
 import { delayMs } from './util.js';
 
 async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
@@ -332,6 +331,3 @@ export async function main()
     // solverTest();
     periodicArrivals();
 }
-
-// For experiments in console
-window.getOptimalBases = getOptimalBases;
