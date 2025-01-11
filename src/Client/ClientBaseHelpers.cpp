@@ -101,6 +101,25 @@ bool isChineseNewYearMode(const String & local_tz)
     return false;
 }
 
+std::string getChineseZodiac()
+{
+    time_t current_time = time(nullptr);
+    int year = DateLUT::instance().toYear(current_time);
+
+    // Traditional Chinese Zodiac
+    static constexpr const char * zodiacs[12] = {
+        "鼠", "牛", "虎", "兔", "龙", "蛇",
+        "马", "羊", "猴", "鸡", "狗", "猪"
+    };
+
+    //2020 is Rat
+    int offset = (year - 2020) % 12;
+    if (offset < 0)
+        offset += 12;
+
+    return zodiacs[offset];
+}
+
 #if USE_REPLXX
 void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context)
 {
@@ -139,8 +158,6 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     /// We don't do highlighting for foreign dialects, such as PRQL and Kusto.
     /// Only normal ClickHouse SQL queries are highlighted.
-
-    /// Currently we highlight only the first query in the multi-query mode.
 
     ParserQuery parser(end, false, context.getSettingsRef()[Setting::implicit_select]);
     ASTPtr ast;

@@ -12,14 +12,14 @@ namespace DB
 class BackupCoordinationCleaner
 {
 public:
-    BackupCoordinationCleaner(const String & zookeeper_path_, const WithRetries & with_retries_, LoggerPtr log_);
+    BackupCoordinationCleaner(bool is_restore_, const String & zookeeper_path_, const WithRetries & with_retries_, LoggerPtr log_);
 
-    void cleanup();
-    bool tryCleanupAfterError() noexcept;
+    bool cleanup(bool throw_if_error);
 
 private:
-    bool tryRemoveAllNodes(bool throw_if_error, WithRetries::Kind retries_kind);
+    bool cleanupImpl(bool throw_if_error, WithRetries::Kind retries_kind);
 
+    const bool is_restore;
     const String zookeeper_path;
 
     /// A reference to a field of the parent object which is either BackupCoordinationOnCluster or RestoreCoordinationOnCluster.
@@ -27,13 +27,8 @@ private:
 
     const LoggerPtr log;
 
-    struct CleanupResult
-    {
-        bool succeeded = false;
-        std::exception_ptr exception;
-    };
-    CleanupResult cleanup_result TSA_GUARDED_BY(mutex);
-
+    bool tried TSA_GUARDED_BY(mutex) = false;
+    bool succeeded TSA_GUARDED_BY(mutex) = false;
     std::mutex mutex;
 };
 

@@ -4,14 +4,17 @@ sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
 ---
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # JSON Data Type
+
+<BetaBadge/>
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
-If you want to use JSON type, set `allow_experimental_json_type = 1`. 
+This feature is beta and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
+If you want to use JSON type, set `enable_json_type = 1`. 
 :::
 
 To declare a column of `JSON` type, use the following syntax:
@@ -73,6 +76,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 Using CAST from `Tuple`:
 
 ```sql
+SET enable_named_columns_in_function_tuple = 1;
 SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
 ```
 
@@ -97,8 +101,9 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 Using CAST from deprecated `Object('json')`:
 
 ```sql
- SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
- ```
+SET allow_experimental_object_type = 1;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
+```
 
 ```text
 ┌─json───────────────────────────────────────────┐
@@ -109,8 +114,6 @@ Using CAST from deprecated `Object('json')`:
 :::note
 CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into `String` column containing JSON objects and deserializing it back to `JSON` type column. 
 :::
-
-CAST between `JSON` types with different arguments will be supported later.
 
 ## Reading JSON paths as subcolumns
 
@@ -187,7 +190,7 @@ select json.a.g.:Float64, dynamicType(json.a.g), json.d.:Date, dynamicType(json.
 └─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
 ```
 
-`Dynamic` subcolumns can be casted to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be casted to the requested type:
+`Dynamic` subcolumns can be cast to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be cast to the requested type:
 
 ```sql
 select json.a.g::UInt64 as uint FROM test;
@@ -691,6 +694,39 @@ SELECT json, json.a, json.b, json.c FROM test;
 │ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
+
+## Comparison between values of the JSON type
+
+Values of the `JSON` column cannot be compared by `less/greater` functions, but can be compared using `equal` function.
+Two JSON objects considered equal when they have the same set of paths and value of each path have the same type and value in both objects.
+
+Example:
+```sql
+CREATE TABLE test (json1 JSON(a UInt32), json2 JSON(a UInt32)) ENGINE=Memory;
+INSERT INTO test FORMAT JSONEachRow
+{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
+{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
+{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
+{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "World"}}
+{"json1" : {"a" : 42, "b" : [1, 2, 3], "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
+{"json1" : {"a" : 42, "b" : 42.0, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
+{"json1" : {"a" : 42, "b" : "42", "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}};
+
+SELECT json1, json2, json1 == json2 FROM test;
+```
+
+```text
+┌─json1──────────────────────────────────┬─json2─────────────────────────┬─equals(json1, json2)─┐
+│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    1 │
+│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
+│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
+│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"World"} │                    0 │
+│ {"a":42,"b":["1","2","3"],"c":"Hello"} │ {"a":42,"b":"42","c":"Hello"} │                    0 │
+│ {"a":42,"b":42,"c":"Hello"}            │ {"a":42,"b":"42","c":"Hello"} │                    0 │
+│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    0 │
+└────────────────────────────────────────┴───────────────────────────────┴──────────────────────┘
+```
+
 
 ## Tips for better usage of the JSON type
 

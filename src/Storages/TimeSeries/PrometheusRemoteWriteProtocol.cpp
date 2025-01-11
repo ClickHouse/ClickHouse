@@ -132,7 +132,7 @@ namespace
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+            ExpressionActionsSettings(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -219,7 +219,8 @@ namespace
         };
 
         /// We're going to prepare two blocks - one for the "data" table, and one for the "tags" table.
-        Block data_block, tags_block;
+        Block data_block;
+        Block tags_block;
 
         auto make_column_for_data_block = [&](const ColumnDescription & column_description) -> IColumn &
         {

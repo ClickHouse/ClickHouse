@@ -74,6 +74,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsBool enable_max_bytes_limit_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
@@ -198,7 +199,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     if (res == SelectPartsDecision::SELECTED)
         return res;
 
-    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
+    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info, max_total_size_to_merge);
     if (!best_partition_id_to_optimize.empty())
     {
         return selectAllPartsToMergeWithinPartition(
@@ -457,6 +458,8 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
         auto & partition_info = partitions_info[partition_id];
         partition_info.min_age = std::min(partition_info.min_age, part_info.age);
+        ++partition_info.num_parts;
+        partition_info.sum_bytes += part_info.size;
 
         ++res.parts_selected_precondition;
 
@@ -617,7 +620,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 }
 
 String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
-    const PartitionsInfo & partitions_info) const
+    const PartitionsInfo & partitions_info, size_t max_total_size_to_merge) const
 {
     const auto & data_settings = data.getSettings();
     if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
@@ -636,14 +639,37 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
         return {};
     }
 
+    const auto is_partition_invalid = [&](const auto & partition)
+    {
+        if (partition.num_parts == 1)
+            return true;
+
+        if (!max_total_size_to_merge || !(*data_settings)[MergeTreeSetting::enable_max_bytes_limit_for_min_age_to_force_merge])
+            return false;
+
+        return partition.sum_bytes > max_total_size_to_merge;
+    };
+
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
         partitions_info.end(),
-        [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
+        [&](const auto & e1, const auto & e2)
+        {
+            // If one partition cannot be used for some reason (e.g. it has only single part, or it's size greater than limit), always select the other partition.
+            if (is_partition_invalid(e1.second))
+                return true;
+
+            if (is_partition_invalid(e2.second))
+                return false;
+
+            // If both partitions have more than one part, select the older partition.
+            return e1.second.min_age < e2.second.min_age;
+        });
 
     assert(best_partition_it != partitions_info.end());
 
-    if (static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+    if ((static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+        || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;

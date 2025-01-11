@@ -27,7 +27,7 @@ ClickHouse создаёт базу данных с именем `db_name` на �
 
 ### ENGINE {#engine}
 
-По умолчанию ClickHouse использует собственный движок баз данных [Atomic](../../../engines/database-engines/atomic.md). Есть также движки баз данных [Lazy](../../../engines/database-engines/lazy.md), [MySQL](../../../engines/database-engines/mysql.md), [PostgresSQL](../../../engines/database-engines/postgresql.md), [MaterializedMySQL](../../../engines/database-engines/materialized-mysql.md), [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md), [Replicated](../../../engines/database-engines/replicated.md), [SQLite](../../../engines/database-engines/sqlite.md).
+По умолчанию ClickHouse использует собственный движок баз данных [Atomic](../../../engines/database-engines/atomic.md). Есть также движки баз данных [Lazy](../../../engines/database-engines/lazy.md), [MySQL](../../../engines/database-engines/mysql.md), [PostgresSQL](../../../engines/database-engines/postgresql.md), [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md), [Replicated](../../../engines/database-engines/replicated.md), [SQLite](../../../engines/database-engines/sqlite.md).
 
 ### COMMENT {#comment}
 

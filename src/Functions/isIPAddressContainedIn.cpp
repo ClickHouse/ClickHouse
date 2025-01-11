@@ -86,7 +86,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     auto prefix_str = cidr_str.substr(pos_slash+1);
 
     const auto * prefix_str_end = prefix_str.data() + prefix_str.size();
-    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);
+    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)

@@ -154,7 +154,7 @@ sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 
 ### Из Docker образа {#from-docker-image}
 
-Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Внутри образов используются официальные `deb`-пакеты.
+Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/_/clickhouse). Внутри образов используются официальные `deb`-пакеты.
 
 ### Из единого бинарного файла {#from-single-binary}
 

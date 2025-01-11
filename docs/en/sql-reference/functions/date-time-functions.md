@@ -195,7 +195,7 @@ makeDateTime64(year, month, day, hour, minute, second[, precision])
 
 **Returned value**
 
-- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).  
+- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -4355,51 +4355,53 @@ Returns time and date values according to the determined format.
 
 Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
 
-| Placeholder | Description                                          | Example    |
-|----------|---------------------------------------------------------|------------|
-| %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
-| %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as an integer number (01-12), see 'Note 3' below  | 01         |
-| %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
-| %d       | day of the month, zero-padded (01-31)                   | 02         |
-| %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
-| %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
-| %f       | fractional second, see 'Note 1' below                   | 1234560    |
-| %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
-| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
-| %h       | hour in 12h format (01-12)                              | 09         |
-| %H       | hour in 24h format (00-23)                              | 22         |
-| %i       | minute (00-59)                                          | 33         |
-| %I       | hour in 12h format (01-12)                              | 10         |
-| %j       | day of the year (001-366)                               | 002        |
-| %k       | hour in 24h format (00-23), see 'Note 3' below          | 14         |
-| %l       | hour in 12h format (01-12), see 'Note 3' below          | 09         |
-| %m       | month as an integer number (01-12)                      | 01         |
-| %M       | full month name (January-December), see 'Note 2' below  | January    |
-| %n       | new-line character (‘’)                                 |            |
-| %p       | AM or PM designation                                    | PM         |
-| %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p        | 10:30 PM   |
-| %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
-| %s       | second (00-59)                                          | 44         |
-| %S       | second (00-59)                                          | 44         |
-| %t       | horizontal-tab character (’)                            |            |
-| %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44   |
-| %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
-| %V       | ISO 8601 week number (01-53)                            | 01         |
-| %w       | weekday as a integer number with Sunday as 0 (0-6)      | 2          |
-| %W       | full weekday name (Monday-Sunday)                       | Monday     |
-| %y       | Year, last two digits (00-99)                           | 18         |
-| %Y       | Year                                                    | 2018       |
-| %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
-| %%       | a % sign                                                | %          |
+| Placeholder | Description                                                                                                                                                                                         | Example   |
+|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| %a       | abbreviated weekday name (Mon-Sun)                                                                                                                                                                  | Mon       |
+| %b       | abbreviated month name (Jan-Dec)                                                                                                                                                                    | Jan       |
+| %c       | month as an integer number (01-12), see 'Note 4' below                                                                                                                                              | 01        |
+| %C       | year divided by 100 and truncated to integer (00-99)                                                                                                                                                | 20        |
+| %d       | day of the month, zero-padded (01-31)                                                                                                                                                               | 02        |
+| %D       | Short MM/DD/YY date, equivalent to %m/%d/%y                                                                                                                                                         | 01/02/18  |
+| %e       | day of the month, space-padded (1-31)                                                                                                                                                               | &nbsp; 2  |
+| %f       | fractional second, see 'Note 1' and 'Note 2' below                                                                                                                                                  | 123456    |
+| %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d                                                                                                                                                       | 2018-01-02 |
+| %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                                                                                                    | 18       |
+| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V | 2018        |
+| %h       | hour in 12h format (01-12)                                                                                                                                                                          | 09        |
+| %H       | hour in 24h format (00-23)                                                                                                                                                                          | 22        |
+| %i       | minute (00-59)                                                                                                                                                                                      | 33        |
+| %I       | hour in 12h format (01-12)                                                                                                                                                                          | 10        |
+| %j       | day of the year (001-366)                                                                                                                                                                           | 002       |
+| %k       | hour in 24h format (00-23), see 'Note 4' below                                                                                                                                                      | 14        |
+| %l       | hour in 12h format (01-12), see 'Note 4' below                                                                                                                                                      | 09        |
+| %m       | month as an integer number (01-12)                                                                                                                                                                  | 01        |
+| %M       | full month name (January-December), see 'Note 3' below                                                                                                                                              | January   |
+| %n       | new-line character (‘’)                                                                                                                                                                             |           |
+| %p       | AM or PM designation                                                                                                                                                                                | PM        |
+| %Q       | Quarter (1-4)                                                                                                                                                                                       | 1         |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p                                                                                                                                                    | 10:30 PM  |
+| %R       | 24-hour HH:MM time, equivalent to %H:%i                                                                                                                                                             | 22:33     |
+| %s       | second (00-59)                                                                                                                                                                                      | 44        |
+| %S       | second (00-59)                                                                                                                                                                                      | 44        |
+| %t       | horizontal-tab character (’)                                                                                                                                                                        |           |
+| %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S                                                                                                                                             | 22:33:44  |
+| %u       | ISO 8601 weekday as number with Monday as 1 (1-7)                                                                                                                                                   | 2         |
+| %V       | ISO 8601 week number (01-53)                                                                                                                                                                        | 01        |
+| %w       | weekday as a integer number with Sunday as 0 (0-6)                                                                                                                                                  | 2         |
+| %W       | full weekday name (Monday-Sunday)                                                                                                                                                                   | Monday    |
+| %y       | Year, last two digits (00-99)                                                                                                                                                                       | 18        |
+| %Y       | Year                                                                                                                                                                                                | 2018      |
+| %z       | Time offset from UTC as +HHMM or -HHMM                                                                                                                                                              | -0500     |
+| %%       | a % sign                                                                                                                                                                                            | %         |
 
 Note 1: In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
 
-Note 2: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
+Note 2: In ClickHouse versions earlier than v25.1, `%f` prints as many digits as specified by the scale of the DateTime64 instead of fixed 6 digits. The previous behavior can be restored using setting `formatdatetime_f_prints_scale_number_of_digits= 1`.
 
-Note 3: In ClickHouse versions earlier than v23.11, function `parseDateTime()` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime()` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
+Note 3: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
+
+Note 4: In ClickHouse versions earlier than v23.11, function `parseDateTime()` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime()` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
 
 **Example**
 
@@ -4489,9 +4491,9 @@ Using replacement fields, you can define a pattern for the resulting string.
 | k           | clockhour of day (1~24)                  | number        | 24                                 |
 | m           | minute of hour                           | number        | 30                                 |
 | s           | second of minute                         | number        | 55                                 |
-| S           | fraction of second (not supported yet)   | number        | 978                                |
-| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
-| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| S           | fraction of second                       | number        | 978                                |
+| z           | time zone                                | text          | Eastern Standard Time; EST         |
+| Z           | time zone offset                         | zone          | -0800; -0812                       |
 | '           | escape for text                          | delimiter     |                                    |
 | ''          | single quote                             | literal       | '                                  |
 
@@ -4773,7 +4775,7 @@ Result:
 
 ## toUTCTimestamp
 
-Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
+Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
 
 **Syntax**
 
@@ -4799,14 +4801,14 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
 Result:
 
 ``` text
-┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
+┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')┐
 │                                     2023-03-15 16:00:00 │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## fromUTCTimestamp
 
-Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
+Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp.  This function is mainly included for compatibility with Apache Spark and similar frameworks.
 
 **Syntax**
 
@@ -4832,7 +4834,7 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 Result:
 
 ``` text
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

@@ -2,6 +2,8 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
+#include <base/scope_guard.h>
+
 namespace DB
 {
 

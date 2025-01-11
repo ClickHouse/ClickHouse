@@ -611,6 +611,11 @@
     M(730, REFRESH_FAILED) \
     M(731, QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE) \
     M(733, TABLE_IS_BEING_RESTARTED) \
+    M(734, CANNOT_WRITE_AFTER_BUFFER_CANCELED) \
+    M(735, QUERY_WAS_CANCELLED_BY_CLIENT) \
+    M(736, ICEBERG_CATALOG_ERROR) \
+    M(737, GOOGLE_CLOUD_ERROR) \
+    M(738, PART_IS_LOCKED) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -620,7 +625,8 @@
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-    /* See END */
+    M(1003, SSH_EXCEPTION) \
+/* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
     #define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M) APPLY_FOR_EXTERNAL_ERROR_CODES(M)
@@ -636,7 +642,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1002;
+    constexpr ErrorCode END = 1003;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
@@ -648,7 +654,7 @@ namespace ErrorCodes
             APPLY_FOR_ERROR_CODES(M)
 #undef M
         }
-    } error_codes_names;
+    } static error_codes_names;
 
     std::string_view getName(ErrorCode error_code)
     {

@@ -2,8 +2,9 @@
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
-#include "Common/VersionNumber.h"
+#include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Client/ClientApplicationBase.h>
 #include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -34,6 +35,7 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 
     out.write(command.data(), command.size());
     out.next();
+    out.finalize();
 
     String result;
     readStringUntilEOF(result, in);
@@ -327,7 +329,8 @@ void KeeperClient::runInteractiveReplxx()
         query_extenders,
         query_delimiters,
         word_break_characters,
-        /* highlighter_= */ {});
+        /* highlighter_= */ {}
+    );
     lr.enableBracketedPaste();
 
     while (true)
