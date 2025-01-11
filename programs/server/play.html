@@ -153,10 +153,15 @@
             color: var(--text-color-active);
         }
 
-        #query
+        #query_div
         {
             /* Make enough space for even big queries. */
             height: 20vh;
+        }
+
+        #query
+        {
+            height: 100%;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
             min-width: 100%;
             border-top: 0;
@@ -480,9 +485,7 @@
         <div id="inputs">
             <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
         </div>
-        <div id="query_div">
-            <textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea>
-        </div>
+        <div id="query_div"><textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
         <div id="run_div">
             <button class="shadow" id="run">Run</button>
             <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
