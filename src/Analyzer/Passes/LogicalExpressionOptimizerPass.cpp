@@ -1130,10 +1130,12 @@ private:
 
         /// To avoid duplicate when traversing in equal condition
         std::unordered_set<QueryTreeNodePtr> equal_set;
+        /// To avoid endless loop, for example, a>b AND b>a AND a<5
+        std::unordered_set<QueryTreeNodePtr> check_path;
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
-            = [&](QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
+        std::function<void(QueryTreeNodePtr, const ConstantNode *, CompareType, std::unordered_set<QueryTreeNodePtr> &)> findPairs
+            = [&](QueryTreeNodePtr current, const ConstantNode * constant, CompareType type, std::unordered_set<QueryTreeNodePtr> & path)
         {
             if (auto it = greater_pairs.find(current); it != greater_pairs.end())
             {
@@ -1141,8 +1143,12 @@ private:
                 {
                     if (left.second == CompareType::equals && equal_set.contains(left.first))
                         continue;
+                    
+                    if (path.contains(left.first))
+                        continue;
 
                     equal_set.insert(left.first);
+                    path.insert(left.first);
                     CompareType compare_type = std::min(type, left.second);
 
                     /// Non-sense to have both sides as constant
@@ -1157,13 +1163,15 @@ private:
                         function_node.getArguments().getNodes().push_back(and_node);
                     }
 
-                    findPairs(left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
+                    findPairs(left.first, constant ? constant : current->as<ConstantNode>(), compare_type, path);
+
+                    path.erase(left.first);
                 }
             }
         };
 
         for (const auto & constant : constants)
-            findPairs(constant, nullptr, CompareType::equals);
+            findPairs(constant, nullptr, CompareType::equals, check_path);
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
