@@ -21,10 +21,6 @@ namespace DB
   */
 struct FormatSettings
 {
-    /// Format will be used for streaming. Not every formats support it
-    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
-    bool enable_streaming = false;
-
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
