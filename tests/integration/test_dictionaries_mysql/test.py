@@ -485,6 +485,8 @@ def test_background_dictionary_reconnect(started_cluster):
     mysql_instance = MySQL_Instance()
     mysql_instance.ip_address = started_cluster.mysql8_ip
 
+    query("TRUNCATE TABLE IF EXISTS system.text_log")
+
     with PartitionManager() as pm:
         # Break connection to mysql server
         pm.partition_instances(
@@ -498,21 +500,32 @@ def test_background_dictionary_reconnect(started_cluster):
             except Exception as e:
                 pass
 
-    counter = 0
-    # Based on bg_reconnect_mysql_dict_interval = 7000 in "configs/bg_reconnect.xml":
-    # connection should not be available for about 5-7 seconds
-    while counter <= 8:
-        try:
-            counter += 1
-            time.sleep(1)
-            result = query("SELECT value FROM dict WHERE id = 1")
-            break
-        except Exception as e:
-            pass
+        time.sleep(5)
 
-    query("DROP DICTIONARY IF EXISTS dict;")
-    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+    time.sleep(5)
 
+    query("SYSTEM FLUSH LOGS")
     assert (
-        counter >= 4 and counter <= 8
-    ), f"Connection reistablisher didn't meet anticipated time interval [4..8]: {counter}"
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Failed to connect to MySQL %: mysqlxx::ConnectionFailed'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+            )
+        )
+        > 0
+    )

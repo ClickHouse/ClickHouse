@@ -399,10 +399,13 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
 
     String table_file;
+    String compression = "auto";
     if (!getClientConfiguration().has("table-file") || getClientConfiguration().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
+        if (default_input_compression_method != CompressionMethod::None)
+            compression = toContentEncodingName(default_input_compression_method);
     }
     else
     {
@@ -418,8 +421,8 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
-                       table_name, table_structure, data_format, table_file);
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {}, {});",
+                       table_name, table_structure, data_format, table_file, compression);
 }
 
 
@@ -491,14 +494,18 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(getClientConfiguration(), "localhost");
+    connection_parameters = ConnectionParameters(
+        config(),
+        ConnectionParameters::Host{"localhost"},
+        ConnectionParameters::Database{default_database}
+    );
 
     /// This is needed for table function input(...).
     ReadBuffer * in;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
-        in = &std_in;
+        in = std_in.get();
     }
     else
     {
@@ -598,7 +605,7 @@ try
     if (!initial_query.empty())
         processQueryText(initial_query);
 
-#if defined(FUZZING_MODE)
+#if USE_FUZZING_MODE
     runLibFuzzer();
 #else
     if (is_interactive && !delayed_interactive)
@@ -872,7 +879,12 @@ void LocalServer::processConfig()
     }
 
     server_display_name = getClientConfiguration().getString("display_name", "");
-    prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
+
+    if (getClientConfiguration().has("prompt"))
+        prompt = getClientConfiguration().getString("prompt");
+    else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
+        prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
+    prompt = appendSmileyIfNeeded(prompt);
 }
 
 
@@ -903,19 +915,19 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description)
 {
-    std::cout << getHelpHeader() << "\n";
-    std::cout << options_description.main_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    std::cout << getHelpFooter() << "\n";
-    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-    std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
+    output_stream << getHelpHeader() << "\n";
+    if (options_description.main_description.has_value())
+        output_stream << options_description.main_description.value() << "\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
+    output_stream << getHelpFooter() << "\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 }
 
 
-void LocalServer::addOptions(OptionsDescription & options_description)
+void LocalServer::addExtraOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("table,N", po::value<std::string>(), "name of the initial table")
