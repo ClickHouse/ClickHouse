@@ -564,9 +564,13 @@ This approach is demonstrated in the example below:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
+
 INSERT INTO myNewTable
-SELECT * FROM myOldTable WHERE CounterID <12345;
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
 DROP TABLE myOldTable;
+
 RENAME TABLE myNewTable TO myOldTable;
 ```
 
@@ -575,7 +579,8 @@ Instead of the approach above, it is also possible to use `REPLACE` (given you a
 ```sql
 REPLACE TABLE myOldTable
 ENGINE = MergeTree()
-ORDER BY CounterID AS
+ORDER BY CounterID 
+AS
 SELECT * FROM myOldTable
 WHERE CounterID <12345;
 ```
@@ -598,15 +603,21 @@ All syntax forms for the `CREATE` statement also work for this statement. Invoki
 Consider the following table:
 
 ```sql
-CREATE DATABASE base ENGINE = Atomic;
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s String)
+CREATE DATABASE base 
+ENGINE = Atomic;
+
+CREATE OR REPLACE TABLE base.t1
+(
+    n UInt64,
+    s String
+)
 ENGINE = MergeTree
 ORDER BY n;
-INSERT INTO base.t1 VALUES (1, 'test');
-SELECT * FROM base.t1;
-```
 
-```text
+INSERT INTO base.t1 VALUES (1, 'test');
+
+SELECT * FROM base.t1;
+
 ┌─n─┬─s────┐
 │ 1 │ test │
 └───┴──────┘
@@ -615,14 +626,18 @@ SELECT * FROM base.t1;
 We can use the `REPLACE` statement to clear all the data:
 
 ```sql
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String))
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64,
+    s Nullable(String)
+)
 ENGINE = MergeTree
 ORDER BY n;
-INSERT INTO base.t1 VALUES (2, null);
-SELECT * FROM base.t1;
-```
 
-```text
+INSERT INTO base.t1 VALUES (2, null);
+
+SELECT * FROM base.t1;
+
 ┌─n─┬─s──┐
 │ 2 │ \N │
 └───┴────┘
@@ -632,12 +647,13 @@ Or we can use the `REPLACE` statement to change the table structure:
 
 ```sql
 REPLACE TABLE base.t1 (n UInt64) 
-ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (3);
-SELECT * FROM base.t1;
-```
+ENGINE = MergeTree 
+ORDER BY n;
 
-```text
+INSERT INTO base.t1 VALUES (3);
+
+SELECT * FROM base.t1;
+
 ┌─n─┐
 │ 3 │
 └───┘
@@ -649,28 +665,37 @@ Consider the following table on ClickHouse Cloud:
 
 ```sql
 CREATE DATABASE base;
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s String)
+
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64,
+    s String
+)
 ENGINE = MergeTree
 ORDER BY n;
-INSERT INTO base.t1 VALUES (1, 'test');
-SELECT * FROM base.t1;
-```
 
-```text
+INSERT INTO base.t1 VALUES (1, 'test');
+
+SELECT * FROM base.t1;
+
 1	test
 ```
 
 We can use the `REPLACE` statement to clear all the data:
 
 ```sql
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String))
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64, 
+    s Nullable(String)
+)
 ENGINE = MergeTree
 ORDER BY n;
-INSERT INTO base.t1 VALUES (2, null);
-SELECT * FROM base.t1;
-```
 
-```text
+INSERT INTO base.t1 VALUES (2, null);
+
+SELECT * FROM base.t1;
+
 2	
 ```
 
@@ -678,12 +703,13 @@ Or we can use the `REPLACE` statement to change the table structure:
 
 ```sql
 REPLACE TABLE base.t1 (n UInt64) 
-ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (3);
-SELECT * FROM base.t1;
-```
+ENGINE = MergeTree 
+ORDER BY n;
 
-```text
+INSERT INTO base.t1 VALUES (3);
+
+SELECT * FROM base.t1;
+
 3
 ```    
 </TabItem>
