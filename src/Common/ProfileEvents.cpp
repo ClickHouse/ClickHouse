@@ -768,20 +768,6 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.", ValueType::Microseconds) \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.", ValueType::Microseconds) \
-    M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces") \
-    M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces") \
-    M(InterfaceNativeSendBytes, "Number of bytes sent through native interfaces") \
-    M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces") \
-    M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces") \
-    M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces") \
-    M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces") \
-    M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces") \
-    M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces") \
-    M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
-    M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
-    M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
-    M(InterfaceMongoDBSendBytes, "Number of bytes sent through MongoDB interfaces") \
-    M(InterfaceMongoDBReceiveBytes, "Number of bytes received through MongoDB interfaces") \
     \
     M(DistrCacheServerSwitches, "Distributed Cache read buffer event. Number of server switches between distributed cache servers in read/write-through cache", ValueType::Number) \
     M(DistrCacheReadMicroseconds, "Distributed Cache read buffer event. Time spent reading from distributed cache", ValueType::Microseconds) \
