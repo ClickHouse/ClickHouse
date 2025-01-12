@@ -1644,7 +1644,9 @@ def test_explanation(started_cluster, format_version, storage_type):
         )
 
         expected = [
-            ["Expression ((Project names + (Projection + Change column names to column identifiers)))"],
+            [
+                "Expression ((Project names + (Projection + Change column names to column identifiers)))"
+            ],
             [f"Iceberg(default.{TABLE_NAME})Source"],
         ]
         print(expected)
