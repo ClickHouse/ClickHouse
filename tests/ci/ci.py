@@ -15,8 +15,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
-from github import Github
-
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
@@ -52,6 +50,7 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
+from github_helper import GitHub
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
@@ -1505,7 +1504,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 
     # create GH status
     pr_info = PRInfo()
-    commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
+    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
 
     def _concurrent_create_status(job: str, batch: int, num_batches: int) -> None:
         job_status = ci_cache.get_successful(job, batch, num_batches)
@@ -1784,6 +1783,8 @@ def _add_build_to_version_history(
 
     print(f"::notice ::Log Adding record to versions history: {data}")
 
+    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+
 
 def _run_test(job_name: str, run_command: str) -> int:
     assert (
@@ -2004,7 +2005,7 @@ def main() -> int:
         else:
             # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
-                Github(get_best_robot_token(), per_page=100), pr_info.sha
+                GitHub(get_best_robot_token(), per_page=100), pr_info.sha
             )
 
             # rerun helper check
@@ -2121,7 +2122,7 @@ def main() -> int:
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
-                    Github(get_best_robot_token(), per_page=100), pr_info.sha
+                    GitHub(get_best_robot_token(), per_page=100), pr_info.sha
                 )
                 post_commit_status(
                     commit,
