@@ -860,7 +860,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         for (auto & all_part_range : all_part_ranges)
         {
             const auto & index_granularity = all_part_range.data_part->index_granularity;
-            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity.getMarksCountWithoutFinal()}}};
+            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity->getMarksCountWithoutFinal()}}};
         }
         return all_part_ranges;
     }
@@ -868,7 +868,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        std::vector<bool> is_selected_range(index_granularity.getMarksCountWithoutFinal(), false);
+        std::vector<bool> is_selected_range(index_granularity->getMarksCountWithoutFinal(), false);
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             selected_ranges.push_back(
