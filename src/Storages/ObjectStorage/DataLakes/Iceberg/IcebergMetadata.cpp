@@ -73,7 +73,7 @@ IcebergMetadata::IcebergMetadata(
     auto manifest_list_file = getRelevantManifestList(object);
     if (manifest_list_file)
     {
-        current_snapshot = getSnapshot(manifest_list_file.value());
+        current_snapshot = getSnapshot(manifest_list_file.value().path, manifest_list_file.value().sequence_id);
     }
     current_schema_id = parseTableSchema(object, schema_processor, log);
 }
@@ -238,16 +238,16 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
 
     auto manifest_list_file = getRelevantManifestList(metadata_object);
-    if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
+    if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value().path != current_snapshot->getName())))
     {
-        current_snapshot = getSnapshot(manifest_list_file.value());
+        current_snapshot = getSnapshot(manifest_list_file.value().path, manifest_list_file.value().sequence_id);
         cached_files_for_current_snapshot = std::nullopt;
     }
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
     return true;
 }
 
-std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata)
+std::optional<IcebergMetadata::ManifestListInfo> IcebergMetadata::getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -262,7 +262,10 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            return std::filesystem::path(path).filename();
+            return ManifestListInfo{
+                .path = std::filesystem::path(path).filename(),
+                .sequence_id = snapshot->getValue<Int64>("sequence-number"),
+            };
         }
     }
     return std::nullopt;
@@ -388,12 +391,12 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
 }
 
 
-IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) const
+IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file, int64_t sequence_id) const
 {
     const auto manifest_list_file_it = manifest_lists_by_name.find(manifest_list_file);
     if (manifest_list_file_it != manifest_lists_by_name.end())
-        return IcebergSnapshot(manifest_list_file_it);
-    return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
+        return IcebergSnapshot(manifest_list_file_it, sequence_id);
+    return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first, sequence_id};
 }
 
 
@@ -419,7 +422,8 @@ DataFileInfos IcebergMetadata::getDataFiles() const
                 data_files.push_back(DataFileInfo{
                     .filename = data_file.data_file_name,
                     .meta = std::make_shared<DataFileMeta>(DataFileMeta{
-                        .type = DataFileMeta::DataFileType::DATA_FILE
+                        .type = DataFileMeta::DataFileType::DATA_FILE,
+                        .sequence_number = current_snapshot->getSequenceId()
                     })
                 });
             }
@@ -432,7 +436,8 @@ DataFileInfos IcebergMetadata::getDataFiles() const
                 data_files.push_back(DataFileInfo{
                     .filename = data_file.data_file_name,
                     .meta = std::make_shared<DataFileMeta>(DataFileMeta{
-                        .type = DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE
+                        .type = DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE,
+                        .sequence_number = current_snapshot->getSequenceId()
                     })
                 });
             }
@@ -445,7 +450,8 @@ DataFileInfos IcebergMetadata::getDataFiles() const
                 data_files.push_back(DataFileInfo{
                     .filename = data_file.data_file_name,
                     .meta = std::make_shared<DataFileMeta>(DataFileMeta{
-                        .type = DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE
+                        .type = DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE,
+                        .sequence_number = current_snapshot->getSequenceId()
                     })
                 });
             }

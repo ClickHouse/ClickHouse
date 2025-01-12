@@ -1,5 +1,6 @@
 #include "StorageObjectStorageSource.h"
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -454,6 +455,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     std::optional<size_t> num_rows_from_cache
         = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
+    int source_sequence_id = object_info->metadata && !object_info->metadata->attributes["sequence_id"].empty() ? std::stoi(object_info->metadata->attributes["sequence_id"]) : -1;
 
     if (num_rows_from_cache)
     {
@@ -531,6 +533,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     for (const auto & positional_delete_object_info : positional_delete_objects)
     {
+        int delete_sequence_id = positional_delete_object_info->metadata ? std::stoi(positional_delete_object_info->metadata->attributes["sequence_id"]) : -1;
+        if (source_sequence_id > delete_sequence_id)
+            continue;
+
         delete_read_buf.push_back(nullptr);
         delete_read_buf_schema.push_back(nullptr);
         delete_block.push_back({});
@@ -573,8 +579,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return std::make_shared<PositionalDeleteTransform>(header, delete_sources, object_info->getPath());
     });
 
-    for (const auto & positional_delete_object_info : equality_delete_objects)
+    for (const auto & equality_delete_object_info : equality_delete_objects)
     {
+        int delete_sequence_id = equality_delete_object_info->metadata ? std::stoi(equality_delete_object_info->metadata->attributes["sequence_id"]) : -1;
+        if (source_sequence_id >= delete_sequence_id)
+            continue;
+
         delete_read_buf.push_back(nullptr);
         delete_read_buf_schema.push_back(nullptr);
         delete_block.push_back({});
@@ -587,7 +597,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             configuration,
             read_from_format_info,
             format_settings,
-            positional_delete_object_info,
+            equality_delete_object_info,
             context_,
             log,
             max_block_size,
@@ -923,22 +933,34 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     for (const auto & key : configuration->getPaths())
     {
         auto object_info = std::make_shared<ObjectInfo>(key.filename);
-        DataFileMeta::DataFileType file_type = key.meta ? std::static_pointer_cast<DataFileMeta>(key.meta)->type : DataFileMeta::DataFileType::DATA_FILE;
+        object_info->metadata = ObjectMetadata{};
+
+        DataFileMeta::DataFileType file_type = DataFileMeta::DataFileType::DATA_FILE;
+        int64_t sequence_id = -1;
+        if (key.meta)
+        {
+            auto data_meta = std::static_pointer_cast<DataFileMeta>(key.meta);
+            file_type = data_meta->type;
+            sequence_id = data_meta->sequence_number;
+        }
         switch (file_type)
         {
             case DataFileMeta::DataFileType::DATA_FILE:
             {
                 keys.push_back(key);
+                object_info->metadata->attributes["sequence_id"] = std::to_string(sequence_id);
                 break;
             }
             case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE:
             {
                 equality_delete_objects.push_back(object_info);
+                object_info->metadata->attributes["sequence_id"] = std::to_string(sequence_id);
                 break;
             }
             case DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE:
             {
                 positional_delete_objects.push_back(object_info);
+                object_info->metadata->attributes["sequence_id"] = std::to_string(sequence_id);
                 break;
             }
         }
@@ -964,6 +986,12 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
             return {};
 
         auto key = keys[current_index];
+        int64_t sequence_id = -1;
+        if (key.meta)
+        {
+            auto data_meta = std::static_pointer_cast<DataFileMeta>(key.meta);
+            sequence_id = data_meta->sequence_number;
+        }
 
         ObjectMetadata object_metadata{};
         if (ignore_non_existent_files)
@@ -979,6 +1007,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
+        object_metadata.attributes["sequence_id"] = std::to_string(sequence_id);
         return std::make_shared<ObjectInfo>(key.filename, object_metadata);
     }
 }
@@ -1047,7 +1076,9 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
 
 StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::nextImpl(size_t)
 {
-    size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+    std::lock_guard lock(mutex);
+
+    size_t current_index = index++;
     if (current_index >= buffer.size())
         return std::make_shared<ObjectInfo>(callback());
 

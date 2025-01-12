@@ -107,7 +107,7 @@ private:
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 
-    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
+    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file, int64_t sequence_id) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
@@ -115,7 +115,13 @@ private:
 
     Iceberg::ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
 
-    std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
+    struct ManifestListInfo
+    {
+        String path;
+        int64_t sequence_id;
+    };
+
+    std::optional<ManifestListInfo> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
     Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
 

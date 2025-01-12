@@ -20,6 +20,7 @@ struct DataFileMeta : StorageObjectStorage::Configuration::PathMetadata
         ICEBERG_EQUALITY_DELETE,
     };
     DataFileType type;
+    int64_t sequence_number;
 };
 
 using DataFileInfo = StorageObjectStorage::Configuration::Path;

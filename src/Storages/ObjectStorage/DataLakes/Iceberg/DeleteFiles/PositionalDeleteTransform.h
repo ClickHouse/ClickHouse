@@ -58,22 +58,24 @@ protected:
                 auto position_column = delete_chunk.getColumns()[position_index];
                 auto filename_column = delete_chunk.getColumns()[filename_index];
                 auto last_filename = filename_column->getDataAt(delete_chunk.getNumRows() - 1).toString();
-                if (cropPrefix(std::move(last_filename)) < source_filename)
+                last_filename = cropPrefix(std::move(last_filename));
+                if (last_filename < source_filename)
                     break;
 
                 auto last_position = position_column->get64(delete_chunk.getNumRows() - 1);
-                if (last_position < chunk_rows_iterator)
+                if (last_position < chunk_rows_iterator && last_filename == source_filename)
                     break;
 
                 auto first_filename = filename_column->getDataAt(0).toString();
-                if (cropPrefix(std::move(first_filename)) > source_filename)
+                first_filename = cropPrefix(std::move(first_filename));
+                if (first_filename > source_filename)
                 {
                     unprocessed_delete_chunk[delete_source_id] = std::move(delete_chunk);
                     break;
                 }
 
                 auto first_position = position_column->get64(0);
-                if (first_position >= chunk_rows_iterator + chunk.getNumRows())
+                if (first_position >= chunk_rows_iterator + chunk.getNumRows() && last_filename == source_filename)
                 {
                     unprocessed_delete_chunk[delete_source_id] = std::move(delete_chunk);
                     break;
@@ -110,6 +112,7 @@ protected:
             column = column->filter(should_delete, -1);
 
         chunk.setColumns(std::move(columns), num_rows_after_filtration);
+        chunk_rows_iterator += num_rows;
     }
 
 private:

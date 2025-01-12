@@ -219,7 +219,8 @@ private:
 
     ReadTaskCallback callback;
     ObjectInfos buffer;
-    std::atomic_size_t index = 0;
+    size_t index = 0;
+    std::mutex mutex;
 };
 
 class StorageObjectStorageSource::GlobIterator : public IIterator, WithContext
