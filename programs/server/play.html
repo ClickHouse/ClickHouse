@@ -198,7 +198,7 @@
             padding: 0.25rem 1rem;
             cursor: pointer;
             font-weight: bold;
-            font-size: 100%; /* Otherwise button element will have lower font size. */
+            font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
         #run:hover, #run:focus
@@ -209,7 +209,6 @@
 
         #hint
         {
-            text-align: center;
             grid-area: hint;
             color: var(--misc-text-color);
         }
@@ -246,8 +245,8 @@
         {
             display: none;
             width: 100%;
-            height: 1rem;
             margin: 0.25rem;
+            color: var(--misc-text-color);
 
             grid-area: progress-bar;
             background: linear-gradient(to right,
@@ -635,7 +634,7 @@ async function postImpl(posted_request_num, query)
             }
 
             document.getElementById('hourglass').style.display = 'none';
-            document.getElementById('progress').style.display = 'none';
+            document.documentElement.style.setProperty('--progress', '0');
             return;
         } else if (format == 'JSONEachRowWithProgress') {
             const reader = response.body.getReader();
@@ -705,7 +704,7 @@ async function postImpl(posted_request_num, query)
         }
         renderError(reply);
         document.getElementById('hourglass').style.display = 'none';
-        document.getElementById('progress').style.display = 'none';
+        document.documentElement.style.setProperty('--progress', '0');
         return;
     }
 
@@ -715,7 +714,8 @@ async function postImpl(posted_request_num, query)
 
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
-    document.getElementById('progress').style.display = 'none';
+    updateProgressText();
+    document.documentElement.style.setProperty('--progress', '0');
 
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
@@ -875,6 +875,7 @@ function clear()
     clearElement('chart');
     clearElement('data-unparsed');
     clearElement('error');
+    clearElement('progress');
 
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
@@ -882,6 +883,9 @@ function clear()
     document.getElementById('logo-container').style.display = 'block';
 
     extremes = {};
+    row_idx = 0;
+    elapsed_ns = 0;
+    incomplete_result = false;
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
@@ -1083,18 +1087,31 @@ function updateRaw(data) {
     /// TODO: no extremes when the format is unknown
 }
 
+function updateProgressText() {
+    let progress_elem = document.getElementById('progress');
+    let progress_text = '';
+    if (row_idx) {
+        progress_text += `${row_idx}${incomplete_result ? '+' : ''} rows in result`;
+        if (elapsed_ns) progress_text += ', ';
+    }
+    if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
+    progress_elem.innerText = progress_text;
+}
+
 function updateProgress(progress) {
     let stats = document.getElementById('stats');
+    let progress_elem = document.getElementById('progress');
+
     const rows = progress.read_rows;
     const bytes = progress.read_bytes;
     const total_rows = progress.total_rows_to_read;
-    const elapsed_ns = progress.elapsed_ns;
+    elapsed_ns = progress.elapsed_ns;
 
     let formatted_rows = formatReadableRows(rows);
     let formatted_bytes = formatReadableBytes(bytes);
 
-    const rps = rows * 1_000_000_000 / elapsed_ns;
-    const bps = bytes * 1_000_000_000 / elapsed_ns;
+    const rps = rows * 1e9 / elapsed_ns;
+    const bps = bytes * 1e9 / elapsed_ns;
 
     let formatted_rps = formatReadableRows(rps) + '/sec';
     let formatted_bps = formatReadableBytes(bps) + '/sec';
@@ -1114,13 +1131,16 @@ function updateProgress(progress) {
 
     stats.innerHTML = text;
 
-    if (rows && total_rows) {
-        document.getElementById('progress').style.display = 'block';
-        document.documentElement.style.setProperty('--progress', (100 * rows / total_rows) + '%');
-    }
+    updateProgressText();
+    progress_elem.style.display = 'block';
+
+    document.documentElement.style.setProperty('--progress',
+        rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
 let row_idx = 0;
+let elapsed_ns = 0;
+let incomplete_result = false;
 let column_is_number = {};
 
 function appendHeader(meta) {
@@ -1160,12 +1180,12 @@ const max_cells = 100_000;
 
 let current_selected_cell = null;
 function appendRow(row, fragment) {
-    ++row_idx;
-
-    if (row_idx > max_rows || row_idx * Object.keys(row).length > max_cells) {
+    if (row_idx >= max_rows || (1 + row_idx) * Object.keys(row).length > max_cells) {
+        incomplete_result = true;
         return false;
     }
 
+    ++row_idx;
     let tr = document.createElement('tr');
 
     let td = document.createElement('td');
@@ -1191,6 +1211,7 @@ function appendRow(row, fragment) {
     }
 
     fragment.appendChild(tr);
+    incomplete_result = false;
     return true;
 }
 
