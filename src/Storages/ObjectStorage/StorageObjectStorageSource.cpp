@@ -564,7 +564,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context_);
         const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
         delete_format->setKeyCondition(actions, context_);
-        
+
         delete_sources.push_back(std::move(delete_format));
     }
 
