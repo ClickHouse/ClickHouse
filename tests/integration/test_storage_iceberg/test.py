@@ -1649,7 +1649,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             ],
             [f"  Iceberg(default.{TABLE_NAME})Source"],
         ]
-        print(expected)
+
         assert res == expected
 
         # Check that we can parse data
