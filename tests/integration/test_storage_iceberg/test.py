@@ -1623,9 +1623,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             f"CREATE TABLE {TABLE_NAME} (x int) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}', 'write.format.default' = '{format}')"
         )
 
-        spark.sql(
-            f"insert into {TABLE_NAME} select 42"
-        )
+        spark.sql(f"insert into {TABLE_NAME} select 42")
         default_upload_directory(
             started_cluster,
             storage_type,
@@ -1637,9 +1635,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             storage_type, instance, TABLE_NAME, started_cluster, format=format
         )
 
-        res = instance.query(
-            f"EXPLAIN SELECT * FROM {TABLE_NAME}"
-        )
+        res = instance.query(f"EXPLAIN SELECT * FROM {TABLE_NAME}")
         res = list(
             map(
                 lambda x: x.split("\t"),
@@ -1647,7 +1643,10 @@ def test_explanation(started_cluster, format_version, storage_type):
             )
         )
 
-        expected = ["Expression ((Project names + (Projection + Change column names to column identifiers)))", f"Iceberg(default.{TABLE_NAME})Source"]
+        expected = [
+            "Expression ((Project names + (Projection + Change column names to column identifiers)))",
+            f"Iceberg(default.{TABLE_NAME})Source"
+        ]
         print(expected)
         assert res == expected
 
