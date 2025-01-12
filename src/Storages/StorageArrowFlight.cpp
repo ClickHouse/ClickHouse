@@ -23,6 +23,11 @@
 #include <Analyzer/SortNode.h>
 #include <Core/Names.h>
 #include <Common/parseAddress.h>
+#include <arrow/buffer.h>
+#include <arrow/builder.h>
+#include <arrow/type.h>
+#include <arrow/array.h>
+#include <arrow/record_batch.h>
 
 namespace DB
 {
@@ -33,6 +38,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ARROWFLIGHT_CONNECTION_FAILURE;
     extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
+    extern const int ARROWFLIGHT_WRITE_ERROR;
 }
 
 StorageArrowFlight::StorageArrowFlight(
@@ -123,6 +129,39 @@ Pipe StorageArrowFlight::read(
     return Pipe(std::make_shared<ArrowFlightSource>(client, buildArrowFlightQueryString(query_info, column_names), sample_block, column_names, max_block_size));
 }
 
+#define ARROW_THROW_NOT_OK(status)                                         \
+    do                                                                     \
+    {                                                                      \
+        if (!(status).ok())                                                \
+        {                                                                  \
+            throw Exception(                                               \
+                ErrorCodes::BAD_ARGUMENTS,                                 \
+                "Arrow operation failed: {}",                              \
+                (status).ToString());                                      \
+        }                                                                  \
+    } while (false)
+
+std::shared_ptr<arrow::RecordBatch> createMockArrowBatch()
+{
+    auto schema = arrow::schema({
+        arrow::field("column1", arrow::utf8()),
+        arrow::field("column2", arrow::int32())
+    });
+
+    arrow::StringBuilder string_builder;
+    ARROW_THROW_NOT_OK(string_builder.Append("test_value"));
+
+    arrow::Int32Builder int32_builder;
+    ARROW_THROW_NOT_OK(int32_builder.Append(1));
+
+    std::shared_ptr<arrow::Array> column1_data;
+    std::shared_ptr<arrow::Array> column2_data;
+    ARROW_THROW_NOT_OK(string_builder.Finish(&column1_data));
+    ARROW_THROW_NOT_OK(int32_builder.Finish(&column2_data));
+
+    return arrow::RecordBatch::Make(schema, 1, {column1_data, column2_data});
+}
+
 class ArrowFlightSink : public SinkToStorage
 {
 public:
@@ -140,6 +179,27 @@ public:
         , port(port_)
         , dataset_name(dataset_name_)
     {
+        arrow::flight::Location location;
+        auto location_result = arrow::flight::Location::ForGrpcTcp(host_, port_);
+        if (!location_result.ok())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid Arrow Flight endpoint specified: {}",
+                location_result.status().ToString()
+            );
+        }
+        location = std::move(location_result).ValueOrDie();
+        auto client_result = arrow::flight::FlightClient::Connect(location);
+        if (!client_result.ok())
+        {
+            throw Exception(
+                ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE,
+                "Failed to connect to Arrow Flight server: {}",
+                client_result.status().ToString()
+            );
+        }
+        client = std::move(client_result).ValueOrDie();
     }
 
     String getName() const override { return "ArrowFlightSink"; }
@@ -148,8 +208,27 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        // auto writer = std::make_shared<ArrowFlightSink>(client, dataset_name, block);
-        // writer->write(block);
+        arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
+
+        auto batch = createMockArrowBatch(); // TODO: replace with convert to arrow flight batch
+
+        auto write_result = client->DoPut(descriptor, batch->schema());
+        if (!write_result.ok())
+        {
+            throw Exception(
+                ErrorCodes::ARROWFLIGHT_WRITE_ERROR,
+                "Failed to write data to Arrow Flight server: {}",
+                write_result.status().ToString());
+        }
+
+        auto stream = std::move(write_result).ValueOrDie();
+        std::unique_ptr<arrow::flight::FlightStreamWriter> writer = std::move(stream.writer);
+        if (!writer->WriteRecordBatch(*batch).ok())
+        {
+            throw Exception(
+                ErrorCodes::ARROWFLIGHT_WRITE_ERROR,
+                "Failed to write record batch to Arrow Flight server.");
+        }
     }
 
 private:
@@ -158,6 +237,7 @@ private:
     [[maybe_unused]] String host;
     [[maybe_unused]] int port;
     String dataset_name;
+    std::unique_ptr<arrow::flight::FlightClient> client;
 };
 
 SinkToStoragePtr StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool async_write)

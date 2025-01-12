@@ -92,6 +92,10 @@
         "name": "clickhouse/dotnet-client",
         "dependent": []
     },
+    "docker/test/integration/arrowflight": {
+        "name": "clickhouse/arrowflight",
+        "dependent": []
+    },
     "docker/test/integration/mysql_java_client": {
         "name": "clickhouse/mysql-java-client",
         "dependent": []

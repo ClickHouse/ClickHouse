@@ -119,6 +119,24 @@ void ArrowFlightSource::fillChunk(MutableColumns & columns, std::shared_ptr<arro
                         column->insertData(str_array->GetView(row_idx).data(), str_array->GetView(row_idx).size());
                         break;
                     }
+                    case arrow::Type::INT64:
+                    {
+                        const auto & int_array = std::static_pointer_cast<arrow::Int64Array>(arrow_column);
+                        column->insert(Field(int_array->Value(row_idx)));
+                        break;
+                    }
+                    case arrow::Type::FLOAT:
+                    {
+                        const auto & float_array = std::static_pointer_cast<arrow::DoubleArray>(arrow_column);
+                        column->insert(Field(float_array->Value(row_idx)));
+                        break;
+                    }
+                    case arrow::Type::BOOL:
+                    {
+                        const auto & bool_array = std::static_pointer_cast<arrow::BooleanArray>(arrow_column);
+                        column->insert(Field(bool_array->Value(row_idx)));
+                        break;
+                    }
                     // TODO: add more types support
                     default:
                         throw Exception(
