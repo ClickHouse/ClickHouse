@@ -25,13 +25,13 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool allow_experimental_analyzer;
-extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 BlockIO InterpreterCopyQuery::execute()
