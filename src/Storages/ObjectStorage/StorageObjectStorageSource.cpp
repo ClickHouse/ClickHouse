@@ -554,8 +554,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 
         {
-            ASTPtr where_ast = makeASTFunction("equals", 
-                std::make_shared<ASTIdentifier>(PositionalDeleteTransform::filename_column_name), 
+            ASTPtr where_ast = makeASTFunction("equals",
+                std::make_shared<ASTIdentifier>(PositionalDeleteTransform::filename_column_name),
                 std::make_shared<ASTLiteral>(Field(object_info->getPath())));
 
             auto syntax_result = TreeRewriter(context_).analyze(where_ast, delete_block.back().getNamesAndTypesList());
