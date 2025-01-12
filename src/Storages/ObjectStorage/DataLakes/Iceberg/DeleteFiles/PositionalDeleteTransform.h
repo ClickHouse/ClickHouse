@@ -57,7 +57,7 @@ protected:
 
                 auto position_column = delete_chunk.getColumns()[position_index];
                 auto filename_column = delete_chunk.getColumns()[filename_index];
-                auto last_filename = std::filesystem::path(filename_column->getDataAt(delete_chunk.getNumRows() - 1).toString()).filename();
+                auto last_filename = filename_column->getDataAt(delete_chunk.getNumRows() - 1).toString();
                 if (cropPrefix(std::move(last_filename)) < source_filename)
                     break;
 
@@ -65,7 +65,7 @@ protected:
                 if (last_position < chunk_rows_iterator)
                     break;
 
-                auto first_filename = std::filesystem::path(filename_column->getDataAt(0).toString()).filename();
+                auto first_filename = filename_column->getDataAt(0).toString();
                 if (cropPrefix(std::move(first_filename)) > source_filename)
                 {
                     unprocessed_delete_chunk[delete_source_id] = std::move(delete_chunk);
@@ -83,7 +83,7 @@ protected:
                 for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
                 {
                     auto position_to_delete = position_column->get64(i);
-                    auto filename_to_delete = std::filesystem::path(filename_column->getDataAt(i).toString()).filename();
+                    auto filename_to_delete = filename_column->getDataAt(i).toString();
                     if (cropPrefix(std::move(filename_to_delete)) == source_filename)
                     {
                         if (position_to_delete - chunk_rows_iterator < chunk.getNumRows())

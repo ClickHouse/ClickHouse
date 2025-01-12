@@ -552,24 +552,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             true
         );
 
+        auto target_path = object_info->getPath();
+        if (!target_path.empty() && target_path.front() != '/')
+            target_path = "/" + target_path;
+        ASTPtr where_ast = makeASTFunction("equals",
+            std::make_shared<ASTIdentifier>(PositionalDeleteTransform::filename_column_name),
+            std::make_shared<ASTLiteral>(Field(target_path)));
 
-        {
-            ASTPtr where_ast = makeASTFunction("equals",
-                std::make_shared<ASTIdentifier>(PositionalDeleteTransform::filename_column_name),
-                std::make_shared<ASTLiteral>(Field(object_info->getPath())));
+        auto syntax_result = TreeRewriter(context_).analyze(where_ast, delete_block.back().getNamesAndTypesList());
 
-            auto syntax_result = TreeRewriter(context_).analyze(where_ast, delete_block.back().getNamesAndTypesList());
-
-            ExpressionAnalyzer analyzer(where_ast, syntax_result, context_);
-            const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
-            delete_format->setKeyCondition(actions, context_);
-        }
+        ExpressionAnalyzer analyzer(where_ast, syntax_result, context_);
+        const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
+        delete_format->setKeyCondition(actions, context_);
+        
         delete_sources.push_back(std::move(delete_format));
     }
 
     builder.addSimpleTransform([&, delete_sources](const Block & header)
     {
-        return std::make_shared<PositionalDeleteTransform>(header, delete_sources, object_info->getFileName());
+        return std::make_shared<PositionalDeleteTransform>(header, delete_sources, object_info->getPath());
     });
 
     for (const auto & positional_delete_object_info : equality_delete_objects)
