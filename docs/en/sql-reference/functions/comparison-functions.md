@@ -13,12 +13,14 @@ The following types can be compared:
 - strings and fixed strings
 - dates
 - dates with times
-- tuples
+- tuples (lexicographic comparison)
+- arrays (lexicographic comparison)
 
 :::note
 - Only values within the same group can be compared (e.g. `UInt16` and `UInt64`) but not across groups (e.g. `UInt16` and `DateTime`).
 - Comparison of numbers and strings are possible.
 - Comparison of strings with dates and dates with times is possible.
+- For tuples and arrays, the comparison is lexicographic meaning that the comparison is made for each corresponding element of the left side and right side tuple/array. 
 :::
 
 :::note
