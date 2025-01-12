@@ -159,9 +159,11 @@
             /* Make enough space for even big queries. */
             height: 20vh;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
+            width: 100%;
             min-width: 100%;
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
+            contain: strict; /* Less input lag even if the table is large. */
         }
 
         #inputs
