@@ -10,11 +10,10 @@ import sys
 import time
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
-
-from github import Github
 
 import docker_images_helper
 import upload_result_helper
@@ -51,6 +50,7 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
+from github_helper import GitHub
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
@@ -1504,7 +1504,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 
     # create GH status
     pr_info = PRInfo()
-    commit = get_commit(Github(get_best_robot_token(), per_page=100), pr_info.sha)
+    commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
 
     def _concurrent_create_status(job: str, batch: int, num_batches: int) -> None:
         job_status = ci_cache.get_successful(job, batch, num_batches)
@@ -1757,6 +1757,35 @@ def _upload_build_profile_data(
             logging.error("Failed to insert binary_size_file for the build, continue")
 
 
+def _add_build_to_version_history(
+    pr_info: PRInfo,
+    start_time: str,
+    version: str,
+    docker_tag: str,
+    ch_helper: ClickHouseHelper,
+) -> None:
+    # with some probability we will not silently break this logic
+    assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
+
+    commit = get_commit(GitHub(get_best_robot_token()), pr_info.sha)
+    parents = [p.sha for p in commit.parents]
+    data = {
+        "check_start_time": start_time,
+        "pull_request_number": pr_info.number,
+        "pull_request_url": pr_info.pr_html_url,
+        "commit_sha": pr_info.sha,
+        "parent_commits_sha": parents,
+        "commit_url": pr_info.commit_html_url,
+        "version": version,
+        "docker_tag": docker_tag,
+        "git_ref": pr_info.head_ref,
+    }
+
+    print(f"::notice ::Log Adding record to versions history: {data}")
+
+    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+
+
 def _run_test(job_name: str, run_command: str) -> int:
     assert (
         run_command or CI_CONFIG.get_job_config(job_name).run_command
@@ -1929,6 +1958,14 @@ def main() -> int:
             result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
+        ch_helper = ClickHouseHelper()
+        _add_build_to_version_history(
+            pr_info,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            result["version"],
+            result["build"],
+            ch_helper,
+        )
     ### CONFIGURE action: end
 
     ### PRE action: start
@@ -1968,7 +2005,7 @@ def main() -> int:
         else:
             # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
-                Github(get_best_robot_token(), per_page=100), pr_info.sha
+                GitHub(get_best_robot_token(), per_page=100), pr_info.sha
             )
 
             # rerun helper check
@@ -2085,7 +2122,7 @@ def main() -> int:
                         additional_urls=additional_urls or None,
                     )
                 commit = get_commit(
-                    Github(get_best_robot_token(), per_page=100), pr_info.sha
+                    GitHub(get_best_robot_token(), per_page=100), pr_info.sha
                 )
                 post_commit_status(
                     commit,
