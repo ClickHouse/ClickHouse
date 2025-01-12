@@ -21,7 +21,7 @@ using ManifestListsByName = std::map<String, ManifestList>;
 class IcebergSnapshot
 {
 public:
-    explicit IcebergSnapshot(const ManifestListsByName::const_iterator & reference_, int64_t sequence_id_) 
+    explicit IcebergSnapshot(const ManifestListsByName::const_iterator & reference_, int64_t sequence_id_)
         : reference(reference_), sequence_id(sequence_id_) { }
 
     const ManifestList & getManifestList() const { return reference->second; }
