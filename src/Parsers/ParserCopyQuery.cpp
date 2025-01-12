@@ -1,6 +1,7 @@
 #include <Parsers/ParserCopyQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -25,7 +26,6 @@
 #include <Parsers/ParserWithElement.h>
 
 #include <memory>
-#include <Parsers/ASTCopyQuery.h>
 
 namespace DB
 {
@@ -165,12 +165,12 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         copy_element->data = name_or_expr->children[0];
         node = copy_element;
+        return true;
     }
     else
     {
         return false;
     }
-    return true;
 }
 
 }
