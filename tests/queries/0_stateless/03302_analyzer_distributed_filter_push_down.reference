@@ -93,7 +93,7 @@ Actions: INPUT : 0 -> sum(__table1.y) UInt64 : 0
          ALIAS sum(__table1.y) :: 0 -> sum(y) UInt64 : 1
 Positions: 1
   Aggregating
-  Keys: 
+  Keys:
   Aggregates:
       sum(__table1.y)
         Function: sum(UInt32) → UInt64
