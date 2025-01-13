@@ -262,7 +262,7 @@ std::optional<IcebergMetadata::ManifestListInfo> IcebergMetadata::getRelevantMan
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            return ManifestListInfo{std::filesystem::path(path).filename(), snapshot->getValue<Int64>("sequence-number")};
+            return ManifestListInfo{std::filesystem::path(path).filename(), snapshot->has("sequence-number") ? snapshot->getValue<Int64>("sequence-number") : -1};
         }
     }
     return std::nullopt;
