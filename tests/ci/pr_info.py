@@ -417,11 +417,15 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (
-                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "Settings.cpp" in f
-                or "FormatFactorySettings.h" in f
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
+                docs_path in f
+                for docs_path in [
+                    "docker/docs",
+                    "Settings.cpp",
+                    "FormatFactorySettings.h",
+                    "tests/ci/docs_check.py",
+                    "aspell-dict.txt",
+                ]
             ):
                 return True
         return False
@@ -441,12 +445,15 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if not (
-                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "docs_check.py" in f
-                or "aspell-dict.txt" in f
-                or ext == ".md"
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
+                docs_path in f
+                for docs_path in [
+                    "docker/docs",
+                    "Settings.cpp",
+                    "FormatFactorySettings.h",
+                    "tests/ci/docs_check.py",
+                    "aspell-dict.txt",
+                ]
             ):
                 return False
         return True
