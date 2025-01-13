@@ -170,9 +170,6 @@ JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & 
     return result;
 }
 
-namespace
-{
-
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
@@ -944,8 +941,6 @@ JoinClausesAndActions buildJoinClausesAndActions(
     }
 
     return result;
-}
-
 }
 
 JoinClausesAndActions buildJoinClausesAndActions(

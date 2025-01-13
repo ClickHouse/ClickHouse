@@ -1105,7 +1105,7 @@ size_t TableJoin::getMaxMemoryUsage() const
     return max_memory_usage;
 }
 
-void TableJoin::swapSides(JoinKind updated_kind)
+void TableJoin::swapSides()
 {
     assertEnableEnalyzer();
 
@@ -1121,6 +1121,7 @@ void TableJoin::swapSides(JoinKind updated_kind)
     std::swap(columns_from_left_table, columns_from_joined_table);
     std::swap(result_columns_from_left_table, columns_added_by_join);
 
+    JoinKind updated_kind = reverseJoinKind(kind());
     setKind(updated_kind);
 }
 

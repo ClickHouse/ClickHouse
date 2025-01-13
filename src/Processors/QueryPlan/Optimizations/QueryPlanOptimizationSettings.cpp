@@ -72,7 +72,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
 
-    /// This comes from EXPLAIN settings not query settings and set externally
+    /// This comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
 }
 

@@ -45,7 +45,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
-    extern const SettingsBoolAuto query_plan_use_new_logical_join_step;
 }
 
 namespace ErrorCodes
@@ -406,14 +405,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     options.setExplain();
 
     ContextPtr query_context = getContext();
-
-    std::optional<bool> query_plan_use_new_logical_join_step = query_context->getSettingsRef()[Setting::query_plan_use_new_logical_join_step].get();
-    if (!query_plan_use_new_logical_join_step.has_value())
-    {
-        ContextMutablePtr new_context = Context::createCopy(query_context);
-        new_context->setSetting("query_plan_use_new_logical_join_step", false);
-        query_context = std::move(new_context);
-    }
 
     switch (ast.getKind())
     {

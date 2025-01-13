@@ -88,7 +88,7 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
-    extern const SettingsBoolAuto query_plan_use_new_logical_join_step;
+    extern const SettingsBool query_plan_use_new_logical_join_step;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
@@ -2040,7 +2040,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    if (!settings[Setting::query_plan_use_new_logical_join_step].valueOr(true))
+    if (!settings[Setting::query_plan_use_new_logical_join_step])
         return buildQueryPlanForJoinNodeLegacy(
             join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 

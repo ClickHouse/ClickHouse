@@ -205,6 +205,28 @@ void JoinStepLogical::updateOutputHeader()
     }
 }
 
+/// We may have expressions like `a and b` that work even if `a` and `b` are non-boolean and expression return boolean or nullable.
+/// In some contexts, we may split `a` and `b`, but we still want to have the same logic applied, as if it were still an `and` operand.
+JoinActionRef toBoolIfNeeded(JoinActionRef condition, ActionsDAG & actions_dag, const FunctionOverloadResolverPtr & concat_function)
+{
+    auto output_type = removeNullable(condition.node->result_type);
+    WhichDataType which_type(output_type);
+    if (!which_type.isUInt8())
+    {
+        DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
+        ColumnWithTypeAndName rhs;
+        const ActionsDAG::Node * rhs_node = nullptr;
+        if (concat_function->getName() == "and")
+            rhs_node = &actions_dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true"));
+        else if (concat_function->getName() == "or")
+            rhs_node = &actions_dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(0, 0), uint8_ty, "false"));
+
+        if (rhs_node)
+            return JoinActionRef(&actions_dag.addFunction(concat_function, {condition.node, rhs_node}, {}));
+    }
+    return condition;
+}
+
 JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, ActionsDAG & actions_dag, const FunctionOverloadResolverPtr & concat_function)
 {
     if (conditions.empty())
@@ -212,8 +234,9 @@ JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, Ac
 
     if (conditions.size() == 1)
     {
-        actions_dag.addOrReplaceInOutputs(*conditions.front().node);
-        return conditions.front();
+        auto result = toBoolIfNeeded(conditions.front(), actions_dag, concat_function);
+        actions_dag.addOrReplaceInOutputs(*result.node);
+        return result;
     }
 
     ActionsDAG::NodeRawConstPtrs nodes;
@@ -645,7 +668,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
             }
         }
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(query_context));
+        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(query_context));
     }
 
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
@@ -681,7 +704,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
 
     if (swap_inputs)
     {
-        table_join->swapSides(reverseJoinKind(join_info.kind));
+        table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
     }
 

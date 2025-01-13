@@ -18,10 +18,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
-/// Apply optimization function to the QueryPlan using DFS traversal.
-using OptimizeStepFunc = bool (*)(QueryPlan::Node &, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
-bool optimizeTreeWithDFS(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, OptimizeStepFunc func);
-
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.

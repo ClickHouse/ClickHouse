@@ -35,20 +35,11 @@ namespace DB::Setting
 namespace DB::QueryPlanOptimizations
 {
 
-static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter, Stack & steps_stack)
+static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
-    steps_stack.push_back({.node = &node});
-    SCOPE_EXIT({ steps_stack.pop_back(); });
-
-    constexpr size_t max_chain_length = 64;
-    if (steps_stack.size() >= max_chain_length)
-        return {};
-
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        optimizePrimaryKeyConditionAndLimit(steps_stack);
-
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
         analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
@@ -93,18 +84,13 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
         return {};
 
     if (typeid_cast<ExpressionStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), has_filter, steps_stack);
+        return estimateReadRowsCount(*node.children.front(), has_filter);
     if (typeid_cast<FilterStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), true, steps_stack);
+        return estimateReadRowsCount(*node.children.front(), true);
 
     return {};
 }
 
-static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node)
-{
-    Stack steps_stack;
-    return estimateReadRowsCount(node, false, steps_stack);
-}
 
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
 {
@@ -156,8 +142,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     const auto & right_stream_input_header = headers.back();
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
-    auto updated_kind = reverseJoinKind(table_join.kind());
-    updated_table_join->swapSides(updated_kind);
+    updated_table_join->swapSides();
     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
     join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
     return true;
@@ -320,12 +305,6 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
             join_ptr,
             settings[Setting::max_block_size]);
         new_join_node.children = {new_left_node};
-    }
-
-    {
-        WriteBufferFromOwnString buffer;
-        IQueryPlanStep::FormatSettings settings_out{.out = buffer, .write_header = true};
-        new_join_node.step->describeActions(settings_out);
     }
 
     if (!post_filter)

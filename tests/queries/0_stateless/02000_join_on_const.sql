@@ -57,7 +57,7 @@ SELECT * FROM t1 LEFT JOIN t2 ON NULL SETTINGS join_algorithm = 'partial_merge';
 SELECT * FROM t1 RIGHT JOIN t2 ON NULL SETTINGS join_algorithm = 'auto'; -- { serverError INVALID_JOIN_ON_EXPRESSION,NOT_IMPLEMENTED }
 SELECT * FROM t1 FULL JOIN t2 ON NULL SETTINGS join_algorithm = 'partial_merge'; -- { serverError INVALID_JOIN_ON_EXPRESSION,NOT_IMPLEMENTED }
 
-SET query_plan_use_new_logical_join_step = 'auto';
+SET query_plan_use_new_logical_join_step = 1;
 
 -- mixing of constant and non-constant expressions in ON is not allowed
 SELECT * FROM t1 JOIN t2 ON t1.id = t2.id AND 1 == 1 SETTINGS enable_analyzer = 0; -- { serverError AMBIGUOUS_COLUMN_NAME }

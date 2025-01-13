@@ -291,7 +291,7 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    void swapSides(JoinKind updated_kind);
+    void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
 

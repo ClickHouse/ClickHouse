@@ -487,12 +487,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
             QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
         QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-
-        QueryPlanOptimizations::optimizeTreeWithDFS(optimization_settings, *root, nodes, QueryPlanOptimizations::optimizeJoinLogical);
-        bool has_join_logical = QueryPlanOptimizations::optimizeTreeWithDFS(optimization_settings, *root, nodes, QueryPlanOptimizations::convertLogicalJoinToPhysical);
-        if (!has_join_logical)
-            QueryPlanOptimizations::optimizeTreeWithDFS(optimization_settings, *root, nodes, QueryPlanOptimizations::optimizeJoinLegacy);
-
         QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
         if (optimization_settings.build_sets)
             QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
