@@ -373,11 +373,11 @@ private:
 class ParquetFileMetaDataCache : public CacheBase<String, parquet::FileMetaData>
 {
 public:
-    static ParquetFileMetaDataCache *  instance(UInt64 max_size_bytes, UInt64 max_entries);
+    static ParquetFileMetaDataCache *  instance(UInt64 max_size_bytes);
     void clear() {}
 
 private:
-    ParquetFileMetaDataCache(UInt64 max_size_bytes, UInt64 max_entries);
+    ParquetFileMetaDataCache(UInt64 max_size_bytes);
 };
 
 }
