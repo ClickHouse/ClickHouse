@@ -61,7 +61,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool validate_enum_literals_in_opearators;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
@@ -651,11 +651,11 @@ struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 struct ComparisonParams
 {
     bool check_decimal_overflow;
-    bool validate_enum_literals_in_opearators;
+    bool validate_enum_literals_in_operators;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_opearators(context->getSettingsRef()[Setting::validate_enum_literals_in_opearators])
+        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
     {}
 };
 
@@ -907,7 +907,7 @@ private:
         {
             if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
                 return false;
-            if (params.validate_enum_literals_in_opearators)
+            if (params.validate_enum_literals_in_operators)
                 return false;
             if (!enum_values || string_value.getType() != Field::Types::String)
                 return false;
