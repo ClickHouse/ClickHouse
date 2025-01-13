@@ -597,14 +597,15 @@ std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAnd
     auto responses = zk_client->tryGet(failed_paths);
     for (size_t i = 0; i < responses.size(); ++i)
     {
-        check_code(responses[i].error, paths[check_paths_indexes[i]]);
+        const auto & filename = paths[check_paths_indexes[i]];
+        check_code(responses[i].error, filename);
         if (responses[i].error == Coordination::Error::ZNONODE)
         {
             result.push_back(check_paths_indexes[i]);
         }
         else
         {
-            LOG_TEST(log_, "Skipping file {}: Failed", check_paths_indexes[i]);
+            LOG_TEST(log_, "Skipping file {}: Failed", filename);
         }
 
     }

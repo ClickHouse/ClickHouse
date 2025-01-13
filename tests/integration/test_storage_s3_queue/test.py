@@ -255,8 +255,11 @@ def generate_random_files(
     bucket=None,
     use_prefix=None,
     use_random_names=False,
+    files=None,
 ):
-    if use_random_names:
+    if files is not None:
+        pass
+    elif use_random_names:
         files = [
             (f"{files_path}/{random_str(10)}.csv", i)
             for i in range(start_ind, start_ind + count)
@@ -2875,3 +2878,90 @@ def test_migration(started_cluster, setting_prefix):
     assert buckets_num == metadata["buckets"]
 
     node.query(f"DROP TABLE r.{table_name} SYNC")
+
+
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+def test_skipping_processed_and_failed_files(started_cluster, mode):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_replicated_{mode}_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+        database_name="r",
+    )
+
+    files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_to_generate)]
+    total_values = generate_random_files(
+        started_cluster,
+        files_path,
+        files_to_generate,
+        start_ind=0,
+        row_num=1,
+        files=files,
+    )
+    incorrect_values = [
+        ["failed", 1, 1],
+    ]
+    incorrect_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
+    ).encode()
+
+    failed_file = f"{files_path}/testz_fff.csv"
+    put_s3_file_content(
+        started_cluster, failed_file, incorrect_values_csv
+    )
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM default.{dst_table_name}"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+    for _ in range(20):
+        if node2.contains_in_log(f"StorageS3Queue (r.{table_name}): Processed rows: 0"):
+            break
+        time.sleep(1)
+    assert node2.contains_in_log(f"StorageS3Queue (r.{table_name}): Processed rows: 0")
+
+    for file in files:
+        assert node2.contains_in_log(
+            f"StorageS3Queue (r.{table_name}): Skipping file {file[0]}: Processed"
+        )
+
+    assert node2.contains_in_log(
+        f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+    )

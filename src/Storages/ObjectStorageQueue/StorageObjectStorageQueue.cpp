@@ -582,6 +582,7 @@ bool StorageObjectStorageQueue::streamToViews()
         total_rows += rows;
     }
 
+    LOG_TEST(log, "Processed rows: {}", total_rows);
     return total_rows > 0;
 }
 

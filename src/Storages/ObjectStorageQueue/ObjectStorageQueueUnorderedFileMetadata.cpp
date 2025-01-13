@@ -152,7 +152,7 @@ std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedA
         {
             LOG_TEST(log_, "Skipping file {}: {}",
                      paths[i / 2],
-                     responses[i].error == Coordination::Error::ZNONODE ? "Processed" : "Failed");
+                     responses[i].error == Coordination::Error::ZOK ? "Processed" : "Failed");
         }
         i += 2;
     }
