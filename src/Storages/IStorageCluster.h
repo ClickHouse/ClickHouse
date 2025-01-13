@@ -31,7 +31,8 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/) override;
 
-    ClusterPtr getCluster(ContextPtr context) const;
+    ClusterPtr getCluster(ContextPtr context, size_t max_hosts = 0) const;
+
     /// Query is needed for pruning by virtual columns (_file, _path)
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const = 0;
 
