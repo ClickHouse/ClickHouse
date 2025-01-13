@@ -51,7 +51,10 @@ public:
         block.checkNumberOfRows();
 
         size_t num_rows = block.rows();
-        return Chunk(block.getColumns(), num_rows);
+        auto chunk = Chunk(block.getColumns(), num_rows);
+        chunk.setRowsReadBefore(total_rows);
+        total_rows += num_rows;
+        return chunk;
     }
 
     void setReadBuffer(ReadBuffer & in_) override

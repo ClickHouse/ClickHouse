@@ -268,6 +268,8 @@ Chunk ParallelParsingInputFormat::read()
         }
     }
 
+    res.setRowsReadBefore(total_rows);
+    total_rows += res.getNumRows();
     return res;
 }
 

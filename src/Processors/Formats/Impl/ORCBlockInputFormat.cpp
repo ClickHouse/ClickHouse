@@ -47,7 +47,12 @@ Chunk ORCBlockInputFormat::read()
         return {};
 
     if (need_only_count)
-        return getChunkForCount(file_reader->GetRawORCReader()->getStripe(stripe_current++)->getNumberOfRows());
+    {
+        auto chunk = getChunkForCount(file_reader->GetRawORCReader()->getStripe(stripe_current++)->getNumberOfRows());
+        chunk.setRowsReadBefore(total_rows);
+        total_rows += chunk.getNumRows();
+        return chunk;
+    }
 
     auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
     if (!batch_result.ok())
@@ -77,7 +82,10 @@ Chunk ORCBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, block_missing_values_ptr);
+    auto chunk = arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, block_missing_values_ptr);
+    chunk.setRowsReadBefore(total_rows);
+    total_rows += chunk.getNumRows();
+    return chunk;
 }
 
 void ORCBlockInputFormat::resetParser()

@@ -88,7 +88,6 @@ private:
     const FormatSettings format_settings;
 
     const size_t num_columns;
-    size_t total_rows = 0;
 
     std::vector<ParserType> parser_type_for_column;
     std::vector<size_t> attempts_to_deduce_template;

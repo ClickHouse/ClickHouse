@@ -34,6 +34,8 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 Chunk ArrowBlockInputFormat::read()
 {
     Chunk res;
+    res.setRowsReadBefore(total_rows);
+
     block_missing_values.clear();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
     size_t batch_start = getDataOffsetMaybeCompressed(*in);
@@ -61,7 +63,10 @@ Chunk ArrowBlockInputFormat::read()
             return {};
 
         if (record_batch_current >= record_batch_total)
+        {
+            total_rows += res.getNumRows();
             return res;
+        }
 
         if (need_only_count)
         {
@@ -69,6 +74,7 @@ Chunk ArrowBlockInputFormat::read()
             if (!rows.ok())
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+            total_rows += rows.ValueUnsafe();
             return getChunkForCount(*rows);
         }
 
@@ -96,6 +102,8 @@ Chunk ArrowBlockInputFormat::read()
     auto batch_end = getDataOffsetMaybeCompressed(*in);
     if (batch_end > batch_start)
         approx_bytes_read_for_chunk = batch_end - batch_start;
+    total_rows += res.getNumRows();
+
     return res;
 }
 

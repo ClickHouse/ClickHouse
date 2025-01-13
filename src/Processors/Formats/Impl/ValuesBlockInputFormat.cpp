@@ -110,6 +110,7 @@ Chunk ValuesBlockInputFormat::read()
     if (total_rows == 0)
         readPrefix();
 
+    size_t total_rows_before = total_rows;
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
     block_missing_values.clear();
@@ -147,7 +148,9 @@ Chunk ValuesBlockInputFormat::read()
         }
 
         total_rows += rows_in_block;
-        return getChunkForCount(rows_in_block);
+        auto chunk = getChunkForCount(rows_in_block);
+        chunk.setRowsReadBefore(total_rows_before);
+        return chunk;
     }
 
     /// Evaluate expressions, which were parsed using templates, if any
@@ -176,7 +179,9 @@ Chunk ValuesBlockInputFormat::read()
         column->finalize();
 
     size_t rows = columns[0]->size();
-    return Chunk{std::move(columns), rows};
+    auto chunk = Chunk{std::move(columns), rows};
+    chunk.setRowsReadBefore(total_rows_before);
+    return chunk;
 }
 
 /// We need continuous memory containing the expression to use Lexer

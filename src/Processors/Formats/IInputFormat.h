@@ -77,6 +77,7 @@ protected:
     InputFormatErrorsLoggerPtr errors_logger;
 
     bool need_only_count = false;
+    size_t total_rows = 0;
 
 private:
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;

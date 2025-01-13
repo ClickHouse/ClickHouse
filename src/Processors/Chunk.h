@@ -127,10 +127,14 @@ public:
     void append(const Chunk & chunk);
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
+    void setRowsReadBefore(UInt64 rows_count) { rows_read_before = rows_count; }
+    UInt64 getRowsReadBefore() const { return rows_read_before; }
+
 private:
     Columns columns;
     UInt64 num_rows = 0;
     ChunkInfoCollection chunk_infos;
+    UInt64 rows_read_before = 0;
 
     void checkNumRowsIsConsistent();
 };

@@ -31,7 +31,10 @@ Chunk OneInputFormat::read()
     done = true;
     auto column = ColumnUInt8::create();
     column->insertDefault();
-    return Chunk(Columns{std::move(column)}, 1);
+    auto chunk = Chunk(Columns{std::move(column)}, 1);
+    chunk.setRowsReadBefore(total_rows);
+    ++total_rows;
+    return chunk;
 }
 
 void registerInputFormatOne(FormatFactory & factory)

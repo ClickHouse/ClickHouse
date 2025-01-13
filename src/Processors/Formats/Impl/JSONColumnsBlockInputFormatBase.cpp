@@ -148,7 +148,10 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         }
 
         approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - chunk_start;
-        return getChunkForCount(num_rows);
+        auto chunk = getChunkForCount(num_rows);
+        chunk.setRowsReadBefore(total_rows);
+        total_rows += chunk.getNumRows();
+        return chunk;
     }
 
     std::vector<UInt8> seen_columns(columns.size(), 0);
@@ -204,7 +207,10 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         }
     }
 
-    return Chunk(std::move(columns), rows);
+    auto chunk = Chunk(std::move(columns), rows);
+    chunk.setRowsReadBefore(total_rows);
+    total_rows += chunk.getNumRows();
+    return chunk;
 }
 
 JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(

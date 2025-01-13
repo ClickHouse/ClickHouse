@@ -953,7 +953,12 @@ Chunk ParquetBlockInputFormat::read()
         return {};
 
     if (need_only_count)
-        return getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
+    {
+        auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
+        chunk.setRowsReadBefore(total_rows);
+        total_rows += chunk.getNumRows();
+        return chunk;
+    }
 
     std::unique_lock lock(mutex);
 
@@ -985,6 +990,8 @@ Chunk ParquetBlockInputFormat::read()
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
+            chunk.chunk.setRowsReadBefore(total_rows);
+            total_rows += chunk.chunk.getNumRows();
             return std::move(chunk.chunk);
         }
 

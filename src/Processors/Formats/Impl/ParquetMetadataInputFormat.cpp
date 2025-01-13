@@ -1,4 +1,5 @@
 #include "ParquetMetadataInputFormat.h"
+#include "Processors/Chunk.h"
 
 #if USE_PARQUET
 
@@ -145,7 +146,11 @@ Chunk ParquetMetadataInputFormat::read()
 {
     Chunk res;
     if (done)
+    {
+        res.setRowsReadBefore(total_rows);
+        total_rows += res.getNumRows();
         return res;
+    }
 
     auto metadata = getFileMetadata(*in, format_settings, is_stopped);
 
@@ -232,6 +237,8 @@ Chunk ParquetMetadataInputFormat::read()
     }
 
     done = true;
+    res.setRowsReadBefore(total_rows);
+    total_rows += res.getNumRows();
     return res;
 }
 
