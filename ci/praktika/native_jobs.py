@@ -152,10 +152,10 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         else:
             assert Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika yaml")
             exit_code, output, err = Shell.get_res_stdout_stderr(
-                f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
+                f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
             if output:
-                info = f"workflows are outdated"
+                info = f"outdated workflows: [{', '.join(output)}], run [praktika yaml] to update"
                 status = Result.Status.FAILED
                 print("ERROR: ", info)
             elif exit_code == 0 and not err:
@@ -163,15 +163,12 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             else:
                 print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
-        return (
-            Result(
-                name="Check Workflows updated",
-                status=status,
-                start_time=stop_watch.start_time,
-                duration=stop_watch.duration,
-                info=info,
-            ),
-            info,
+        return Result(
+            name="Check Workflows updated",
+            status=status,
+            start_time=stop_watch.start_time,
+            duration=stop_watch.duration,
+            info=info,
         )
 
     def _check_secrets(secrets):
@@ -186,15 +183,12 @@ def _config_workflow(workflow: Workflow.Config, job_name):
                 print(info)
 
         info = "\n".join(infos)
-        return (
-            Result(
-                name="Check Secrets",
-                status=(Result.Status.FAILED if infos else Result.Status.SUCCESS),
-                start_time=stop_watch.start_time,
-                duration=stop_watch.duration,
-                info=info,
-            ),
-            info,
+        return Result(
+            name="Check Secrets",
+            status=(Result.Status.FAILED if infos else Result.Status.SUCCESS),
+            start_time=stop_watch.start_time,
+            duration=stop_watch.duration,
+            info=info,
         )
 
     def _check_db(workflow):
@@ -203,15 +197,12 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
             workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD).get_value(),
         ).check()
-        return (
-            Result(
-                name="Check CI DB",
-                status=(Result.Status.FAILED if not res else Result.Status.SUCCESS),
-                start_time=stop_watch.start_time,
-                duration=stop_watch.duration,
-                info=info,
-            ),
-            info,
+        return Result(
+            name="Check CI DB",
+            status=(Result.Status.FAILED if not res else Result.Status.SUCCESS),
+            start_time=stop_watch.start_time,
+            duration=stop_watch.duration,
+            info=info,
         )
 
     print(f"Start [{job_name}], workflow [{workflow.name}]")
@@ -251,26 +242,26 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             job_status = Result.Status.ERROR
 
     # checks:
-    result_, info = _check_yaml_up_to_date()
+    result_ = _check_yaml_up_to_date()
     if result_.status != Result.Status.SUCCESS:
         print("ERROR: yaml files are outdated - regenerate, commit and push")
         job_status = Result.Status.ERROR
-        info_lines.append(job_name + ": " + info)
+        info_lines.append(result_.name + ": " + result_.info)
     results.append(result_)
 
     if workflow.secrets:
-        result_, info = _check_secrets(workflow.secrets)
+        result_ = _check_secrets(workflow.secrets)
         if result_.status != Result.Status.SUCCESS:
             print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
             job_status = Result.Status.ERROR
-            info_lines.append(job_name + ": " + info)
+            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if workflow.enable_cidb:
-        result_, info = _check_db(workflow)
+        result_ = _check_db(workflow)
         if result_.status != Result.Status.SUCCESS:
             job_status = Result.Status.ERROR
-            info_lines.append(job_name + ": " + info)
+            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if workflow.enable_merge_commit:

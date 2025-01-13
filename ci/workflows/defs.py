@@ -141,12 +141,12 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/kerberos-kdc",
-    #     path="./docker/test/integration/kerberos_kdc",
-    #     platforms=[Docker.Platforms.AMD],
-    #     depends_on=[],
-    # ),
+    Docker.Config(
+        name="clickhouse/kerberos-kdc",
+        path="./docker/test/integration/kerberos_kdc",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=[],
+    ),
     Docker.Config(
         name="clickhouse/mysql-golang-client",
         path="./docker/test/integration/mysql_golang_client",
@@ -156,7 +156,9 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-java-client",
         path="./docker/test/integration/mysql_java_client",
-        platforms=Docker.Platforms.arm_amd,
+        # TODO: amd image on arm runner hangs on "RUN javac MySQLJavaClientTest.java"
+        #  fix and enable for both platforms
+        platforms=[Docker.Platforms.AMD],
         depends_on=[],
     ),
     Docker.Config(
@@ -290,6 +292,7 @@ class JobNames:
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
     INSTALL_CHECK = "Install check"
+    ASTFUZZER = "AST Fuzzer"
 
 
 class ToolSet:
@@ -353,6 +356,7 @@ class ArtifactNames:
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
     FUZZERS = "FUZZERS"
+    FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
     PERF_REPORTS_AMD_1_3 = "PERF_REPORTS_AMD_1_3"
     PERF_REPORTS_AMD_2_3 = "PERF_REPORTS_AMD_2_3"
@@ -423,7 +427,18 @@ ARTIFACTS = [
         ]
     ),
     Artifact.Config(
-        name=ArtifactNames.FUZZERS, type=Artifact.Type.S3, path=f"{TEMP_DIR}/fuzzers/*"
+        name=ArtifactNames.FUZZERS,
+        type=Artifact.Type.S3,
+        path=[
+            f"{TEMP_DIR}/build/programs/*_fuzzer",
+            f"{TEMP_DIR}/build/programs/*_fuzzer.options",
+            f"{TEMP_DIR}/build/programs/all.dict",
+        ],
+    ),
+    Artifact.Config(
+        name=ArtifactNames.FUZZERS_CORPUS,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
@@ -616,7 +631,7 @@ class Jobs:
             [ArtifactNames.CH_RISCV64],
             [ArtifactNames.CH_S390X],
             [ArtifactNames.CH_LOONGARCH64],
-            [ArtifactNames.FUZZERS],
+            [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
             [RunnerLabels.BUILDER_AMD],
@@ -993,4 +1008,11 @@ class Jobs:
             [ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.CH_AMD_RELEASE],
             [ArtifactNames.DEB_ARM_RELEASE, ArtifactNames.CH_ARM_RELEASE],
         ],
+    )
+    ast_fuzzer_jobs = Job.Config(
+        name=JobNames.ASTFUZZER,
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="python3 ./ci/jobs/fuzzers_job.py",
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
     )
