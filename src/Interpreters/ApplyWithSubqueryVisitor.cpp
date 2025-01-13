@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int UNSUPPORTED_METHOD;
+}
+
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     checkStackSize();
@@ -34,6 +39,11 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
+    /// This is probably not the best place to check this, but it's just to throw a proper error to the user
+    if (ast.recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     std::optional<Data> new_data;
     if (auto with = ast.with())
     {
