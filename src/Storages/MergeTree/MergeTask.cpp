@@ -5,46 +5,46 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Common/ProfileEvents.h>
-#include <Disks/SingleDiskVolume.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <DataTypes/ObjectUtils.h>
+#include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Merges/CollapsingSortedTransform.h>
-#include <Processors/Merges/SummingSortedTransform.h>
-#include <Processors/Merges/ReplacingSortedTransform.h>
-#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <Processors/Transforms/TTLTransform.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
-#include <Processors/QueryPlan/ExtractColumnsStep.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/addSubcolumnsExtraction.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeProjectionPartsTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -1098,11 +1098,12 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
 
             auto indices_expression = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
-            auto indices_expression_dag = addSubcolumnsExtraction(indices_expression->getActionsDAG().clone(), merge_column_query_plan.getCurrentHeader(), global_ctx->data->getContext());
+            auto indices_expression_dag = indices_expression->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(merge_column_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
             indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
                 merge_column_query_plan.getCurrentHeader(),
-                std::move(indices_expression_dag));
+                ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
             merge_column_query_plan.addStep(std::move(calculate_indices_expression_step));
         }
     }
@@ -1782,10 +1783,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         /// Calculate sorting key expressions so that they are available for merge sorting.
         const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
-        auto sorting_key_expression_dag = addSubcolumnsExtraction(sorting_key_expression->getActionsDAG().clone(), merge_parts_query_plan.getCurrentHeader(), global_ctx->data->getContext());
+        auto sorting_key_expression_dag = sorting_key_expression->getActionsDAG().clone();
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(merge_parts_query_plan.getCurrentHeader(), sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            std::move(sorting_key_expression_dag));
+            ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag)));
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
@@ -1875,11 +1877,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (!global_ctx->merging_skip_indexes.empty())
     {
         auto indices_expression = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
-        auto indices_expression_dag = addSubcolumnsExtraction(indices_expression->getActionsDAG().clone(), merge_parts_query_plan.getCurrentHeader(), global_ctx->data->getContext());
+        auto indices_expression_dag = indices_expression->getActionsDAG().clone();
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(merge_parts_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
         indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            std::move(indices_expression_dag));
+            ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
         merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
     }
 
