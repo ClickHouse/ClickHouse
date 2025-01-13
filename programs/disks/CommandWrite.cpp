@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/TerminalSize.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

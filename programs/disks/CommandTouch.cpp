@@ -3,6 +3,7 @@
 #include "DisksApp.h"
 #include "DisksClient.h"
 #include "ICommand.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
