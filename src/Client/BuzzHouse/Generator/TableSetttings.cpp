@@ -5,7 +5,7 @@ namespace BuzzHouse
 
 static std::vector<std::string> merge_storage_policies;
 
-static std::map<std::string, CHSetting> mergeTreeTableSettings = {
+static std::unordered_map<std::string, CHSetting> mergeTreeTableSettings = {
     {"adaptive_write_buffer_initial_size",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 32 * 1024 * 1024)); }, {}, false)},
@@ -293,7 +293,7 @@ static std::map<std::string, CHSetting> mergeTreeTableSettings = {
          false)},
     {"vertical_merge_remote_filesystem_prefetch", CHSetting(trueOrFalse, {}, false)}};
 
-std::map<TableEngineValues, std::map<std::string, CHSetting>> allTableSettings
+std::unordered_map<TableEngineValues, std::unordered_map<std::string, CHSetting>> allTableSettings
     = {{MergeTree, mergeTreeTableSettings},
        {ReplacingMergeTree, mergeTreeTableSettings},
        {SummingMergeTree, mergeTreeTableSettings},

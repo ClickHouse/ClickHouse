@@ -25,30 +25,30 @@ private:
 public:
     explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc), qfile(ffc.db_file_path / "query.data") { buf.reserve(4096); }
 
-    int resetOracleValues();
-    int setIntermediateStepSuccess(bool success);
-    int processFirstOracleQueryResult(bool success);
-    int processSecondOracleQueryResult(bool success, const std::string & oracle_name);
+    void resetOracleValues();
+    void setIntermediateStepSuccess(bool success);
+    void processFirstOracleQueryResult(bool success);
+    void processSecondOracleQueryResult(bool success, const std::string & oracle_name);
 
     /* Correctness query oracle */
-    int generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
-    int generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
+    void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
+    void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /* Dump and read table oracle */
-    int dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
-    int generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
-    int generateClearQuery(const SQLTable & t, SQLQuery & sq3);
-    int generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
+    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
+    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
+    void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
+    void generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
 
     /* Run query with different settings oracle */
-    int generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
-    int generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
-    int generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
+    void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
+    void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
+    void generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
     /* Replace query with peer tables */
-    int truncatePeerTables(const StatementGenerator & gen) const;
-    int optimizePeerTables(const StatementGenerator & gen) const;
-    int replaceQueryWithTablePeers(
+    void truncatePeerTables(const StatementGenerator & gen) const;
+    void optimizePeerTables(const StatementGenerator & gen) const;
+    void replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
 

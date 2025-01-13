@@ -1,4 +1,5 @@
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
+#include "SQLCatalog.h"
 
 #include <cstdio>
 
@@ -13,7 +14,7 @@ SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 or
 SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 */
-int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
+void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
@@ -55,7 +56,6 @@ int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-    return 0;
 }
 
 /*
@@ -63,7 +63,7 @@ SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
 or
 SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 */
-int QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
+void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
@@ -94,13 +94,12 @@ int QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & s
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-    return 0;
 }
 
 /*
 Dump and read table oracle
 */
-int QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
+void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
     bool first = true;
     TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
@@ -139,10 +138,9 @@ int QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-    return 0;
 }
 
-static const std::map<OutFormat, InFormat> out_in{
+static const std::unordered_map<OutFormat, InFormat> out_in{
     {OutFormat::OUT_CSV, InFormat::IN_CSV},
     {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
     {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
@@ -176,7 +174,7 @@ static const std::map<OutFormat, InFormat> out_in{
     {OutFormat::OUT_Native, InFormat::IN_Native},
     {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
 
-int QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
+void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
 {
     bool first = true;
     Insert * ins = sq2.mutable_inner_query()->mutable_insert();
@@ -235,10 +233,9 @@ int QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & 
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     jt->set_final(t.supportsFinal());
-    return 0;
 }
 
-int QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
+void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 {
     Truncate * trunc = sq3.mutable_inner_query()->mutable_trunc();
     ExprSchemaTable * est = trunc->mutable_est();
@@ -248,10 +245,9 @@ int QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    return 0;
 }
 
-int QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     Insert * ins = sq4.mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
@@ -283,10 +279,9 @@ int QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & 
         sv->set_property("input_format_csv_detect_header");
         sv->set_value("0");
     }
-    return 0;
 }
 
-static std::map<std::string, CHSetting> queryOracleSettings;
+static std::unordered_map<std::string, CHSetting> queryOracleSettings;
 
 void loadFuzzerOracleSettings(const FuzzConfig &)
 {
@@ -302,7 +297,7 @@ void loadFuzzerOracleSettings(const FuzzConfig &)
 /*
 Run query with different settings oracle
 */
-int QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
+void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
     const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
     SettingValues * sv = sq1.mutable_inner_query()->mutable_setting_values();
@@ -335,10 +330,9 @@ int QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
         }
         can_test_query_success &= !chs.changes_behavior;
     }
-    return 0;
 }
 
-int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
+void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 {
     const SettingValues & osv = sq1.inner_query().setting_values();
     SettingValues * sv = sq3.mutable_inner_query()->mutable_setting_values();
@@ -351,10 +345,9 @@ int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
         setv->set_property(osetv.property());
         setv->set_value(nsettings[i]);
     }
-    return 0;
 }
 
-int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
+void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
@@ -364,10 +357,12 @@ int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.generatingPeerQuery(pq);
+    gen.setAllowEngineUDF(this->peer_query != PeerQuery::ClickHouseOnly);
     gen.generateTopSelect(rg, global_aggregate, std::numeric_limits<uint32_t>::max(), ts);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.generatingPeerQuery(PeerQuery::None);
+    gen.setAllowEngineUDF(true);
 
     if (!global_aggregate)
     {
@@ -381,7 +376,6 @@ int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-    return 0;
 }
 
 void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen)
@@ -489,27 +483,25 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
     }
 }
 
-int QueryOracle::truncatePeerTables(const StatementGenerator & gen) const
+void QueryOracle::truncatePeerTables(const StatementGenerator & gen) const
 {
     for (const auto & entry : found_tables)
     {
         //first truncate tables
         gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
     }
-    return 0;
 }
 
-int QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
+void QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
 {
     for (const auto & entry : found_tables)
     {
         //lastly optimize tables
         gen.connections.optimizePeerTableOnRemote(gen.tables.at(entry));
     }
-    return 0;
 }
 
-int QueryOracle::replaceQueryWithTablePeers(
+void QueryOracle::replaceQueryWithTablePeers(
     RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
 {
     found_tables.clear();
@@ -546,33 +538,29 @@ int QueryOracle::replaceQueryWithTablePeers(
         gen.entries.clear();
         peer_queries.push_back(std::move(next));
     }
-    return 0;
 }
 
-int QueryOracle::resetOracleValues()
+void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     first_success = second_sucess = other_steps_sucess = can_test_query_success = true;
-    return 0;
 }
 
-int QueryOracle::setIntermediateStepSuccess(const bool success)
+void QueryOracle::setIntermediateStepSuccess(const bool success)
 {
     other_steps_sucess &= success;
-    return 0;
 }
 
-int QueryOracle::processFirstOracleQueryResult(const bool success)
+void QueryOracle::processFirstOracleQueryResult(const bool success)
 {
     if (success)
     {
         md5_hash.hashFile(qfile.generic_string(), first_digest);
     }
     first_success = success;
-    return 0;
 }
 
-int QueryOracle::processSecondOracleQueryResult(const bool success, const std::string & oracle_name)
+void QueryOracle::processSecondOracleQueryResult(const bool success, const std::string & oracle_name)
 {
     if (success)
     {
@@ -590,7 +578,6 @@ int QueryOracle::processSecondOracleQueryResult(const bool success, const std::s
             throw std::runtime_error(oracle_name + " oracle failed with different result sets");
         }
     }
-    return 0;
 }
 
 }

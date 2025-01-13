@@ -7,7 +7,7 @@ namespace BuzzHouse
 
 extern SQLType *size_tp, *null_tp;
 
-extern std::map<std::string, std::map<std::string, SQLType *>> systemTables;
+extern std::unordered_map<std::string, std::unordered_map<std::string, SQLType *>> systemTables;
 
 void loadSystemTables(bool has_cloud_features);
 

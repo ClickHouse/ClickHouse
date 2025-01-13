@@ -34,7 +34,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::string database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    std::map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
+    std::unordered_map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
         {"hostname", [&](const JSONObjectType & value) { hostname = std::string(value.getString()); }},
         {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
         {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -81,7 +81,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
         throw std::runtime_error("Parsed JSON value is not an object");
     }
 
-    std::map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
+    std::unordered_map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {
@@ -119,7 +119,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
              std::transform(input.begin(), input.end(), input.begin(), ::tolower);
              const auto & split = splitString(input, ',');
 
-             std::map<std::string, uint32_t> type_entries
+             std::unordered_map<std::string, uint32_t> type_entries
                  = {{"bool", allow_bool},
                     {"uint", allow_unsigned_int},
                     {"int8", allow_int8},

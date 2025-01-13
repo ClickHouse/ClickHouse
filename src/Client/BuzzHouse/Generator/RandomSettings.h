@@ -36,9 +36,9 @@ const std::function<void(RandomGenerator &, std::string &)> zeroOneTwo
 const std::function<void(RandomGenerator &, std::string &)> zeroToThree
     = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
-extern std::map<std::string, CHSetting> serverSettings;
+extern std::unordered_map<std::string, CHSetting> serverSettings;
 
-const std::map<std::string, CHSetting> memoryTableSettings
+const std::unordered_map<std::string, CHSetting> memoryTableSettings
     = {{"min_bytes_to_keep",
         CHSetting(
             [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
@@ -53,18 +53,18 @@ const std::map<std::string, CHSetting> memoryTableSettings
             [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
        {"compress", CHSetting(trueOrFalse, {}, false)}};
 
-const std::map<std::string, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
+const std::unordered_map<std::string, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
 
-const std::map<std::string, CHSetting> joinTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
+const std::unordered_map<std::string, CHSetting> joinTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
 
-const std::map<std::string, CHSetting> embeddedRocksDBTableSettings = {
+const std::unordered_map<std::string, CHSetting> embeddedRocksDBTableSettings = {
     {"optimize_for_bulk_insert", CHSetting(trueOrFalse, {}, false)},
     {"bulk_insert_block_size",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
 };
 
-const std::map<std::string, CHSetting> mySQLTableSettings
+const std::unordered_map<std::string, CHSetting> mySQLTableSettings
     = {{"connection_pool_size",
         CHSetting(
             [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
@@ -72,7 +72,7 @@ const std::map<std::string, CHSetting> mySQLTableSettings
         CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
        {"connection_auto_close", CHSetting(trueOrFalse, {}, false)}};
 
-const std::map<std::string, CHSetting> fileTableSettings
+const std::unordered_map<std::string, CHSetting> fileTableSettings
     = {{"engine_file_allow_create_multiple_files", CHSetting(trueOrFalse, {}, false)},
        {"engine_file_empty_if_not_exists", CHSetting(trueOrFalse, {}, false)},
        {"engine_file_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
@@ -89,7 +89,7 @@ const std::map<std::string, CHSetting> fileTableSettings
             {},
             false)}};
 
-const std::map<std::string, CHSetting> s3QueueTableSettings
+const std::unordered_map<std::string, CHSetting> s3QueueTableSettings
     = {{"after_processing",
         CHSetting(
             [](RandomGenerator & rg, std::string & ret)
@@ -109,9 +109,9 @@ const std::map<std::string, CHSetting> s3QueueTableSettings
             {},
             false)}};
 
-extern std::map<TableEngineValues, std::map<std::string, CHSetting>> allTableSettings;
+extern std::unordered_map<TableEngineValues, std::unordered_map<std::string, CHSetting>> allTableSettings;
 
-const std::map<std::string, CHSetting> mergeTreeColumnSettings = {
+const std::unordered_map<std::string, CHSetting> mergeTreeColumnSettings = {
     {"min_compress_block_size",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
@@ -119,7 +119,7 @@ const std::map<std::string, CHSetting> mergeTreeColumnSettings = {
      CHSetting(
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)}};
 
-const std::map<TableEngineValues, std::map<std::string, CHSetting>> allColumnSettings
+const std::unordered_map<TableEngineValues, std::unordered_map<std::string, CHSetting>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},
        {ReplacingMergeTree, mergeTreeColumnSettings},
        {SummingMergeTree, mergeTreeColumnSettings},

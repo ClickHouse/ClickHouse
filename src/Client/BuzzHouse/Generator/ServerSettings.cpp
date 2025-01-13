@@ -5,7 +5,7 @@ namespace BuzzHouse
 
 static std::vector<std::string> settings_timezones;
 
-std::map<std::string, CHSetting> serverSettings = {
+std::unordered_map<std::string, CHSetting> serverSettings = {
     {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"aggregation_in_order_max_block_bytes",
      CHSetting(
@@ -444,7 +444,7 @@ std::map<std::string, CHSetting> serverSettings = {
 
 /// We need to split the serverSettings because in order to initialize the values for the map it
 /// needs to be able to fit into the stack. Note we may have to split it even more in the future.
-static std::map<std::string, CHSetting> serverSettings2 = {
+static std::unordered_map<std::string, CHSetting> serverSettings2 = {
     {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},

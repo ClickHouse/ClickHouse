@@ -3,7 +3,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <map>
+#include <unordered_map>
 #include <random>
 #include <set>
 #include <string>
@@ -214,7 +214,7 @@ public:
     }
 
     template <typename K, typename V>
-    const K & pickKeyRandomlyFromMap(const std::map<K, V> & vals)
+    const K & pickKeyRandomlyFromMap(const std::unordered_map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -223,7 +223,7 @@ public:
     }
 
     template <typename K, typename V>
-    const V & pickValueRandomlyFromMap(const std::map<K, V> & vals)
+    const V & pickValueRandomlyFromMap(const std::unordered_map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -232,7 +232,7 @@ public:
     }
 
     template <typename K, typename V>
-    std::tuple<K, V> pickPairRandomlyFromMap(const std::map<K, V> & vals)
+    std::tuple<K, V> pickPairRandomlyFromMap(const std::unordered_map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();

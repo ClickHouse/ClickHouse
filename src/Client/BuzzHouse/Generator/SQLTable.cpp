@@ -169,7 +169,7 @@ void StatementGenerator::addTableRelation(
     this->levels[this->current_level].rels.push_back(std::move(rel));
 }
 
-int StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats)
+void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats)
 {
     const size_t nstats = (rg.nextMediumNumber() % static_cast<uint32_t>(ColumnStat_MAX)) + 1;
 
@@ -192,10 +192,9 @@ int StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStati
         }
     }
     ids.clear();
-    return 0;
 }
 
-int StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
+void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
 {
     const uint32_t ncodecs = (rg.nextMediumNumber() % UINT32_C(3)) + 1;
 
@@ -244,10 +243,9 @@ int StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
                 break;
         }
     }
-    return 0;
 }
 
-int StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
+void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
 {
     assert(filtered_entries.empty());
     for (const auto & entry : this->entries)
@@ -286,10 +284,10 @@ int StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::o
         this->allow_in_expression_alias = this->allow_subqueries = true;
         this->levels.clear();
     }
-    return 0;
 }
 
-int StatementGenerator::generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr)
+void StatementGenerator::generateNextTTL(
+    RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr)
 {
     const uint32_t nttls = (rg.nextLargeNumber() % 3) + 1;
 
@@ -366,10 +364,9 @@ int StatementGenerator::generateNextTTL(RandomGenerator & rg, const std::optiona
             this->allow_in_expression_alias = this->allow_subqueries = true;
         }
     }
-    return 0;
 }
 
-int StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist)
+void StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist)
 {
     flatTableColumnPath(flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
     const uint32_t ocols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
@@ -379,7 +376,6 @@ int StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t,
         columnPathRef(this->entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
     }
     entries.clear();
-    return 0;
 }
 
 const std::vector<SQLFunc> multicol_hash
@@ -469,7 +465,7 @@ void StatementGenerator::columnPathRef(const ColumnPathChain & entry, ColumnPath
     }
 }
 
-int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
+void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
     {
@@ -559,7 +555,6 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
             }
         }
     }
-    return 0;
 }
 
 template <typename T>
@@ -622,7 +617,7 @@ void StatementGenerator::setMergeTableParamter(RandomGenerator & rg, const char 
     }
 }
 
-int StatementGenerator::generateMergeTreeEngineDetails(
+void StatementGenerator::generateMergeTreeEngineDetails(
     RandomGenerator & rg, const TableEngineValues teng, const PeerTableDatabase peer, const bool add_pkey, TableEngine * te)
 {
     if (rg.nextSmallNumber() < 6)
@@ -720,12 +715,11 @@ int StatementGenerator::generateMergeTreeEngineDetails(
             columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
         }
     }
-    return 0;
 }
 
 const std::vector<std::string> & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
-int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
+void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     SettingValues * svs = nullptr;
 
@@ -984,10 +978,9 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             }
         }
     }
-    return 0;
 }
 
-int StatementGenerator::addTableColumn(
+void StatementGenerator::addTableColumn(
     RandomGenerator & rg,
     SQLTable & t,
     const uint32_t cname,
@@ -1137,10 +1130,9 @@ int StatementGenerator::addTableColumn(
         cd->set_comment(buf);
     }
     to_add[cname] = std::move(col);
-    return 0;
 }
 
-int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef)
+void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef)
 {
     SQLIndex idx;
     const uint32_t iname = t.idx_counter++;
@@ -1240,10 +1232,9 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
         idef->set_granularity(next_dist(rg.generator));
     }
     to_add[iname] = std::move(idx);
-    return 0;
 }
 
-int StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
+void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
     const uint32_t pname = t.proj_counter++;
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
@@ -1256,10 +1247,9 @@ int StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, c
     this->levels.clear();
     this->inside_projection = false;
     to_add.insert(pname);
-    return 0;
 }
 
-int StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef)
+void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef)
 {
     const uint32_t crname = t.constr_counter++;
     auto & to_add = staged ? t.staged_constrs : t.constrs;
@@ -1274,7 +1264,6 @@ int StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, c
     this->allow_in_expression_alias = true;
     this->levels.clear();
     to_add.insert(crname);
-    return 0;
 }
 
 PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng)
@@ -1397,7 +1386,7 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::EmbeddedRocksDB,
        TableEngineValues::Merge};
 
-int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
+void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
     SQLTable next;
     uint32_t tname = 0;
@@ -1632,7 +1621,6 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
 
     assert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
-    return 0;
 }
 
 }
