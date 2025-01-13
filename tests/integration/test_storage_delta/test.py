@@ -13,6 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pyspark
 import pytest
+from azure.storage.blob import BlobServiceClient
 from delta import *
 from deltalake.writer import write_deltalake
 from minio.deleteobjects import DeleteObject
@@ -32,13 +33,13 @@ from pyspark.sql.types import (
     TimestampType,
 )
 from pyspark.sql.window import Window
-from azure.storage.blob import BlobServiceClient
+
 import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
-    S3Uploader,
     AzureUploader,
+    S3Uploader,
     get_file_contents,
     list_s3_objects,
     prepare_s3_bucket,
@@ -48,6 +49,7 @@ from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, with_spark=True)
+
 
 def get_spark():
     builder = (
@@ -103,9 +105,7 @@ def started_cluster():
             cluster.minio_client, cluster.minio_bucket
         )
 
-        cluster.minio_restricted_bucket = "{}-with-auth".format(
-            cluster.minio_bucket
-        )
+        cluster.minio_restricted_bucket = "{}-with-auth".format(cluster.minio_bucket)
         if cluster.minio_client.bucket_exists(cluster.minio_restricted_bucket):
             cluster.minio_client.remove_bucket(cluster.minio_restricted_bucket)
 
@@ -178,15 +178,16 @@ def create_delta_table(node, table_name, bucket="root"):
         ENGINE=DeltaLake(s3, filename = '{table_name}/', url = 'http://minio1:9001/{bucket}/')"""
     )
 
+
 def get_creation_expression(
-        storage_type,
-        table_name,
-        cluster,
-        format="Parquet",
-        table_function=False,
-        allow_dynamic_metadata_for_data_lakes=False,
-        run_on_cluster=False,
-        **kwargs,
+    storage_type,
+    table_name,
+    cluster,
+    format="Parquet",
+    table_function=False,
+    allow_dynamic_metadata_for_data_lakes=False,
+    run_on_cluster=False,
+    **kwargs,
 ):
     allow_dynamic_metadata_for_datalakes_suffix = (
         " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
@@ -208,11 +209,11 @@ def get_creation_expression(
                 return f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
             else:
                 return (
-                        f"""
+                    f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-                        + allow_dynamic_metadata_for_datalakes_suffix
+                    + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
     elif storage_type == "azure":
@@ -228,19 +229,18 @@ def get_creation_expression(
                 """
             else:
                 return (
-                        f"""
+                    f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})"""
-                        + allow_dynamic_metadata_for_datalakes_suffix
+                    + allow_dynamic_metadata_for_datalakes_suffix
                 )
     else:
         raise Exception(f"Unknown delta lake storage type: {storage_type}")
 
 
-
 def default_upload_directory(
-        started_cluster, storage_type, local_path, remote_path, **kwargs
+    started_cluster, storage_type, local_path, remote_path, **kwargs
 ):
     if storage_type == "s3":
         print(kwargs)
@@ -253,7 +253,6 @@ def default_upload_directory(
         )
     else:
         raise Exception(f"Unknown delta storage type: {storage_type}")
-
 
 
 def create_initial_data_file(
@@ -273,6 +272,7 @@ def create_initial_data_file(
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_single_log_file(started_cluster, storage_type):
@@ -296,9 +296,7 @@ def test_single_log_file(started_cluster, storage_type):
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
-    instance.query(
-        get_creation_expression(storage_type,TABLE_NAME,started_cluster)
-    );
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster))
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
@@ -329,9 +327,7 @@ def test_partition_by(started_cluster, storage_type):
 
     assert len(files) == 11  # 10 partitions and 1 metadata file
 
-    instance.query(
-        get_creation_expression(storage_type,TABLE_NAME,started_cluster)
-    );
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
@@ -375,9 +371,7 @@ def test_checkpoint(started_cluster, storage_type):
             ok = True
     assert ok
 
-    instance.query(
-        get_creation_expression(storage_type,TABLE_NAME,started_cluster)
-    )
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster))
     assert (
         int(
             instance.query(
