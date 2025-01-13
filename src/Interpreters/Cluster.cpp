@@ -431,7 +431,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     if (shards_with_name_count != 0 && shards_with_name_count != config_keys.size())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_name must be specified for every shard(node) in the config or for no one. Config: {}", config_prefix);
+        throw Exception(ErrorCodes::INVALID_SHARD_ID, "shard_name must be specified for every shard(node) in the config or for none. Config: {}", config_prefix);
     }
 
     bool use_shards_names = shards_with_name_count == config_keys.size();

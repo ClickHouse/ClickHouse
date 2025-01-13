@@ -58,3 +58,11 @@ def test_incorrect_shard_names(start_cluster):
         response = node.query_and_get_error("SYSTEM RELOAD CONFIG")
         assert "DB::Exception" in response and "INVALID_SHARD_ID" in response
         config_manager.reset()
+
+        config_manager.add_main_config(
+            node, "configs/incorrect_cluster_no_shard_name.xml", reload_config=False
+        )
+        response = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+        print(response)
+        assert "DB::Exception" in response and "INVALID_SHARD_ID" in response
+        config_manager.reset()
