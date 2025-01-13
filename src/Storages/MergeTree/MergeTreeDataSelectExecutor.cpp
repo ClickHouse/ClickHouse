@@ -172,14 +172,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    bool final = false;
     std::optional<ASTSampleRatio::Rational> sample_size_ratio;
     std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
 
     if (select_query_info.table_expression_modifiers)
     {
         const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
-        final = table_expression_modifiers.hasFinal();
         sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
         sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
     }
@@ -187,7 +185,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     {
         auto & select = select_query_info.query->as<ASTSelectQuery &>();
 
-        final = select.final();
         auto select_sample_size = select.sampleSize();
         auto select_sample_offset = select.sampleOffset();
 
@@ -367,17 +364,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             std::shared_ptr<ASTFunction> lower_function;
             std::shared_ptr<ASTFunction> upper_function;
 
-            /// If sample and final are used together no need to calculate sampling expression twice.
-            /// The first time it was calculated for final, because sample key is a part of the PK.
-            /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
-
-            if (final)
-            {
-                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
-                /// We do spoil available_real_columns here, but it is not used later.
-                available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
-            }
+            chassert(metadata_snapshot->getSamplingKeyAST() != nullptr);
+            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
 
             if (has_lower_limit)
             {
