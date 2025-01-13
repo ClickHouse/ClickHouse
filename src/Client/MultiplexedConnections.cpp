@@ -333,6 +333,8 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 
 UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_callback)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
@@ -347,7 +349,7 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
     try
     {
         AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
-        packet_type = current_connection->checkPacket(0).value();
+        packet_type = current_connection->receivePacketType();
     }
     catch (Exception & e)
     {
@@ -366,6 +368,8 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
 
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
