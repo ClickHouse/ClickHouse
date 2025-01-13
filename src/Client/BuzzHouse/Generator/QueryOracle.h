@@ -25,8 +25,8 @@ private:
 public:
     explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc), qfile(ffc.db_file_path / "query.data") { buf.reserve(4096); }
 
-    int ResetOracleValues();
-    int SetIntermediateStepSuccess(bool success);
+    int resetOracleValues();
+    int setIntermediateStepSuccess(bool success);
     int processFirstOracleQueryResult(bool success);
     int processSecondOracleQueryResult(bool success, const std::string & oracle_name);
 

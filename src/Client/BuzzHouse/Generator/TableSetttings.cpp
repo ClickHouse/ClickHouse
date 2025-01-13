@@ -8,7 +8,7 @@ static std::vector<std::string> merge_storage_policies;
 static std::map<std::string, CHSetting> mergeTreeTableSettings = {
     {"adaptive_write_buffer_initial_size",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024)); }, {}, false)},
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 32 * 1024 * 1024)); }, {}, false)},
     {"add_minmax_index_for_numeric_columns", CHSetting(trueOrFalse, {}, false)},
     {"add_minmax_index_for_string_columns", CHSetting(trueOrFalse, {}, false)},
     {"allow_experimental_block_number_column", CHSetting(trueOrFalse, {}, false)},
@@ -26,7 +26,7 @@ static std::map<std::string, CHSetting> mergeTreeTableSettings = {
     {"compact_parts_max_bytes_to_buffer",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret)
-         { ret += std::to_string(rg.RandomInt<uint32_t>(1024, UINT32_C(512) * UINT32_C(1024) * UINT32_C(1024))); },
+         { ret += std::to_string(rg.randomInt<uint32_t>(1024, UINT32_C(512) * UINT32_C(1024) * UINT32_C(1024))); },
          {},
          false)},
     {"compact_parts_max_granules_to_buffer",
@@ -36,7 +36,7 @@ static std::map<std::string, CHSetting> mergeTreeTableSettings = {
          false)},
     {"compact_parts_merge_max_bytes_to_prefetch_part",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024)); }, {}, false)},
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 32 * 1024 * 1024)); }, {}, false)},
     {"compatibility_allow_sampling_expression_not_in_primary_key", CHSetting(trueOrFalse, {}, false)},
     {"compress_marks", CHSetting(trueOrFalse, {}, false)},
     {"compress_primary_key", CHSetting(trueOrFalse, {}, false)},
@@ -76,7 +76,7 @@ static std::map<std::string, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"index_granularity_bytes",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024)); },
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1024, 30 * 1024 * 1024)); },
          {},
          false)},
     {"lightweight_mutation_projection_mode",
@@ -180,7 +180,7 @@ static std::map<std::string, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_index_granularity_bytes",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1024, 30 * 1024 * 1024)); },
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1024, 30 * 1024 * 1024)); },
          {},
          false)},
     {"min_merge_bytes_to_use_direct_io",

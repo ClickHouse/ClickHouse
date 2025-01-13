@@ -541,7 +541,7 @@ bool Client::buzzHouse()
                 if ((correctness_oracle + settings_oracle + dump_oracle + peer_oracle) > 0
                     && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
-                    (void)qo.ResetOracleValues();
+                    (void)qo.resetOracleValues();
                 }
                 if (correctness_oracle && nopt < (correctness_oracle + 1))
                 {
@@ -567,7 +567,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.SetIntermediateStepSuccess(!have_error);
+                    (void)qo.setIntermediateStepSuccess(!have_error);
 
                     sq2.Clear();
                     full_query2.resize(0);
@@ -583,7 +583,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.SetIntermediateStepSuccess(!have_error);
+                    (void)qo.setIntermediateStepSuccess(!have_error);
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
@@ -607,7 +607,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.SetIntermediateStepSuccess(!have_error);
+                    (void)qo.setIntermediateStepSuccess(!have_error);
 
                     sq3.Clear();
                     full_query.resize(0);
@@ -615,7 +615,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.SetIntermediateStepSuccess(!have_error);
+                    (void)qo.setIntermediateStepSuccess(!have_error);
 
                     sq4.Clear();
                     full_query.resize(0);
@@ -623,7 +623,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.SetIntermediateStepSuccess(!have_error);
+                    (void)qo.setIntermediateStepSuccess(!have_error);
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
@@ -656,7 +656,7 @@ bool Client::buzzHouse()
                         BuzzHouse::SQLQueryToString(full_query2, entry);
                         outf << full_query2 << std::endl;
                         server_up &= processBuzzHouseQuery(full_query2);
-                        (void)qo.SetIntermediateStepSuccess(!have_error);
+                        (void)qo.setIntermediateStepSuccess(!have_error);
                     }
                     (void)qo.optimizePeerTables(gen);
 

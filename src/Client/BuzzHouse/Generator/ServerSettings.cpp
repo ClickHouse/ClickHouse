@@ -34,7 +34,7 @@ std::map<std::string, CHSetting> serverSettings = {
     {"async_insert_threads",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret)
-         { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         { ret += std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {},
          false)},
     {"async_insert_use_adaptive_busy_timeout", CHSetting(trueOrFalse, {}, false)},
@@ -501,7 +501,7 @@ static std::map<std::string, CHSetting> serverSettings2 = {
     {"max_final_threads",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret)
-         { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         { ret += std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"max_insert_block_size",
@@ -513,7 +513,7 @@ static std::map<std::string, CHSetting> serverSettings2 = {
     {"max_insert_threads",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret)
-         { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         { ret += std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {},
          false)},
     {"max_joined_block_size_rows",
@@ -579,17 +579,17 @@ static std::map<std::string, CHSetting> serverSettings2 = {
     {"max_threads",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret)
-         { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
+         { ret += std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"merge_tree_coarse_index_granularity",
-     CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(2, 32)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(2, 32)); }, {}, false)},
     {"merge_tree_compact_parts_min_granules_to_multibuffer_read",
-     CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 128)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 128)); }, {}, false)},
     {"merge_tree_determine_task_size_by_prewhere_columns", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(std::ceil(rg.RandomZeroOne() * 100.0) / 100.0); }, {}, false)},
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(std::ceil(rg.randomZeroOne() * 100.0) / 100.0); }, {}, false)},
     {"merge_tree_use_const_size_tasks_for_remote_reading", CHSetting(trueOrFalse, {}, false)},
     {"merge_tree_use_v1_object_and_dynamic_serialization", CHSetting(trueOrFalse, {}, false)},
     {"metrics_perf_events_enabled", CHSetting(trueOrFalse, {}, false)},
@@ -614,7 +614,7 @@ static std::map<std::string, CHSetting> serverSettings2 = {
     {"min_chunk_bytes_for_parallel_parsing",
      CHSetting(
          [](RandomGenerator & rg, std::string & ret)
-         { ret += std::to_string(std::max(1024, static_cast<int>(rg.RandomGauss(10 * 1024 * 1024, 5 * 1000 * 1000)))); },
+         { ret += std::to_string(std::max(1024, static_cast<int>(rg.randomGauss(10 * 1024 * 1024, 5 * 1000 * 1000)))); },
          {"0", "100", "1000", "100000"},
          false)},
     {"min_compress_block_size",
@@ -908,7 +908,7 @@ static std::map<std::string, CHSetting> serverSettings2 = {
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"read_in_order_two_level_merge_threshold",
      CHSetting(
-         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 100)); },
+         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 100)); },
          {"0", "1", "10", "100"},
          false)},
     {"read_in_order_use_buffering", CHSetting(trueOrFalse, {"0", "1"}, false)},

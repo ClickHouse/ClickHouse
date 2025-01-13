@@ -549,14 +549,14 @@ int QueryOracle::replaceQueryWithTablePeers(
     return 0;
 }
 
-int QueryOracle::ResetOracleValues()
+int QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     first_success = second_sucess = other_steps_sucess = can_test_query_success = true;
     return 0;
 }
 
-int QueryOracle::SetIntermediateStepSuccess(const bool success)
+int QueryOracle::setIntermediateStepSuccess(const bool success)
 {
     other_steps_sucess &= success;
     return 0;

@@ -31,10 +31,10 @@ const std::function<void(RandomGenerator &, std::string &)> trueOrFalse
     = [](RandomGenerator & rg, std::string & ret) { ret += rg.nextBool() ? "1" : "0"; };
 
 const std::function<void(RandomGenerator &, std::string &)> zeroOneTwo
-    = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 2)); };
+    = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 2)); };
 
 const std::function<void(RandomGenerator &, std::string &)> zeroToThree
-    = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 3)); };
+    = [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
 extern std::map<std::string, CHSetting> serverSettings;
 
@@ -69,7 +69,7 @@ const std::map<std::string, CHSetting> mySQLTableSettings
         CHSetting(
             [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
        {"connection_max_tries",
-        CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 16)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
        {"connection_auto_close", CHSetting(trueOrFalse, {}, false)}};
 
 const std::map<std::string, CHSetting> fileTableSettings
@@ -105,7 +105,7 @@ const std::map<std::string, CHSetting> s3QueueTableSettings
        {"processing_threads_num",
         CHSetting(
             [](RandomGenerator & rg, std::string & ret)
-            { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
+            { ret += std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
             {},
             false)}};
 

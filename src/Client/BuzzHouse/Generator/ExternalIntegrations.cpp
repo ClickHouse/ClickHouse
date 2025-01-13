@@ -16,118 +16,561 @@
 namespace BuzzHouse
 {
 
-bool MinIOIntegration::sendRequest(const std::string & resource)
+bool ClickHouseIntegratedDatabase::performIntegration(
+    RandomGenerator & rg,
+    std::shared_ptr<SQLDatabase> db,
+    const uint32_t tname,
+    const bool can_shuffle,
+    std::vector<ColumnPathChain> & entries)
 {
-    struct tm ttm;
-    ssize_t nbytes = 0;
-    bool created = false;
-    int sock = -1;
-    int error = 0;
-    char buffer[1024];
-    char found_ip[1024];
-    const std::time_t time = std::time({});
-    DB::WriteBufferFromOwnString sign_cmd;
-    DB::WriteBufferFromOwnString sign_out;
-    DB::WriteBufferFromOwnString sign_err;
-    DB::WriteBufferFromOwnString http_request;
-    struct addrinfo hints = {};
-    struct addrinfo * result = nullptr;
+    const std::string str_tname = getTableName(db, tname);
 
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
+    buf.resize(0);
+    buf += "DROP TABLE IF EXISTS ";
+    buf += str_tname;
+    buf += ";";
 
-    (void)std::sprintf(buffer, "%" PRIu32 "", sc.port);
-    if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
+    if (performQuery(buf))
     {
-        if (error == EAI_SYSTEM)
+        bool first = true;
+
+        buf.resize(0);
+        buf += "CREATE TABLE ";
+        buf += str_tname;
+        buf += "(";
+
+        if (can_shuffle && rg.nextSmallNumber() < 7)
         {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
+            std::shuffle(entries.begin(), entries.end(), rg.generator);
+        }
+        for (const auto & entry : entries)
+        {
+            SQLType * tp = entry.getBottomType();
+
+            if (!first)
+            {
+                buf += ", ";
+            }
+            buf += entry.getBottomName();
+            buf += " ";
+            columnTypeAsString(rg, tp, buf);
+            buf += " ";
+            buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable, false, false, false>(tp)) ? "" : "NOT ";
+            buf += "NULL";
+            assert(entry.path.size() == 1);
+            first = false;
+        }
+        buf += ");";
+        return performQuery(buf);
+    }
+    return false;
+}
+
+bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
+{
+    assert(t.hasDatabasePeer());
+    buf.resize(0);
+    buf += "DROP TABLE IF EXISTS ";
+    buf += getTableName(t.db, t.tname);
+    buf += ";";
+    return performQuery(buf);
+}
+
+bool ClickHouseIntegratedDatabase::performCreatePeerTable(
+    RandomGenerator & rg,
+    const bool is_clickhouse_integration,
+    const SQLTable & t,
+    const CreateTable * ct,
+    std::vector<ColumnPathChain> & entries)
+{
+    //drop table if exists in other db
+    bool res = dropPeerTableOnRemote(t);
+
+    //create table on other server
+    if (res && is_clickhouse_integration)
+    {
+        if (t.db)
+        {
+            CreateDatabase newd;
+            DatabaseEngine * deng = newd.mutable_dengine();
+
+            newd.set_if_not_exists(true);
+            deng->set_engine(t.db->deng);
+            if (t.db->isReplicatedDatabase())
+            {
+                deng->set_zoo_path(t.db->zoo_path_counter);
+            }
+            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+
+            buf.resize(0);
+            CreateDatabaseToString(buf, newd);
+            buf += ";";
+            res &= performQuery(buf);
+        }
+        if (res)
+        {
+            CreateTable newt;
+            newt.CopyFrom(*ct);
+
+            assert(newt.has_est() && !newt.has_table_as());
+            ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
+            if (t.db)
+            {
+                est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
+            }
+            newt.set_create_opt(CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace);
+
+            buf.resize(0);
+            CreateTableToString(buf, newt);
+            buf += ";";
+            res &= performQuery(buf);
+        }
+    }
+    else if (res)
+    {
+        res &= performIntegration(rg, is_clickhouse_integration ? t.db : nullptr, t.tname, false, entries);
+    }
+    return res;
+}
+
+void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
+{
+    assert(t.hasDatabasePeer());
+    buf.resize(0);
+    truncateStatement(buf);
+    buf += " ";
+    buf += getTableName(t.db, t.tname);
+    buf += ";";
+    (void)performQuery(buf);
+}
+
+#if defined USE_MYSQL && USE_MYSQL
+MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
+    const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const std::string & server)
+{
+    MYSQL * mcon = nullptr;
+
+    if (!(mcon = mysql_init(nullptr)))
+    {
+        LOG_ERROR(fcc.log, "Could not initialize MySQL handle");
+    }
+    else if (!mysql_real_connect(
+                 mcon,
+                 scc.hostname.empty() ? nullptr : scc.hostname.c_str(),
+                 scc.user.empty() ? nullptr : scc.user.c_str(),
+                 scc.password.empty() ? nullptr : scc.password.c_str(),
+                 nullptr,
+                 scc.mysql_port ? scc.mysql_port : scc.port,
+                 scc.unix_socket.empty() ? nullptr : scc.unix_socket.c_str(),
+                 0))
+    {
+        LOG_ERROR(fcc.log, "{} connection error: {}", server, mysql_error(mcon));
+        mysql_close(mcon);
+    }
+    else
+    {
+        MySQLIntegration * mysql = new MySQLIntegration(fcc, scc, server == "ClickHouse", mcon);
+
+        if (read_log
+            || (mysql->performQuery("DROP DATABASE IF EXISTS " + scc.database + ";")
+                && mysql->performQuery("CREATE DATABASE " + scc.database + ";")))
+        {
+            LOG_INFO(fcc.log, "Connected to {}", server);
+            return mysql;
         }
         else
         {
-            LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
+            delete mysql;
         }
+    }
+    return nullptr;
+}
+
+void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+    te->add_params()->set_svalue(sc.database);
+    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(sc.user);
+    te->add_params()->set_svalue(sc.password);
+    if (rg.nextBool())
+    {
+        te->add_params()->set_num(rg.nextBool() ? 1 : 0);
+    }
+}
+
+std::string MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname)
+{
+    std::string res;
+
+    if (is_clickhouse && db)
+    {
+        res += "d";
+        res += std::to_string(db->dname);
+        res += ".";
+    }
+    else if (!is_clickhouse)
+    {
+        res += "test.";
+    }
+    res += "t";
+    res += std::to_string(tname);
+    return res;
+}
+
+void MySQLIntegration::truncateStatement(std::string & outbuf)
+{
+    outbuf += "TRUNCATE";
+    if (is_clickhouse)
+    {
+        outbuf += " TABLE";
+    }
+}
+
+void MySQLIntegration::optimizePeerTableOnRemote(const SQLTable & t)
+{
+    assert(t.hasDatabasePeer());
+    if (is_clickhouse && t.supportsFinal())
+    {
+        buf.resize(0);
+        buf += "OPTIMIZE TABLE ";
+        buf += getTableName(t.db, t.tname);
+        buf += " FINAL;";
+        (void)performQuery(buf);
+    }
+}
+
+bool MySQLIntegration::performQuery(const std::string & query)
+{
+    if (!mysql_connection)
+    {
+        LOG_ERROR(fc.log, "Not connected to MySQL");
         return false;
     }
-    /* Loop through results */
-    for (const struct addrinfo * p = result; p; p = p->ai_next)
+    out_file << query << std::endl;
+    if (mysql_query(mysql_connection, query.c_str()))
     {
-        if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(mysql_connection));
+        return false;
+    }
+    else
+    {
+        MYSQL_ROW row;
+        MYSQL_RES * result = mysql_store_result(mysql_connection);
+
+        while ((row = mysql_fetch_row(result)))
+            ;
+        mysql_free_result(result);
+    }
+    return true;
+}
+
+void MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const
+{
+    tp->MySQLtypeName(rg, out, false);
+}
+
+#else
+MySQLIntegration *
+MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const std::string &)
+{
+    LOG_INFO(fcc.log, "ClickHouse not compiled with MySQL connector, skipping MySQL integration");
+    return nullptr;
+}
+#endif
+
+#if defined USE_LIBPQXX && USE_LIBPQXX
+PostgreSQLIntegration *
+PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
+{
+    bool has_something = false;
+    std::string connection_str;
+    pqxx::connection * pcon = nullptr;
+    PostgreSQLIntegration * psql = nullptr;
+
+    if (!scc.unix_socket.empty() || !scc.hostname.empty())
+    {
+        connection_str += "host='";
+        connection_str += scc.unix_socket.empty() ? scc.hostname : scc.unix_socket;
+        connection_str += "'";
+        has_something = true;
+    }
+    if (scc.port)
+    {
+        if (has_something)
         {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
-            return false;
+            connection_str += " ";
         }
-        if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
+        connection_str += "port='";
+        connection_str += std::to_string(scc.port);
+        connection_str += "'";
+        has_something = true;
+    }
+    if (!scc.user.empty())
+    {
+        if (has_something)
         {
-            if ((error = getnameinfo(p->ai_addr, p->ai_addrlen, found_ip, sizeof(found_ip), nullptr, 0, NI_NUMERICHOST)) != 0)
+            connection_str += " ";
+        }
+        connection_str += "user='";
+        connection_str += scc.user;
+        connection_str += "'";
+        has_something = true;
+    }
+    if (!scc.password.empty())
+    {
+        if (has_something)
+        {
+            connection_str += " ";
+        }
+        connection_str += "password='";
+        connection_str += scc.password;
+        connection_str += "'";
+    }
+    if (!scc.database.empty())
+    {
+        if (has_something)
+        {
+            connection_str += " ";
+        }
+        connection_str += "dbname='";
+        connection_str += scc.database;
+        connection_str += "'";
+    }
+    try
+    {
+        if (!(pcon = new pqxx::connection(connection_str)))
+        {
+            LOG_ERROR(fcc.log, "Could not initialize PostgreSQL handle");
+        }
+        else
+        {
+            psql = new PostgreSQLIntegration(fcc, scc, pcon);
+            if (read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
             {
-                if (error == EAI_SYSTEM)
-                {
-                    strerror_r(errno, buffer, sizeof(buffer));
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
-                }
-                else
-                {
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
-                }
-                return false;
+                LOG_INFO(fcc.log, "Connected to PostgreSQL");
+                return psql;
             }
-            break;
         }
-        close(sock);
-        sock = -1;
     }
-    freeaddrinfo(result);
-    if (sock == -1)
+    catch (std::exception const & e)
     {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
-        return false;
+        LOG_ERROR(fcc.log, "PostgreSQL connection error: {}", e.what());
     }
-    (void)gmtime_r(&time, &ttm);
-    (void)std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
-    sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
-             << resource << "\""
-             << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
-    auto res = DB::ShellCommand::execute(sign_cmd.str());
-    res->in.close();
-    copyData(res->out, sign_out);
-    copyData(res->err, sign_err);
-    res->wait();
-    if (!sign_err.str().empty())
-    {
-        close(sock);
-        LOG_ERROR(fc.log, "Error while executing shell command: {}", sign_err.str());
-        return false;
-    }
+    delete psql;
+    delete pcon;
+    return nullptr;
+}
 
-    http_request << "PUT " << resource << " HTTP/1.1\n"
-                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << "\n"
-                 << "Accept: */*\n"
-                 << "Date: " << buffer << "\n"
-                 << "Content-Type: application/octet-stream\n"
-                 << "Authorization: AWS " << sc.user << ":" << sign_out.str() << "Content-Length: 0\n\n\n";
-
-    if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
+void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.database);
+    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(sc.user);
+    te->add_params()->set_svalue(sc.password);
+    te->add_params()->set_svalue("test");
+    if (rg.nextSmallNumber() < 4)
     {
-        strerror_r(errno, buffer, sizeof(buffer));
-        close(sock);
-        LOG_ERROR(fc.log, "Error sending request {}: {}", http_request.str(), buffer);
+        te->add_params()->set_svalue("ON CONFLICT DO NOTHING");
+    }
+}
+
+std::string PostgreSQLIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
+{
+    return "test.t" + std::to_string(tname);
+}
+
+void PostgreSQLIntegration::truncateStatement(std::string & outbuf)
+{
+    outbuf += "TRUNCATE";
+}
+
+bool PostgreSQLIntegration::performQuery(const std::string & query)
+{
+    if (!postgres_connection)
+    {
+        LOG_ERROR(fc.log, "Not connected to PostgreSQL");
         return false;
     }
-    if ((nbytes = read(sock, buffer, sizeof(buffer))) > 0 && nbytes < static_cast<ssize_t>(sizeof(buffer)) && nbytes > 12
-        && !(created = (std::strncmp(buffer + 9, "200", 3) == 0)))
+    try
     {
-        LOG_ERROR(fc.log, "Request {} not successful: {}", http_request.str(), buffer);
+        pqxx::work w(*postgres_connection);
+
+        out_file << query << std::endl;
+        (void)w.exec(query);
+        w.commit();
+        return true;
     }
-    close(sock);
-    return created;
+    catch (std::exception const & e)
+    {
+        LOG_ERROR(fc.log, "PostgreSQL query: {} Error: {}", query, e.what());
+        return false;
+    }
+}
+
+void PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const
+{
+    tp->PostgreSQLtypeName(rg, out, false);
+}
+
+#else
+PostgreSQLIntegration *
+PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, const bool)
+{
+    LOG_INFO(fcc.log, "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration");
+    return nullptr;
+}
+#endif
+
+#if defined USE_SQLITE && USE_SQLITE
+SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+{
+    sqlite3 * scon = nullptr;
+    const std::filesystem::path spath = fcc.db_file_path / "sqlite.db";
+
+    if (sqlite3_open(spath.c_str(), &scon) != SQLITE_OK)
+    {
+        if (scon)
+        {
+            LOG_ERROR(fcc.log, "SQLite connection error: {}", sqlite3_errmsg(scon));
+            sqlite3_close(scon);
+        }
+        else
+        {
+            LOG_ERROR(fcc.log, "Could not initialize SQLite handle");
+        }
+        return nullptr;
+    }
+    else
+    {
+        LOG_INFO(fcc.log, "Connected to SQLite");
+        return new SQLiteIntegration(fcc, scc, scon, spath);
+    }
+}
+
+void SQLiteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const std::string & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(sqlite_path.generic_string());
+    te->add_params()->set_svalue(tname);
+}
+
+std::string SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
+{
+    return "t" + std::to_string(tname);
+}
+
+void SQLiteIntegration::truncateStatement(std::string & outbuf)
+{
+    outbuf += "DELETE FROM";
+}
+
+bool SQLiteIntegration::performQuery(const std::string & query)
+{
+    char * err_msg = nullptr;
+
+    if (!sqlite_connection)
+    {
+        LOG_ERROR(fc.log, "Not connected to SQLite");
+        return false;
+    }
+    out_file << query << std::endl;
+    if (sqlite3_exec(sqlite_connection, query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
+    {
+        LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
+        sqlite3_free(err_msg);
+        return false;
+    }
+    return true;
+}
+
+void SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const
+{
+    tp->SQLitetypeName(rg, out, false);
+}
+
+#else
+SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+{
+    LOG_INFO(fcc.log, "ClickHouse not compiled with SQLite connector, skipping SQLite integration");
+    return nullptr;
+}
+#endif
+
+void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string &, TableEngine * te)
+{
+    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
+    te->add_params()->set_svalue(sc.password);
+    te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
+}
+
+bool RedisIntegration::performIntegration(
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, std::vector<ColumnPathChain> &)
+{
+    return true;
 }
 
 #if defined USE_MONGODB && USE_MONGODB
+MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+{
+    std::string connection_str = "mongodb://";
+
+    if (!scc.user.empty())
+    {
+        connection_str += scc.user;
+        if (!scc.password.empty())
+        {
+            connection_str += ":";
+            connection_str += scc.password;
+        }
+        connection_str += "@";
+    }
+    connection_str += scc.hostname;
+    connection_str += ":";
+    connection_str += std::to_string(scc.port);
+
+    try
+    {
+        bool db_exists = false;
+        mongocxx::client client = mongocxx::client(mongocxx::uri(std::move(connection_str)));
+        auto databases = client.list_databases();
+
+        for (const auto & db : databases)
+        {
+            if (db["name"].get_utf8().value == scc.database)
+            {
+                db_exists = true;
+                break;
+            }
+        }
+
+        if (db_exists)
+        {
+            client[scc.database].drop();
+        }
+
+        mongocxx::database db = client[scc.database];
+        db.create_collection("test");
+
+        LOG_INFO(fcc.log, "Connected to MongoDB");
+        return new MongoDBIntegration(fcc, scc, client, db);
+    }
+    catch (const std::exception & e)
+    {
+        LOG_ERROR(fcc.log, "MongoDB connection error: {}", e.what());
+        return nullptr;
+    }
+}
+
+void MongoDBIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const std::string & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.database);
+    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(sc.user);
+    te->add_params()->set_svalue(sc.password);
+}
 
 template <typename T>
 constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream::document>;
@@ -560,6 +1003,353 @@ void MongoDBIntegration::documentAppendAnyValue(
         assert(0);
     }
 }
+
+bool MongoDBIntegration::performIntegration(
+    RandomGenerator & rg,
+    std::shared_ptr<SQLDatabase>,
+    const uint32_t tname,
+    const bool can_shuffle,
+    std::vector<ColumnPathChain> & entries)
+{
+    try
+    {
+        const bool permute = can_shuffle && rg.nextBool();
+        const bool miss_cols = rg.nextBool();
+        const uint32_t ndocuments = rg.nextMediumNumber();
+        const std::string str_tname = "t" + std::to_string(tname);
+        mongocxx::collection coll = database[str_tname];
+
+        for (uint32_t j = 0; j < ndocuments; j++)
+        {
+            bsoncxx::builder::stream::document document{};
+
+            if (permute && rg.nextSmallNumber() < 4)
+            {
+                std::shuffle(entries.begin(), entries.end(), rg.generator);
+            }
+            for (const auto & entry : entries)
+            {
+                if (miss_cols && rg.nextSmallNumber() < 4)
+                {
+                    //sometimes the column is missing
+                    documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
+                    assert(entry.path.size() == 1);
+                }
+            }
+            documents.push_back(document << bsoncxx::builder::stream::finalize);
+        }
+        out_file << str_tname << std::endl; //collection name
+        for (const auto & doc : documents)
+        {
+            out_file << bsoncxx::to_json(doc.view()) << std::endl; // Write each JSON document on a new line
+        }
+        coll.insert_many(documents);
+        documents.clear();
+    }
+    catch (const std::exception & e)
+    {
+        LOG_ERROR(fc.log, "MongoDB connection error: {}", e.what());
+        return false;
+    }
+    return true;
+}
+#else
+MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+{
+    LOG_INFO(fcc.log, "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration");
+    return nullptr;
+}
 #endif
+
+bool MinIOIntegration::sendRequest(const std::string & resource)
+{
+    struct tm ttm;
+    ssize_t nbytes = 0;
+    bool created = false;
+    int sock = -1;
+    int error = 0;
+    char buffer[1024];
+    char found_ip[1024];
+    const std::time_t time = std::time({});
+    DB::WriteBufferFromOwnString sign_cmd;
+    DB::WriteBufferFromOwnString sign_out;
+    DB::WriteBufferFromOwnString sign_err;
+    DB::WriteBufferFromOwnString http_request;
+    struct addrinfo hints = {};
+    struct addrinfo * result = nullptr;
+
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    (void)std::sprintf(buffer, "%" PRIu32 "", sc.port);
+    if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
+    {
+        if (error == EAI_SYSTEM)
+        {
+            strerror_r(errno, buffer, sizeof(buffer));
+            LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
+        }
+        else
+        {
+            LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
+        }
+        return false;
+    }
+    /* Loop through results */
+    for (const struct addrinfo * p = result; p; p = p->ai_next)
+    {
+        if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        {
+            strerror_r(errno, buffer, sizeof(buffer));
+            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
+            return false;
+        }
+        if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
+        {
+            if ((error = getnameinfo(p->ai_addr, p->ai_addrlen, found_ip, sizeof(found_ip), nullptr, 0, NI_NUMERICHOST)) != 0)
+            {
+                if (error == EAI_SYSTEM)
+                {
+                    strerror_r(errno, buffer, sizeof(buffer));
+                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
+                }
+                else
+                {
+                    LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
+                }
+                return false;
+            }
+            break;
+        }
+        close(sock);
+        sock = -1;
+    }
+    freeaddrinfo(result);
+    if (sock == -1)
+    {
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
+        return false;
+    }
+    (void)gmtime_r(&time, &ttm);
+    (void)std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
+    sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
+             << resource << "\""
+             << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
+    auto res = DB::ShellCommand::execute(sign_cmd.str());
+    res->in.close();
+    copyData(res->out, sign_out);
+    copyData(res->err, sign_err);
+    res->wait();
+    if (!sign_err.str().empty())
+    {
+        close(sock);
+        LOG_ERROR(fc.log, "Error while executing shell command: {}", sign_err.str());
+        return false;
+    }
+
+    http_request << "PUT " << resource << " HTTP/1.1\n"
+                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << "\n"
+                 << "Accept: */*\n"
+                 << "Date: " << buffer << "\n"
+                 << "Content-Type: application/octet-stream\n"
+                 << "Authorization: AWS " << sc.user << ":" << sign_out.str() << "Content-Length: 0\n\n\n";
+
+    if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
+    {
+        strerror_r(errno, buffer, sizeof(buffer));
+        close(sock);
+        LOG_ERROR(fc.log, "Error sending request {}: {}", http_request.str(), buffer);
+        return false;
+    }
+    if ((nbytes = read(sock, buffer, sizeof(buffer))) > 0 && nbytes < static_cast<ssize_t>(sizeof(buffer)) && nbytes > 12
+        && !(created = (std::strncmp(buffer + 9, "200", 3) == 0)))
+    {
+        LOG_ERROR(fc.log, "Request {} not successful: {}", http_request.str(), buffer);
+    }
+    close(sock);
+    return created;
+}
+
+void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const std::string & tname, TableEngine * te)
+{
+    te->add_params()->set_svalue(
+        "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname.substr(1)
+        + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(sc.user);
+    te->add_params()->set_svalue(sc.password);
+}
+
+bool MinIOIntegration::performIntegration(
+    RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, std::vector<ColumnPathChain> &)
+{
+    return sendRequest(sc.database + "/file" + std::to_string(tname));
+}
+
+ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fc)
+{
+    if (fc.mysql_server.has_value())
+    {
+        mysql = MySQLIntegration::testAndAddMySQLConnection(fc, fc.mysql_server.value(), fc.read_log, "MySQL");
+    }
+    if (fc.postgresql_server.has_value())
+    {
+        postresql = PostgreSQLIntegration::testAndAddPostgreSQLIntegration(fc, fc.postgresql_server.value(), fc.read_log);
+    }
+    if (fc.sqlite_server.has_value())
+    {
+        sqlite = SQLiteIntegration::testAndAddSQLiteIntegration(fc, fc.sqlite_server.value());
+    }
+    if (fc.mongodb_server.has_value())
+    {
+        mongodb = MongoDBIntegration::testAndAddMongoDBIntegration(fc, fc.mongodb_server.value());
+    }
+    if (fc.redis_server.has_value())
+    {
+        redis = new RedisIntegration(fc, fc.redis_server.value());
+    }
+    if (fc.minio_server.has_value())
+    {
+        minio = new MinIOIntegration(fc, fc.minio_server.value());
+    }
+    if (fc.clickhouse_server.has_value())
+    {
+        clickhouse = MySQLIntegration::testAndAddMySQLConnection(fc, fc.clickhouse_server.value(), fc.read_log, "ClickHouse");
+    }
+}
+
+void ExternalIntegrations::createExternalDatabaseTable(
+    RandomGenerator & rg, const IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te)
+{
+    const std::string & tname = "t" + std::to_string(b.tname);
+
+    requires_external_call_check++;
+    switch (dc)
+    {
+        case IntegrationCall::MySQL:
+            next_calls_succeeded.push_back(mysql->performIntegration(rg, b.db, b.tname, true, entries));
+            mysql->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::PostgreSQL:
+            next_calls_succeeded.push_back(postresql->performIntegration(rg, b.db, b.tname, true, entries));
+            postresql->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::SQLite:
+            next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.db, b.tname, true, entries));
+            sqlite->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::MongoDB:
+            next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.db, b.tname, true, entries));
+            mongodb->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::Redis:
+            next_calls_succeeded.push_back(redis->performIntegration(rg, b.db, b.tname, true, entries));
+            redis->setEngineDetails(rg, b, tname, te);
+            break;
+        case IntegrationCall::MinIO:
+            next_calls_succeeded.push_back(minio->performIntegration(rg, b.db, b.tname, true, entries));
+            minio->setEngineDetails(rg, b, tname, te);
+            break;
+    }
+}
+
+void ExternalIntegrations::createPeerTable(
+    RandomGenerator & rg, const PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries)
+{
+    requires_external_call_check++;
+    switch (pt)
+    {
+        case PeerTableDatabase::ClickHouse:
+            next_calls_succeeded.push_back(clickhouse->performCreatePeerTable(rg, true, t, ct, entries));
+            break;
+        case PeerTableDatabase::MySQL:
+            next_calls_succeeded.push_back(mysql->performCreatePeerTable(rg, false, t, ct, entries));
+            break;
+        case PeerTableDatabase::PostgreSQL:
+            next_calls_succeeded.push_back(postresql->performCreatePeerTable(rg, false, t, ct, entries));
+            break;
+        case PeerTableDatabase::SQLite:
+            next_calls_succeeded.push_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
+            break;
+        case PeerTableDatabase::None:
+            assert(0);
+            break;
+    }
+}
+
+void ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)
+{
+    switch (t.peer_table)
+    {
+        case PeerTableDatabase::ClickHouse:
+            clickhouse->truncatePeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::MySQL:
+            mysql->truncatePeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::PostgreSQL:
+            postresql->truncatePeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::SQLite:
+            sqlite->truncatePeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::None:
+            break;
+    }
+}
+
+void ExternalIntegrations::optimizePeerTableOnRemote(const SQLTable & t)
+{
+    switch (t.peer_table)
+    {
+        case PeerTableDatabase::ClickHouse:
+            clickhouse->optimizePeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::MySQL:
+        case PeerTableDatabase::PostgreSQL:
+        case PeerTableDatabase::SQLite:
+        case PeerTableDatabase::None:
+            break;
+    }
+}
+
+void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
+{
+    switch (t.peer_table)
+    {
+        case PeerTableDatabase::ClickHouse:
+            clickhouse->dropPeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::MySQL:
+            mysql->dropPeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::PostgreSQL:
+            postresql->dropPeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::SQLite:
+            sqlite->dropPeerTableOnRemote(t);
+            break;
+        case PeerTableDatabase::None:
+            break;
+    }
+}
+
+bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const std::string & query)
+{
+    switch (pt)
+    {
+        case PeerTableDatabase::ClickHouse:
+            return clickhouse->performQuery(query);
+        case PeerTableDatabase::MySQL:
+            return mysql->performQuery(query);
+        case PeerTableDatabase::PostgreSQL:
+            return postresql->performQuery(query);
+        case PeerTableDatabase::SQLite:
+            return sqlite->performQuery(query);
+        default:
+            assert(0);
+    }
+}
 
 }
