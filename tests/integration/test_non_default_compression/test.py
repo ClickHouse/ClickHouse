@@ -321,4 +321,4 @@ def test_preconfigured_deflateqpl_codec(start_cluster):
         == "10003\n"
     )
 
-    node5.query("DROP TABLE compression_codec_multiple_with_key;")
+    node6.query("DROP TABLE compression_codec_multiple_with_key;")
