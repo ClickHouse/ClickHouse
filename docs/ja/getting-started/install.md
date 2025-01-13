@@ -302,8 +302,6 @@ ClickHouseのCIは時間とともに進化するため、CIで生成されたビ
 - コンパイラ＝"clang-*-aarch64"の行を見つけます - 複数の行があります。
 - これらのビルドのアーティファクトをダウンロードします。
 
-[SSE3](https://ja.wikipedia.org/wiki/SSE3)サポートなしの非常に古いx86-64システムまたは[ARMv8.1-A](https://ja.wikipedia.org/wiki/AArch64#ARMv8.1-A)サポートなしの古いARMシステムのためのバイナリをダウンロードするには、プルリクエストを開いてCIチェック"BuilderBinAmd64Compat"、それぞれ"BuilderBinAarch64V80Compat"を見つけます。その後、"Details"をクリックしてビルドフォルダを開き、最後までスクロールし、メッセージ"Notice: Build URLs https://s3.amazonaws.com/clickhouse/builds/PRs/.../.../binary_aarch64_v80compat/clickhouse" を見つけます。そのリンクをクリックしてビルドをダウンロードできます。
-
 ### macOSのみ：Homebrewでのインストール
 
 macOSで[homebrew](https://brew.sh/)を使用してClickHouseをインストールするには、ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse)を参照してください。

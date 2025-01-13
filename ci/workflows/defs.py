@@ -99,12 +99,6 @@ DOCKERS = [
         depends_on=[],
     ),
     # Docker.Config(
-    #     name="clickhouse/test-base",
-    #     path="./ci/docker/test/base",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-util"],
-    # ),
-    # Docker.Config(
     #     name="clickhouse/keeper-jepsen-test",
     #     path="./ci/docker/test/keeper-jepsen",
     #     platforms=Docker.Platforms.arm_amd,
@@ -119,12 +113,6 @@ DOCKERS = [
     # Docker.Config(
     #     name="clickhouse/sqllogic-test",
     #     path="./ci/docker/test/sqllogic",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/sqltest",
-    #     path="./ci/docker/test/sqltest",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=["clickhouse/test-base"],
     # ),
@@ -214,11 +202,6 @@ DOCKERS = [
 #     "name": "clickhouse/kerberos-kdc",
 #     "dependent": []
 # },
-# "docker/test/integration/kerberized_hadoop": {
-#     "only_amd64": true,
-#     "name": "clickhouse/kerberized-hadoop",
-#     "dependent": []
-# },
 # "docker/test/sqlancer": {
 #     "name": "clickhouse/sqlancer-test",
 #     "dependent": []
@@ -262,6 +245,7 @@ class JobNames:
     Docs = "Docs check"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server"
+    SQL_TEST = "SQLTest"
 
 
 class ToolSet:
@@ -790,4 +774,19 @@ class Jobs:
             ],
         ),
         requires=[ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.DEB_ARM_RELEASE],
+    )
+    # TODO: make it release only
+    sqltest_job = Job.Config(
+        name=JobNames.SQL_TEST,
+        # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="python3 ./ci/jobs/sqltest_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqltest_job.py",
+            ],
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
     )

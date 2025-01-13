@@ -285,6 +285,7 @@ class Result(MetaClasses.Serializable):
         name,
         command,
         with_log=False,
+        with_info=False,
         fail_fast=True,
         workdir=None,
         command_args=None,
@@ -297,6 +298,7 @@ class Result(MetaClasses.Serializable):
         :param command: Shell command (str) or Python callable, or list of them.
         :param workdir: Optional working directory.
         :param with_log: Boolean flag to log output to a file.
+        :param with_info: Fill in Result.info from command output
         :param fail_fast: Boolean flag to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
@@ -309,11 +311,12 @@ class Result(MetaClasses.Serializable):
         command_kwargs = command_kwargs or {}
 
         # Set log file path if logging is enabled
-        log_file = (
-            f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-            if with_log
-            else None
-        )
+        if with_log:
+            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
+        elif with_info:
+            log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
+        else:
+            log_file = None
 
         # Ensure the command is a list for consistent iteration
         if not isinstance(command, list):
@@ -323,25 +326,28 @@ class Result(MetaClasses.Serializable):
         print(f"> Starting execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
-        for command_ in command:
-            if callable(command_):
-                # If command is a Python function, call it with provided arguments
-                result = command_(*command_args, **command_kwargs)
-                if isinstance(result, bool):
-                    res = result
-                elif result:
-                    error_infos.append(str(result))
-                    res = False
-            else:
-                # Run shell command in a specified directory with logging and verbosity
-                with ContextManager.cd(workdir):
+        with ContextManager.cd(workdir):
+            for command_ in command:
+                if callable(command_):
+                    # If command is a Python function, call it with provided arguments
+                    result = command_(*command_args, **command_kwargs)
+                    if isinstance(result, bool):
+                        res = result
+                    elif result:
+                        error_infos.append(str(result))
+                        res = False
+                else:
+                    # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
+                    if with_info:
+                        with open(log_file, "r") as f:
+                            error_infos.append(f.read().strip())
                     res = exit_code == 0
 
-            # If fail_fast is enabled, stop on first failure
-            if not res and fail_fast:
-                print(f"Execution stopped due to failure in [{command_}]")
-                break
+                # If fail_fast is enabled, stop on first failure
+                if not res and fail_fast:
+                    print(f"Execution stopped due to failure in [{command_}]")
+                    break
 
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
@@ -349,7 +355,7 @@ class Result(MetaClasses.Serializable):
             status=res,
             stopwatch=stop_watch_,
             info=error_infos,
-            files=[log_file] if log_file else None,
+            files=[log_file] if with_log else None,
         )
 
     def complete_job(self):

@@ -287,13 +287,17 @@ To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/dev
 
 You can compile packages and install them or use programs without installing packages.
 
-      Client: <build_directory>/programs/clickhouse-client
-      Server: <build_directory>/programs/clickhouse-server
+```
+Client: <build_directory>/programs/clickhouse-client
+Server: <build_directory>/programs/clickhouse-server
+```
 
 You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-      /var/lib/clickhouse/data/default/
-      /var/lib/clickhouse/metadata/default/
+```
+/var/lib/clickhouse/data/default/
+/var/lib/clickhouse/metadata/default/
+```
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
@@ -317,13 +321,6 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 - Click "Details" next to "Builds" in the list, it will open a page similar to [this page](https://s3.amazonaws.com/clickhouse-test-reports/46793/b460eb70bf29b19eadd19a1f959b15d186705394/clickhouse_build_check/report.html)
 - Find the rows with compiler = "clang-*-aarch64" - there are multiple rows.
 - Download the artifacts for these builds.
-
-To download binaries for very old x86-64 systems without [SSE3](https://en.wikipedia.org/wiki/SSE3) support or old ARM systems without
-[ARMv8.1-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.1-A) support, open a [pull
-request](https://github.com/ClickHouse/ClickHouse/commits/master) and find CI check "BuilderBinAmd64Compat", respectively
-"BuilderBinAarch64V80Compat". Then click "Details", open the "Build" fold, scroll to the end, find message "Notice: Build URLs
-https://s3.amazonaws.com/clickhouse/builds/PRs/.../.../binary_aarch64_v80compat/clickhouse". You can then click the link to download the
-build.
 
 ### macOS-only: Install with Homebrew
 
