@@ -38,6 +38,10 @@ On Linux, macOS and FreeBSD:
    curl https://clickhouse.com/ | sh
    ```
 
+   :::note
+   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+   :::
+
 2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
 
    ```bash
@@ -287,13 +291,17 @@ To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/dev
 
 You can compile packages and install them or use programs without installing packages.
 
-      Client: <build_directory>/programs/clickhouse-client
-      Server: <build_directory>/programs/clickhouse-server
+```
+Client: <build_directory>/programs/clickhouse-client
+Server: <build_directory>/programs/clickhouse-server
+```
 
 You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-      /var/lib/clickhouse/data/default/
-      /var/lib/clickhouse/metadata/default/
+```
+/var/lib/clickhouse/data/default/
+/var/lib/clickhouse/metadata/default/
+```
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
@@ -321,6 +329,10 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 ### macOS-only: Install with Homebrew
 
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
+
+:::note
+For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+:::
 
 ## Launch {#launch}
 
