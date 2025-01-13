@@ -3958,6 +3958,9 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropCache:
             ret += "DROP CACHE";
             break;
+        case CmdType::kDropSkipIndexCache:
+            ret += "DROP SKIPPING INDEX CACHE";
+            break;
         default:
             ret += "REFRESH VIEW";
     }

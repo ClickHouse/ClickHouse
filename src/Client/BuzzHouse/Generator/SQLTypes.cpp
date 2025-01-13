@@ -147,13 +147,25 @@ SQLType * TypeDeepCopy(SQLType * tp)
     return nullptr;
 }
 
-void BoolType::typeName(String & ret, const bool) const { ret += "Bool"; }
+void BoolType::typeName(String & ret, const bool) const
+{
+    ret += "Bool";
+}
 
-void BoolType::MySQLtypeName(RandomGenerator &, String & ret, const bool) const { ret += "BOOL"; }
+void BoolType::MySQLtypeName(RandomGenerator &, String & ret, const bool) const
+{
+    ret += "BOOL";
+}
 
-void BoolType::PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const { ret += "BOOLEAN"; }
+void BoolType::PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const
+{
+    ret += "BOOLEAN";
+}
 
-void BoolType::SQLitetypeName(RandomGenerator &, String & ret, const bool) const { ret += "INTEGER"; }
+void BoolType::SQLitetypeName(RandomGenerator &, String & ret, const bool) const
+{
+    ret += "INTEGER";
+}
 
 void IntType::typeName(String & ret, const bool) const
 {

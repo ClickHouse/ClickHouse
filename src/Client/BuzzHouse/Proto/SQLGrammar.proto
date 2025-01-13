@@ -3517,6 +3517,7 @@ message SystemCommand {
         bool flush_async_insert_queue = 60;
         bool sync_filesystem_cache = 61;
         bool drop_cache = 62;
+        bool drop_skip_index_cache = 63;
     }
 }
 
