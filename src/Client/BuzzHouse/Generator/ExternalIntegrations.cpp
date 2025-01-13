@@ -1334,10 +1334,9 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
             return postresql->performQuery(query);
         case PeerTableDatabase::SQLite:
             return sqlite->performQuery(query);
-        default:
-            assert(0);
+        case PeerTableDatabase::None:
+            return false;
     }
-    return false;
 }
 
 }
