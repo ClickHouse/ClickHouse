@@ -1907,7 +1907,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         if (!table_function->canBeUsedToCreateTable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} cannot be used to create a table", table_function->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -1925,7 +1925,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             properties.constraints,
             mode);
 
-        /// If schema wes inferred while storage creation, add columns description to create query.
+        /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc

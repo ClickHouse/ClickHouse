@@ -19,6 +19,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <ranges>
+
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;
@@ -89,17 +91,9 @@ String joinByComma(const T & t)
     }
     else if constexpr (is_unordered_map<T>)
     {
-        String joined_keys;
-        for (const auto & [k, _] : t)
-        {
-            if (!joined_keys.empty())
-                joined_keys += ", ";
-            joined_keys += k;
-        }
-        return joined_keys;
+        auto keys = std::views::keys(t);
+        return fmt::format("{}", fmt::join(keys, ", "));
     }
-    /// TODO once our libcxx is recent enough, replace above by
-    ///      return fmt::format("{}", fmt::join(std::views::keys(t)), ", "));
     std::unreachable();
 }
 
@@ -178,6 +172,13 @@ String USearchIndexWithSerialization::Statistics::toString() const
             max_level, connectivity, size, capacity, ReadableSize(memory_usage), bytes_per_vector, scalar_words, nodes, edges, max_edges);
 
 }
+
+size_t USearchIndexWithSerialization::memoryUsageBytes() const
+{
+    /// Memory consumption is extremely high, asked in Discord: https://discord.com/channels/1063947616615923875/1064496121520590878/1309266814299144223
+    return Base::memory_usage();
+}
+
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,

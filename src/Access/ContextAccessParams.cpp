@@ -34,7 +34,7 @@ ContextAccessParams::ContextAccessParams(
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
     , address(client_info_.current_address.host())
-    , forwarded_address(client_info_.getLastForwardedFor())
+    , forwarded_address(client_info_.getLastForwardedForHost())
     , quota_key(client_info_.quota_key)
     , initial_user((client_info_.initial_user != client_info_.current_user) ? client_info_.initial_user : "")
 {

@@ -193,6 +193,9 @@
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
+    M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
+    M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
+    M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
@@ -290,6 +293,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
+    M(SkippingIndexCacheSize, "Size of the skipping index cache in bytes") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
