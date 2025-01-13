@@ -16,7 +16,7 @@ the columns from the input data will be mapped to the columns of the table by th
 Otherwise, the first row will be skipped.
 :::
 
-This format is also available under the name `TSVWithNames`.
+This format is also available under the name `TSVRawWithNames`.
 
 ## Example Usage
 

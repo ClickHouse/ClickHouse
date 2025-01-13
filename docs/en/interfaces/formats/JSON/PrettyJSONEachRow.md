@@ -8,6 +8,8 @@ keywords : [PrettyJSONEachRow]
 
 Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable only for output.
 
+Alias: `PrettyJSONLines`, `PrettyNDJSON`
+
 ## Example Usage
 
 Example

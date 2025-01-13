@@ -6,7 +6,7 @@ keywords : [JSONEachRow]
 
 ## Description
 
-In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object. Alias: `JSONLines`, `NDJSON`.
 
 ## Example Usage
 
