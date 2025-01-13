@@ -2483,9 +2483,16 @@ def test_list_and_delete_race(started_cluster):
     )
 
     assert len(res1) + len(res2) == total_rows
-    assert node.contains_in_log(
-        "because of the race with list & delete"
-    ) or node_2.contains_in_log("because of the race with list & delete")
+    assert (
+        node.contains_in_log("because of the race with list & delete")
+        or node_2.contains_in_log("because of the race with list & delete")
+        or node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Skipping table" # Unfortunately this optimization makes the race less easy to catch.
+        )
+        or node_2.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Skipping table"
+        )
+    )
 
 
 def test_registry(started_cluster):
@@ -2794,7 +2801,7 @@ def test_migration(started_cluster, setting_prefix):
     )
 
     for node in [node1, node2]:
-        node.query(f"DETACH TABLE {mv_name}")
+        node.query(f"DETACH TABLE {mv_name} SYNC")
 
     assert (
         "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1"
