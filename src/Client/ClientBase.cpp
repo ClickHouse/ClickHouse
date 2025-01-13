@@ -3005,7 +3005,8 @@ void ClientBase::runInteractive()
     }
 
     autocomplete.emplace();
-    if (load_autocomplete) {
+    if (load_autocomplete)
+    {
         if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
             autocomplete->load<Connection>(global_context, connection_parameters);
         else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)

@@ -190,7 +190,8 @@ bool GPTJModel::loadModel(const std::string & file_name)
 
     // create the ggml context
     {
-        struct ggml_init_params params = {
+        struct ggml_init_params params =
+        {
             /*.mem_size   =*/ctx_size,
             /*.mem_buffer =*/nullptr,
             /*.no_alloc   =*/false,
@@ -418,7 +419,8 @@ bool GPTJModel::gptjEval(const std::vector<GptVocab::id> & ids_input, std::vecto
         buf = temp;
     }
 
-    struct ggml_init_params params = {
+    struct ggml_init_params params =
+    {
         /*.mem_size   =*/buf_size,
         /*.mem_buffer =*/buf,
         /*.no_alloc   =*/false,

@@ -144,7 +144,7 @@ void Autocomplete::load(IServerConnection & connection, const ConnectionTimeouts
     }
     catch (...)
     {
-        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        tryLogCurrentException("Autocomplete", __PRETTY_FUNCTION__);
         last_error = getCurrentExceptionCode();
     }
     loading_finished = true;
