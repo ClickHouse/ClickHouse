@@ -236,6 +236,9 @@ public:
       */
     virtual bool isComparable() const { return false; }
 
+    /// Is it possible to compare for equal?
+    virtual bool isComparableForEquality() const { return isComparable(); }
+
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */
@@ -414,7 +417,7 @@ struct WhichDataType
     constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
     constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
-    constexpr bool isNativeNumber() const { return isNativeInteger() || isFloat(); }
+    constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
     constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
@@ -555,7 +558,6 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
-template <typename DataType> constexpr bool IsDataTypeNativeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
@@ -582,9 +584,6 @@ template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = t
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
-template <typename T>
-requires std::is_arithmetic_v<T>
-constexpr bool IsDataTypeNativeNumber<DataTypeNumber<T>> = true;
 
 template <> inline constexpr bool IsDataTypeDate<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDate<DataTypeDate32> = true;

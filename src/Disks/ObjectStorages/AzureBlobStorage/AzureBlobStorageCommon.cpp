@@ -11,6 +11,7 @@
 #include <azure/storage/blobs/blob_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -19,6 +20,8 @@ namespace ProfileEvents
     extern const Event AzureCreateContainer;
     extern const Event DiskAzureCreateContainer;
 }
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -108,7 +111,7 @@ ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions 
     new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
 
     auto response = client.ListBlobs(new_options);
-    auto blob_prefix_str = blob_prefix.empty() ? "" : blob_prefix.string() + "/";
+    String blob_prefix_str = blob_prefix / "";
 
     for (auto & blob : response.Blobs)
     {
@@ -240,6 +243,12 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
             {
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
+        }
+
+        if (config.has(config_prefix + ".endpoint_subpath"))
+        {
+            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
+            prefix = fs::path(prefix) / endpoint_subpath;
         }
     }
     else if (config.has(config_prefix + ".connection_string"))

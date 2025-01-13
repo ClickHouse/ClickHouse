@@ -1633,7 +1633,8 @@ TEST_F(MySQLBinlog, factoryThreads)
     };
 
     int n = 4;
-    std::vector<std::thread> ts1, ts2;
+    std::vector<std::thread> ts1;
+    std::vector<std::thread> ts2;
     for (int i = 0; i < n; ++i)
     {
         ts1.emplace_back(std::thread(func1));
@@ -1689,7 +1690,8 @@ TEST_F(MySQLBinlog, clientThreads)
     };
 
     int n = 4;
-    std::vector<std::thread> ts1, ts2;
+    std::vector<std::thread> ts1;
+    std::vector<std::thread> ts2;
     for (int i = 0; i < n; ++i)
     {
         ts1.emplace_back(std::thread(func1));

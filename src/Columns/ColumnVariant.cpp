@@ -505,7 +505,10 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
 
         Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
         size_t offset = variants[local_discr]->size();
-        variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
+
+        if (!skip_discriminator || global_discr != *skip_discriminator)
+            variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
+
         getLocalDiscriminators().resize_fill(local_discriminators->size() + length, local_discr);
         auto & offsets_data = getOffsets();
         offsets_data.reserve(offsets_data.size() + length);
@@ -1426,16 +1429,16 @@ bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-ColumnPtr ColumnVariant::compress() const
+ColumnPtr ColumnVariant::compress(bool force_compression) const
 {
-    ColumnPtr local_discriminators_compressed = local_discriminators->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    ColumnPtr local_discriminators_compressed = local_discriminators->compress(force_compression);
+    ColumnPtr offsets_compressed = offsets->compress(force_compression);
     size_t byte_size = local_discriminators_compressed->byteSize() + offsets_compressed->byteSize();
     Columns compressed;
     compressed.reserve(variants.size());
     for (const auto & variant : variants)
     {
-        auto compressed_variant = variant->compress();
+        auto compressed_variant = variant->compress(force_compression);
         byte_size += compressed_variant->byteSize();
         compressed.emplace_back(std::move(compressed_variant));
     }
@@ -1574,16 +1577,16 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
             filter.reserve_exact(null_map.size());
             for (size_t i = 0; i != local_discriminators_data.size(); ++i)
             {
-               if (null_map[i])
-               {
+                if (null_map[i])
+                {
                     filter.push_back(0);
                     local_discriminators_data[i] = NULL_DISCRIMINATOR;
-               }
-               else
-               {
+                }
+                else
+                {
                    filter.push_back(1);
                    offsets_data[i] = size_hint++;
-               }
+                }
             }
             variants[*non_empty_local_discr] = variants[*non_empty_local_discr]->filter(filter, size_hint);
         }
@@ -1610,7 +1613,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.
                 if (variant_filter.empty())
-                   variant_filter.resize_fill(variants[discr]->size(), 1);
+                    variant_filter.resize_fill(variants[discr]->size(), 1);
                 variant_filter[offsets_data[i]] = 0;
                 discr = NULL_DISCRIMINATOR;
             }

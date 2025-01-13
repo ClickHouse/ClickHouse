@@ -70,6 +70,7 @@ def get_packager_cmd(
 
     cmd += f" --docker-image-version={image_version}"
     cmd += " --with-profiler"
+    cmd += " --with-buzzhouse"
     cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
@@ -209,6 +210,9 @@ def main():
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
+            logging.warning("Collecting 'dmesg -T' content")
+            with TeePopen("sudo dmesg -T", build_output_path / "dmesg.log") as process:
+                process.wait()
         except subprocess.CalledProcessError:
             logging.error(
                 "The dockerd looks down, won't upload anything and generate report"

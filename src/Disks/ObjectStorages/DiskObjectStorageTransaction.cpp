@@ -10,6 +10,7 @@
 #include <base/defines.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -593,6 +594,39 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
     }
 };
 
+struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOperation
+{
+    StoredObject object;
+
+    CreateEmptyFileObjectStorageOperation(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        const std::string & path_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+    {
+        const auto key = object_storage.generateObjectKeyForPath(path_, std::nullopt);
+        object = StoredObject(key.serialize(), path_, /* file_size */0);
+    }
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object.remote_path, object.local_path);
+    }
+
+    void execute(MetadataTransactionPtr /* tx */) override
+    {
+        auto buf = object_storage.writeObject(object, WriteMode::Rewrite);
+        buf->finalize();
+    }
+
+    void undo() override
+    {
+        object_storage.removeObjectIfExists(object);
+    }
+
+    void finalize() override {}
+};
+
 }
 
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
@@ -910,6 +944,12 @@ void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
+    if (object_storage.isPlain() && !object_storage.isWriteOnce())
+    {
+        operations_to_execute.emplace_back(
+            std::make_unique<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
+    }
+
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {
