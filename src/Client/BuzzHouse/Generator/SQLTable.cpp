@@ -1476,25 +1476,25 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
             const uint32_t add_is_deleted
                 = 2 * static_cast<uint32_t>(added_is_deleted < to_add_is_deleted && added_version == to_add_version);
             const uint32_t prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version + add_is_deleted;
-            std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
+            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
-            if (add_idx && nopt < (add_idx))
+            if (add_idx && nopt < (add_idx + 1))
             {
                 addTableIndex(rg, next, false, colsdef->add_other_defs()->mutable_idx_def());
                 added_idxs++;
             }
-            else if (add_proj && nopt < (add_idx + add_proj))
+            else if (add_proj && nopt < (add_idx + add_proj + 1))
             {
                 addTableProjection(rg, next, false, colsdef->add_other_defs()->mutable_proj_def());
                 added_projs++;
             }
-            else if (add_const && nopt < (add_idx + add_proj + add_const))
+            else if (add_const && nopt < (add_idx + add_proj + add_const + 1))
             {
                 addTableConstraint(rg, next, false, colsdef->add_other_defs()->mutable_const_def());
                 added_consts++;
             }
-            else if (add_col && nopt < (add_idx + add_proj + add_const + add_col))
+            else if (add_col && nopt < (add_idx + add_proj + add_const + add_col + 1))
             {
                 const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
                 ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
@@ -1507,7 +1507,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
             {
                 const uint32_t cname = next.col_counter++;
                 const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
-                const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version);
+                const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
                 ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
                 addTableColumn(

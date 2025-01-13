@@ -138,7 +138,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     const uint32_t tudf = 5;
     const uint32_t system_table = 5;
     const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table;
-    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
     name += "t";
@@ -146,7 +146,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     name += "d";
     name += std::to_string(this->current_level);
 
-    if (derived_table && nopt < derived_table)
+    if (derived_table && nopt < (derived_table + 1))
     {
         SQLRelation rel(name);
         JoinedDerivedQuery * jdq = tos->mutable_joined_derived_query();
@@ -155,7 +155,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         jdq->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }
-    else if (cte && nopt < (derived_table + cte))
+    else if (cte && nopt < (derived_table + cte + 1))
     {
         SQLRelation rel(name);
         JoinedTable * jt = tos->mutable_joined_table();
@@ -169,7 +169,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         jt->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }
-    else if (table && nopt < (derived_table + cte + table))
+    else if (table && nopt < (derived_table + cte + table + 1))
     {
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
@@ -190,7 +190,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         jt->set_final(t.supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3));
         addTableRelation(rg, true, name, t);
     }
-    else if (view && nopt < (derived_table + cte + table + view))
+    else if (view && nopt < (derived_table + cte + table + view + 1))
     {
         SQLRelation rel(name);
         JoinedTable * jt = tos->mutable_joined_table();
@@ -215,7 +215,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         }
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }
-    else if (engineudf && nopt < (derived_table + cte + table + view + engineudf))
+    else if (engineudf && nopt < (derived_table + cte + table + view + engineudf + 1))
     {
         SQLRelation rel(name);
         JoinedTableFunction * jtf = tos->mutable_joined_table_function();
@@ -227,7 +227,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         addTableRelation(rg, true, name, t);
         jtf->mutable_table_alias()->set_table(name);
     }
-    else if (tudf && nopt < (derived_table + cte + table + view + engineudf + tudf))
+    else if (tudf && nopt < (derived_table + cte + table + view + engineudf + tudf + 1))
     {
         SQLRelation rel(name);
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
@@ -315,7 +315,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         jtf->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }
-    else if (system_table && nopt < (derived_table + cte + table + view + engineudf + tudf + system_table))
+    else if (system_table && nopt < (derived_table + cte + table + view + engineudf + tudf + system_table + 1))
     {
         SQLRelation rel(name);
         JoinedTable * jt = tos->mutable_joined_table();
