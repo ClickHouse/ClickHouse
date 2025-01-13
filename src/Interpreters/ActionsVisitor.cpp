@@ -68,7 +68,6 @@ namespace Setting
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -356,7 +355,7 @@ ColumnsWithTypeAndName createBlockForSet(
 
     GetSetElementParams set_params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
-        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
+        .forbid_unknown_enum_values = false,
     };
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.

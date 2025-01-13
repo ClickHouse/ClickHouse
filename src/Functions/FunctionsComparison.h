@@ -27,7 +27,6 @@
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/Context.h>
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
@@ -35,7 +34,6 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
-#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -57,11 +55,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace Setting
-{
-    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
@@ -655,7 +648,7 @@ struct ComparisonParams
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+        , validate_enum_literals_in_operators(false)
     {}
 };
 

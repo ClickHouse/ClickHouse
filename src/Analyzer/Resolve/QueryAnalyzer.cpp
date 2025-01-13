@@ -103,7 +103,6 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
@@ -3468,7 +3467,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type,
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
-                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                    .forbid_unknown_enum_values = false,
                 });
 
 
