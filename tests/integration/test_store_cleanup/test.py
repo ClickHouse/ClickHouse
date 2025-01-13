@@ -22,6 +22,12 @@ def started_cluster():
 
 
 def test_store_cleanup(started_cluster):
+    sync_drop = {"database_atomic_wait_for_drop_and_detach_synchronously": True}
+
+    node1.query("DROP DATABASE IF EXISTS db", settings=sync_drop)
+    node1.query("DROP DATABASE IF EXISTS db2", settings=sync_drop)
+    node1.query("DROP DATABASE IF EXISTS db3", settings=sync_drop)
+
     node1.query("CREATE DATABASE db UUID '10000000-1000-4000-8000-000000000001'")
     node1.query(
         "CREATE TABLE db.log UUID '10000000-1000-4000-8000-000000000002' ENGINE=Log AS SELECT 1"
@@ -37,7 +43,7 @@ def test_store_cleanup(started_cluster):
     node1.query(
         "CREATE TABLE db2.log UUID '20000000-1000-4000-8000-000000000002' ENGINE=Log AS SELECT 1"
     )
-    node1.query("DETACH DATABASE db2")
+    node1.query("DETACH DATABASE db2", settings=sync_drop)
 
     node1.query("CREATE DATABASE db3 UUID '30000000-1000-4000-8000-000000000001'")
     node1.query(
@@ -84,7 +90,7 @@ def test_store_cleanup(started_cluster):
     )
 
     node1.start_clickhouse()
-    node1.query("DETACH DATABASE db2")
+    node1.query("DETACH DATABASE db2", settings=sync_drop)
     node1.query("DETACH TABLE db3.log")
 
     node1.wait_for_log_line(
