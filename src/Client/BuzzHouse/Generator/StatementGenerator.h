@@ -84,8 +84,9 @@ private:
 
     std::string buf;
 
+    PeerQuery peer_query = PeerQuery::None;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
-         allow_subqueries = true, enforce_final = false, peer_query = false, allow_engine_udf = true;
+         allow_subqueries = true, enforce_final = false, allow_engine_udf = true;
     uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0,
              next_type_mask = std::numeric_limits<uint32_t>::max();
     std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
@@ -123,7 +124,7 @@ private:
 
     void setAllowNotDetermistic(const bool value) { allow_not_deterministic = value; }
     void enforceFinal(const bool value) { enforce_final = value; }
-    void generatingPeerQuery(const bool value) { peer_query = value; }
+    void generatingPeerQuery(const PeerQuery value) { peer_query = value; }
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
 
     template <typename T>
@@ -482,6 +483,11 @@ public:
     {
         return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
             && t.hasDatabasePeer();
+    };
+    const std::function<bool(const SQLTable &)> attached_tables_for_clickhouse_table_peer_oracle = [](const SQLTable & t)
+    {
+        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
+            && t.hasClickHousePeer();
     };
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases

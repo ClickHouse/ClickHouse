@@ -13,6 +13,7 @@ private:
     const FuzzConfig & fc;
     const std::filesystem::path qfile;
     MD5Impl md5_hash;
+    PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
     uint8_t first_digest[16], second_digest[16];
     std::string buf;
@@ -41,7 +42,7 @@ public:
 
     /* Run query with different settings oracle */
     int generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
-    int generateOracleSelectQuery(RandomGenerator & rg, bool peer_query, StatementGenerator & gen, SQLQuery & sq2);
+    int generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
     int generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
     /* Replace query with peer tables */

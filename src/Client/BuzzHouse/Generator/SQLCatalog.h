@@ -30,6 +30,13 @@ enum class PeerTableDatabase
     ClickHouse = 4
 };
 
+enum class PeerQuery
+{
+    None = 0,
+    ClickHouseOnly = 1,
+    AllPeers = 2
+};
+
 struct SQLColumn
 {
 public:

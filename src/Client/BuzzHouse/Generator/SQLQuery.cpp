@@ -772,7 +772,8 @@ int StatementGenerator::generateGroupBy(
         const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
         const bool no_grouping_sets = next_opt < 91 || !allow_settings;
         const bool has_gsm = !enforce_having && next_opt < 51 && allow_settings && rg.nextSmallNumber() < 4;
-        const bool has_totals = !enforce_having && !this->peer_query && no_grouping_sets && allow_settings && rg.nextSmallNumber() < 4;
+        const bool has_totals
+            = !enforce_having && this->peer_query != PeerQuery::AllPeers && no_grouping_sets && allow_settings && rg.nextSmallNumber() < 4;
 
         if (no_grouping_sets)
         {

@@ -1007,6 +1007,23 @@ public:
         }
     }
 
+    bool performQuery(const PeerTableDatabase pt, const std::string & query)
+    {
+        switch (pt)
+        {
+            case PeerTableDatabase::ClickHouse:
+                return clickhouse->performQuery(query);
+            case PeerTableDatabase::MySQL:
+                return mysql->performQuery(query);
+            case PeerTableDatabase::PostgreSQL:
+                return postresql->performQuery(query);
+            case PeerTableDatabase::SQLite:
+                return sqlite->performQuery(query);
+            default:
+                assert(0);
+        }
+    }
+
     ~ExternalIntegrations()
     {
         delete mysql;

@@ -571,7 +571,7 @@ bool Client::buzzHouse()
 
                     sq2.Clear();
                     full_query2.resize(0);
-                    (void)qo.generateOracleSelectQuery(rg, false, gen, sq2);
+                    (void)qo.generateOracleSelectQuery(rg, BuzzHouse::PeerQuery::None, gen, sq2);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
@@ -632,9 +632,16 @@ bool Client::buzzHouse()
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
                     //test results with peer tables
+                    bool has_success = false;
+                    BuzzHouse::PeerQuery nquery
+                        = ((!ei.hasMySQLConnection() && !ei.hasPostgreSQLConnection() && !ei.hasSQLiteConnection()) || rg.nextBool())
+                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_clickhouse_table_peer_oracle)
+                        ? BuzzHouse::PeerQuery::ClickHouseOnly
+                        : BuzzHouse::PeerQuery::AllPeers;
+
                     sq1.Clear();
                     full_query.resize(0);
-                    (void)qo.generateOracleSelectQuery(rg, true, gen, sq1);
+                    (void)qo.generateOracleSelectQuery(rg, nquery, gen, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
@@ -656,8 +663,16 @@ bool Client::buzzHouse()
                     full_query2.resize(0);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processSecondOracleQueryResult(!have_error, "Peer table query");
+                    if (nquery == BuzzHouse::PeerQuery::AllPeers)
+                    {
+                        server_up &= processBuzzHouseQuery(full_query2);
+                        has_success = !have_error;
+                    }
+                    else
+                    {
+                        has_success = ei.performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
+                    }
+                    (void)qo.processSecondOracleQueryResult(has_success, "Peer table query");
                 }
                 else if (run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query + 1))
                 {

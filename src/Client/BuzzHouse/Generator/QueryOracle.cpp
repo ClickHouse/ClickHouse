@@ -354,19 +354,20 @@ int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
     return 0;
 }
 
-int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const bool peer_query, StatementGenerator & gen, SQLQuery & sq2)
+int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     const bool global_aggregate = rg.nextSmallNumber() < 4;
 
+    this->peer_query = pq;
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
-    gen.generatingPeerQuery(peer_query);
+    gen.generatingPeerQuery(pq);
     gen.generateTopSelect(rg, global_aggregate, std::numeric_limits<uint32_t>::max(), ts);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
-    gen.generatingPeerQuery(false);
+    gen.generatingPeerQuery(PeerQuery::None);
 
     if (!global_aggregate)
     {
@@ -515,7 +516,10 @@ int QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().select().sel()), gen);
+    if (this->peer_query == PeerQuery::AllPeers)
+    {
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().select().sel()), gen);
+    }
     for (const auto & entry : found_tables)
     {
         SQLQuery next;
@@ -547,6 +551,7 @@ int QueryOracle::replaceQueryWithTablePeers(
 
 int QueryOracle::ResetOracleValues()
 {
+    peer_query = PeerQuery::AllPeers;
     first_success = second_sucess = other_steps_sucess = can_test_query_success = true;
     return 0;
 }
