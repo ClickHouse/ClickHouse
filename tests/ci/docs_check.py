@@ -130,9 +130,7 @@ def main():
         else:
             logging.info("Run failed")
             test_results.append(
-                TestResult(
-                    "htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log]
-                )
+                TestResult("htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log])
             )
 
     JobReport(
