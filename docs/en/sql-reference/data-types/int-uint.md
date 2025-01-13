@@ -5,11 +5,12 @@ sidebar_label: Int | UInt
 title: Int | UInt Types
 ---
 
-ClickHouse offers a number of fixed-length integers, with a sign (`Int_`) or without a sign (unsigned `UInt_`) ranging from 8 bytes to 256 bytes.
+ClickHouse offers a number of fixed-length integers, 
+with a sign (`Int`) or without a sign (unsigned `UInt`) ranging from one byte to 32 bytes.
 
 When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.
 
-## Int Ranges
+## Integer Ranges
 
 Integer types have the following ranges:
 
@@ -22,19 +23,6 @@ Integer types have the following ranges:
 | `Int128` | \[-170141183460469231731687303715884105728 : 170141183460469231731687303715884105727\]                                                                             |
 | `Int256` | \[-57896044618658097711785492504343953926634992332820282019728792003956564819968 : 57896044618658097711785492504343953926634992332820282019728792003956564819967\] |
 
-## Int Aliases
-
-Integer types have the following aliases:
-
-| Type    | Alias                                                                             |
-|---------|-----------------------------------------------------------------------------------|
-| `Int8`  | `TINYINT`, `INT1`, `BYTE`, `TINYINT SIGNED`, `INT1 SIGNED`                        |
-| `Int16` | `SMALLINT`, `SMALLINT SIGNED`                                                     |
-| `Int32` | `INT`, `INTEGER`, `MEDIUMINT`, `MEDIUMINT SIGNED`, `INT SIGNED`, `INTEGER SIGNED` |
-| `Int64` | `BIGINT`, `SIGNED`, `BIGINT SIGNED`, `TIME`                                       |
-
-## UInt Ranges
-
 Unsigned integer types have the following ranges:
 
 | Type      | Range                                                                                  |
@@ -46,7 +34,16 @@ Unsigned integer types have the following ranges:
 | `UInt128` | \[0 : 340282366920938463463374607431768211455\]                                        |
 | `UInt256` | \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\] |
 
-## UInt Aliases
+## Integer Aliases
+
+Integer types have the following aliases:
+
+| Type    | Alias                                                                             |
+|---------|-----------------------------------------------------------------------------------|
+| `Int8`  | `TINYINT`, `INT1`, `BYTE`, `TINYINT SIGNED`, `INT1 SIGNED`                        |
+| `Int16` | `SMALLINT`, `SMALLINT SIGNED`                                                     |
+| `Int32` | `INT`, `INTEGER`, `MEDIUMINT`, `MEDIUMINT SIGNED`, `INT SIGNED`, `INTEGER SIGNED` |
+| `Int64` | `BIGINT`, `SIGNED`, `BIGINT SIGNED`, `TIME`                                       |
 
 Unsigned integer types have the following aliases:
 

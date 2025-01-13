@@ -3515,7 +3515,7 @@ Supported arguments:
 
 **Returned value**
 
-- 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa. [BFloat16](../data-types/float.md/#bfloat16).
+- 16-bit brain-float value. [BFloat16](../data-types/float.md/#bfloat16).
 
 **Example**
 
@@ -3564,7 +3564,7 @@ Unsupported arguments (return `0`):
 
 **Returned value**
 
-- 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa, otherwise `0`. [BFloat16](../data-types/float.md/#bfloat16).
+- 16-bit brain-float value, otherwise `0`. [BFloat16](../data-types/float.md/#bfloat16).
 
 :::note
 The function allows a silent loss of precision while converting from the string representation.
@@ -3617,7 +3617,7 @@ Unsupported arguments (return `NULL`):
 
 **Returned value**
 
-- 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa, otherwise `NULL` (`\N`). [BFloat16](../data-types/float.md/#bfloat16).
+- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](../data-types/float.md/#bfloat16).
 
 :::note
 The function allows a silent loss of precision while converting from the string representation.
