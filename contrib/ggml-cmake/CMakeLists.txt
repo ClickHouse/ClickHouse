@@ -101,7 +101,8 @@ endif()
 add_library(_ggml
     ${GGML_SRCS} ${GGML_HDRS}
 )
-target_include_directories(_ggml PUBLIC ${GGML_CPP_INCLUDE_DIR} ${GGML_CPP_INCLUDE_DIR}/ggml)
+
+target_include_directories(_ggml PUBLIC ${GGML_CPP_INCLUDE_DIR} ${GGML_CPP_INCLUDE_DIR})
 
 target_compile_options(_ggml PRIVATE ${GGML_ARCH_FLAGS})
 target_compile_definitions(_ggml PRIVATE ${GGML_COMPILE_DEFENITIONS})
@@ -123,4 +124,3 @@ endif()
 #
 
 add_library(ch_contrib::ggml ALIAS _ggml)
-
