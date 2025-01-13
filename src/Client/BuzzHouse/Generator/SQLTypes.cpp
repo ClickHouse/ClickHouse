@@ -923,10 +923,10 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     const uint32_t dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0);
     const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
         + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (nopt < (int_type + 1))
+    if (nopt < int_type)
     {
         Integers nint;
 
@@ -936,7 +936,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             tp->set_integers(nint);
         }
     }
-    else if (floating_point_type && nopt < (int_type + floating_point_type + 1))
+    else if (floating_point_type && nopt < (int_type + floating_point_type))
     {
         FloatingPoints nflo;
 
@@ -946,7 +946,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             tp->set_floats(nflo);
         }
     }
-    else if (date_type && nopt < (int_type + floating_point_type + date_type + 1))
+    else if (date_type && nopt < (int_type + floating_point_type + date_type))
     {
         Dates dd;
 
@@ -956,13 +956,13 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
             tp->set_dates(dd);
         }
     }
-    else if (datetime_type && nopt < (int_type + floating_point_type + date_type + datetime_type + 1))
+    else if (datetime_type && nopt < (int_type + floating_point_type + date_type + datetime_type))
     {
         DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
 
         res = randomDateTimeType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types, dtp);
     }
-    else if (string_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + 1))
+    else if (string_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type))
     {
         std::optional<uint32_t> swidth = std::nullopt;
 
@@ -983,7 +983,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         res = new StringType(swidth);
     }
-    else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
+    else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type))
     {
         Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
         std::optional<DecimalN_DecimalPrecision> short_notation = std::nullopt;
@@ -1045,7 +1045,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         res = new DecimalType(short_notation, precision, scale);
     }
-    else if (bool_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + 1))
+    else if (bool_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type))
     {
         if (tp)
         {
@@ -1055,7 +1055,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     }
     else if (
         enum_type
-        && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + 1))
+        && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type))
     {
         const bool bits16 = rg.nextBool();
         std::vector<EnumValue> evs;
@@ -1094,8 +1094,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     else if (
         uuid_type
         && nopt
-            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + 1))
+            < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type))
     {
         if (tp)
         {
@@ -1107,7 +1106,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         ipv4_type
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + 1))
+               + ipv4_type))
     {
         if (tp)
         {
@@ -1119,7 +1118,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         ipv6_type
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + 1))
+               + ipv4_type + ipv6_type))
     {
         if (tp)
         {
@@ -1131,7 +1130,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         j_type
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + j_type + 1))
+               + ipv4_type + ipv6_type + j_type))
     {
         std::string desc;
         std::vector<JSubType> subcols;
@@ -1224,7 +1223,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         dynamic_type
         && nopt
             < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type + uuid_type
-               + ipv4_type + ipv6_type + j_type + dynamic_type + 1))
+               + ipv4_type + ipv6_type + j_type + dynamic_type))
     {
         Dynamic * dyn = tp ? tp->mutable_dynamic() : nullptr;
         std::optional<uint32_t> ntypes = std::nullopt;
@@ -1261,10 +1260,10 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     const uint32_t geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && this->fc.fuzz_floating_points);
     const uint32_t prob_space
         = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (non_nullable_type && nopt < (non_nullable_type + 1))
+    if (non_nullable_type && nopt < non_nullable_type)
     {
         //non nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
@@ -1272,7 +1271,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             = bottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
         return lcard ? new LowCardinality(res) : res;
     }
-    else if (nullable_type && nopt < (non_nullable_type + nullable_type + 1))
+    else if (nullable_type && nopt < (non_nullable_type + nullable_type))
     {
         //nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
@@ -1283,7 +1282,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
     }
-    else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
+    else if (array_type && nopt < (nullable_type + non_nullable_type + array_type))
     {
         //array
         TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
@@ -1293,7 +1292,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         this->depth--;
         return new ArrayType(k);
     }
-    else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
+    else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type))
     {
         //map
         MapTypeDef * mt = tp ? tp->mutable_map() : nullptr;
@@ -1307,7 +1306,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         this->width--;
         return new MapType(k, v);
     }
-    else if (tuple_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + 1))
+    else if (tuple_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type))
     {
         //tuple
         std::vector<SubType> subtypes;
@@ -1339,7 +1338,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         this->depth--;
         return new TupleType(subtypes);
     }
-    else if (variant_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + 1))
+    else if (variant_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type))
     {
         //variant
         std::vector<SQLType *> subtypes;
@@ -1359,8 +1358,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         this->depth--;
         return new VariantType(subtypes);
     }
-    else if (
-        nested_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + 1))
+    else if (nested_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type))
     {
         //nested
         std::vector<NestedSubType> subtypes;
@@ -1385,8 +1383,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         return new NestedType(subtypes);
     }
     else if (
-        geo_type
-        && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
+        geo_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type))
     {
         //geo
         const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);

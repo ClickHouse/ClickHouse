@@ -302,10 +302,10 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     const uint32_t drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t drop_function = 1 * static_cast<uint32_t>(functions.size() > 3);
     const uint32_t prob_space = drop_table + drop_view + drop_database + drop_function;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (drop_table && nopt < (drop_table + 1))
+    if (drop_table && nopt < drop_table)
     {
         ExprSchemaTable * est = sot->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
@@ -319,7 +319,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
-    else if (drop_view && nopt < (drop_table + drop_view + 1))
+    else if (drop_view && nopt < (drop_table + drop_view))
     {
         ExprSchemaTable * est = sot->mutable_est();
         const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
@@ -331,7 +331,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
         }
         est->mutable_table()->set_table("v" + std::to_string(v.tname));
     }
-    else if (drop_database && nopt < (drop_table + drop_view + drop_database + 1))
+    else if (drop_database && nopt < (drop_table + drop_view + drop_database))
     {
         const std::shared_ptr<SQLDatabase> & d
             = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
@@ -451,10 +451,10 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     const uint32_t desc_query = 5;
     const uint32_t desc_function = 5;
     const uint32_t prob_space = desc_table + desc_view + desc_query + desc_function;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (desc_table && nopt < (desc_table + 1))
+    if (desc_table && nopt < desc_table)
     {
         ExprSchemaTable * est = dt->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
@@ -465,7 +465,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
-    else if (desc_view && nopt < (desc_table + desc_view + 1))
+    else if (desc_view && nopt < (desc_table + desc_view))
     {
         ExprSchemaTable * est = dt->mutable_est();
         const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
@@ -476,12 +476,12 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
         }
         est->mutable_table()->set_table("v" + std::to_string(v.tname));
     }
-    else if (desc_query && nopt < (desc_table + desc_view + desc_query + 1))
+    else if (desc_query && nopt < (desc_table + desc_view + desc_query))
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
         generateSelect(rg, false, false, (rg.nextLargeNumber() % 5) + 1, std::numeric_limits<uint32_t>::max(), dt->mutable_sel());
     }
-    else if (desc_function && nopt < (desc_table + desc_view + desc_query + desc_function + 1))
+    else if (desc_function && nopt < (desc_table + desc_view + desc_query + desc_function))
     {
         generateTableFuncCall(rg, dt->mutable_stf());
         this->levels.clear();
@@ -679,10 +679,10 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     const uint32_t trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database);
     const uint32_t trunc_db = 5 * static_cast<uint32_t>(trunc_database);
     const uint32_t prob_space = trunc_table + trunc_db_tables + trunc_db;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (trunc_table && nopt < (trunc_table + 1))
+    if (trunc_table && nopt < trunc_table)
     {
         ExprSchemaTable * est = trunc->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
@@ -693,14 +693,14 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
-    else if (trunc_db_tables && nopt < (trunc_table + trunc_db_tables + 1))
+    else if (trunc_db_tables && nopt < (trunc_table + trunc_db_tables))
     {
         const std::shared_ptr<SQLDatabase> & d
             = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         trunc->mutable_all_tables()->set_database("d" + std::to_string(d->dname));
     }
-    else if (trunc_db && nopt < (trunc_table + trunc_db_tables + trunc_db + 1))
+    else if (trunc_db && nopt < (trunc_table + trunc_db_tables + trunc_db))
     {
         const std::shared_ptr<SQLDatabase> & d
             = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
@@ -775,10 +775,10 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             const uint32_t alter_query = 3;
             const uint32_t prob_space = alter_refresh + alter_query;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
-            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+            std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
-            if (alter_refresh && nopt < (alter_refresh + 1))
+            if (alter_refresh && nopt < alter_refresh)
             {
                 generateNextRefreshableView(rg, ati->mutable_refresh());
             }
@@ -884,10 +884,10 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 + clear_column_partition + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl
                 + remove_ttl + comment_table;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
-            std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+            std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
-            if (alter_order_by && nopt < (alter_order_by + 1))
+            if (alter_order_by && nopt < alter_order_by)
             {
                 TableKey * tkey = ati->mutable_order();
 
@@ -900,7 +900,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     this->entries.clear();
                 }
             }
-            else if (heavy_delete && nopt < (heavy_delete + alter_order_by + 1))
+            else if (heavy_delete && nopt < (heavy_delete + alter_order_by))
             {
                 HeavyDelete * hdel = ati->mutable_del();
 
@@ -910,7 +910,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 }
                 generateUptDelWhere(rg, t, hdel->mutable_del()->mutable_expr()->mutable_expr());
             }
-            else if (add_column && nopt < (heavy_delete + alter_order_by + add_column + 1))
+            else if (add_column && nopt < (heavy_delete + alter_order_by + add_column))
             {
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_add_column();
@@ -928,7 +928,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     add_col->mutable_add_where()->set_first(true);
                 }
             }
-            else if (materialize_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + 1))
+            else if (materialize_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column))
             {
                 ColInPartition * mcol = ati->mutable_materialize_column();
 
@@ -940,14 +940,14 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     generateNextTablePartition<false>(rg, t, mcol->mutable_partition());
                 }
             }
-            else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
+            else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column))
             {
                 flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomlyFromVector(this->entries), ati->mutable_drop_column());
                 this->entries.clear();
             }
             else if (
-                rename_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + 1))
+                rename_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column))
             {
                 const uint32_t ncname = t.col_counter++;
                 RenameCol * rcol = ati->mutable_rename_column();
@@ -963,8 +963,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             }
             else if (
                 clear_column
-                && nopt
-                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column + 1))
+                && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column))
             {
                 ColInPartition * ccol = ati->mutable_clear_column();
 
@@ -980,7 +979,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 modify_column
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + 1))
+                       + modify_column))
             {
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_modify_column();
@@ -1009,7 +1008,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 comment_column
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + 1))
+                       + modify_column + comment_column))
             {
                 CommentColumn * ccol = ati->mutable_comment_column();
 
@@ -1024,7 +1023,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 delete_mask
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + delete_mask + 1))
+                       + modify_column + comment_column + delete_mask))
             {
                 ApplyDeleteMask * adm = ati->mutable_delete_mask();
 
@@ -1037,7 +1036,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 heavy_update
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + delete_mask + heavy_update + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update))
             {
                 Update * upt = ati->mutable_update();
 
@@ -1112,7 +1111,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 add_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats))
             {
                 AddStatistics * ads = ati->mutable_add_stats();
 
@@ -1123,7 +1122,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 mod_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats))
             {
                 AddStatistics * ads = ati->mutable_mod_stats();
 
@@ -1134,7 +1133,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 drop_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats))
             {
                 pickUpNextCols(rg, t, ati->mutable_drop_stats());
             }
@@ -1142,8 +1141,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 clear_stats
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
-                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + 1))
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats))
             {
                 pickUpNextCols(rg, t, ati->mutable_clear_stats());
             }
@@ -1152,7 +1150,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + 1))
+                       + mat_stats))
             {
                 pickUpNextCols(rg, t, ati->mutable_mat_stats());
             }
@@ -1161,7 +1159,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + add_idx + 1))
+                       + mat_stats + add_idx))
             {
                 AddIndex * add_index = ati->mutable_add_index();
 
@@ -1185,7 +1183,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + add_idx + materialize_idx + 1))
+                       + mat_stats + add_idx + materialize_idx))
             {
                 IdxInPartition * iip = ati->mutable_materialize_index();
 
@@ -1200,7 +1198,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + add_idx + materialize_idx + clear_idx + 1))
+                       + mat_stats + add_idx + materialize_idx + clear_idx))
             {
                 IdxInPartition * iip = ati->mutable_clear_index();
 
@@ -1215,7 +1213,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + 1))
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx))
             {
                 ati->mutable_drop_index()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
             }
@@ -1224,7 +1222,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + 1))
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property))
             {
                 RemoveColumnProperty * rcs = ati->mutable_column_remove_property();
 
@@ -1239,7 +1237,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 && nopt
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
-                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + 1))
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting))
             {
                 ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
@@ -1255,7 +1253,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
-                       + column_remove_setting + 1))
+                       + column_remove_setting))
             {
                 RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
@@ -1271,7 +1269,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
-                       + column_remove_setting + table_modify_setting + 1))
+                       + column_remove_setting + table_modify_setting))
             {
                 const auto & tsettings = allTableSettings.at(t.teng);
 
@@ -1283,7 +1281,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
-                       + column_remove_setting + table_modify_setting + table_remove_setting + 1))
+                       + column_remove_setting + table_modify_setting + table_remove_setting))
             {
                 const auto & tsettings = allTableSettings.at(t.teng);
 
@@ -1295,7 +1293,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
-                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + 1))
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection))
             {
                 addTableProjection(rg, t, true, ati->mutable_add_projection());
             }
@@ -1305,7 +1303,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
-                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection + 1))
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection))
             {
                 ati->mutable_remove_projection()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
             }
@@ -1316,7 +1314,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
-                       + materialize_projection + 1))
+                       + materialize_projection))
             {
                 ProjectionInPartition * pip = ati->mutable_materialize_projection();
 
@@ -1333,7 +1331,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
-                       + materialize_projection + clear_projection + 1))
+                       + materialize_projection + clear_projection))
             {
                 ProjectionInPartition * pip = ati->mutable_clear_projection();
 
@@ -1350,7 +1348,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
-                       + materialize_projection + clear_projection + add_constraint + 1))
+                       + materialize_projection + clear_projection + add_constraint))
             {
                 addTableConstraint(rg, t, true, ati->mutable_add_constraint());
             }
@@ -1361,7 +1359,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
-                       + materialize_projection + clear_projection + add_constraint + remove_constraint + 1))
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint))
             {
                 ati->mutable_remove_constraint()->set_constraint("c" + std::to_string(rg.pickRandomlyFromSet(t.constrs)));
             }
@@ -1372,7 +1370,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
-                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + 1))
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_detach_partition();
@@ -1399,8 +1397,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
-                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
-                       + 1))
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
+                       + drop_partition))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_drop_partition();
@@ -1428,7 +1426,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
-                       + drop_detached_partition + 1))
+                       + drop_detached_partition))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_drop_detached_partition();
@@ -1457,7 +1455,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
-                       + drop_detached_partition + forget_partition + 1))
+                       + drop_detached_partition + forget_partition))
             {
                 PartitionExpr * pexpr = ati->mutable_forget_partition();
 
@@ -1472,7 +1470,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
-                       + drop_detached_partition + forget_partition + attach_partition + 1))
+                       + drop_detached_partition + forget_partition + attach_partition))
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_attach_partition();
@@ -1501,7 +1499,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
-                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + 1))
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to))
             {
                 AttachPartitionFrom * apf = ati->mutable_move_partition_to();
                 PartitionExpr * pexpr = apf->mutable_partition();
@@ -1524,7 +1522,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
-                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition + 1))
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition))
             {
                 ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
                 PartitionExpr * pexpr = ccip->mutable_partition();
@@ -1544,7 +1542,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + 1))
+                       + freeze_partition))
             {
                 FreezePartition * fp = ati->mutable_freeze_partition();
 
@@ -1564,7 +1562,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + unfreeze_partition + 1))
+                       + freeze_partition + unfreeze_partition))
             {
                 FreezePartition * fp = ati->mutable_unfreeze_partition();
                 const uint32_t fname = rg.pickKeyRandomlyFromMap(t.frozen_partitions);
@@ -1585,7 +1583,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + unfreeze_partition + clear_index_partition + 1))
+                       + freeze_partition + unfreeze_partition + clear_index_partition))
             {
                 ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
                 PartitionExpr * pexpr = ccip->mutable_partition();
@@ -1603,7 +1601,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + 1))
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition))
             {
                 MovePartition * mp = ati->mutable_move_partition();
                 PartitionExpr * pexpr = mp->mutable_partition();
@@ -1621,7 +1619,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + 1))
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl))
             {
                 flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
                 generateNextTTL(rg, t, nullptr, ati->mutable_modify_ttl());
@@ -1636,7 +1634,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl + 1))
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl))
             {
                 ati->set_remove_ttl(true);
             }
@@ -1650,7 +1648,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
-                       + comment_table + 1))
+                       + comment_table))
             {
                 buf.resize(0);
                 rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
@@ -1679,10 +1677,10 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     const uint32_t attach_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(detached_views));
     const uint32_t attach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
     const uint32_t prob_space = attach_table + attach_view + attach_database;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (attach_table && nopt < (attach_table + 1))
+    if (attach_table && nopt < attach_table)
     {
         ExprSchemaTable * est = sot->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(detached_tables));
@@ -1694,7 +1692,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
-    else if (attach_view && nopt < (attach_table + attach_view + 1))
+    else if (attach_view && nopt < (attach_table + attach_view))
     {
         ExprSchemaTable * est = sot->mutable_est();
         const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(detached_views));
@@ -1735,10 +1733,10 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     const uint32_t detach_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3);
     const uint32_t detach_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t prob_space = detach_table + detach_view + detach_database;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (detach_table && nopt < (detach_table + 1))
+    if (detach_table && nopt < detach_table)
     {
         ExprSchemaTable * est = sot->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
@@ -1750,7 +1748,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
-    else if (detach_view && nopt < (detach_table + detach_view + 1))
+    else if (detach_view && nopt < (detach_table + detach_view))
     {
         ExprSchemaTable * est = sot->mutable_est();
         const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
@@ -1868,28 +1866,27 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache + prewarm_primary_index_cache
         + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache + drop_index_uncompressed_cache + drop_mmap_cache
         + drop_page_cache + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache + drop_cache;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (reload_embedded_dictionaries && nopt < (reload_embedded_dictionaries + 1))
+    if (reload_embedded_dictionaries && nopt < reload_embedded_dictionaries)
     {
         sc->set_reload_embedded_dictionaries(true);
     }
-    else if (reload_dictionaries && nopt < (reload_embedded_dictionaries + reload_dictionaries + 1))
+    else if (reload_dictionaries && nopt < (reload_embedded_dictionaries + reload_dictionaries))
     {
         sc->set_reload_dictionaries(true);
     }
-    else if (reload_models && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + 1))
+    else if (reload_models && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models))
     {
         sc->set_reload_models(true);
     }
-    else if (reload_functions && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + 1))
+    else if (reload_functions && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions))
     {
         sc->set_reload_functions(true);
     }
     else if (
-        reload_function
-        && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function + 1))
+        reload_function && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function))
     {
         const uint32_t & fname = rg.pickKeyRandomlyFromMap(this->functions);
 
@@ -1899,7 +1896,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         reload_asynchronous_metrics
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
-               + reload_asynchronous_metrics + 1))
+               + reload_asynchronous_metrics))
     {
         sc->set_reload_asynchronous_metrics(true);
     }
@@ -1907,7 +1904,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         drop_dns_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
-               + reload_asynchronous_metrics + drop_dns_cache + 1))
+               + reload_asynchronous_metrics + drop_dns_cache))
     {
         sc->set_drop_dns_cache(true);
     }
@@ -1915,7 +1912,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         drop_mark_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
-               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + 1))
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache))
     {
         sc->set_drop_mark_cache(true);
     }
@@ -1923,7 +1920,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         drop_uncompressed_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
-               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + 1))
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache))
     {
         sc->set_drop_uncompressed_cache(true);
     }
@@ -1931,8 +1928,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         drop_compiled_expression_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
-               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + 1))
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache))
     {
         sc->set_drop_compiled_expression_cache(true);
     }
@@ -1941,7 +1937,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + 1))
+               + drop_query_cache))
     {
         sc->set_drop_query_cache(true);
     }
@@ -1950,7 +1946,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + 1))
+               + drop_query_cache + drop_format_schema_cache))
     {
         sc->set_drop_format_schema_cache(rg.nextBool());
     }
@@ -1959,7 +1955,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + flush_logs + 1))
+               + drop_query_cache + drop_format_schema_cache + flush_logs))
     {
         sc->set_flush_logs(true);
     }
@@ -1968,7 +1964,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + 1))
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config))
     {
         sc->set_reload_config(true);
     }
@@ -1977,7 +1973,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + 1))
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users))
     {
         sc->set_reload_users(true);
     }
@@ -1986,7 +1982,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + 1))
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_merges());
     }
@@ -1995,7 +1991,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
-               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges + 1))
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_merges());
     }
@@ -2005,7 +2001,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + 1))
+               + stop_ttl_merges))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_ttl_merges());
     }
@@ -2015,7 +2011,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + 1))
+               + stop_ttl_merges + start_ttl_merges))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_ttl_merges());
     }
@@ -2025,7 +2021,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + stop_moves + 1))
+               + stop_ttl_merges + start_ttl_merges + stop_moves))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_moves());
     }
@@ -2035,7 +2031,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + 1))
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_moves());
     }
@@ -2045,7 +2041,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + 1))
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_wait_loading_parts());
     }
@@ -2055,7 +2051,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + 1))
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_fetches());
     }
@@ -2065,7 +2061,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
-               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches + 1))
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_fetches());
     }
@@ -2076,7 +2072,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
-               + stop_replicated_sends + 1))
+               + stop_replicated_sends))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replicated_sends());
     }
@@ -2087,7 +2083,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
-               + stop_replicated_sends + start_replicated_sends + 1))
+               + stop_replicated_sends + start_replicated_sends))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replicated_sends());
     }
@@ -2098,7 +2094,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
-               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + 1))
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_replication_queues());
     }
@@ -2109,7 +2105,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
-               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues + 1))
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_replication_queues());
     }
@@ -2121,7 +2117,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
-               + stop_pulling_replication_log + 1))
+               + stop_pulling_replication_log))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_pulling_replication_log());
     }
@@ -2133,7 +2129,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
-               + stop_pulling_replication_log + start_pulling_replication_log + 1))
+               + stop_pulling_replication_log + start_pulling_replication_log))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_pulling_replication_log());
     }
@@ -2145,12 +2141,11 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
-               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + 1))
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica))
     {
         SyncReplica * srep = sc->mutable_sync_replica();
 
-        srep->set_policy(
-            static_cast<SyncReplica_SyncPolicy>((rg.nextRandomUInt32() % static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX)) + 1));
+        srep->set_policy(static_cast<SyncReplica_SyncPolicy>((rg.nextRandomUInt32() % static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX))));
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, srep->mutable_est());
     }
     else if (
@@ -2161,7 +2156,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
-               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + 1))
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database))
     {
         const std::shared_ptr<SQLDatabase> & d
             = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
@@ -2176,8 +2171,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
-               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + 1))
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restart_replica());
     }
@@ -2190,7 +2184,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + 1))
+               + restore_replica))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_restore_replica());
     }
@@ -2203,7 +2197,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + 1))
+               + restore_replica + restart_replicas))
     {
         sc->set_restart_replicas(true);
     }
@@ -2216,7 +2210,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + drop_filesystem_cache + 1))
+               + restore_replica + restart_replicas + drop_filesystem_cache))
     {
         sc->set_drop_filesystem_cache(true);
     }
@@ -2229,7 +2223,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + 1))
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache))
     {
         sc->set_sync_file_cache(true);
     }
@@ -2242,7 +2236,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + 1))
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks))
     {
         sc->set_load_pks(true);
     }
@@ -2255,7 +2249,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + 1))
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_load_pk());
     }
@@ -2268,7 +2262,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + 1))
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks))
     {
         sc->set_unload_pks(true);
     }
@@ -2281,8 +2275,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
-               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + 1))
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks
+               + unload_pk))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_unload_pk());
     }
@@ -2296,7 +2290,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + 1))
+               + refresh_views))
     {
         sc->set_refresh_views(true);
     }
@@ -2310,7 +2304,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + 1))
+               + refresh_views + refresh_view))
     {
         setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_refresh_view());
     }
@@ -2324,7 +2318,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + 1))
+               + refresh_views + refresh_view + stop_views))
     {
         sc->set_stop_views(true);
     }
@@ -2338,7 +2332,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + 1))
+               + refresh_views + refresh_view + stop_views + stop_view))
     {
         setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_stop_view());
     }
@@ -2352,7 +2346,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + start_views + 1))
+               + refresh_views + refresh_view + stop_views + stop_view + start_views))
     {
         sc->set_start_views(true);
     }
@@ -2366,7 +2360,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + 1))
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view))
     {
         setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_start_view());
     }
@@ -2380,7 +2374,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + 1))
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view))
     {
         setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_cancel_view());
     }
@@ -2394,7 +2388,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + 1))
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view))
     {
         setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_wait_view());
     }
@@ -2408,8 +2402,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
-               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
-               + 1))
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view
+               + prewarm_cache))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_cache());
     }
@@ -2424,7 +2418,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
-               + prewarm_primary_index_cache + 1))
+               + prewarm_primary_index_cache))
     {
         setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_primary_index_cache());
     }
@@ -2439,7 +2433,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
-               + prewarm_primary_index_cache + drop_connections_cache + 1))
+               + prewarm_primary_index_cache + drop_connections_cache))
     {
         sc->set_drop_connections_cache(true);
     }
@@ -2454,7 +2448,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
-               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + 1))
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache))
     {
         sc->set_drop_primary_index_cache(true);
     }
@@ -2469,7 +2463,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
-               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache + 1))
+               + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache))
     {
         sc->set_drop_index_mark_cache(true);
     }
@@ -2485,7 +2479,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
-               + drop_index_uncompressed_cache + 1))
+               + drop_index_uncompressed_cache))
     {
         sc->set_drop_index_uncompressed_cache(true);
     }
@@ -2501,7 +2495,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
-               + drop_index_uncompressed_cache + drop_mmap_cache + 1))
+               + drop_index_uncompressed_cache + drop_mmap_cache))
     {
         sc->set_drop_mmap_cache(true);
     }
@@ -2517,7 +2511,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
-               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + 1))
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache))
     {
         sc->set_drop_page_cache(true);
     }
@@ -2533,7 +2527,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
-               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + 1))
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache))
     {
         sc->set_drop_schema_cache(true);
     }
@@ -2549,7 +2543,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
-               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache + 1))
+               + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache))
     {
         sc->set_drop_s3_client_cache(true);
     }
@@ -2566,7 +2560,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
-               + flush_async_insert_queue + 1))
+               + flush_async_insert_queue))
     {
         sc->set_flush_async_insert_queue(true);
     }
@@ -2583,7 +2577,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
-               + flush_async_insert_queue + sync_filesystem_cache + 1))
+               + flush_async_insert_queue + sync_filesystem_cache))
     {
         sc->set_sync_filesystem_cache(true);
     }
@@ -2600,7 +2594,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache
                + prewarm_primary_index_cache + drop_connections_cache + drop_primary_index_cache + drop_index_mark_cache
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
-               + flush_async_insert_queue + sync_filesystem_cache + drop_cache + 1))
+               + flush_async_insert_queue + sync_filesystem_cache + drop_cache))
     {
         sc->set_drop_cache(true);
     }
@@ -2665,46 +2659,45 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
         + select_query;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
     assert(this->ids.empty());
-    if (create_table && nopt < (create_table + 1))
+    if (create_table && nopt < create_table)
     {
         return generateNextCreateTable(rg, sq->mutable_create_table());
     }
-    else if (create_view && nopt < (create_table + create_view + 1))
+    else if (create_view && nopt < (create_table + create_view))
     {
         return generateNextCreateView(rg, sq->mutable_create_view());
     }
-    else if (drop && nopt < (create_table + create_view + drop + 1))
+    else if (drop && nopt < (create_table + create_view + drop))
     {
         return generateNextDrop(rg, sq->mutable_drop());
     }
-    else if (insert && nopt < (create_table + create_view + drop + insert + 1))
+    else if (insert && nopt < (create_table + create_view + drop + insert))
     {
         return generateNextInsert(rg, sq->mutable_insert());
     }
-    else if (light_delete && nopt < (create_table + create_view + drop + insert + light_delete + 1))
+    else if (light_delete && nopt < (create_table + create_view + drop + insert + light_delete))
     {
         return generateNextDelete(rg, sq->mutable_del());
     }
-    else if (truncate && nopt < (create_table + create_view + drop + insert + light_delete + truncate + 1))
+    else if (truncate && nopt < (create_table + create_view + drop + insert + light_delete + truncate))
     {
         return generateNextTruncate(rg, sq->mutable_trunc());
     }
-    else if (optimize_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + 1))
+    else if (optimize_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table))
     {
         return generateNextOptimizeTable(rg, sq->mutable_opt());
     }
-    else if (
-        check_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + 1))
+    else if (check_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table))
     {
         return generateNextCheckTable(rg, sq->mutable_check());
     }
     else if (
         desc_table
-        && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + 1))
+        && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table))
     {
         return generateNextDescTable(rg, sq->mutable_desc());
     }
@@ -2712,7 +2705,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         exchange_tables
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + 1))
+               + exchange_tables))
     {
         return generateNextExchangeTables(rg, sq->mutable_exchange());
     }
@@ -2720,7 +2713,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         alter_table
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + 1))
+               + exchange_tables + alter_table))
     {
         return generateAlterTable(rg, sq->mutable_alter_table());
     }
@@ -2728,7 +2721,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         set_values
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + 1))
+               + exchange_tables + alter_table + set_values))
     {
         return generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
     }
@@ -2736,7 +2729,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         attach
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + 1))
+               + exchange_tables + alter_table + set_values + attach))
     {
         return generateAttach(rg, sq->mutable_attach());
     }
@@ -2744,7 +2737,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         detach
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + detach + 1))
+               + exchange_tables + alter_table + set_values + attach + detach))
     {
         return generateDetach(rg, sq->mutable_detach());
     }
@@ -2752,7 +2745,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         create_database
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + detach + create_database + 1))
+               + exchange_tables + alter_table + set_values + attach + detach + create_database))
     {
         return generateNextCreateDatabase(rg, sq->mutable_create_database());
     }
@@ -2760,7 +2753,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         create_function
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + 1))
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function))
     {
         return generateNextCreateFunction(rg, sq->mutable_create_function());
     }
@@ -2768,7 +2761,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         system_stmt
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
-               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt + 1))
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt))
     {
         return generateNextSystemStatement(rg, sq->mutable_system_cmd());
     }
@@ -2862,14 +2855,14 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
     const uint32_t explain_query = 10;
     const uint32_t run_query = 120;
     const uint32_t prob_space = start_transaction + commit + explain_query + run_query;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    std::uniform_int_distribution<uint32_t> next_dist(0, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    if (start_transaction && nopt < (start_transaction + 1))
+    if (start_transaction && nopt < start_transaction)
     {
         sq.set_start_trans(true);
     }
-    else if (commit && nopt < (start_transaction + commit + 1))
+    else if (commit && nopt < (start_transaction + commit))
     {
         if (rg.nextSmallNumber() < 7)
         {
