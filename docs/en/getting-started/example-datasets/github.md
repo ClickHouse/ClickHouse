@@ -64,7 +64,7 @@ CREATE TABLE git.commits
 
 - Linux - `~/clickhouse git-import` - 160 mins
 
-# Downloading and inserting the data { #downloading-and-inserting-the-data }
+# Downloading and inserting the data {#downloading-and-inserting-the-data}
 
 The following data can be used to reproduce a working environment. Alternatively, this dataset is available in play.clickhouse.com - see [Queries](#queries) for further details.
 
@@ -203,7 +203,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 0 rows in set. Elapsed: 50.535 sec. Processed 7.54 million rows, 2.09 GB (149.11 thousand rows/s., 41.40 MB/s.)
 ```
 
-# Queries { #queries }
+# Queries {#queries}
 
 The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
