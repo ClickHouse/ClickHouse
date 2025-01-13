@@ -759,9 +759,13 @@ def test_streaming_to_many_views(started_cluster, mode):
             break
         time.sleep(1)
     processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
-    missing_files = [x[0] for x in files if x[0] not in processed_files.strip().split('\n')]
+    missing_files = [
+        x[0] for x in files if x[0] not in processed_files.strip().split("\n")
+    ]
     assert check() == files_num, f"Missing files: {missing_files}"
-    assert row_num * files_num == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    assert row_num * files_num == int(
+        node.query(f"SELECT count() FROM {dst_table_name}")
+    )
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):
