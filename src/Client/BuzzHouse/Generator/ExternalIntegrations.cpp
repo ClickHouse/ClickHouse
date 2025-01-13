@@ -1337,6 +1337,7 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
         default:
             assert(0);
     }
+    return false;
 }
 
 }
