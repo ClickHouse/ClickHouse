@@ -1337,6 +1337,7 @@ azureBlobStorage
 azureBlobStorageCluster
 backend
 backoff
+backtick
 backticks
 backupview
 balancer
