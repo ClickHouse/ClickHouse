@@ -200,7 +200,7 @@ public:
     uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
     std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
     std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
-    std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
+    std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;
 
     size_t numberOfInsertableColumns() const

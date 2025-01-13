@@ -4,7 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <random>
-#include <set>
+#include <unordered_set>
 #include <tuple>
 #include <unordered_map>
 
@@ -204,7 +204,7 @@ public:
     }
 
     template <typename T>
-    const T & pickRandomlyFromSet(const std::set<T> & vals)
+    const T & pickRandomlyFromSet(const std::unordered_set<T> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();

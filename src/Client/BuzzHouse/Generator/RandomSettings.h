@@ -15,10 +15,10 @@ struct CHSetting
 {
 public:
     const std::function<void(RandomGenerator &, String &)> random_func;
-    const std::set<String> oracle_values;
+    const std::unordered_set<String> oracle_values;
     const bool changes_behavior;
 
-    CHSetting(const std::function<void(RandomGenerator &, String &)> & rf, const std::set<String> & ov, const bool cb)
+    CHSetting(const std::function<void(RandomGenerator &, String &)> & rf, const std::unordered_set<String> & ov, const bool cb)
         : random_func(rf), oracle_values(ov), changes_behavior(cb)
     {
     }

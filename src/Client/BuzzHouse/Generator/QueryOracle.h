@@ -20,7 +20,7 @@ private:
     bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
 
     String buf;
-    std::set<uint32_t> found_tables;
+    std::unordered_set<uint32_t> found_tables;
     std::vector<String> nsettings;
 
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);

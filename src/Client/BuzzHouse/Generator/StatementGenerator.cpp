@@ -2777,9 +2777,9 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
 struct TestSetting
 {
     const String tsetting;
-    const std::set<String> options;
+    const std::unordered_set<String> options;
 
-    TestSetting(const String & sett, const std::set<String> & noptions) : tsetting(sett), options(noptions) { }
+    TestSetting(const String & sett, const std::unordered_set<String> & noptions) : tsetting(sett), options(noptions) { }
 };
 
 static const std::vector<TestSetting> explain_settings{//QUERY TREE
