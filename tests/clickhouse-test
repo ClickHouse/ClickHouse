@@ -2704,6 +2704,7 @@ def do_run_tests(
             process.start()
 
         while processes:
+            sleep(0.1)
             sys.stdout.flush()
             # Periodically check the server for hangs
             # and stop all processes in this case

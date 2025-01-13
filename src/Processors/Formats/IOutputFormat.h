@@ -109,6 +109,11 @@ public:
         }
     }
 
+    void setProgressWriteFrequencyMicroseconds(size_t value)
+    {
+        progress_write_frequency_us = value;
+    }
+
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -219,6 +224,9 @@ private:
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;
+
+    UInt64 progress_write_frequency_us = 0;
+    std::atomic<UInt64> prev_progress_write_ns = 0;
 };
 
 }
