@@ -12,10 +12,13 @@ class QueryOracle
 private:
     const FuzzConfig & fc;
     const std::filesystem::path qfile;
-    MD5Impl md5_hash;
+
+    MD5Impl md5_hash1, md5_hash2;
+    Poco::DigestEngine::Digest first_digest, second_digest;
+
     PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
-    uint8_t first_digest[16], second_digest[16];
+
     std::string buf;
     std::set<uint32_t> found_tables;
     std::vector<std::string> nsettings;

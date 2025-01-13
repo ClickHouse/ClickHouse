@@ -40,7 +40,8 @@ void StatementGenerator::generateSettingValues(
     generateSettingValues(rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 20) + 1)), vals);
 }
 
-void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingList * sl)
+void StatementGenerator::generateSettingList(
+    RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingList * sl)
 {
     const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 7) + 1));
 

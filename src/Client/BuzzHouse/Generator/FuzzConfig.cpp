@@ -3,25 +3,6 @@
 namespace BuzzHouse
 {
 
-static inline std::vector<std::string> splitString(const std::string & input, const char delimiter)
-{
-    std::vector<std::string> result;
-    const char * str = input.c_str();
-
-    do
-    {
-        const char * begin = str;
-
-        while (*str && *str != delimiter)
-        {
-            str++;
-        }
-        result.push_back(std::string(begin, str));
-    } while (*str++);
-
-    return result;
-}
-
 static std::optional<ServerCredentials> loadServerCredentials(
     const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
@@ -81,7 +62,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
         throw std::runtime_error("Parsed JSON value is not an object");
     }
 
-    std::unordered_map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
+    static std::unordered_map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {
@@ -117,9 +98,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
          {
              std::string input = std::string(value.getString());
              std::transform(input.begin(), input.end(), input.begin(), ::tolower);
-             const auto & split = splitString(input, ',');
 
-             std::unordered_map<std::string, uint32_t> type_entries
+             static std::unordered_map<std::string_view, uint32_t> type_entries
                  = {{"bool", allow_bool},
                     {"uint", allow_unsigned_int},
                     {"int8", allow_int8},
@@ -148,11 +128,13 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
                     {"ipv6", allow_ipv6},
                     {"geo", allow_geo}};
 
-             for (const auto & entry : split)
+             for (const auto word : std::views::split(input, ","))
              {
+                 const auto & entry = std::string_view(word);
+
                  if (type_entries.find(entry) == type_entries.end())
                  {
-                     throw std::runtime_error("Unknown type optiom: " + entry);
+                     throw std::runtime_error("Unknown type optiom: " + std::string(entry));
                  }
                  type_mask &= (~type_entries.at(entry));
              }

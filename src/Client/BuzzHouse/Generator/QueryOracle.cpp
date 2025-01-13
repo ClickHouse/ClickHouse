@@ -555,7 +555,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success)
 {
     if (success)
     {
-        md5_hash.hashFile(qfile.generic_string(), first_digest);
+        md5_hash1.hashFile(qfile.generic_string(), first_digest);
     }
     first_success = success;
 }
@@ -564,7 +564,7 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, const std::
 {
     if (success)
     {
-        md5_hash.hashFile(qfile.generic_string(), second_digest);
+        md5_hash2.hashFile(qfile.generic_string(), second_digest);
     }
     second_sucess = success;
     if (other_steps_sucess)
@@ -573,7 +573,7 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, const std::
         {
             throw std::runtime_error(oracle_name + " oracle failed with different success results");
         }
-        if (first_success && second_sucess && !std::equal(std::begin(first_digest), std::end(first_digest), std::begin(second_digest)))
+        if (first_success && second_sucess && first_digest != second_digest)
         {
             throw std::runtime_error(oracle_name + " oracle failed with different result sets");
         }

@@ -268,10 +268,11 @@ private:
     void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlterTable(RandomGenerator & rg, AlterTable * at);
-    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, std::string & ret, SetValue * set);
-    void generateSettingValues(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingValues * vals);
     void
-    generateSettingValues(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, size_t nvalues, SettingValues * vals);
+    setRandomSetting(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, std::string & ret, SetValue * set);
+    void generateSettingValues(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingValues * vals);
+    void generateSettingValues(
+        RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, size_t nvalues, SettingValues * vals);
     void generateSettingList(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingList * sl);
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
