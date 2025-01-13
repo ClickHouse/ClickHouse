@@ -183,9 +183,14 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 #if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
 #endif
+
+#if USE_AZURE_BLOB_STORAGE
+using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
 #endif
 
 #if USE_AWS_S3
 using StorageS3HudiConfiguration = DataLakeConfiguration<StorageS3Configuration, HudiMetadata>;
+#endif
+
 #endif
 }
