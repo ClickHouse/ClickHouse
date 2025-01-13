@@ -165,6 +165,8 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
+    auto * logger = &::Poco::Logger::get("optimizeUseNormalProjections");
+
     for (const auto * projection : normal_projections)
     {
         if (!hasAllRequiredColumns(projection, required_columns))
@@ -188,10 +190,36 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
             continue;
 
         if (candidate.sum_marks >= ordinary_reading_marks)
+        {
+            LOG_DEBUG(
+                logger,
+                "Projection {} is useable but it needs to read {} marks, which is no better than reading {} marks from original table",
+                candidate.projection->name,
+                candidate.sum_marks,
+                ordinary_reading_marks);
             continue;
+        }
 
         if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
+        {
+            LOG_DEBUG(
+                logger,
+                "Projection {} is selected as current best candidate with {} marks to read, while original table needs to scan {} marks",
+                candidate.projection->name,
+                candidate.sum_marks,
+                ordinary_reading_marks);
             best_candidate = &candidate;
+        }
+        else
+        {
+            LOG_DEBUG(
+                logger,
+                "Projection {} with {} marks is less efficient than current best candidate {} with {} marks",
+                candidate.projection->name,
+                candidate.sum_marks,
+                best_candidate->projection->name,
+                best_candidate->sum_marks);
+        }
     }
 
     if (!best_candidate)
