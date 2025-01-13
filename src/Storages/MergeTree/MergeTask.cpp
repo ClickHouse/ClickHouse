@@ -631,10 +631,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
-    /// MergeTreeIndices indices;
-    /// if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
-    /// MergeTreeIndices indices = MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes);
-
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
