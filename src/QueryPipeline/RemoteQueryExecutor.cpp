@@ -1,3 +1,4 @@
+#include "Common/StackTrace.h"
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -609,6 +610,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Packet type = {}\n{}", Protocol::Server::toString(packet.type), StackTrace().toString());
+
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
@@ -732,6 +735,8 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "replica_num={}", request.replica_num);
+
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
@@ -742,6 +747,8 @@ void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest re
 
 void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "replica_num={}", announcement.replica_num);
+
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
@@ -967,10 +974,10 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX)
 
-    OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
-
     if (!context->canUseParallelReplicasOnInitiator())
         return false;
+
+    OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)
@@ -993,12 +1000,14 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
     packet_in_progress = true;
 
     const auto packet_type = read_context->getPacketType();
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Packet type = {}", Protocol::Server::toString(packet_type));
+
     if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
     {
         // resume reading packet
-        read_context->resume();
-        if (!read_context->isInProgress()) // data is not arrived yet
-            return false;
+        // read_context->resume();
+        // if (!read_context->isInProgress()) // data is not arrived yet
+        //     return false;
 
         packet_in_progress = false;
         processPacket(read_context->getPacket());
