@@ -34,8 +34,6 @@
 #include <string_view>
 #include <string>
 
-
-
 namespace DB
 {
 
@@ -233,7 +231,6 @@ private:
     void stopKeystrokeInterceptorIfExists();
 
 protected:
-
     class QueryInterruptHandler : private boost::noncopyable
     {
     public:
@@ -305,7 +302,6 @@ protected:
 
     std::optional<Autocomplete> autocomplete;
     bool load_autocomplete = true;
-
 
     std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files

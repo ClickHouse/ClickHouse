@@ -186,23 +186,6 @@ const NGram::UnigramsWithStats & NGram::at(std::span<const std::string> span_key
 
 void NGram::printMap() const
 {
-    std::cout << "START OF THE MAP WITH CONTEXT SIZE: " << context_size << " ________________\n";
-    for (const auto & [context, words_map] : *this)
-    {
-        std::cout << "Key: ";
-        for (const auto & context_word : context)
-        {
-            std::cout << context_word << ", ";
-        }
-        std::cout << "\n";
-        for (const auto & [word, count] : words_map.unigram_map)
-        {
-            std::cout << "Value: " << word << ", CNT: " << count.cnt << "\n";
-        }
-
-        std::cout << "________________\n";
-    }
-    std::cout << "END OF THE MAP WITH CONTEXT SIZE: " << context_size << " ________________\n";
 }
 
 void NGram::update(std::span<const std::string> context, const std::string & word, size_t timestamp)
