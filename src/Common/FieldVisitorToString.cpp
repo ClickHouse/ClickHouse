@@ -51,18 +51,6 @@ static inline String formatQuoted(T x)
     return wb.str();
 }
 
-template <typename T>
-static inline String formatQuoted(const Decimal<T> & x, UInt32 scale)
-{
-    WriteBufferFromOwnString wb;
-
-    writeChar('\'', wb);
-    writeText(x, scale, wb, {});
-    writeChar('\'', wb);
-
-    return wb.str();
-}
-
 /** In contrast to writeFloatText (and writeQuoted),
   *  even if number looks like integer after formatting, prints decimal point nevertheless (for example, Float64(1) is printed as 1.).
   * - because resulting text must be able to be parsed back as Float64 by query parser (otherwise it will be parsed as integer).
@@ -93,10 +81,6 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const Decimal32 & x, UInt32 scale) const { return formatQuoted(x, scale); }
-String FieldVisitorToString::operator() (const Decimal64 & x, UInt32 scale) const { return formatQuoted(x, scale); }
-String FieldVisitorToString::operator() (const Decimal128 & x, UInt32 scale) const { return formatQuoted(x, scale); }
-String FieldVisitorToString::operator() (const Decimal256 & x, UInt32 scale) const { return formatQuoted(x, scale); }
 String FieldVisitorToString::operator() (const Int128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }

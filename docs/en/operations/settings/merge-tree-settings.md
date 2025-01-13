@@ -38,6 +38,11 @@ ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
 -- reset to global default (value from system.merge_tree_settings)
 ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
 ```
+## allow_nullable_key
+
+Allow Nullable types as primary keys.
+
+Default value: 0.
 
 ## index_granularity
 
@@ -609,7 +614,7 @@ The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30 second
 ## max_bytes_to_merge_at_max_space_in_pool {#max-bytes-to-merge-at-max-space-in-pool}
 
 The maximum total parts size (in bytes) to be merged into one part, if there are enough resources available.
-`max_bytes_to_merge_at_max_space_in_pool` -- roughly corresponds to the maximum possible part size created by an automatic background merge.
+Corresponds roughly to the maximum possible part size created by an automatic background merge.
 
 Possible values:
 
@@ -617,9 +622,10 @@ Possible values:
 
 Default value: 161061273600 (150 GB).
 
-The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there are enough free resources in the pool, it starts background merges.
+Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
-Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
+Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space is taken into account).
 
 ## max_bytes_to_merge_at_min_space_in_pool {#max-bytes-to-merge-at-min-space-in-pool}
 
@@ -702,6 +708,8 @@ You can also specify a query complexity setting [max_partitions_to_read](query-c
 
 Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
 
+By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
+
 Possible values:
 
 - Positive integer.
@@ -711,6 +719,18 @@ Default value: 0 — Disabled.
 ## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
 
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
+
+By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
+
+If settings `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only` should respect setting `max_bytes_to_merge_at_max_space_in_pool`.
 
 Possible values:
 
@@ -1141,7 +1161,13 @@ When `cache_populated_by_fetch` is disabled (the default setting), new data part
 
 If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action.
 
-Default value: 0.
+Default value: false
+
+**See Also**
+
+- [ignore_cold_parts_seconds](settings.md/#ignore_cold_parts_seconds)
+- [prefer_warmed_unmerged_parts_seconds](settings.md/#prefer_warmed_unmerged_parts_seconds)
+- [cache_warmer_threads](settings.md/#cache_warmer_threads)
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine
 
