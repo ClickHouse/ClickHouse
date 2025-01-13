@@ -568,6 +568,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge algorithm must be chosen");
     }
 
+    /// If setting 'materialize_skip_indexes_on_merge' is false, forget about skip indexes.
+    if (!(*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    {
+        global_ctx->merging_skip_indexes.clear();
+        global_ctx->skip_indexes_by_column.clear();
+    }
+
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
     bool use_const_adaptive_granularity = (*merge_tree_settings)[MergeTreeSetting::use_const_adaptive_granularity];
 
@@ -624,15 +631,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
-    MergeTreeIndices indices;
-    if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
-        indices = MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes);
+    /// MergeTreeIndices indices;
+    /// if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    /// MergeTreeIndices indices = MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes);
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
-        indices,
+        /// indices,
+        MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
         getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
         ctx->compression_codec,
         std::move(index_granularity_ptr),
