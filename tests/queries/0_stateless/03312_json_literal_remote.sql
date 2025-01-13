@@ -1,4 +1,7 @@
+-- Tags: no-fasttest
+
 set enable_json_type=1;
+set enable_analyzer=1;
 
 select '{"a" : false}'::JSON as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
 select '{"a" : null}'::JSON as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
