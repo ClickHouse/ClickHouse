@@ -1118,8 +1118,6 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT({
-        CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
-
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -2528,6 +2526,8 @@ try
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
+
+            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
 
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
