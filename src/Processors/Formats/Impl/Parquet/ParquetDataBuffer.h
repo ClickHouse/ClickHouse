@@ -60,7 +60,7 @@ public:
 	    auto offset = i * sizeof(ParquetType);
 
 	    // necessary to prevent memory alignment issues https://github.com/ClickHouse/ClickHouse/issues/74512#issuecomment-2587260001
-            std::memcpy(&temp, data + offset, sizeof(ParquetType));
+            memcpy(&temp, data + offset, sizeof(ParquetType));
             dst[i] = static_cast<TValue>(temp);
         }
 
