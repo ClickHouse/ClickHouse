@@ -2930,18 +2930,12 @@ def test_skipping_processed_and_failed_files(started_cluster, mode):
     ).encode()
 
     failed_file = f"{files_path}/testz_fff.csv"
-    put_s3_file_content(
-        started_cluster, failed_file, incorrect_values_csv
-    )
+    put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
 
     create_mv(node1, f"r.{table_name}", dst_table_name)
 
     def get_count():
-        return int(
-            node1.query(
-                f"SELECT count() FROM default.{dst_table_name}"
-            )
-        )
+        return int(node1.query(f"SELECT count() FROM default.{dst_table_name}"))
 
     expected_rows = files_to_generate
     for _ in range(20):
