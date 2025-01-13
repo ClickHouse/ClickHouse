@@ -38,6 +38,10 @@ On Linux, macOS and FreeBSD:
    curl https://clickhouse.com/ | sh
    ```
 
+   :::note
+   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+   :::
+
 2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
 
    ```bash
@@ -325,6 +329,10 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 ### macOS-only: Install with Homebrew
 
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
+
+:::note
+For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+:::
 
 ## Launch {#launch}
 
