@@ -2487,7 +2487,7 @@ def test_list_and_delete_race(started_cluster):
         node.contains_in_log("because of the race with list & delete")
         or node_2.contains_in_log("because of the race with list & delete")
         or node.contains_in_log(
-            f"StorageS3Queue (default.{table_name}): Skipping table" # Unfortunately this optimization makes the race less easy to catch.
+            f"StorageS3Queue (default.{table_name}): Skipping table"  # Unfortunately this optimization makes the race less easy to catch.
         )
         or node_2.contains_in_log(
             f"StorageS3Queue (default.{table_name}): Skipping table"
