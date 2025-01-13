@@ -153,6 +153,8 @@ String FieldVisitorToString::operator() (const Map & x) const
 
 String FieldVisitorToString::operator() (const Object & x) const
 {
+    /// We don't support Object literals in a form of {"a" : ...}.
+    /// So we write Object as a String containing valid JSON.
     WriteBufferFromOwnString wb;
 
     wb << '{';
@@ -167,7 +169,6 @@ String FieldVisitorToString::operator() (const Object & x) const
     wb << '}';
 
     return formatQuoted(wb.str());
-
 }
 
 String convertFieldToString(const Field & field)
