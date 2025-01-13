@@ -111,7 +111,6 @@ public:
         if (column_length_const)
             length_value = column_length_const->getInt(0);
 
-        
         // If length_value < 0, we need to convert column_length to full column
         // to handle right/left Func offset < 0 cases
         if (length_value < 0)
@@ -119,7 +118,7 @@ public:
             column_length = column_length_const->convertToFullColumn();
             column_length_const = nullptr;
         }
-    
+
         if constexpr (is_utf8)
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
