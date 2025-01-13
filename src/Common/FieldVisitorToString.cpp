@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorToJSONElement.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -161,11 +162,11 @@ String FieldVisitorToString::operator() (const Object & x) const
             wb << ", ";
 
         writeDoubleQuoted(it->first, wb);
-        wb << ": " << applyVisitor(*this, it->second);
+        wb << ": " << applyVisitor(FieldVisitorToJSONElement(), it->second);
     }
     wb << '}';
 
-    return wb.str();
+    return formatQuoted(wb.str());
 
 }
 
