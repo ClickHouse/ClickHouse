@@ -690,7 +690,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             {
                 LOG_DEBUG(
                     logger,
-                    "Projection {} is useable but it needs to read {} marks, which is no better than reading {} marks from original table",
+                    "Projection {} is usable but it needs to read {} marks, which is no better than reading {} marks from original table",
                     candidate.projection->name,
                     candidate.sum_marks,
                     ordinary_reading_marks);
