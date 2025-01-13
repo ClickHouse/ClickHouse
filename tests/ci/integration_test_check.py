@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple
 import integration_tests_runner as runner
 from build_download_helper import download_all_deb_packages
 from ci_config import CI
-from ci_utils import Utils, Shell
+from ci_utils import Shell, Utils
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
@@ -164,9 +164,9 @@ def main():
     if check_name.startswith("amd_") or check_name.startswith("arm_"):
         is_new_ci = True
         for option in check_name.split(","):
-            if '/' in option:
-                job_batch = int(option.split('/')[0]) - 1
-                total_batches = int(option.split('/')[1])
+            if "/" in option:
+                job_batch = int(option.split("/")[0]) - 1
+                total_batches = int(option.split("/")[1])
                 break
 
     if "RUN_BY_HASH_NUM" in os.environ:
@@ -205,7 +205,7 @@ def main():
             # temporary hack for praktika based CI
             print("Copy input *.deb artifacts")
             assert Shell.check(
-                f"cp /tmp/praktika/input/*.deb {build_path}", verbose=True
+                f"cp {REPO_COPY}/ci/tmp/*.deb {build_path}", verbose=True
             )
         else:
             download_all_deb_packages(check_name, reports_path, build_path)

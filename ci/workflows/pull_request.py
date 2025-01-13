@@ -25,6 +25,7 @@ workflow = Workflow.Config(
         Jobs.sqltest_job,
         Jobs.sqlancer_job,
         *Jobs.install_check_job,
+        Jobs.ast_fuzzer_jobs,
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
