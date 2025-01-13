@@ -1,5 +1,6 @@
-#include <Common/checkStackSize.h>
+#include <Core/Settings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/misc.h>
@@ -10,14 +11,25 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool allow_experimental_analyzer;
+}
+
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
+}
+
+ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
+    : use_analyzer(context_->getSettingsRef()[Setting::allow_experimental_analyzer])
+{
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
@@ -40,7 +52,7 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
     /// This is probably not the best place to check this, but it's just to throw a proper error to the user
-    if (ast.recursive_with)
+    if (!use_analyzer && ast.recursive_with)
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
 
