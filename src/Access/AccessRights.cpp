@@ -1155,7 +1155,13 @@ private:
 
         calculateMinMaxFlags();
 
-        auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
+        auto new_flags = function(
+            flags,
+            min_flags_with_children,
+            max_flags_with_children,
+            level,
+            grant_option,
+            isLeaf() || wildcard_grant);
 
         if (new_flags != flags)
         {
@@ -1212,7 +1218,13 @@ AccessRights::AccessRights(const AccessRightsElement & element)
 
 AccessRights::AccessRights(const AccessRightsElements & elements)
 {
-    grant(elements);
+    for (const auto & element : elements)
+    {
+        if (element.is_partial_revoke)
+            revoke(element);
+        else
+            grant(element);
+    }
 }
 
 
@@ -1460,18 +1472,18 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 template <bool grant_option>
 bool AccessRights::containsImpl(const AccessRights & other) const
 {
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
+    auto helper = [&](const std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node) -> bool
     {
         if (!root_node)
-            return !other.root;
-        if (!other.root)
+            return !other_root_node;
+        if (!other_root_node)
             return true;
-        return root_node->contains(*other.root);
+        return root_node->contains(*other_root_node);
     };
     if constexpr (grant_option)
-        return helper(root_with_grant_option);
+        return helper(root_with_grant_option, other.root);
     else
-        return helper(root);
+        return helper(root, other.root) && helper(root_with_grant_option, other.root_with_grant_option);
 }
 
 
