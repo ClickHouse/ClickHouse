@@ -56,12 +56,8 @@ public:
 
         for (std::size_t i = 0; i < count; i++)
         {
-            ParquetType temp;
             auto offset = i * sizeof(ParquetType);
-
-            // necessary to prevent memory alignment issues https://github.com/ClickHouse/ClickHouse/issues/74512#issuecomment-2587260001
-            memcpy(&temp, data + offset, sizeof(ParquetType));
-            dst[i] = static_cast<TValue>(temp);
+            dst[i] = unalignedLoad<TValue>(data + offset);
         }
 
         consume(necessary_bytes);
