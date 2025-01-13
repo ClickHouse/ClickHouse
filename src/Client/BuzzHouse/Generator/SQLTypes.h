@@ -25,10 +25,10 @@ SQLType * TypeDeepCopy(SQLType * tp);
 class BoolType : public SQLType
 {
 public:
-    void typeName(String & ret, const bool) const override { ret += "Bool"; }
-    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override { ret += "BOOL"; }
-    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override { ret += "BOOLEAN"; }
-    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override { ret += "INTEGER"; }
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override;
 
     ~BoolType() override = default;
 };

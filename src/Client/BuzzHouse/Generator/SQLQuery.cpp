@@ -108,17 +108,16 @@ void StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation 
 
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
-    String name;
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
     const uint32_t cte = 10 * static_cast<uint32_t>(!this->ctes.empty());
-    const uint32_t table = 40
+    const uint32_t table = (40
         * static_cast<uint32_t>(collectionHas<SQLTable>(
             [&](const SQLTable & tt)
             {
                 return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
                     && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
                     && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer());
-            }));
+            }))) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
     const uint32_t view = 20
         * static_cast<uint32_t>(
                               this->peer_query != PeerQuery::ClickHouseOnly
@@ -140,11 +139,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-
-    name += "t";
-    name += std::to_string(this->levels[this->current_level].rels.size());
-    name += "d";
-    name += std::to_string(this->current_level);
+    const String name = fmt::format("t{}d{}", std::to_string(this->levels[this->current_level].rels.size()), std::to_string(this->current_level));
 
     if (derived_table && nopt < (derived_table + 1))
     {
@@ -1054,12 +1049,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
     for (uint32_t i = 0; i < nclauses; i++)
     {
         CTEquery * cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
-        String name;
-
-        name += "cte";
-        name += std::to_string(i);
-        name += "d";
-        name += std::to_string(this->current_level);
+        const String name = fmt::format("cte{}d{}", std::to_string(i), std::to_string(this->current_level));
         SQLRelation rel(name);
 
         cte->mutable_table()->set_table(name);
