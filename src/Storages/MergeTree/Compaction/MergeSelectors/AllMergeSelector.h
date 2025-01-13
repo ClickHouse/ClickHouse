@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeSelectors/MergeSelector.h>
-
+#include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
 
 namespace DB
 {
@@ -13,7 +12,8 @@ public:
     /// Parameter max_total_size_to_merge is ignored.
     PartsRange select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge,
+        RangeFilter range_filter) const override;
 };
 
 }
