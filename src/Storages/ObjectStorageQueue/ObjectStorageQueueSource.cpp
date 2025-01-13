@@ -161,18 +161,18 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
                 VirtualColumnUtils::filterByPathOrFile(
                     new_batch, paths, filter_expr, virtual_columns, getContext());
 
-                LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
+                LOG_TEST(logger, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
 
                 size_t previous_size = new_batch.size();
-                new_batch = filterOutProcessedAndFailed(new_batch);
+                filterOutProcessedAndFailed(new_batch);
 
-                LOG_TEST(logger, "Filtered files: {} -> {}", previous_size, new_batch.size());
+                LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
             }
             else
             {
                 size_t previous_size = new_batch.size();
-                new_batch = filterOutProcessedAndFailed(new_batch);
-                LOG_TEST(logger, "Filtered files: {} -> {}", previous_size, new_batch.size());
+                filterOutProcessedAndFailed(new_batch);
+                LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
             }
         }
 
@@ -191,8 +191,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
     return object_infos[index++];
 }
 
-ObjectStorageQueueSource::Source::ObjectInfos
-ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
@@ -208,8 +207,8 @@ ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::Obje
     Source::ObjectInfos result;
     result.reserve(indexes.size());
     for (const auto & idx : indexes)
-        result.push_back(objects[idx]);
-    return result;
+        result.push_back(std::move(objects[idx]));
+    objects = std::move(result);
 }
 
 ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::nextImpl(size_t processor)

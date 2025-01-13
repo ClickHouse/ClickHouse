@@ -88,7 +88,7 @@ public:
         size_t index = 0;
 
         Source::ObjectInfoPtr next();
-        Source::ObjectInfos filterOutProcessedAndFailed(Source::ObjectInfos & objects);
+        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;

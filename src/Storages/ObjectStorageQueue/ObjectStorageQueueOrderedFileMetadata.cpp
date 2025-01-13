@@ -565,7 +565,7 @@ std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAnd
 
         NodeMetadata max_processed_file;
         if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, zk_client))
-            max_processed_file_per_bucket[i] = max_processed_file.file_path;
+            max_processed_file_per_bucket[i] = std::move(max_processed_file.file_path);
     }
 
     std::vector<std::string> failed_paths;
@@ -586,11 +586,7 @@ std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAnd
 
     std::vector<size_t> result;
     if (failed_paths.empty())
-    {
-        result.resize(paths.size());
-        std::iota(result.begin(), result.end(), 0);
-        return result;
-    }
+        return result; /// All files are already processed.
 
     auto check_code = [&](auto code, const std::string & path)
     {
