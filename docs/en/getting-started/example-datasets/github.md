@@ -64,7 +64,7 @@ CREATE TABLE git.commits
 
 - Linux - `~/clickhouse git-import` - 160 mins
 
-# Downloading and inserting the data
+# Downloading and inserting the data { #downloading-and-inserting-the-data }
 
 The following data can be used to reproduce a working environment. Alternatively, this dataset is available in play.clickhouse.com - see [Queries](#queries) for further details.
 
@@ -203,7 +203,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 0 rows in set. Elapsed: 50.535 sec. Processed 7.54 million rows, 2.09 GB (149.11 thousand rows/s., 41.40 MB/s.)
 ```
 
-# Queries
+# Queries { #queries }
 
 The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
@@ -1761,7 +1761,7 @@ WITH
                 path,
                 max(time) AS last_time,
                 argMax(change_type, time) AS change_type
-            FROM git.file_changes
+            FROM git.clickhouse_file_changes
             GROUP BY path
         )
         GROUP BY path
@@ -1840,7 +1840,7 @@ SELECT
     countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
-FROM git.file_changes
+FROM git.clickhouse_file_changes
 GROUP BY author
 HAVING code > 20
 ORDER BY code DESC
@@ -1886,7 +1886,7 @@ WITH (
                 countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
                 countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
                 code / (code + test) AS ratio_code
-            FROM git.file_changes
+            FROM git.clickhouse_file_changes
             GROUP BY author
             HAVING code > 20
             ORDER BY code DESC
@@ -1932,7 +1932,7 @@ FROM
         countIf(line_type = 'Comment') AS comments,
         countIf(line_type = 'Code') AS code,
         if(comments > 0, comments / (comments + code), 0) AS ratio_comments
-    FROM git.line_changes
+    FROM git.clickhouse_line_changes
     GROUP BY
         author,
         commit_hash
@@ -1960,8 +1960,6 @@ Note we sort by code contributions. Surprisingly high % for all our largest cont
 ## How does an authors commits change over time with respect to code/comments percentage?
 
 To compute this by author is trivial,
-
-[play](#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZV9saW5lcywKICAgIGNvdW50SWYoKGxpbmVfdHlwZSA9ICdDb21tZW50JykgT1IgKGxpbmVfdHlwZSA9ICdQdW5jdCcpKSBBUyBjb21tZW50cywKICAgIGNvZGVfbGluZXMgLyAoY29tbWVudHMgKyBjb2RlX2xpbmVzKSBBUyByYXRpb19jb2RlLAogICAgdG9TdGFydE9mV2Vlayh0aW1lKSBBUyB3ZWVrCkZST00gZ2l0X2NsaWNraG91c2UubGluZV9jaGFuZ2VzCkdST1VQIEJZCiAgICB0aW1lLAogICAgYXV0aG9yCk9SREVSIEJZCiAgICBhdXRob3IgQVNDLAogICAgdGltZSBBU0MKTElNSVQgMTA=)
 
 ```sql
 SELECT
@@ -2077,7 +2075,7 @@ Encouragingly, our comment % is pretty constant and doesn't degrade the longer a
 
 ## What is the average time before code will be rewritten and the median (half-life of code decay)?
 
-We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
+We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
 
 [play](https://sql.clickhouse.com?query_id=WSHUEPJP9TNJUH7QITWWOR)
 
@@ -2137,7 +2135,7 @@ FROM rewrites
 
 ## What is the worst time to write code in sense that the code has highest chance to be re-written?
 
-Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors), except we aggregate by day of week. Adjust as required e.g. month of year.
+Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times), except we aggregate by day of week. Adjust as required e.g. month of year.
 
 [play](https://sql.clickhouse.com?query_id=8PQNWEWHAJTGN6FTX59KH2)
 

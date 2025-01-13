@@ -52,13 +52,17 @@ Then this table can be used with the following protocols (a port must be assigne
 A `TimeSeries` table doesn't have its own data, everything is stored in its target tables.
 This is similar to how a [materialized view](../../../sql-reference/statements/create/view#materialized-view) works,
 with the difference that a materialized view has one target table
-whereas a `TimeSeries` table has three target tables named [data]{#data-table}, [tags]{#tags-table], and [metrics]{#metrics-table}.
+whereas a `TimeSeries` table has three target tables named [data](#data-table), [tags](#tags-table), and [metrics](#metrics-table).
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
 
 The target tables are the following:
-1. The _data_ table {#data-table} contains time series associated with some identifier.
+
+### Data table {#data-table}
+
+The _data_ table contains time series associated with some identifier.
+
 The _data_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
@@ -67,12 +71,16 @@ The _data_ table must have columns:
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
-2. The _tags_ table {#tags-table} contains identifiers calculated for each combination of a metric name and tags.
+
+### Tags table {#tags-table}
+
+The _tags_ table contains identifiers calculated for each combination of a metric name and tags.
+
 The _tags_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `UUID` | any (must match the type of `id` in the [data]{#data-table} table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
+| `id` | [x] | `UUID` | any (must match the type of `id` in the [data](#data-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of tags excluding the tag `__name__` containing the name of a metric and excluding tags with names enumerated in the [tags_to_columns](#settings) setting |
@@ -80,7 +88,10 @@ The _tags_ table must have columns:
 | `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 | `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 
-3. The _metrics_ table {#metrics-table} contains some information about metrics been collected, the types of those metrics and their descriptions.
+### Metrics table {#metrics-table}
+
+The _metrics_ table contains some information about metrics been collected, the types of those metrics and their descriptions.
+
 The _metrics_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
@@ -91,7 +102,7 @@ The _metrics_ table must have columns:
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
 
 Any row inserted into a `TimeSeries` table will be in fact stored in those three target tables.
-A `TimeSeries` table contains all those columns from the [data]{#data-table}, [tags]{#tags-table}, [metrics]{#metrics-table} tables.
+A `TimeSeries` table contains all those columns from the [data](#data-table), [tags](#tags-table), [metrics](#metrics-table) tables.
 
 ## Creation {#creation}
 
@@ -189,7 +200,7 @@ CREATE TABLE my_table
 ) ENGINE=TimeSeries
 ```
 
-will make the inner [data]{#data-table} table store timestamp in microseconds instead of milliseconds:
+will make the inner [data](#data-table) table store timestamp in microseconds instead of milliseconds:
 
 ``` sql
 CREATE TABLE default.`.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
@@ -230,7 +241,7 @@ This statement will add columns
     `instance` String,
     `job` String
 ```
-to the definition of both `my_table` and its inner [tags]{#tags-table} target table. In this case the `tags` column will not contain tags `instance` and `job`,
+to the definition of both `my_table` and its inner [tags](#tags-table) target table. In this case the `tags` column will not contain tags `instance` and `job`,
 but the `all_tags` column will contain them. The `all_tags` column is ephemeral and its only purpose to be used in the DEFAULT expression
 for the `id` column.
 
@@ -244,10 +255,10 @@ ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
 ## Table engines of inner target tables {#inner-table-engines}
 
 By default inner target tables use the following table engines:
-- the [data]{#data-table} table uses [MergeTree](../mergetree-family/mergetree);
-- the [tags]{#tags-table} table uses [AggregatingMergeTree](../mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
+- the [data](#data-table) table uses [MergeTree](../mergetree-family/mergetree);
+- the [tags](#tags-table) table uses [AggregatingMergeTree](../mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
-- the [metrics]{#metrics-table} table uses [ReplacingMergeTree](../mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
+- the [metrics](#metrics-table) table uses [ReplacingMergeTree](../mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates.
 
 Other table engines also can be used for inner target tables if it's specified so:
@@ -286,7 +297,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags]{#tags-table} table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
+| `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `use_all_tags_column_to_generate_id` | Bool | true | When generating an expression to calculate an identifier of a time series, this flag enables using the `all_tags` column in that calculation |
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |

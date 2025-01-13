@@ -141,6 +141,8 @@ namespace ProfileEvents
     extern const Event PartsLockHoldMicroseconds;
     extern const Event LoadedDataParts;
     extern const Event LoadedDataPartsMicroseconds;
+    extern const Event RestorePartsSkippedFiles;
+    extern const Event RestorePartsSkippedBytes;
 }
 
 namespace CurrentMetrics
@@ -5993,8 +5995,13 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
-        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME))
+        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME) ||
+            filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
+        {
+            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
+            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(part_path_in_backup_fs / filename));
             continue;
+        }
 
         size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite);
         reservation->update(reservation->getSize() - file_size);
@@ -8704,7 +8711,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                 std::erase_if(covered_parts,
                         [min_bytes_to_rebalance_partition_over_jbod](const auto & part)
                         {
-                            return !(part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod);
+                            return part->getBytesOnDisk() < min_bytes_to_rebalance_partition_over_jbod;
                         });
 
                 // Include current submerging big parts which are not yet in `currently_submerging_big_parts`
@@ -8713,7 +8720,7 @@ ReservationPtr MergeTreeData::balancedReservation(
 
                 for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Active))
                 {
-                    if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
+                    if (part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
                         && part_info.partition_id == part->info.partition_id)
                     {
                         auto name = part->getDataPartStorage().getDiskName();
@@ -9054,25 +9061,23 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part_storage->beginTransaction();
 
     SyncGuardPtr sync_guard;
-    if (new_data_part->isStoredOnDisk())
+
+    /// The name could be non-unique in case of stale files from previous runs.
+    if (new_data_part_storage->exists())
     {
-        /// The name could be non-unique in case of stale files from previous runs.
-        if (new_data_part_storage->exists())
-        {
-            /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
-            /// New part have to capture its name, therefore there is no concurrentcy in directory creation
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "New empty part is about to matirialize but the dirrectory already exist"
-                            ", new part {}"
-                            ", directory {}",
-                            new_part_name, new_data_part_storage->getFullPath());
-        }
-
-        new_data_part_storage->createDirectories();
-
-        if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
-            sync_guard = new_data_part_storage->getDirectorySyncGuard();
+        /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
+        /// New part have to capture its name, therefore there is no concurrentcy in directory creation
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "New empty part is about to matirialize but the dirrectory already exist"
+                        ", new part {}"
+                        ", directory {}",
+                        new_part_name, new_data_part_storage->getFullPath());
     }
+
+    new_data_part_storage->createDirectories();
+
+    if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
+        sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
