@@ -261,6 +261,7 @@ def test_uncompressed_cache_plus_zstd_codec(start_cluster):
 
     node5.query("DROP TABLE compression_codec_multiple_with_key;")
 
+
 def test_preconfigured_deflateqpl_codec(start_cluster):
     if is_arm():
         pytest.skip(
