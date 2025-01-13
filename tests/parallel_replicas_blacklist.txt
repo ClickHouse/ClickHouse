@@ -267,7 +267,6 @@
 01087_window_view_alter_query
 01088_window_view_default_column
 
-
     analyzer=0 (partially supported)
 02918_join_pm_lc_crash
 01925_join_materialized_columns
