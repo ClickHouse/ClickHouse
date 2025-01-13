@@ -37,7 +37,8 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 {
     if (block_side == JoinTableSide::Left)
         return "--pmj_cond_left_" + name;
-    return "--pmj_cond_right_" + name;
+    else
+        return "--pmj_cond_right_" + name;
 }
 
 /*
@@ -262,9 +263,9 @@ public:
     {
         if (has_left_nullable && has_right_nullable)
             return getNextEqualRangeImpl<true, true>(rhs);
-        if (has_left_nullable)
+        else if (has_left_nullable)
             return getNextEqualRangeImpl<true, false>(rhs);
-        if (has_right_nullable)
+        else if (has_right_nullable)
             return getNextEqualRangeImpl<false, true>(rhs);
         return getNextEqualRangeImpl<false, false>(rhs);
     }
@@ -603,17 +604,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(),
-        right_sort_description,
-        max_rows_in_right_block,
-        /*max_block_bytes=*/0,
-        /*limit_=*/0,
-        /*increase_sort_description_compile_attempts=*/false,
-        /*max_bytes_before_remerge_*/0,
-        /*remerge_lowered_memory_bytes_ratio_*/0,
-        /*max_bytes_before_external_sort_*/0,
-        /*tmp_data_*/nullptr,
-        /*min_free_disk_space_*/0));
+        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, false, 0, 0, 0, nullptr, 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);

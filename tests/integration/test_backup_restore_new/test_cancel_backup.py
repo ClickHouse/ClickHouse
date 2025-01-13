@@ -1,10 +1,9 @@
-import re
-import uuid
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
+import uuid
+import re
+
 
 cluster = ClickHouseCluster(__file__)
 

@@ -1,43 +1,45 @@
-import ast
-import io
 import json
-import logging
-import math
 import os.path as p
 import random
 import socket
-import string
 import threading
 import time
-from contextlib import contextmanager
+import logging
+import io
+import string
+import ast
+import math
 
-import avro.datafile
-import avro.io
 import avro.schema
-import kafka.errors
-import pytest
+import avro.io
+import avro.datafile
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
-from google.protobuf.internal.encoder import _VarintBytes
-from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
-from kafka.admin import NewTopic
-from kafka.protocol.admin import DescribeGroupsRequest_v1
-from kafka.protocol.group import MemberAssignment
 
+import kafka.errors
+import pytest
+from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
+from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
+from kafka.protocol.admin import DescribeGroupsRequest_v1
+from kafka.protocol.group import MemberAssignment
+from kafka.admin import NewTopic
+from contextlib import contextmanager
 
-from . import kafka_pb2, message_with_repeated_pb2, social_pb2
 
 # protoc --version
 # libprotoc 3.0.0
 # # to create kafka_pb2.py
 # protoc --python_out=. kafka.proto
 
+from . import kafka_pb2
+from . import social_pb2
+from . import message_with_repeated_pb2
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -59,9 +61,6 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
-    keeper_required_feature_flags=[
-        "create_if_not_exists"
-    ],  # new Kafka doesn't work without this feature
     macros={
         "kafka_broker": "kafka1",
         "kafka_topic_old": KAFKA_TOPIC_OLD,
@@ -1891,15 +1890,7 @@ def test_kafka_recreate_kafka_table(kafka_cluster, create_query_generator, log_l
         )
 
         # data was not flushed yet (it will be flushed 7.5 sec after creating MV)
-        assert (
-            int(
-                instance.query_with_retry(
-                    sql="SELECT count() FROM test.view",
-                    check_callback=lambda x: x == 240,
-                )
-            )
-            == 240
-        )
+        assert int(instance.query("SELECT count() FROM test.view")) == 240
 
         instance.query(
             """
@@ -4196,7 +4187,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             ],
             "expected": {
                 "raw_message": "050102696405496E743634000000000000000007626C6F636B4E6F06537472696E67034241440476616C3106537472696E6702414D0476616C3207466C6F617433320000003F0476616C330555496E743801",
-                "error": "Cannot parse string 'BAD' as UInt16",
+                "error": "Cannot convert: String to UInt16",
             },
             "printable": False,
         },

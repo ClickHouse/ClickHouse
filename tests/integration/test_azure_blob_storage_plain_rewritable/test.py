@@ -4,12 +4,13 @@ import random
 import string
 
 import pytest
-from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
+from azure.storage.blob import BlobServiceClient
 from test_storage_azure_blob_storage.test import azure_query
 
 NODE_NAME = "node"
+OTHER_NODE = "other_node"
 
 
 def generate_cluster_def(port):
@@ -77,6 +78,11 @@ def cluster():
             with_azurite=True,
             stay_alive=True,
         )
+        cluster.add_instance(
+            OTHER_NODE,
+            with_azurite=True,
+        )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -132,6 +138,35 @@ def test_restart_server(cluster):
             )
             == value
         )
+
+
+def test_failpoint_on_disk_init(cluster):
+    other_node = cluster.instances[OTHER_NODE]
+    port = cluster.env_variables["AZURITE_PORT"]
+
+    azure_query(
+        other_node,
+        "SYSTEM ENABLE FAILPOINT plain_rewritable_object_storage_azure_not_found_on_init",
+    )
+    azure_query(
+        other_node,
+        """CREATE TABLE table (id Int64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS disk=disk(
+        type = object_storage,
+        metadata_type = plain_rewritable,
+        object_storage_type = azure_blob_storage,
+        container_name = 'cont',
+        endpoint = 'http://azurite1:{port}/devstoreaccount1/cont',
+        account_name = 'devstoreaccount1',
+        account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
+        """.format(
+            port=port
+        ),
+    )
+    azure_query(other_node, "DROP TABLE table SYNC")
+    azure_query(
+        other_node,
+        "SYSTEM DISABLE FAILPOINT plain_rewritable_object_storage_azure_not_found_on_init",
+    )
 
 
 def test_drop_table(cluster):

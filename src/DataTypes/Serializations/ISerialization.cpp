@@ -42,9 +42,10 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    if (str == "Sparse")
+    else if (str == "Sparse")
         return Kind::SPARSE;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
@@ -419,27 +420,12 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
     return path[last_elem].type == Substream::VariantElementNullMap;
 }
 
-bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
-{
-    if (prefix_len == 0 || prefix_len > path.size())
-        return false;
-
-    for (size_t i = 0; i != prefix_len; ++i)
-    {
-        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
-            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
-            return true;
-    }
-
-    return false;
-}
-
-bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerialization::SubstreamPath & path)
+bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
 
-    return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)

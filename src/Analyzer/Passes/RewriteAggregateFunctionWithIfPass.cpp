@@ -20,10 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_rewrite_aggregate_function_with_if;
-}
 
 namespace
 {
@@ -36,7 +32,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_aggregate_function_with_if])
+        if (!getSettings().optimize_rewrite_aggregate_function_with_if)
             return;
 
         auto * function_node = node->as<FunctionNode>();
