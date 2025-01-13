@@ -106,7 +106,7 @@ private:
 
     mutable std::optional<Strings> cached_files_for_current_snapshot;
 
-    void updateState()
+    void updateState(const ContextPtr & local_context);
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 

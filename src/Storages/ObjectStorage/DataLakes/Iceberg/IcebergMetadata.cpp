@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "base/types.h"
 #include "config.h"
 
@@ -237,11 +238,12 @@ Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_p
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
-void IcebergMetadata::updateState()
+void IcebergMetadata::updateState(const ContextPtr & local_context)
 {
-    Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_query_at_timestamp_ms];
-    if (query_timestamp == 0)
+    bool timestamp_changed = local_context->getSettingsRef()[Settings::iceberg_query_at_timestamp_ms].changed;
+    if (!timestamp_changed)
     {
+        Int64 query_timestamp = local_context->getSettingsRef()[Settings::iceberg_query_at_timestamp_ms];
         // Use current snapshot
         snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
         for (size_t i = 0; i < snapshots->size(); ++i)
@@ -253,6 +255,8 @@ void IcebergMetadata::updateState()
                 manifest_list_file
                     = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
                 schema_id = snapshot->getValue<Int32>("schema-id");
+                snapshot_id = snapshot->getValue<Int64>("snapshot-id");
+
                 break;
             }
         }
@@ -292,200 +296,236 @@ void IcebergMetadata::updateState()
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
 }
 
-    bool IcebergMetadata::update(const ContextPtr & local_context)
+bool IcebergMetadata::update(const ContextPtr & local_context)
+{
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+
+    if (metadata_version == current_metadata_version)
+        return false;
+
+    current_metadata_version = metadata_version;
+
+    auto metadata_object = readJSON(metadata_file_path, local_context);
+
+    chassert(format_version == metadata_object->getValue<int>("format-version"));
+
+    auto manifest_list_file = getRelevantManifestList(metadata_object);
+    if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
     {
-        auto configuration_ptr = configuration.lock();
-
-        const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
-
-        if (metadata_version == current_metadata_version)
-            return false;
-
-        current_metadata_version = metadata_version;
-
-        auto metadata_object = readJSON(metadata_file_path, local_context);
-
-        chassert(format_version == metadata_object->getValue<int>("format-version"));
-
-        auto manifest_list_file = getRelevantManifestList(metadata_object);
-        if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
-        {
-            current_snapshot = getSnapshot(manifest_list_file.value());
-            cached_files_for_current_snapshot = std::nullopt;
-        }
-        current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
-        return true;
+        current_snapshot = getSnapshot(manifest_list_file.value());
+        cached_files_for_current_snapshot = std::nullopt;
     }
+    current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
+    return true;
+}
 
-    std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata)
+std::string IcebergMetadata::getManifestListBySnapshotId(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id)
+{
+    auto configuration_ptr = configuration.lock();
+
+    auto snapshots = metadata->get("snapshots").extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i < snapshots->size(); ++i)
     {
-        auto configuration_ptr = configuration.lock();
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>("snapshot-id") == snapshot_id)
+        {
+            const auto path = snapshot->getValue<String>("manifest-list");
+            return std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
+        }
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No Iceberg snapshot found with snapshot id {}", snapshot_id);
+}
 
-        auto snapshots = metadata->get("snapshots").extract<Poco::JSON::Array::Ptr>();
+Int64 IcebergMetadata::getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata)
+{
+    auto configuration_ptr = configuration.lock();
 
-        auto current_snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
+    Int64 snapshot_id = -1;
+    Int32 schema_id = -1;
 
+    std::optional<String> manifest_list_file;
+
+    bool timestamp_changed = local_context->getSettingsRef()[Settings::iceberg_query_at_timestamp_ms].changed;
+    bool snapshot_id_changed = local_context->getSettingsRef()[Settings::iceberg_snapshot_id].changed;
+    if (timestamp_changed && snapshot_id_changed)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot id and timestamp cannot be changed simultaneously");
+    }
+    if (timestamp_changed)
+    {
+        Int64 closest_timestamp = 0;
+        Int64 query_timestamp = local_context->getSettingsRef()[Settings::iceberg_timestamp_ms];
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-
-            if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
+            Int64 snapshot_timestamp = snapshot->getValue<Int64>("timestamp-ms");
+            if (snapshot_timestamp <= query_timestamp && snapshot_timestamp > closest_timestamp)
             {
+                closest_timestamp = snapshot_timestamp;
                 const auto path = snapshot->getValue<String>("manifest-list");
-                return std::filesystem::path(path).filename();
+                manifest_list_file
+                    = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
+                snapshot_id = snapshot->getValue<Int64>("snapshot-id");
             }
         }
+    }
+    else if (snapshot_id_changed)
+    {
+        snapshot_id = local_context->getSettingsRef()[Settings::iceberg_snapshot_id];
+        return std::make_tuple(schema_id, snapshot_id);
+    }
+}
+
+std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
+{
+    auto manifest_file_it = manifest_entry_by_data_file.find(data_path);
+    if (manifest_file_it == manifest_entry_by_data_file.end())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
+    }
+    auto schema_id = manifest_file_it->second.getContent().getSchemaId();
+    if (schema_id == current_schema_id)
         return std::nullopt;
+    return std::optional{schema_id};
+}
+
+
+DataLakeMetadataPtr IcebergMetadata::create(
+    const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
+{
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+
+    auto log = getLogger("IcebergMetadata");
+
+    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    IcebergSchemaProcessor schema_processor;
+
+    auto format_version = object->getValue<int>("format-version");
+
+    auto ptr
+        = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
+
+    return ptr;
+}
+
+ManifestList IcebergMetadata::initializeManifestList(const String & manifest_list_file) const
+{
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    auto context = getContext();
+    StorageObjectStorageSource::ObjectInfo object_info(
+        std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
+    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+
+    auto manifest_list_file_reader
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
+
+    auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
+    Block header{{data_type->createColumn(), data_type, "manifest_path"}};
+    auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));
+    auto & col = columns.at(0);
+
+    if (col->getDataType() != TypeIndex::String)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "The parsed column from Avro file of `manifest_path` field should be String type, got {}",
+            col->getFamilyName());
     }
 
-    std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
+    const auto * col_str = typeid_cast<ColumnString *>(col.get());
+    std::vector<ManifestFileEntry> manifest_files;
+    for (size_t i = 0; i < col_str->size(); ++i)
     {
-        auto manifest_file_it = manifest_entry_by_data_file.find(data_path);
-        if (manifest_file_it == manifest_entry_by_data_file.end())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
-        }
-        auto schema_id = manifest_file_it->second.getContent().getSchemaId();
-        if (schema_id == current_schema_id)
-            return std::nullopt;
-        return std::optional{schema_id};
-    }
-
-
-    DataLakeMetadataPtr IcebergMetadata::create(
-        const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
-    {
-        auto configuration_ptr = configuration.lock();
-
-        const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
-
-        auto log = getLogger("IcebergMetadata");
-
-        StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
-        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
-
-        String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
-
-        Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-        Poco::Dynamic::Var json = parser.parse(json_str);
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-        IcebergSchemaProcessor schema_processor;
-
-        auto format_version = object->getValue<int>("format-version");
-
-        auto ptr
-            = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
-
-        return ptr;
-    }
-
-    ManifestList IcebergMetadata::initializeManifestList(const String & manifest_list_file) const
-    {
-        auto configuration_ptr = configuration.lock();
-        if (configuration_ptr == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-
-        auto context = getContext();
-        StorageObjectStorageSource::ObjectInfo object_info(
-            std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
-        auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
-
-        auto manifest_list_file_reader
-            = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
-
-        auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
-        Block header{{data_type->createColumn(), data_type, "manifest_path"}};
-        auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));
-        auto & col = columns.at(0);
-
-        if (col->getDataType() != TypeIndex::String)
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "The parsed column from Avro file of `manifest_path` field should be String type, got {}",
-                col->getFamilyName());
-        }
-
-        const auto * col_str = typeid_cast<ColumnString *>(col.get());
-        std::vector<ManifestFileEntry> manifest_files;
-        for (size_t i = 0; i < col_str->size(); ++i)
-        {
-            const auto file_path = col_str->getDataAt(i).toView();
-            const auto filename = std::filesystem::path(file_path).filename();
-            String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
-            auto manifest_file_it = manifest_files_by_name.find(manifest_file);
-            if (manifest_file_it != manifest_files_by_name.end())
-            {
-                manifest_files.emplace_back(manifest_file_it);
-                continue;
-            }
-            manifest_files.emplace_back(initializeManifestFile(filename, configuration_ptr));
-        }
-
-        return ManifestList{(*manifest_list_file_reader, manifest_list_file), manifest_files};
-    }
-
-    ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const
-    {
+        const auto file_path = col_str->getDataAt(i).toView();
+        const auto filename = std::filesystem::path(file_path).filename();
         String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
-
-        StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
-        auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
-        auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
-        auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
-        auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
-            std::move(manifest_file_reader), format_version, configuration_ptr->getPath(), getFormatSettings(getContext()), schema_id);
-        auto [manifest_file_iterator, _inserted]
-            = manifest_files_by_name.emplace(manifest_file, ManifestFileContent(std::move(manifest_file_impl)));
-        ManifestFileEntry manifest_file_entry{manifest_file_iterator};
-        for (const auto & data_file : manifest_file_entry.getContent().getDataFiles())
+        auto manifest_file_it = manifest_files_by_name.find(manifest_file);
+        if (manifest_file_it != manifest_files_by_name.end())
         {
-            manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
+            manifest_files.emplace_back(manifest_file_it);
+            continue;
         }
-        schema_processor.addIcebergTableSchema(schema_object);
-        return manifest_file_entry;
+        manifest_files.emplace_back(initializeManifestFile(filename, configuration_ptr));
     }
 
+    return ManifestList{(*manifest_list_file_reader, manifest_list_file), manifest_files};
+}
 
-    IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) const
+ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const
+{
+    String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
+
+    StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
+    auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
+    auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
+    auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
+    auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
+        std::move(manifest_file_reader), format_version, configuration_ptr->getPath(), getFormatSettings(getContext()), schema_id);
+    auto [manifest_file_iterator, _inserted]
+        = manifest_files_by_name.emplace(manifest_file, ManifestFileContent(std::move(manifest_file_impl)));
+    ManifestFileEntry manifest_file_entry{manifest_file_iterator};
+    for (const auto & data_file : manifest_file_entry.getContent().getDataFiles())
     {
-        const auto manifest_list_file_it = manifest_lists_by_name.find(manifest_list_file);
-        if (manifest_list_file_it != manifest_lists_by_name.end())
-            return IcebergSnapshot(manifest_list_file_it);
-        return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
+        manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
+    }
+    schema_processor.addIcebergTableSchema(schema_object);
+    return manifest_file_entry;
+}
+
+
+IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) const
+{
+    const auto manifest_list_file_it = manifest_lists_by_name.find(manifest_list_file);
+    if (manifest_list_file_it != manifest_lists_by_name.end())
+        return IcebergSnapshot(manifest_list_file_it);
+    return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
+}
+
+
+Strings IcebergMetadata::getDataFiles() const
+{
+    if (!current_snapshot)
+    {
+        return {};
     }
 
-
-    Strings IcebergMetadata::getDataFiles() const
+    if (cached_files_for_current_snapshot.has_value())
     {
-        if (!current_snapshot)
-        {
-            return {};
-        }
-
-        if (cached_files_for_current_snapshot.has_value())
-        {
-            return cached_files_for_current_snapshot.value();
-        }
-
-        Strings data_files;
-        for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
-        {
-            for (const auto & data_file : manifest_entry.getContent().getDataFiles())
-            {
-                if (data_file.status != ManifestEntryStatus::DELETED)
-                {
-                    data_files.push_back(data_file.data_file_name);
-                }
-            }
-        }
-
-        cached_files_for_current_snapshot.emplace(std::move(data_files));
-
         return cached_files_for_current_snapshot.value();
     }
+
+    Strings data_files;
+    for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
+    {
+        for (const auto & data_file : manifest_entry.getContent().getDataFiles())
+        {
+            if (data_file.status != ManifestEntryStatus::DELETED)
+            {
+                data_files.push_back(data_file.data_file_name);
+            }
+        }
+    }
+
+    cached_files_for_current_snapshot.emplace(std::move(data_files));
+
+    return cached_files_for_current_snapshot.value();
+}
 }
 
 #endif
