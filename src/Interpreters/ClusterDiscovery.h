@@ -149,6 +149,10 @@ private:
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
 
+    /// Hold the callback pointers of each cluster.
+    /// To avoid registering callbacks for the same path multiple times.
+    std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
+
     mutable std::mutex mutex;
     std::unordered_map<String, ClusterPtr> cluster_impls;
 
