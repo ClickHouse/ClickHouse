@@ -54,11 +54,14 @@ public:
         auto necessary_bytes = count * sizeof(ParquetType);
         checkAvaible(necessary_bytes);
 
-        const ParquetType* src = reinterpret_cast<const ParquetType*>(data);
-
         for (std::size_t i = 0; i < count; i++)
         {
-            dst[i] = static_cast<TValue>(src[i]);
+            ParquetType temp;
+	    auto offset = i * sizeof(ParquetType);
+
+	    // necessary to prevent memory alignment issues https://github.com/ClickHouse/ClickHouse/issues/74512#issuecomment-2587260001
+            std::memcpy(&temp, data + offset, sizeof(ParquetType));
+            dst[i] = static_cast<TValue>(temp);
         }
 
         consume(necessary_bytes);
