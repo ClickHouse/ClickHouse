@@ -4,8 +4,6 @@ sidebar_position: 36
 sidebar_label: SYSTEM
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # SYSTEM Statements
 
 ## RELOAD EMBEDDED DICTIONARIES
@@ -185,8 +183,6 @@ SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 
 ## SHUTDOWN
 
-<CloudNotSupportedBadge/>
-
 Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
 
 ## KILL
@@ -259,8 +255,6 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 
 ### STOP MERGES
 
-<CloudNotSupportedBadge/>
-
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
@@ -272,8 +266,6 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 :::
 
 ### START MERGES
-
-<CloudNotSupportedBadge/>
 
 Provides possibility to start background merges for tables in the MergeTree family:
 
@@ -339,8 +331,6 @@ ClickHouse can manage background replication related processes in [ReplicatedMer
 
 ### STOP FETCHES
 
-<CloudNotSupportedBadge/>
-
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
@@ -349,8 +339,6 @@ SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family
 ```
 
 ### START FETCHES
-
-<CloudNotSupportedBadge/>
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
@@ -516,18 +504,6 @@ Will do sync syscall.
 
 ```sql
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
-```
-
-### LOAD PRIMARY KEY
-
-Load the primary keys for the given table or for all tables.
-
-```sql
-SYSTEM LOAD PRIMARY KEY [db.]name
-```
-
-```sql
-SYSTEM LOAD PRIMARY KEY
 ```
 
 ### UNLOAD PRIMARY KEY

@@ -4,16 +4,7 @@ sidebar_position: 110
 sidebar_label: Kafka
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Kafka
-
-<CloudNotSupportedBadge/>
-
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/docs/en/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
-:::
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -260,9 +251,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
 
-## Engine to store committed offsets in ClickHouse Keeper
-
-<ExperimentalBadge/>
+## Experimental engine to store committed offsets in ClickHouse Keeper
 
 If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
  - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper

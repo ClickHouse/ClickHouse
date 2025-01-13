@@ -141,11 +141,7 @@ public:
     // Special function for nullable minmax index
     void getExtremesNullLast(Field & min, Field & max) const;
 
-    ColumnPtr compress(bool force_compression) const override;
-
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
+    ColumnPtr compress() const override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override
     {

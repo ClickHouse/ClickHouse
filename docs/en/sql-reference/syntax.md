@@ -58,19 +58,9 @@ Identifiers are:
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and cannot be equal to [keywords](#keywords).
-See the table below for examples of valid and invalid identifiers:
-
-| Valid identifiers                              | Invalid identifiers                    |
-|------------------------------------------------|----------------------------------------|
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
-
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#keywords). Examples: `x`, `_1`, `X_y__Z123_`.
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
-
-:::note
-The same rules apply for escaping in quoted identifiers apply as for string literals. See [String](#string) for more details.
-:::
 
 ## Literals
 
@@ -107,39 +97,12 @@ Octal literals are not supported to avoid accidental errors in interpretation.
 ### String
 
 String literals must be enclosed in single quotes, double quotes are not supported.
-Escaping works by either:
+Escaping works either
 
 - using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
-- using the preceding backslash with the following supported escape sequences listed in the table below.
+- using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
 
-:::note
-The backslash loses its special meaning i.e. it is interpreted literally should it precede characters other than the listed ones below.
-:::
-
-| Supported Escape                    | Description                                                             |
-|-------------------------------------|-------------------------------------------------------------------------|
-| `\xHH`                              | 8-bit character specification followed by any number of hex digits (H). | 
-| `\N`                                | reserved, does nothing (eg `SELECT 'a\Nb'` returns `ab`)                |
-| `\a`                                | alert                                                                   |
-| `\b`                                | backspace                                                               |
-| `\e`                                | escape character                                                        |
-| `\f`                                | form feed                                                               |
-| `\n`                                | line feed                                                               |
-| `\r`                                | carriage return                                                         |
-| `\t`                                | horizontal tab                                                          |
-| `\v`                                | vertical tab                                                            |
-| `\0`                                | null character                                                          |
-| `\\`                                | backslash                                                               |
-| `\'` (or ` '' `)                    | single quote                                                            |
-| `\"`                                | double quote                                                            |
-| `` ` ``                             | backtick                                                                |
-| `\/`                                | forward slash                                                           |
-| `\=`                                | equal sign                                                              |
-| ASCII control characters (c &lt;= 31). |                                                                      |
-
-:::note
 In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
-:::
 
 ### Compound
 

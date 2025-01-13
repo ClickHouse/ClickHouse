@@ -38,11 +38,6 @@ ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
 -- reset to global default (value from system.merge_tree_settings)
 ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
 ```
-## allow_nullable_key
-
-Allow Nullable types as primary keys.
-
-Default value: 0.
 
 ## index_granularity
 
@@ -82,16 +77,6 @@ If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads
 If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 
 Default value: `10 * 1024 * 1024 * 1024` bytes.
-
-## ttl_only_drop_parts
-
-Controls whether data parts are fully dropped in MergeTree tables when all rows in that part have expired according to their `TTL` settings.
-
-When `ttl_only_drop_parts` is disabled (by default), only the rows that have expired based on their TTL settings are removed.
-
-When `ttl_only_drop_parts` is enabled, the entire part is dropped if all rows in that part have expired according to their `TTL` settings.
-
-Default value: 0.
 
 ## merge_with_ttl_timeout
 
@@ -1083,7 +1068,7 @@ Default value: throw
 
 ## min_free_disk_bytes_to_perform_insert
 
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the insert is not executed. Note that this setting:
+The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting:
 - takes into account the `keep_free_space_bytes` setting.
 - does not take into account the amount of data that will be written by the `INSERT` operation.
 - is only checked if a positive (non-zero) number of bytes is specified
@@ -1096,7 +1081,7 @@ Default value: 0 bytes.
 
 Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
 
-## min_free_disk_ratio_to_perform_insert
+## min_free_disk_ratio_to_perform_insert 
 
 The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
 - takes into account the `keep_free_space_bytes` setting.
@@ -1110,64 +1095,3 @@ Possible values:
 Default value: 0.0
 
 Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## allow_experimental_reverse_key
-
-Enables support for descending sort order in MergeTree sorting keys. This setting is particularly useful for time series analysis and Top-N queries, allowing data to be stored in reverse chronological order to optimize query performance.
-
-With `allow_experimental_reverse_key` enabled, you can define descending sort orders within the `ORDER BY` clause of a MergeTree table. This enables the use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder` for descending queries.
-
-**Example**
-
-```sql
-CREATE TABLE example
-(
-    time DateTime,
-    key Int32,
-    value String
-) ENGINE = MergeTree
-ORDER BY (time DESC, key)  -- Descending order on 'time' field
-SETTINGS allow_experimental_reverse_key = 1;
-
-SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-```
-
-By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-**Default Value:** false
-
-## cache_populated_by_fetch
-
-:::note
-This setting applies only to ClickHouse Cloud.
-:::
-
-When `cache_populated_by_fetch` is disabled (the default setting), new data parts are loaded into the cache only when a query is run that requires those parts.
-
-If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action.
-
-Default value: false
-
-**See Also**
-
-- [ignore_cold_parts_seconds](settings.md/#ignore_cold_parts_seconds)
-- [prefer_warmed_unmerged_parts_seconds](settings.md/#prefer_warmed_unmerged_parts_seconds)
-- [cache_warmer_threads](settings.md/#cache_warmer_threads)
-
-## add_implicit_sign_column_constraint_for_collapsing_engine
-
-If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
-
-Default value: false
-
-## add_minmax_index_for_numeric_columns
-
-When enabled, min-max (skipping) indices are added for all numeric columns of the table.
-
-Default value: false.
-
-## add_minmax_index_for_string_columns
-
-When enabled, min-max (skipping) indices are added for all string columns of the table.
-
-Default value: false.

@@ -8,7 +8,6 @@
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
-#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <Parsers/CommonParsers.h>
@@ -413,20 +412,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
 
     return true;
-}
-
-std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(const String & name)
-{
-    /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
-    if (name.size() < 3
-        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
-        || name[1] != '`' || name.back() != '`')
-        return std::nullopt;
-
-    String identifier;
-    ReadBufferFromMemory buf(name.data() + 1, name.size() - 1);
-    readBackQuotedString(identifier, buf);
-    return std::make_pair(name[0], identifier);
 }
 
 
@@ -1327,11 +1312,13 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             if (pos->type == closing_bracket)
             {
+                std::shared_ptr<ASTLiteral> literal;
+
                 /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
                     return false;
 
-                std::shared_ptr<ASTLiteral> literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
+                literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
                 literal->begin = layers.back().literal_begin;
                 literal->end = ++pos;
 
@@ -1596,7 +1583,6 @@ const char * ParserAlias::restricted_keywords[] =
     "ON",
     "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
-    "PARALLEL",
     "PREWHERE",
     "RIGHT",
     "SAMPLE",
@@ -2179,39 +2165,6 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserExpression elem_p;
-    ParserKeyword ascending(Keyword::ASCENDING);
-    ParserKeyword descending(Keyword::DESCENDING);
-    ParserKeyword asc(Keyword::ASC);
-    ParserKeyword desc(Keyword::DESC);
-
-    ASTPtr expr_elem;
-    if (!elem_p.parse(pos, expr_elem, expected))
-        return false;
-
-    if (!allow_order)
-    {
-        node = std::move(expr_elem);
-        return true;
-    }
-
-    int direction = 1;
-
-    if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
-        direction = -1;
-    else
-        ascending.ignore(pos, expected) || asc.ignore(pos, expected);
-
-    auto storage_elem = std::make_shared<ASTStorageOrderByElement>();
-    storage_elem->children.push_back(std::move(expr_elem));
-    storage_elem->direction = direction;
-
-    node = std::move(storage_elem);
-    return true;
-}
-
 
 bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2228,7 +2181,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword from(Keyword::FROM);
     ParserKeyword to(Keyword::TO);
     ParserKeyword step(Keyword::STEP);
-    ParserKeyword staleness(Keyword::STALENESS);
     ParserStringLiteral collate_locale_parser;
     ParserExpressionWithOptionalAlias exp_parser(false);
 
@@ -2270,7 +2222,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;
-    ASTPtr fill_staleness;
     if (with_fill.ignore(pos, expected))
     {
         has_with_fill = true;
@@ -2281,9 +2232,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
 
         if (step.ignore(pos, expected) && !exp_parser.parse(pos, fill_step, expected))
-            return false;
-
-        if (staleness.ignore(pos, expected) && !exp_parser.parse(pos, fill_staleness, expected))
             return false;
     }
 
@@ -2299,7 +2247,6 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->setFillFrom(fill_from);
     elem->setFillTo(fill_to);
     elem->setFillStep(fill_step);
-    elem->setFillStaleness(fill_staleness);
 
     node = elem;
 

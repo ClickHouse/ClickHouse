@@ -11,7 +11,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
-#include <Formats/FormatSettings.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -129,7 +128,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
     if (pos == end)
         return {subcolumn_name, {}};
 
-    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};
 }
 
 }

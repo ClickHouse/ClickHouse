@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/session_log
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # session_log
-
-<SystemTableCloud/>
 
 Contains information about all successful and failed login and logout events.
 

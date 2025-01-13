@@ -2,10 +2,9 @@
 
 #include <memory>
 
-#include <Columns/IColumn.h>
-#include <Core/Block.h>
 #include <Core/Names.h>
-#include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Core/Block.h>
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -90,13 +89,6 @@ public:
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
-    virtual bool isScatteredJoin() const { return false; }
-    virtual void joinBlock(
-        [[maybe_unused]] Block & block, [[maybe_unused]] ExtraScatteredBlocks & extra_blocks, [[maybe_unused]] std::vector<Block> & res)
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "joinBlock is not supported for {}", getName());
-    }
-
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
@@ -122,7 +114,6 @@ public:
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
-    virtual bool rightTableCanBeReranged() const { return false; }
     virtual void tryRerangeRightTableData() {}
 
     virtual IBlocksStreamPtr

@@ -287,7 +287,7 @@ value of the rotation.
             {"overflow_int", "SELECT arrayRotateLeft([1, 2, 3, 4, 5], 8)", "[4, 5, 1, 2, 3]"},
 
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
     factory.registerFunction<FunctionArrayRotateRight>(
         FunctionDocumentation{
@@ -314,7 +314,7 @@ value of the rotation.
             {"negative_rotation_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], -3)", "[4, 5, 1, 2, 3]"},
             {"overflow_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], 8)", "[4, 5, 1, 2, 3]"},
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
     factory.registerFunction<FunctionArrayShiftLeft>(
         FunctionDocumentation{
@@ -336,7 +336,7 @@ The default value must be of the same type as the array elements.
 [example:simple_int_with_default]
 [example:simple_string_with_default]
 [example:simple_array_with_default]
-[example:cast_array_with_default]
+[example:casted_array_with_default]
 )",
         .examples{
             {"simple_int", "SELECT arrayShiftLeft([1, 2, 3, 4, 5], 3)", "[4, 5, 0, 0, 0]"},
@@ -348,11 +348,11 @@ The default value must be of the same type as the array elements.
             {"simple_int_with_default", "SELECT arrayShiftLeft([1, 2, 3, 4, 5], 3, 7)", "[4, 5, 7, 7, 7]"},
             {"simple_string_with_default", "SELECT arrayShiftLeft(['a', 'b', 'c', 'd', 'e'], 3, 'foo')", "['d', 'e', 'foo', 'foo', 'foo']"},
             {"simple_array_with_default", "SELECT arrayShiftLeft([[1, 2], [3, 4], [5, 6]], 2, [7, 8])", "[[5, 6], [7, 8], [7, 8]]"},
-            {"cast_array_with_default",
+            {"casted_array_with_default",
              "SELECT arrayShiftLeft(CAST('[1, 2, 3, 4, 5, 6]', 'Array(UInt16)'), 1, 1000)",
              "[2, 3, 4, 5, 6, 1000]"},
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
     factory.registerFunction<FunctionArrayShiftRight>(
         FunctionDocumentation{
@@ -374,7 +374,7 @@ The default value must be of the same type as the array elements.
 [example:simple_int_with_default]
 [example:simple_string_with_default]
 [example:simple_array_with_default]
-[example:cast_array_with_default]
+[example:casted_array_with_default]
 )",
         .examples{
             {"simple_int", "SELECT arrayShiftRight([1, 2, 3, 4, 5], 3)", "[0, 0, 0, 1, 2]"},
@@ -388,11 +388,11 @@ The default value must be of the same type as the array elements.
              "SELECT arrayShiftRight(['a', 'b', 'c', 'd', 'e'], 3, 'foo')",
              "['foo', 'foo', 'foo', 'a', 'b']"},
             {"simple_array_with_default", "SELECT arrayShiftRight([[1, 2], [3, 4], [5, 6]], 2, [7, 8])", "[[7, 8], [7, 8], [1, 2]]"},
-            {"cast_array_with_default",
+            {"casted_array_with_default",
              "SELECT arrayShiftRight(CAST('[1, 2, 3, 4, 5, 6]', 'Array(UInt16)'), 1, 1000)",
              "[1000, 1, 2, 3, 4, 5]"},
         },
-        .category = {"Array"},
+        .categories = {"Array"},
     });
 }
 

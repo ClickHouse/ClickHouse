@@ -277,10 +277,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
                         settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(str_buf, settings);
+                        res->format(settings);
 
                         if (insert_query_payload)
                         {
@@ -324,10 +324,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        IAST::FormatSettings settings(str_buf, oneline_current_query, hilite);
                         settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(str_buf, settings);
+                        res->format(settings);
 
                         auto res_string = str_buf.str();
                         WriteBufferFromOStream res_cout(std::cout, 4096);

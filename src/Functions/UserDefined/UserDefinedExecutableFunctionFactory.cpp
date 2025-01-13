@@ -4,16 +4,16 @@
 
 #include <Common/filesystemHelpers.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
 
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>

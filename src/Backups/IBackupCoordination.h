@@ -1,47 +1,30 @@
 #pragma once
 
-#include <exception>
 #include <Core/Types.h>
 
 
 namespace DB
 {
+class Exception;
 struct BackupFileInfo;
 using BackupFileInfos = std::vector<BackupFileInfo>;
 enum class AccessEntityType : uint8_t;
 enum class UserDefinedSQLObjectType : uint8_t;
-struct ZooKeeperRetriesInfo;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
-/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationOnCluster.
+/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
 /// BackupCoordinationLocal is used while executing BACKUP without ON CLUSTER and performs coordination in memory.
-/// BackupCoordinationOnCluster is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
+/// BackupCoordinationRemote is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
 class IBackupCoordination
 {
 public:
     virtual ~IBackupCoordination() = default;
 
-    /// Sets that the backup query was sent to other hosts.
-    /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
-    virtual void setBackupQueryIsSentToOtherHosts() = 0;
-    virtual bool isBackupQuerySentToOtherHosts() const = 0;
-
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
-
-    /// Lets other hosts know that the current host has encountered an error.
-    /// Returns true if the information is successfully passed so other hosts can read it.
-    virtual bool setError(std::exception_ptr exception, bool throw_if_error) = 0;
-
-    /// Waits until all the other hosts finish their work.
-    /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
-    virtual bool waitOtherHostsFinish(bool throw_if_error) const = 0;
-
-    /// Lets other hosts know that the current host has finished its work.
-    virtual bool finish(bool throw_if_error) = 0;
-
-    /// Removes temporary nodes in ZooKeeper.
-    virtual bool cleanup(bool throw_if_error) = 0;
+    virtual void setStage(const String & new_stage, const String & message) = 0;
+    virtual void setError(const Exception & exception) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     struct PartNameAndChecksum
     {
@@ -104,7 +87,9 @@ public:
     /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
     virtual bool startWritingFile(size_t data_file_index) = 0;
 
-    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
+    /// This function is used to check if concurrent backups are running
+    /// other than the backup passed to the function
+    virtual bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const = 0;
 };
 
 }

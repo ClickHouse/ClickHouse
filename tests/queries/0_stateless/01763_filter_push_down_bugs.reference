@@ -26,7 +26,7 @@ Expression ((Projection + Before ORDER BY))
             Parts: 1/1
             Granules: 1/1
 Expression ((Project names + Projection))
-  Filter (WHERE)
+  Filter ((WHERE + DROP unused columns after JOIN))
     Join (JOIN FillRightFirst)
       Expression
         ReadFromMergeTree (default.t1)

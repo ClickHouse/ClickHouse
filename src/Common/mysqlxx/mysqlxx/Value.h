@@ -1,11 +1,19 @@
 #pragma once
 
-#include <Common/DateLUT.h>
-#include <Common/LocalDateTime.h>
-#include <mysqlxx/Types.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <math.h>
 
-#include <ostream>
 #include <string>
+#include <limits>
+
+#include <base/preciseExp10.h>
+#include <base/types.h>
+#include <Common/DateLUT.h>
+
+#include <mysqlxx/Types.h>
+#include <Common/LocalDateTime.h>
 
 
 namespace mysqlxx

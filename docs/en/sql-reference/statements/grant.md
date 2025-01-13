@@ -4,8 +4,6 @@ sidebar_position: 38
 sidebar_label: GRANT
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # GRANT Statement
 
 - Grants [privileges](#privileges) to ClickHouse user accounts or roles.
@@ -79,10 +77,6 @@ You can grant multiple privileges to multiple accounts in one query. The query `
 Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to execute the `SELECT` query over all the tables in `db` database.
 Also, you can omit database name. In this case privileges are granted for current database.
 For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
-
-:::note
-The feature described below is available starting with the 24.10 ClickHouse version.
-:::
 
 You can also put asterisks at the end of a table or a database name. This feature allows you to grant privileges on an abstract prefix of the table's path.
 Example: `GRANT SELECT ON db.my_tables* TO john`. This query allows `john` to execute the `SELECT` query over all the `db` database tables with the prefix `my_tables*`.
@@ -605,14 +599,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 
 ### ALL
 
-<CloudNotSupportedBadge/>
-
 Grants all the privileges on regulated entity to a user account or a role.
-
-:::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
-Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
-:::
 
 ### NONE
 

@@ -854,20 +854,23 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
         if (put_error_to_stream)
         {
             exception_message = e.message();
-            for (size_t i = 0; i < result_columns.size(); ++i)
+            for (const auto & column : result_columns)
             {
-                // We could already push some rows to result_columns before exception, we need to fix it.
-                result_columns[i]->rollback(*checkpoints[i]);
+                // read_kafka_message could already push some rows to result_columns
+                // before exception, we need to fix it.
+                auto cur_rows = column->size();
+                if (cur_rows > total_rows)
+                    column->popBack(cur_rows - total_rows);
 
                 // all data columns will get default value in case of error
-                result_columns[i]->insertDefault();
+                column->insertDefault();
             }
 
             return 1;

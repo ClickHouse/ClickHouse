@@ -1,6 +1,5 @@
 #include <filesystem>
 
-#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
@@ -10,6 +9,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;
@@ -32,21 +32,16 @@ namespace ErrorCodes
 
 void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-
-    if (!db_disk->isSymlinkSupported())
-        return;
-
     const String & engine_name = create.storage->engine->name;
     const String & database_name = create.getDatabase();
 
     if (engine_name != "Ordinary")
         return;
 
-    if (!db_disk->isSymlink(metadata_path))
+    if (!FS::isSymlink(metadata_path))
         return;
 
-    String target_path = db_disk->readSymlink(metadata_path);
+    String target_path = FS::readSymlink(metadata_path).string();
     fs::path path_to_remove = metadata_path;
     if (path_to_remove.filename().empty())
         path_to_remove = path_to_remove.parent_path();

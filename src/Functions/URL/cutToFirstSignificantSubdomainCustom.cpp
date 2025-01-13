@@ -52,7 +52,7 @@ Can be useful if you need fresh TLD list or you have custom.
         .examples{
             {"cutToFirstSignificantSubdomainCustom", "SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');", ""},
         },
-        .category{"URLs"}
+        .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>(
         FunctionDocumentation{
@@ -63,19 +63,19 @@ Accepts custom TLD list name from config.
 Can be useful if you need fresh TLD list or you have custom.
         )",
         .examples{{"cutToFirstSignificantSubdomainCustomWithWWW", "SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')", ""}},
-        .category{"URLs"}
+        .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomRFC>(
         FunctionDocumentation{
         .description=R"(Similar to `cutToFirstSignificantSubdomainCustom` but follows stricter rules according to RFC 3986.)",
         .examples{},
-        .category{"URLs"}
+        .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC>(
         FunctionDocumentation{
         .description=R"(Similar to `cutToFirstSignificantSubdomainCustomWithWWW` but follows stricter rules according to RFC 3986.)",
         .examples{},
-        .category{"URLs"}
+        .categories{"URL"}
         });
 }
 

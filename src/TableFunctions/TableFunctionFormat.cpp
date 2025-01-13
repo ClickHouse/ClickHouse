@@ -217,7 +217,7 @@ Result:
 )", ""
         },
     },
-    .category{""}
+    .categories{"format", "table-functions"}
 };
 
 }
