@@ -3069,9 +3069,8 @@ void ClientBase::runInteractive()
     if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
         actual_history_file_path = history_file;
 
-    lr = std::make_unique<ReplxxLineReader>(
+    auto replxx_lr = std::make_unique<ReplxxLineReader>(
         *suggest,
-        *autocomplete,
         actual_history_file_path,
         history_max_entries,
         getClientConfiguration().has("multiline"),
@@ -3086,6 +3085,9 @@ void ClientBase::runInteractive()
         stdout_fd,
         stderr_fd
     );
+
+    replxx_lr->setCompletionCallbackWithAutoComplete(*suggest, *autocomplete);
+    lr = std::move(replxx_lr);
 #else
     lr = LineReader(
         history_file,
