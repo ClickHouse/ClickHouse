@@ -1,7 +1,6 @@
-#include <Client/BuzzHouse/Generator/QueryOracle.h>
-#include "SQLCatalog.h"
-
 #include <cstdio>
+
+#include <Client/BuzzHouse/Generator/QueryOracle.h>
 
 namespace BuzzHouse
 {

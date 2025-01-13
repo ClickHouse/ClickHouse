@@ -1,6 +1,4 @@
-#include "SQLTypes.h"
 #include <cstdint>
-#include <sys/types.h>
 
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
