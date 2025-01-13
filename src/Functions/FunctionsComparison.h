@@ -27,6 +27,7 @@
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
@@ -34,12 +35,17 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
+#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
 #include <limits>
 #include <type_traits>
+
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Planner/Planner.h>
 
 namespace DB
 {
@@ -51,6 +57,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsBool validate_enum_literals_in_opearators;
 }
 
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
@@ -641,12 +652,10 @@ struct ComparisonParams
 {
     bool check_decimal_overflow;
     bool validate_enum_literals_in_opearators;
-    bool allow_not_comparable_types;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_opearators(context->getSettingsRef()[Setting::validate_enum_literals_in_opearators])
-        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
 };
 
