@@ -117,8 +117,8 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coord
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 }
 
-std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
-    const std::vector<std::string> & paths, const std::filesystem::path & zk_path_, LoggerPtr log_)
+void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
+    std::vector<std::string> & paths, const std::filesystem::path & zk_path_, LoggerPtr log_)
 {
     std::vector<std::string> check_paths;
     for (const auto & path : paths)
@@ -137,7 +137,7 @@ std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedA
             throw zkutil::KeeperException::fromPath(code, path);
     };
 
-    std::vector<size_t> result;
+    std::vector<std::string> result;
     for (size_t i = 0; i < responses.size();)
     {
         check_code(responses[i].error, check_paths[i]);
@@ -146,7 +146,7 @@ std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedA
         if (responses[i].error == Coordination::Error::ZNONODE
             && responses[i + 1].error == Coordination::Error::ZNONODE)
         {
-            result.push_back(i / 2);
+            result.push_back(std::move(paths[i / 2]));
         }
         else
         {
@@ -156,7 +156,7 @@ std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedA
         }
         i += 2;
     }
-    return result;
+    paths = std::move(result);
 }
 
 }

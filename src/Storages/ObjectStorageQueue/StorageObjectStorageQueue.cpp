@@ -70,6 +70,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
+    extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
 }
 
 namespace ErrorCodes
@@ -170,6 +171,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
     , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
+    , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
@@ -257,6 +259,15 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
     if (files_metadata)
     {
+        try
+        {
+            files_metadata->unregister(getStorageID(), /* active */true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
         files_metadata->shutdown();
         files_metadata.reset();
     }
@@ -457,12 +468,15 @@ void StorageObjectStorageQueue::threadFunc()
     try
     {
         const size_t dependencies_count = getDependencies();
+        const auto storage_id = getStorageID();
         if (dependencies_count)
         {
             mv_attached.store(true);
             SCOPE_EXIT({ mv_attached.store(false); });
 
             LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+            files_metadata->registerIfNot(storage_id, /* active */true);
 
             if (streamToViews())
             {
@@ -934,11 +948,13 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         files_metadata,
         object_storage,
         configuration,
+        getStorageID(),
         list_objects_batch_size,
         predicate,
         getVirtualsList(),
         local_context,
         log,
+        enable_hash_ring_filtering,
         file_deletion_enabled,
         shutdown_called);
 }

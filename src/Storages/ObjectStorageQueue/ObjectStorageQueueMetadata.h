@@ -76,8 +76,9 @@ public:
     ObjectStorageType getType() const { return storage_type; }
     std::string getPath() const { return zookeeper_path; }
 
-    void registerIfNot(const StorageID & storage_id);
-    size_t unregister(const StorageID & storage_id);
+    void registerIfNot(const StorageID & storage_id, bool active);
+    size_t unregister(const StorageID & storage_id, bool active);
+    Strings getRegistered(bool active);
 
     void shutdown();
 
@@ -101,10 +102,16 @@ public:
 
     void alterSettings(const SettingsChanges & changes, const ContextPtr & context);
 
+    void filterOutForProcessor(Strings & paths, const std::string & processor_id);
+    static std::string getProcessorID(const StorageID & storage_id);
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
     void migrateToBucketsInKeeper(size_t value);
+
+    void updateRegistryFunc();
+    void updateRegistry(const DB::Strings & registered_processors);
 
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
@@ -113,6 +120,7 @@ private:
     const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
     const size_t keeper_multiread_batch_size;
     size_t buckets_num;
+    std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
     LoggerPtr log;
 
@@ -121,6 +129,14 @@ private:
 
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
+
+    using RegisteredProcessor = std::string;
+    using ProcessorsSet = std::set<RegisteredProcessor>;
+    ProcessorsSet registered_processors;
+
+    class ServersHashRing;
+    std::shared_ptr<ServersHashRing> servers_hash_ring;
+    std::mutex registered_processors_mutex;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

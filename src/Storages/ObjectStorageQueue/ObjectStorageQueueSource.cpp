@@ -56,11 +56,13 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
+    const StorageID & storage_id_,
     size_t list_objects_batch_size_,
     const ActionsDAG::Node * predicate_,
     const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
     LoggerPtr logger_,
+    bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
     std::atomic<bool> & shutdown_called_)
     : IIterator("ObjectStorageQueueFileIterator")
@@ -71,6 +73,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , virtual_columns(virtual_columns_)
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , mode(metadata->getTableMetadata().getMode())
+    , enable_hash_ring_filtering(enable_hash_ring_filtering_)
+    , processor_id(ObjectStorageQueueMetadata::getProcessorID(storage_id_))
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -164,14 +168,14 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
                 LOG_TEST(logger, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
 
                 size_t previous_size = new_batch.size();
-                filterOutProcessedAndFailed(new_batch);
+                filterProcessableFiles(new_batch);
 
                 LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
             }
             else
             {
                 size_t previous_size = new_batch.size();
-                filterOutProcessedAndFailed(new_batch);
+                filterProcessableFiles(new_batch);
                 LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
             }
         }
@@ -191,23 +195,31 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
     return object_infos[index++];
 }
 
-void ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
     for (const auto & object : objects)
         paths.push_back(object->getPath());
 
-    std::vector<size_t> indexes;
+    if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
+        metadata->filterOutForProcessor(paths, processor_id);
+
     if (mode == ObjectStorageQueueMode::UNORDERED)
-        indexes = ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
+        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
     else
-        indexes = ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+
+    std::unordered_set<std::string> paths_set;
+    std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
 
     Source::ObjectInfos result;
-    result.reserve(indexes.size());
-    for (const auto & idx : indexes)
-        result.push_back(std::move(objects[idx]));
+    result.reserve(paths_set.size());
+    for (auto & object : objects)
+    {
+        if (paths_set.contains(object->getPath()))
+            result.push_back(std::move(object));
+    }
     objects = std::move(result);
 }
 

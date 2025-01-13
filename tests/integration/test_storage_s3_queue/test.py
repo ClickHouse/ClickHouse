@@ -367,7 +367,7 @@ def create_mv(
     dst_table_name,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
 ):
-    mv_name = f"{dst_table_name}_mv"
+    mv_name = f"{src_table_name}_mv"
     node.query(
         f"""
         DROP TABLE IF EXISTS {dst_table_name};
@@ -569,6 +569,7 @@ def test_direct_select_file(started_cluster, mode):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": 1,
+                "enable_hash_ring_filtering": 0,
             },
         )
 
@@ -735,26 +736,32 @@ def test_streaming_to_many_views(started_cluster, mode):
             files_path,
             additional_settings={
                 "keeper_path": keeper_path,
+                "polling_min_timeout_ms": 100,
+                "polling_max_timeout_ms": 100,
+                "polling_backoff_ms": 0,
             },
         )
         create_mv(node, table, dst_table_name)
 
-    total_values = generate_random_files(started_cluster, files_path, 5)
-    expected_values = set([tuple(i) for i in total_values])
+    files_num = 20
+    row_num = 100
+    files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_num)]
+    total_values = generate_random_files(
+        started_cluster, files_path, files_num, files=files, row_num=row_num
+    )
+    expected_values = sorted(set([tuple(i) for i in total_values]))
 
-    def select():
-        return {
-            tuple(map(int, l.split()))
-            for l in node.query(
-                f"SELECT column1, column2, column3 FROM {dst_table_name}"
-            ).splitlines()
-        }
+    def check():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
 
     for _ in range(20):
-        if select() == expected_values:
+        if check() == files_num:
             break
         time.sleep(1)
-    assert select() == expected_values
+    processed_files = node.query(f"SELECT distinct(_path) FROM {dst_table_name}")
+    missing_files = [x[0] for x in files if x[0] not in processed_files.strip().split('\n')]
+    assert check() == files_num, f"Missing files: {missing_files}"
+    assert row_num * files_num == int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):
@@ -2712,7 +2719,7 @@ def test_migration(started_cluster, setting_prefix):
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
-    mv_name = f"{dst_table_name}_mv"
+    mv_name = f"{src_table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
@@ -2930,18 +2937,12 @@ def test_skipping_processed_and_failed_files(started_cluster, mode):
     ).encode()
 
     failed_file = f"{files_path}/testz_fff.csv"
-    put_s3_file_content(
-        started_cluster, failed_file, incorrect_values_csv
-    )
+    put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
 
     create_mv(node1, f"r.{table_name}", dst_table_name)
 
     def get_count():
-        return int(
-            node1.query(
-                f"SELECT count() FROM default.{dst_table_name}"
-            )
-        )
+        return int(node1.query(f"SELECT count() FROM default.{dst_table_name}"))
 
     expected_rows = files_to_generate
     for _ in range(20):
