@@ -180,7 +180,7 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
+:::note
 Step and query cost estimation is not supported.
 :::
 
@@ -474,6 +474,6 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::
