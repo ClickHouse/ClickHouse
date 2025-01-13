@@ -53,11 +53,9 @@ BlockIO InterpreterCreateIndexQuery::execute()
             throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE INDEX without TYPE is forbidden."
                 " SET allow_create_index_without_type=1 to ignore this statements");
         }
-        else
-        {
-            // Nothing to do
-            return {};
-        }
+
+        // Nothing to do
+        return {};
     }
 
     AccessRightsElements required_access;

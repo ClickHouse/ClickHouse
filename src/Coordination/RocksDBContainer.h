@@ -1,8 +1,6 @@
 #pragma once
 #include <base/StringRef.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
-#include <Common/SipHash.h>
 #include <Disks/DiskLocal.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
@@ -320,7 +318,7 @@ public:
         {
             return false;
         }
-        else if (status.IsNotFound())
+        if (status.IsNotFound())
         {
             status = rocksdb_ptr->Put(write_options, encoded_key, value.getEncodedString());
             if (status.ok())
@@ -415,8 +413,7 @@ public:
     {
         if (!snapshot_mode)
             return std::make_pair(counter, current_version);
-        else
-            return std::make_pair(snapshot_size, current_version);
+        return std::make_pair(snapshot_size, current_version);
     }
 
     const_iterator begin() const

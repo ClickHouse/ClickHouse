@@ -1,0 +1,2 @@
+                Prewhere filter column: and(like(__table1.Title, \'%Google%\'_String), notLike(__table1.URL, \'%.google.%\'_String), notEquals(__table1.SearchPhrase, \'\'_String)) (removed)
+                Prewhere filter column: and(notEquals(__table1.SearchPhrase, \'\'_String), like(__table1.Title, \'%Google%\'_String), notLike(__table1.URL, \'%.google.%\'_String)) (removed)

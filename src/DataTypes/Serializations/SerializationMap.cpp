@@ -306,13 +306,13 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
         WriteBufferFromOwnString str_buf;
         key->serializeText(nested_tuple.getColumn(0), i, str_buf, settings);
 
-        writeChar(' ', (indent + 1) * 4, ostr);
+        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
         writeJSONString(str_buf.str(), ostr, settings);
         writeCString(": ", ostr);
         value->serializeTextJSONPretty(nested_tuple.getColumn(1), i, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
+    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
     writeChar('}', ostr);
 }
 
@@ -347,12 +347,11 @@ ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffe
                         return deserialize_nested(subcolumn_, buf_, subcolumn_serialization);
                     });
             });
-    else
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-            {
-                return deserialize_nested(subcolumn, buf, subcolumn_serialization);
-            });
+    return deserializeTextImpl<ReturnType>(
+        column,
+        istr,
+        [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
+        { return deserialize_nested(subcolumn, buf, subcolumn_serialization); });
 }
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

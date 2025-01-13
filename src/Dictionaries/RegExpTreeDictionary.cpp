@@ -248,7 +248,8 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
 
 #if USE_VECTORSCAN
         String required_substring;
-        bool is_trivial, required_substring_is_prefix;
+        bool is_trivial;
+        bool required_substring_is_prefix;
         std::vector<std::string> alternatives;
 
         if (use_vectorscan)
@@ -321,6 +322,7 @@ void RegExpTreeDictionary::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
         Block block;
         while (executor.pull(block))
@@ -375,8 +377,8 @@ void RegExpTreeDictionary::loadData()
 
             if (error->expression < 0)
                 throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
         }
 
         /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
@@ -491,10 +493,8 @@ public:
                 return false;
             return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
         }
-        else
-        {
-            return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
-        }
+
+        return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
     }
 
     // Returns the number of full attributes
@@ -888,7 +888,8 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             const auto & node = it->second;
             col_pid->insert(node->parent_id);
             col_regex->insert(node->regex);
-            std::vector<Field> keys, values;
+            std::vector<Field> keys;
+            std::vector<Field> values;
             for (const auto & [key, attr] : node->attributes)
             {
                 keys.push_back(key);

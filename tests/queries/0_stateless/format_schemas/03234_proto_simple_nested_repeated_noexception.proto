@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+message M {
+  uint32     u = 1000 ;
+  repeated N v = 2000 ;
+
+  message N {
+    uint32          w = 2100 ;
+    uint32          x = 2200 ;
+    repeated uint32 y = 2300 ;
+    repeated uint32 z = 2400 ;
+  }
+}

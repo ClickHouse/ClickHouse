@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
@@ -148,7 +147,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
             for (size_t i = 0; i < rows; ++i)
             {
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
-                const DatabasePtr database = databases.at(database_name);
+                const DatabasePtr & database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -168,13 +167,6 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                         storage_uuid = hash.get128();
                     }
 
-#if USE_MYSQL
-                    if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
-                    {
-                        auto nested = proxy->getNested();
-                        storage.swap(nested);
-                    }
-#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
@@ -259,7 +251,7 @@ ReadFromSystemPartsBase::ReadFromSystemPartsBase(
     std::vector<UInt8> columns_mask_,
     bool has_state_column_)
     : SourceStepWithFilter(
-        DataStream{.header = std::move(sample_block)},
+        std::move(sample_block),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -328,7 +320,7 @@ void StorageSystemPartsBase::read(
 void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto stream = storage->getStoragesInfoStream(std::move(filter_by_database), std::move(filter_by_other_columns), context);
-    auto header = getOutputStream().header;
+    auto header = getOutputHeader();
 
     MutableColumns res_columns = header.cloneEmptyColumns();
 

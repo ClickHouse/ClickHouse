@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as ku
-from multiprocessing.dummy import Pool
 import os
+from multiprocessing.dummy import Pool
+
+import pytest
+
+import helpers.keeper_utils as ku
+from helpers.cluster import ClickHouseCluster
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)
@@ -50,8 +52,6 @@ nodes = [
     ),
 ]
 
-from kazoo.client import KazooClient
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -65,11 +65,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return ku.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def run_test():
@@ -158,6 +154,9 @@ def check_valid_configuration(filename, password):
     for node in nodes:
         setupSsl(node, filename, password)
     start_all_clickhouse()
+    nodes[0].wait_for_log_line(
+        "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=1000
+    )
     run_test()
 
 
@@ -166,10 +165,11 @@ def check_invalid_configuration(filename, password):
     for node in nodes:
         setupSsl(node, filename, password)
 
-    nodes[0].start_clickhouse(expected_to_fail=True)
+    nodes[0].start_clickhouse()
     nodes[0].wait_for_log_line(
-        "OpenSSLException: EVPKey::loadKey.*error:0480006C:PEM routines::no start line",
+        "Raft ASIO listener initiated on :::9234, SSL enabled", look_behind_lines=1000
     )
+    nodes[0].wait_for_log_line("failed to connect to peer.*Connection refused")
 
 
 def test_secure_raft_works(started_cluster):

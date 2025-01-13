@@ -151,6 +151,7 @@ public:
     {
         String result = "Statistics: ";
         std::vector<String> stats_by_replica;
+        stats_by_replica.reserve(stats.size());
         for (size_t i = 0; i < stats.size(); ++i)
             stats_by_replica.push_back(fmt::format(
                 "replica {}{} - {{requests: {} marks: {} assigned_to_me: {} stolen_by_hash: {} stolen_unassigned: {}}}",
@@ -609,13 +610,13 @@ void DefaultCoordinator::tryToStealFromQueue(
             }
             if (can_take)
             {
-                if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
+                auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result);
+                if (taken == range.getNumberOfMarks())
                 {
                     it = decltype(it)(queue.erase(std::next(it).base()));
                     continue;
                 }
-                else
-                    range.begin += taken;
+                range.begin += taken;
             }
         }
 
@@ -664,7 +665,11 @@ void DefaultCoordinator::processPartsFurther(
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
+                    {
                         part.description.ranges.pop_front();
+                        /// Range is taken fully. Proceed further to the next one.
+                        break;
+                    }
                     else
                     {
                         range.begin += taken;
@@ -677,7 +682,11 @@ void DefaultCoordinator::processPartsFurther(
                     enqueueSegment(part.description.info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
+                    {
                         part.description.ranges.pop_front();
+                        /// Range is taken fully. Proceed further to the next one.
+                        break;
+                    }
                 }
             }
         }
@@ -754,7 +763,12 @@ size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, 
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
-    LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
+    LOG_TRACE(
+        log,
+        "Handling request from replica {}, minimal marks size is {}, request count {}",
+        request.replica_num,
+        request.min_number_of_marks,
+        stats[request.replica_num].number_of_requests);
 
     ParallelReadResponse response;
 

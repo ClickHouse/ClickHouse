@@ -406,9 +406,10 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
     std::vector<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
-        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
-        func->serialize(data[i], wbuf, version);
-        wbuf.finalize();
+        {
+            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+            func->serialize(data[i], wbuf, version);
+        }
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
 
@@ -417,9 +418,10 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 {
-    /// Fallback to per-element hashing, as there is no faster way
-    for (size_t i = 0; i < size(); ++i)
-        updateHashWithValue(i, hash);
+    WriteBufferFromOwnString wbuf;
+    const ColumnAggregateFunction::Container & vec = getData();
+    func->serializeBatch(vec, 0, size(), wbuf);
+    hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
 /// The returned size is less than real size. The reason is that some parts of
@@ -746,18 +748,16 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
         res_data.assign(data.begin(), data.begin() + size);
         return res;
     }
-    else
-    {
-        /// Create a new column to return.
-        MutableColumnPtr cloned_col = cloneEmpty();
-        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
 
-        res->insertRangeFrom(*this, 0, from_size);
-        for (size_t i = from_size; i < size; ++i)
-            res->insertDefault();
+    /// Create a new column to return.
+    MutableColumnPtr cloned_col = cloneEmpty();
+    auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
 
-        return cloned_col;
-    }
+    res->insertRangeFrom(*this, 0, from_size);
+    for (size_t i = from_size; i < size; ++i)
+        res->insertDefault();
+
+    return cloned_col;
 }
 
 }

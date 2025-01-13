@@ -9,6 +9,8 @@
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Poco/UTF8Encoding.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <limits>
 
@@ -24,11 +26,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
 template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
-
 
 template <typename Type>
 const char * DataTypeEnum<Type>::getFamilyName() const
@@ -125,15 +125,13 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
         this->getValue(value_or_name.safeGet<String>()); /// Check correctness
         return value_or_name.safeGet<String>();
     }
-    else if (value_or_name.getType() == Field::Types::Int64)
+    if (value_or_name.getType() == Field::Types::Int64)
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
         return this->getNameForValue(static_cast<Type>(value)).toString();
     }
-    else
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
 
 template <typename Type>
@@ -143,17 +141,14 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
     {
         return this->getValue(value_or_name.safeGet<String>());
     }
-    else if (value_or_name.getType() == Field::Types::Int64
-          || value_or_name.getType() == Field::Types::UInt64)
+    if (value_or_name.getType() == Field::Types::Int64 || value_or_name.getType() == Field::Types::UInt64)
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
         this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
-    else
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }
 
 

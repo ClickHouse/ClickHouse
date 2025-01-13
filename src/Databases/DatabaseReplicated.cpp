@@ -4,47 +4,51 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseReplicatedWorker.h>
+#include <Databases/TablesDependencyGraph.h>
+#include <Databases/enableAllExperimentalSettings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/PoolId.h>
+#include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/PoolId.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
-#include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseReplicatedWorker.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/TablesDependencyGraph.h>
-#include <Databases/enableAllExperimentalSettings.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DDLTask.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/SharedThreadPools.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/queryToString.h>
-#include <Storages/StorageKeeperMap.h>
-#include <Storages/AlterCommands.h>
 
 namespace DB
 {
@@ -55,9 +59,22 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
+    extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool database_replicated_allow_detach_permanently;
+    extern const ServerSettingsUInt32 max_database_replicated_create_table_thread_pool_size;
+}
+
+namespace DatabaseReplicatedSetting
+{
+    extern const DatabaseReplicatedSettingsString collection_name;
+    extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
+}
 
 namespace ErrorCodes
 {
@@ -74,6 +91,7 @@ namespace ErrorCodes
     extern const int NO_ACTIVE_REPLICAS;
     extern const int CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -124,9 +142,9 @@ DatabaseReplicated::DatabaseReplicated(
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
-    if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
+    if (shard_name.contains('/') || replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
-    if (shard_name.find('|') != std::string::npos || replica_name.find('|') != std::string::npos)
+    if (shard_name.contains('|') || replica_name.contains('|'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (zookeeper_path.back() == '/')
@@ -136,8 +154,8 @@ DatabaseReplicated::DatabaseReplicated(
     if (zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
 
-    if (!db_settings.collection_name.value.empty())
-        fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
+    if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
+        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -431,7 +449,6 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
-
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
     try
@@ -643,7 +660,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         {
             nodes_exist = false;
             break;
-        } else if (response.error != Coordination::Error::ZOK)
+        }
+        if (response.error != Coordination::Error::ZOK)
         {
             throw zkutil::KeeperException::fromPath(response.error, check_paths[i]);
         }
@@ -1045,6 +1063,9 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 {
     waitDatabaseStarted();
 
+    if (!DatabaseCatalog::instance().canPerformReplicatedDDLQueries())
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
+
     if (query_context->getCurrentTransaction() && query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed DDL queries inside transactions are not supported");
 
@@ -1080,14 +1101,15 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
             hosts_to_wait.push_back(unfiltered_hosts[i]);
     }
 
-    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
+
+    return getQueryStatus(node_path, fs::path(zookeeper_path) / "replicas", query_context, hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
-    bool looks_like_shared = metadata.find("Shared") != std::string::npos;
-    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
+    bool looks_like_replicated = metadata.contains("Replicated");
+    bool looks_like_shared = metadata.contains("Shared");
+    bool looks_like_merge_tree = metadata.contains("MergeTree");
     if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
@@ -1206,6 +1228,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
+        /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
+        /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
+        /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
+        /// Same for data_type_default_nullable.
+        query_context->setSetting("flatten_nested", false);
+        query_context->setSetting("data_type_default_nullable", false);
+
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
         return query_context;
@@ -1214,9 +1243,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
-    if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
+    if (total_tables * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio] < tables_to_detach.size())
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
-    else if (!tables_to_detach.empty())
+    if (!tables_to_detach.empty())
     {
         LOG_WARNING(log, "Will recreate {} broken tables to recover replica", tables_to_detach.size());
         /// It's too dangerous to automatically drop tables, so we will move them to special database.
@@ -1225,6 +1254,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
         query_context->setSetting("allow_deprecated_database_ordinary", 1);
+        query_context->setSetting("cloud_mode", false);
         executeQuery(query, query_context, QueryFlags{ .internal = true });
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
@@ -1232,6 +1262,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// so it's ok to save UUID of replicated table.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
+        query_context->setSetting("cloud_mode", false);
         executeQuery(query, query_context, QueryFlags{ .internal = true });
     }
 
@@ -1357,7 +1388,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     tables_dependencies.checkNoCyclicDependencies();
 
-    auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
+    auto allow_concurrent_table_creation = getContext()->getServerSettings()[ServerSetting::max_database_replicated_create_table_thread_pool_size] > 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
@@ -1517,7 +1548,7 @@ void DatabaseReplicated::dropReplica(
 
     String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
 
-    if (full_replica_name.find('/') != std::string::npos)
+    if (full_replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
@@ -1612,7 +1643,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -1622,7 +1653,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
     {
         /// Avoid recursive locking of metadata_mutex
         table->dropInnerTableIfAny(sync, local_context);
@@ -1760,7 +1791,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 {
     waitDatabaseStarted();
 
-    if (!local_context->getServerSettings().database_replicated_allow_detach_permanently)
+    if (!local_context->getServerSettings()[ServerSetting::database_replicated_allow_detach_permanently])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
@@ -1814,9 +1845,14 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
+    ReadSettings read_settings = getReadSettings();
+    read_settings.local_fs_method = LocalFSReadMethod::read;
+    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+    auto in = db_disk->readFile(getObjectMetadataPath(table_name), read_settings);
+
     String statement;
-    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
-    readStringUntilEOF(statement, in);
+    readStringUntilEOF(statement, *in);
+
     return statement;
 }
 
@@ -2021,5 +2057,22 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             std::move(database_replicated_settings), args.context);
     };
     factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true});
+}
+
+BlockIO DatabaseReplicated::getQueryStatus(
+    const String & node_path, const String & replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
+{
+    BlockIO io;
+    if (context_->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
+        return io;
+
+    auto source = std::make_shared<ReplicatedDatabaseQueryStatusSource>(node_path, replicas_path, context_, hosts_to_wait);
+    io.pipeline = QueryPipeline(std::move(source));
+
+    if (context_->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
+        || context_->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
+
+    return io;
 }
 }

@@ -32,7 +32,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
     {
         if (dictionary_key_type == DictionaryKeyType::Simple && dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed dictionary");
-        else if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
+        if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -94,34 +94,31 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             {
                 if (shards > 1)
                     return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, false>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
             }
-            else
-            {
-                if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            }
+
+            if (shards > 1)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, true>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, false>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
         }
-        else
+
+        if (sparse)
         {
-            if (sparse)
-            {
-                if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            }
-            else
-            {
-                if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            }
+            if (shards > 1)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, true>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, false>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
         }
+
+        if (shards > 1)
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, true>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, false>>(
+            dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed",

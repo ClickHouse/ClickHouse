@@ -1,7 +1,9 @@
+import os
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
-import os
 
 METADATA_SERVER_HOSTNAME = "resolver"
 METADATA_SERVER_PORT = 8080

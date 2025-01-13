@@ -18,7 +18,6 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
-#include <Core/FormatFactorySettingsDeclaration.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 
@@ -51,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace ErrorCodes
@@ -142,12 +142,12 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.custom.allow_variable_number_of_columns = settings[Setting::input_format_custom_allow_variable_number_of_columns];
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
+    format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
     format_settings.interval.output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
     format_settings.bool_false_representation = settings[Setting::bool_false_representation];
-    format_settings.enable_streaming = settings[Setting::output_format_enable_streaming];
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
     format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
     format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
@@ -182,6 +182,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.ignore_unnecessary_fields = settings[Setting::input_format_json_ignore_unnecessary_fields];
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -191,11 +192,13 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.case_insensitive_column_matching = settings[Setting::input_format_parquet_case_insensitive_column_matching];
     format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
+    format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.use_native_reader = settings[Setting::input_format_parquet_use_native_reader];
     format_settings.parquet.allow_missing_columns = settings[Setting::input_format_parquet_allow_missing_columns];
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
+    format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -206,17 +209,27 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];
     format_settings.parquet.write_page_index = settings[Setting::output_format_parquet_write_page_index];
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
+    format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.max_column_pad_width = settings[Setting::output_format_pretty_max_column_pad_width];
     format_settings.pretty.max_rows = settings[Setting::output_format_pretty_max_rows];
+    format_settings.pretty.max_column_name_width_cut_to = settings[Setting::output_format_pretty_max_column_name_width_cut_to];
+    format_settings.pretty.max_column_name_width_min_chars_to_cut = settings[Setting::output_format_pretty_max_column_name_width_min_chars_to_cut];
     format_settings.pretty.max_value_width = settings[Setting::output_format_pretty_max_value_width];
     format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
     format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
-    format_settings.pretty.output_format_pretty_row_numbers = settings[Setting::output_format_pretty_row_numbers];
-    format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
-    format_settings.pretty.output_format_pretty_display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
-    format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
+    format_settings.pretty.row_numbers = settings[Setting::output_format_pretty_row_numbers];
+    format_settings.pretty.single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
+    format_settings.pretty.display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
+    format_settings.pretty.display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
+    format_settings.pretty.squash_consecutive_ms = settings[Setting::output_format_pretty_squash_consecutive_ms];
+    format_settings.pretty.squash_max_wait_ms = settings[Setting::output_format_pretty_squash_max_wait_ms];
+    format_settings.pretty.highlight_trailing_spaces = settings[Setting::output_format_pretty_highlight_trailing_spaces];
+    format_settings.pretty.multiline_fields = settings[Setting::output_format_pretty_multiline_fields];
+    format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
+    format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
+    format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
@@ -265,9 +278,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
-    format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
-    format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
-    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
+    format_settings.orc.dictionary_as_low_cardinality = settings[Setting::input_format_orc_dictionary_as_low_cardinality];
     format_settings.orc.case_insensitive_column_matching = settings[Setting::input_format_orc_case_insensitive_column_matching];
     format_settings.orc.output_string_as_string = settings[Setting::output_format_orc_string_as_string];
     format_settings.orc.output_compression_method = settings[Setting::output_format_orc_compression_method];
@@ -276,6 +287,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.use_fast_decoder = settings[Setting::input_format_orc_use_fast_decoder];
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
+    format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
@@ -307,13 +319,16 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.binary.max_binary_array_size = settings[Setting::format_binary_max_array_size];
     format_settings.binary.encode_types_in_binary_format = settings[Setting::output_format_binary_encode_types_in_binary_format];
     format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
+    format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];
+    format_settings.binary.read_json_as_string = settings[Setting::input_format_binary_read_json_as_string];
     format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
-    format_settings.max_parser_depth = context->getSettingsRef()[Setting::max_parser_depth];
-    format_settings.client_protocol_version = context->getClientProtocolVersion();
+    format_settings.native.write_json_as_string = settings[Setting::output_format_native_write_json_as_string];
+    format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
+    format_settings.client_protocol_version = context->getClientProtocolVersion();
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -578,20 +593,15 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     format_settings.max_threads = context->getSettingsRef()[Setting::max_threads];
     format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
-    /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
-      *  which only work with full columns.
-      */
     auto format = output_getter(buf, sample, format_settings);
-
-    /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
-    if (format_settings.enable_streaming)
-        format->setAutoFlush();
 
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
         mysql->setContext(context);
 
     addExistingProgressToOutputFormat(format, context);
+
+    format->setProgressWriteFrequencyMicroseconds(context->getSettingsRef()[Setting::interactive_delay]);
 
     return format;
 }
@@ -832,6 +842,14 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
+{
+    auto & target = getOrCreateCreators(name).is_tty_friendly;
+    if (!target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as non-TTY-friendly", name);
+    target = false;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
     const auto & target = getCreators(name);
@@ -891,6 +909,12 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
 {
     const auto & target = getCreators(name);
     return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.is_tty_friendly;
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

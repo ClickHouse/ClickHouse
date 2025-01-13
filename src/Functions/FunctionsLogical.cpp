@@ -1,11 +1,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
@@ -649,8 +651,37 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
-    if (checkShortCircuitArguments(arguments) != -1)
-        return executeShortCircuit(arguments, result_type);
+    if constexpr (std::is_same_v<Name, NameAnd> || std::is_same_v<Name, NameOr>)
+    {
+        ColumnRawPtrs solid_args;
+        std::vector<size_t> not_solid_args_index;
+        ColumnsWithTypeAndName new_args;
+
+        for (size_t i = 0, n = args.size(); i < n; ++i)
+        {
+            if (checkAndGetShortCircuitArgument(arguments[i].column))
+                not_solid_args_index.emplace_back(i);
+            else
+                solid_args.emplace_back(arguments[i].column.get());
+        }
+
+        ColumnPtr partial_result = nullptr;
+        if (solid_args.size() > 1)
+        {
+            partial_result = result_type->isNullable()
+                ? executeForTernaryLogicImpl<Impl>(std::move(solid_args), result_type, input_rows_count)
+                : basicExecuteImpl<Impl>(std::move(solid_args), input_rows_count);
+            if (not_solid_args_index.empty())
+                return partial_result;
+            new_args.emplace_back(partial_result, result_type, "__partial_result");
+            for (const auto & index : not_solid_args_index)
+                new_args.emplace_back(std::move(arguments[index]));
+        }
+        else
+            new_args.swap(arguments);
+
+        return executeShortCircuit(new_args, result_type);
+    }
 
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
@@ -658,8 +689,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 
     if (result_type->isNullable())
         return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    else
-        return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
 template <typename Impl, typename Name>

@@ -143,7 +143,7 @@ namespace
                     String string_id = value.toString();
                     return Field(string_id.data(), string_id.size());
                 }
-                else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
                     return Field(string.data(), string.size());
@@ -179,14 +179,14 @@ namespace
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
                     return parse<UUID>(string);
                 }
-                else if (value.type() == Poco::MongoDB::ElementTraits<MongoUUID>::TypeId)
+                if (value.type() == Poco::MongoDB::ElementTraits<MongoUUID>::TypeId)
                 {
                     const Poco::UUID & poco_uuid = static_cast<const Poco::MongoDB::ConcreteElement<MongoUUID> &>(value).value()->uuid();
                     return parsePocoUUID(poco_uuid);
                 }
-                else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String/UUID, got type id = {} for column {}",
-                                        toString(value.type()), name);
+
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String/UUID, got type id = {} for column {}",
+                                    toString(value.type()), name);
             };
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type conversion to {} is not supported", nested->getName());
@@ -279,7 +279,7 @@ namespace
                     assert_cast<ColumnString &>(column).insertData(string_id.data(), string_id.size());
                     break;
                 }
-                else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
                     assert_cast<ColumnString &>(column).insertData(string.data(), string.size());
@@ -467,12 +467,10 @@ Poco::MongoDB::Document::Vector MongoDBPocoLegacyCursor::nextDocuments(Poco::Mon
         cursor_id = response.cursorID();
         return std::move(response.documents());
     }
-    else
-    {
-        auto response = new_cursor->next(connection);
-        cursor_id = new_cursor->cursorID();
-        return std::move(response.documents());
-    }
+
+    auto response = new_cursor->next(connection);
+    cursor_id = new_cursor->cursorID();
+    return std::move(response.documents());
 }
 
 Int64 MongoDBPocoLegacyCursor::cursorID() const

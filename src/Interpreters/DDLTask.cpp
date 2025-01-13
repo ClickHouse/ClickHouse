@@ -85,6 +85,10 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
+    parent_table_uuid = context->getParentTable();
+    if (parent_table_uuid.has_value())
+        version = std::max(version, PARENT_TABLE_UUID_VERSION);
+
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         version = SETTINGS_IN_ZK_VERSION;
@@ -132,6 +136,16 @@ String DDLLogEntry::toString() const
 
     if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
         wb << "is_backup_restore: " << is_backup_restore << "\n";
+
+    if (version >= PARENT_TABLE_UUID_VERSION)
+    {
+        wb << "parent: ";
+        if (parent_table_uuid.has_value())
+            wb << parent_table_uuid.value();
+        else
+            wb << "-";
+        wb << "\n";
+    }
 
     return wb.str();
 }
@@ -191,6 +205,18 @@ void DDLLogEntry::parse(const String & data)
         checkString("is_backup_restore: ", rb);
         readBoolText(is_backup_restore, rb);
         checkChar('\n', rb);
+    }
+
+    if (version >= PARENT_TABLE_UUID_VERSION)
+    {
+        rb >> "parent: ";
+        if (!checkChar('-', rb))
+        {
+            UUID uuid;
+            rb >> uuid;
+            parent_table_uuid = uuid;
+        }
+        rb >> "\n";
     }
 
     assertEOF(rb);
@@ -391,28 +417,27 @@ bool DDLTask::tryFindHostInCluster()
                                         "There are two exactly the same ClickHouse instances {} in cluster {}",
                                         address.readableString(), cluster_name);
                     }
-                    else
-                    {
-                        /* Circular replication is used.
+
+                    /* Circular replication is used.
                          * It is when every physical node contains
                          * replicas of different shards of the same table.
                          * To distinguish one replica from another on the same node,
                          * every shard is placed into separate database.
                          * */
-                        is_circular_replicated = true;
-                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
+                    is_circular_replicated = true;
+                    auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
 
-                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
-                        if (query_with_table)
-                        {
-                            if (!query_with_table->database)
-                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name "
-                                                "must be qualified by database name.");
+                    /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
+                    if (query_with_table)
+                    {
+                        if (!query_with_table->database)
+                            throw Exception(
+                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                "For a distributed DDL on circular replicated cluster its table name "
+                                "must be qualified by database name.");
 
-                            if (default_database == query_with_table->getDatabase())
-                                return true;
-                        }
+                        if (default_database == query_with_table->getDatabase())
+                            return true;
                     }
                 }
                 found_exact_match = true;
@@ -448,13 +473,11 @@ bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
                                     "There are two the same ClickHouse instances in cluster {} : {} and {}",
                                     cluster_name, address_in_cluster.readableString(), address.readableString());
                 }
-                else
-                {
-                    found_via_resolving = true;
-                    host_shard_num = shard_num;
-                    host_replica_num = replica_num;
-                    address_in_cluster = address;
-                }
+
+                found_via_resolving = true;
+                host_shard_num = shard_num;
+                host_replica_num = replica_num;
+                address_in_cluster = address;
             }
         }
     }
@@ -592,8 +615,7 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();
-        else
-            return replicated_db->tryGetCluster();
+        return replicated_db->tryGetCluster();
     }
     return {};
 }

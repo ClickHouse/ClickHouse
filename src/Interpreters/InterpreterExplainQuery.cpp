@@ -21,6 +21,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,6 +34,9 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+
 
 namespace DB
 {
@@ -40,6 +44,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -74,10 +79,8 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
-            /// we need to read statistic when `allow_statistics_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettingsRef()[Setting::allow_statistics_optimize];
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -89,6 +92,36 @@ namespace
     };
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
+
+    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    {
+        friend class InDepthQueryTreeVisitor;
+        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        {
+            QueryTreeNodeType type = parent->getNodeType();
+            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+        }
+
+        void visitImpl(VisitQueryTreeNodeType & query_tree_node)
+        {
+            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
+            if (!table_function_node_ptr)
+                return;
+
+            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            {
+                auto & argument_nodes = table_function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+
+                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+                {
+                    if (secret_arguments.are_named)
+                        argument_nodes[n]->as<FunctionNode&>().getArguments().getNodes()[1]->as<ConstantNode&>().setMaskId();
+                    else
+                        argument_nodes[n]->as<ConstantNode&>().setMaskId();
+                }
+            }
+        }
+    };
 
 }
 
@@ -119,16 +152,14 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
         });
     }
-    else
-    {
-        Block res;
-        ColumnWithTypeAndName col;
-        col.name = "explain";
-        col.type = std::make_shared<DataTypeString>();
-        col.column = col.type->createColumn();
-        res.insert(col);
-        return res;
-    }
+
+    Block res;
+    ColumnWithTypeAndName col;
+    col.name = "explain";
+    col.type = std::make_shared<DataTypeString>();
+    col.column = col.type->createColumn();
+    res.insert(col);
+    return res;
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -200,7 +231,7 @@ struct QueryTreeSettings
 
 struct QueryPlanSettings
 {
-    QueryPlan::ExplainPlanOptions query_plan_options;
+    ExplainPlanOptions query_plan_options;
 
     /// Apply query plan optimizations.
     bool optimize = true;
@@ -217,6 +248,7 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+            {"distributed", query_plan_options.distributed},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -394,7 +426,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
+            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -412,6 +444,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
             bool need_newline = false;
+
+            if (!getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+            {
+                TableFunctionSecretsVisitor visitor;
+                visitor.visit(query_tree);
+            }
 
             if (settings.run_passes)
             {
@@ -443,7 +481,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (need_newline)
                     buf << "\n\n";
 
-                query_tree->toAST()->format(IAST::FormatSettings(buf, false));
+                IAST::FormatSettings format_settings(false);
+                format_settings.show_secrets = getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+
+                query_tree->toAST()->format(buf, format_settings);
             }
 
             break;
@@ -472,10 +513,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+                plan.optimize(QueryPlanOptimizationSettings(context));
 
             if (settings.json)
             {
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'json'");
+
                 /// Add extra layers to make plan look more like from postgres.
                 auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
                 plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
@@ -517,9 +561,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
-                    BuildQueryPipelineSettings::fromContext(context));
+                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
@@ -549,6 +591,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* async_isnert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
+                // we do not need it anymore, it would be executed
+                io.pipeline.cancel();
             }
             else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
@@ -579,9 +623,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
@@ -619,6 +661,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             break;
         }
     }
+    buf.finalize();
     if (insert_buf)
     {
         if (single_line)

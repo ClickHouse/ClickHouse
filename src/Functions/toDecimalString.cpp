@@ -48,6 +48,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
@@ -272,7 +277,7 @@ second argument is the desired number of digits in fractional part. Returns Stri
 
         )",
             .examples{{"toDecimalString", "SELECT toDecimalString(2.1456,2)", ""}},
-            .categories{"String"}
+            .category{"Type Conversion"}
         }, FunctionFactory::Case::Insensitive);
 }
 

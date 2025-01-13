@@ -235,12 +235,10 @@ namespace
                 /// tuple(windowID(timestamp, toIntervalSecond('5')))
                 return;
             }
-            else
-            {
-                /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
-                /// and other...
-                node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
-            }
+
+            /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
+            /// and other...
+            node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
         }
 
         static void visit(const ASTIdentifier & node, ASTPtr & node_ptr, Data & data)
@@ -409,13 +407,11 @@ UInt32 StorageWindowView::getCleanupBound()
         return 0;
     if (is_proctime)
         return max_fired_watermark;
-    else
-    {
-        auto w_bound = max_fired_watermark;
-        if (allowed_lateness)
-            w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
-        return getWindowLowerBound(w_bound);
-    }
+
+    auto w_bound = max_fired_watermark;
+    if (allowed_lateness)
+        w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
+    return getWindowLowerBound(w_bound);
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
@@ -595,7 +591,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
     auto adding_column_actions
-        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings::fromContext(getContext()));
+        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings(getContext()));
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, adding_column_actions);
@@ -609,7 +605,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         new_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
-        std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+        std::move(convert_actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -661,6 +657,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
     PullingAsyncPipelineExecutor executor(pipeline);
+    pipeline.setConcurrencyControl(getContext()->getSettingsRef()[Setting::use_concurrency_control]);
     Block block;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
 
@@ -736,7 +733,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+            ExpressionActionsSettings(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -926,12 +923,9 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
     { \
         if (is_tumble) \
             return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
-        else \
-        {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-            UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-            return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
-        }\
+        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
+        return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)
@@ -1171,13 +1165,13 @@ void StorageWindowView::read(
     if (query_plan.isInitialized())
     {
         auto wv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream().header;
+        auto target_header = query_plan.getCurrentHeader();
 
         if (!blocksHaveEqualStructure(wv_header, target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
                 target_header.getColumnsWithTypeAndName(), wv_header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
         }
@@ -1556,7 +1550,7 @@ void StorageWindowView::writeIntoWindowView(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings::fromContext(local_context));
+                ExpressionActionsSettings(local_context));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -1602,7 +1596,7 @@ void StorageWindowView::writeIntoWindowView(
         return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
     });
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", stream_header);
@@ -1649,7 +1643,7 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", stream_header);
@@ -1669,12 +1663,12 @@ void StorageWindowView::writeIntoWindowView(
             output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
-            std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+            std::move(convert_actions_dag), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", stream_header);

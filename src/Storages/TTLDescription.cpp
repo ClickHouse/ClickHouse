@@ -30,7 +30,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool enable_zstd_qat_codec;
-    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -192,7 +191,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     dag.getOutputs() = {col};
     dag.removeUnusedActions();
 
-    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_copy));
+    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context_copy));
     result.sets = analyzer.getPreparedSets();
 
     return result;
@@ -276,7 +275,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
 
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
@@ -349,7 +348,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 

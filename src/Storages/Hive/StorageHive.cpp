@@ -8,6 +8,7 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -254,14 +255,13 @@ public:
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
                                 getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
                         }
-                        else
-                        {
-                            return std::make_unique<ReadBufferFromHDFS>(
-                                hdfs_namenode_url,
-                                current_path,
-                                getContext()->getGlobalContext()->getConfigRef(),
-                                getContext()->getReadSettings());
-                        }
+
+                        return std::make_unique<ReadBufferFromHDFS>(
+                            hdfs_namenode_url,
+                            current_path,
+                            getContext()->getGlobalContext()->getConfigRef(),
+                            getContext()->getReadSettings());
+
                     };
 
                     raw_read_buf = get_raw_read_buf();
@@ -533,7 +533,7 @@ void StorageHive::initMinMaxIndexExpression()
         partition_names = partition_name_types.getNames();
         partition_types = partition_name_types.getTypes();
         partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
+            ActionsDAG(partition_name_types), ExpressionActionsSettings(getContext()));
     }
 
     NamesAndTypesList all_name_types = metadata_snapshot->getColumns().getAllPhysical();
@@ -543,7 +543,7 @@ void StorageHive::initMinMaxIndexExpression()
             hivefile_name_types.push_back(column);
     }
     hivefile_minmax_idx_expr = std::make_shared<ExpressionActions>(
-        ActionsDAG(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
+        ActionsDAG(hivefile_name_types), ExpressionActionsSettings(getContext()));
 }
 
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
@@ -557,13 +557,11 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
         /// Primary key is specified in tuple, extract its arguments.
         return expr_func->arguments->clone();
     }
-    else
-    {
-        /// Primary key consists of one column.
-        auto res = std::make_shared<ASTExpressionList>();
-        res->children.push_back(node);
-        return res;
-    }
+
+    /// Primary key consists of one column.
+    auto res = std::make_shared<ASTExpressionList>();
+    res->children.push_back(node);
+    return res;
 }
 
 
@@ -805,7 +803,7 @@ public:
         LoggerPtr log_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(header)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(header), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , sources_info(std::move(sources_info_))
         , builder(std::move(builder_))
@@ -874,7 +872,7 @@ void StorageHive::read(
     {
         if (format_name == "Parquet")
             return settings[Setting::input_format_parquet_case_insensitive_column_matching];
-        else if (format_name == "ORC")
+        if (format_name == "ORC")
             return settings[Setting::input_format_orc_case_insensitive_column_matching];
         return false;
     };
@@ -928,7 +926,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     if (hive_files->empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
         return;
     }
 
@@ -952,7 +950,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(getOutputStream().header));
+        pipe = Pipe(std::make_shared<NullSource>(getOutputHeader()));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -1126,6 +1124,7 @@ void registerStorageHive(StorageFactory & factory)
             .supports_settings = true,
             .supports_sort_order = true,
             .source_access_type = AccessType::HIVE,
+            .has_builtin_setting_fn = HiveSettings::hasBuiltin,
         });
 }
 

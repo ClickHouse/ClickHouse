@@ -119,3 +119,4 @@ u4_01292	local_directory	['double_sha1_password']	['{}']	['::/0']	[]	[]	[]	1	[]	
 \N	u4_01292	\N	2	readonly	1	\N	\N	\N	\N
 -- multiple authentication methods
 u1_01292	['plaintext_password','kerberos','bcrypt_password','ldap']	['{}','{"realm":"qwerty10"}','{}','{"server":"abc"}']
+-- no passwords or hashes in query_log

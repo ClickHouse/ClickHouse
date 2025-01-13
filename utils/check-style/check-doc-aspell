@@ -53,7 +53,7 @@ done
 if (( STATUS != 0 )); then
     echo "====== Errors found ======"
     echo "To exclude some words add them to the dictionary file \"${ASPELL_IGNORE_PATH}/aspell-dict.txt\""
-    echo "You can also run ${0} -i to see the errors interactively and fix them or add to the dictionary file"
+    echo "You can also run '$(realpath --relative-base=${ROOT_PATH} ${0}) -i' to see the errors interactively and fix them or add to the dictionary file"
 fi
 
 exit ${STATUS}

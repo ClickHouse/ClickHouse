@@ -106,9 +106,8 @@ public:
                     "The argument 1 and argument {} of function {} have different array sizes",
                     unaligned_index + 1,
                     getName());
-            else
-                return ColumnArray::create(
-                    ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
+            return ColumnArray::create(
+                ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
         }
         else
             return executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
@@ -175,7 +174,7 @@ REGISTER_FUNCTION(ArrayZip)
         {.description = R"(
 Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 )",
-         .categories{"String"}});
+         .category{"Arrays"}});
 
     factory.registerFunction<FunctionArrayZip<true>>(
         {.description = R"(
@@ -183,7 +182,7 @@ Combines multiple arrays into a single array, allowing for unaligned arrays. The
 
 If the arrays have different sizes, the shorter arrays will be padded with `null` values.
 )",
-         .categories{"String"}}
+         .category{"Arrays"}}
 
     );
 }

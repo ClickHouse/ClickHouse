@@ -83,8 +83,6 @@ void registerInputFormatForm(FormatFactory & factory);
 /// Output only (presentational) formats.
 
 void registerOutputFormatPretty(FormatFactory & factory);
-void registerOutputFormatPrettyCompact(FormatFactory & factory);
-void registerOutputFormatPrettySpace(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
@@ -95,7 +93,6 @@ void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
-void registerOutputFormatJSONCompactWithProgress(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -230,8 +227,6 @@ void registerFormats()
     registerOutputFormatNpy(factory);
 
     registerOutputFormatPretty(factory);
-    registerOutputFormatPrettyCompact(factory);
-    registerOutputFormatPrettySpace(factory);
     registerOutputFormatVertical(factory);
     registerOutputFormatJSONEachRowWithProgress(factory);
     registerOutputFormatXML(factory);
@@ -243,7 +238,6 @@ void registerFormats()
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
     registerOutputFormatSQLInsert(factory);
-    registerOutputFormatJSONCompactWithProgress(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);

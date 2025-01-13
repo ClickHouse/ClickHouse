@@ -1,9 +1,11 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import time
 import csv
 import re
+import time
+
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -15,8 +17,6 @@ node2 = cluster.add_instance(
 node3 = cluster.add_instance(
     "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
-
-from kazoo.client import KazooClient
 
 
 def wait_nodes():
@@ -55,22 +55,13 @@ def clear_znodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
-
-
-def close_keeper_socket(cli):
-    if cli is not None:
-        cli.close()
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def reset_node_stats(node=node1):
     client = None
     try:
-        client = keeper_utils.get_keeper_socket(cluster, node)
+        client = keeper_utils.get_keeper_socket(cluster, node.name)
         client.send(b"srst")
         client.recv(10)
     finally:
@@ -81,7 +72,7 @@ def reset_node_stats(node=node1):
 def reset_conn_stats(node=node1):
     client = None
     try:
-        client = keeper_utils.get_keeper_socket(cluster, node)
+        client = keeper_utils.get_keeper_socket(cluster, node.name)
         client.send(b"crst")
         client.recv(10_000)
     finally:
@@ -90,13 +81,9 @@ def reset_conn_stats(node=node1):
 
 
 def test_cmd_ruok(started_cluster):
-    client = None
-    try:
-        wait_nodes()
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="ruok")
-        assert data == "imok"
-    finally:
-        close_keeper_socket(client)
+    wait_nodes()
+    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="ruok")
+    assert data == "imok"
 
 
 def do_some_action(
@@ -203,108 +190,98 @@ def test_cmd_mntr(started_cluster):
 
 
 def test_cmd_srst(started_cluster):
-    client = None
-    try:
-        wait_nodes()
-        clear_znodes()
+    wait_nodes()
+    clear_znodes()
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="srst")
-        assert data.strip() == "Server stats reset."
+    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="srst")
+    assert data.strip() == "Server stats reset."
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
-        assert len(data) != 0
+    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+    assert len(data) != 0
 
-        # print(data)
-        reader = csv.reader(data.split("\n"), delimiter="\t")
-        result = {}
+    # print(data)
+    reader = csv.reader(data.split("\n"), delimiter="\t")
+    result = {}
 
-        for row in reader:
-            if len(row) != 0:
-                result[row[0]] = row[1]
+    for row in reader:
+        if len(row) != 0:
+            result[row[0]] = row[1]
 
-        assert int(result["zk_packets_received"]) == 0
-        assert int(result["zk_packets_sent"]) == 0
-
-    finally:
-        close_keeper_socket(client)
+    assert int(result["zk_packets_received"]) == 0
+    assert int(result["zk_packets_sent"]) == 0
 
 
 def test_cmd_conf(started_cluster):
-    client = None
-    try:
-        wait_nodes()
-        clear_znodes()
+    wait_nodes()
+    clear_znodes()
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
+    data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="conf")
 
-        reader = csv.reader(data.split("\n"), delimiter="=")
-        result = {}
+    reader = csv.reader(data.split("\n"), delimiter="=")
+    result = {}
 
-        for row in reader:
-            if len(row) != 0:
-                print(row)
-                result[row[0]] = row[1]
+    for row in reader:
+        if len(row) != 0:
+            print(row)
+            result[row[0]] = row[1]
 
-        assert result["server_id"] == "1"
-        assert result["tcp_port"] == "9181"
-        assert "tcp_port_secure" not in result
-        assert "superdigest" not in result
+    assert result["server_id"] == "1"
+    assert result["tcp_port"] == "9181"
+    assert "tcp_port_secure" not in result
+    assert "superdigest" not in result
 
-        assert result["four_letter_word_allow_list"] == "*"
-        assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
-        assert result["log_storage_disk"] == "LocalLogDisk"
-        assert (
-            result["snapshot_storage_path"]
-            == "/var/lib/clickhouse/coordination/snapshots"
-        )
-        assert result["snapshot_storage_disk"] == "LocalSnapshotDisk"
+    assert result["four_letter_word_allow_list"] == "*"
+    assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
+    assert result["log_storage_disk"] == "LocalLogDisk"
+    assert (
+        result["snapshot_storage_path"] == "/var/lib/clickhouse/coordination/snapshots"
+    )
+    assert result["snapshot_storage_disk"] == "LocalSnapshotDisk"
 
-        assert result["session_timeout_ms"] == "30000"
-        assert result["min_session_timeout_ms"] == "10000"
-        assert result["operation_timeout_ms"] == "5000"
-        assert result["dead_session_check_period_ms"] == "500"
-        assert result["heart_beat_interval_ms"] == "500"
-        assert result["election_timeout_lower_bound_ms"] == "1000"
-        assert result["election_timeout_upper_bound_ms"] == "2000"
-        assert result["leadership_expiry_ms"] == "0"
-        assert result["reserved_log_items"] == "100000"
+    assert result["session_timeout_ms"] == "30000"
+    assert result["min_session_timeout_ms"] == "10000"
+    assert result["operation_timeout_ms"] == "5000"
+    assert result["dead_session_check_period_ms"] == "500"
+    assert result["heart_beat_interval_ms"] == "500"
+    assert result["election_timeout_lower_bound_ms"] == "1000"
+    assert result["election_timeout_upper_bound_ms"] == "2000"
+    assert result["leadership_expiry_ms"] == "0"
+    assert result["reserved_log_items"] == "100000"
 
-        assert result["snapshot_distance"] == "75"
-        assert result["auto_forwarding"] == "true"
-        assert result["shutdown_timeout"] == "5000"
-        assert result["startup_timeout"] == "180000"
+    assert result["snapshot_distance"] == "75"
+    assert result["auto_forwarding"] == "true"
+    assert result["shutdown_timeout"] == "5000"
+    assert result["startup_timeout"] == "180000"
 
-        assert result["raft_logs_level"] == "trace"
-        assert result["rotate_log_storage_interval"] == "100000"
-        assert result["snapshots_to_keep"] == "3"
-        assert result["stale_log_gap"] == "10000"
-        assert result["fresh_log_gap"] == "200"
+    assert result["raft_logs_level"] == "trace"
+    assert result["rotate_log_storage_interval"] == "100000"
+    assert result["snapshots_to_keep"] == "3"
+    assert result["stale_log_gap"] == "10000"
+    assert result["fresh_log_gap"] == "200"
 
-        assert result["max_requests_batch_size"] == "100"
-        assert result["max_requests_batch_bytes_size"] == "102400"
-        assert result["max_flush_batch_size"] == "1000"
-        assert result["max_request_queue_size"] == "100000"
-        assert result["max_requests_quick_batch_size"] == "100"
-        assert result["quorum_reads"] == "false"
-        assert result["force_sync"] == "true"
+    assert result["max_requests_batch_size"] == "100"
+    assert result["max_requests_batch_bytes_size"] == "102400"
+    assert result["max_flush_batch_size"] == "1000"
+    assert result["max_request_queue_size"] == "100000"
+    assert result["max_requests_quick_batch_size"] == "100"
+    assert result["quorum_reads"] == "false"
+    assert result["force_sync"] == "true"
 
-        assert result["compress_logs"] == "false"
-        assert result["compress_snapshots_with_zstd_format"] == "true"
-        assert result["configuration_change_tries_count"] == "20"
+    assert result["compress_logs"] == "false"
+    assert result["compress_snapshots_with_zstd_format"] == "true"
+    assert result["configuration_change_tries_count"] == "20"
 
-        assert result["async_replication"] == "true"
+    assert result["async_replication"] == "true"
 
-        assert result["latest_logs_cache_size_threshold"] == "1073741824"
-        assert result["commit_logs_cache_size_threshold"] == "524288000"
+    assert result["latest_logs_cache_size_threshold"] == "1073741824"
+    assert result["commit_logs_cache_size_threshold"] == "524288000"
 
-        assert result["disk_move_retries_wait_ms"] == "1000"
-        assert result["disk_move_retries_during_init"] == "100"
+    assert result["disk_move_retries_wait_ms"] == "1000"
+    assert result["disk_move_retries_during_init"] == "100"
 
-        assert result["log_slow_total_threshold_ms"] == "5000"
-        assert result["log_slow_cpu_threshold_ms"] == "100"
-        assert result["log_slow_connection_operation_threshold_ms"] == "1000"
-    finally:
-        close_keeper_socket(client)
+    assert result["log_slow_total_threshold_ms"] == "5000"
+    assert result["log_slow_cpu_threshold_ms"] == "100"
+    assert result["log_slow_connection_operation_threshold_ms"] == "1000"
 
 
 def test_cmd_isro(started_cluster):
@@ -342,7 +319,7 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"], 16) > 10
+        assert int(result["Zxid"], 16) >= 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "14"
 

@@ -20,10 +20,6 @@
 
 #include "config.h"
 
-#if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#endif
-
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
@@ -93,16 +89,15 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
 
     if (drop.table)
         return executeToTable(drop);
-    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
+    if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
     }
-    else if (drop.database)
+    if (drop.database)
         return executeToDatabase(drop);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
 }
 
 void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait)
@@ -134,8 +129,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
-        else
-            query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
+        query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
     if (query.temporary)
@@ -330,29 +324,27 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
 {
     if (kind == ASTDropQuery::Kind::Detach)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
-    else
+
+    auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
+    auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
+    if (resolved_id)
     {
-        auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
-        auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
-        if (resolved_id)
+        StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, getContext());
+        if (kind == ASTDropQuery::Kind::Truncate)
         {
-            StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, getContext());
-            if (kind == ASTDropQuery::Kind::Truncate)
-            {
-                auto table_lock
-                    = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-                /// Drop table data, don't touch metadata
-                auto metadata_snapshot = table->getInMemoryMetadataPtr();
-                table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);
-            }
-            else if (kind == ASTDropQuery::Kind::Drop)
-            {
-                context_handle->removeExternalTable(table_name);
-            }
-            else if (kind == ASTDropQuery::Kind::Detach)
-            {
-                table->is_detached = true;
-            }
+            auto table_lock
+                = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+            /// Drop table data, don't touch metadata
+            auto metadata_snapshot = table->getInMemoryMetadataPtr();
+            table->truncate(current_query_ptr, metadata_snapshot, getContext(), table_lock);
+        }
+        else if (kind == ASTDropQuery::Kind::Drop)
+        {
+            context_handle->removeExternalTable(table_name);
+        }
+        else if (kind == ASTDropQuery::Kind::Detach)
+        {
+            table->is_detached = true;
         }
     }
 
@@ -431,7 +423,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// Flush should not be done if shouldBeEmptyOnDetach() == false,
         /// since in this case getTablesIterator() may do some additional work,
-        /// see DatabaseMaterializedMySQL::getTablesIterator()
+        /// see DatabaseMaterialized...SQL::getTablesIterator()
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
         /// Do not hold extra shared pointers to tables

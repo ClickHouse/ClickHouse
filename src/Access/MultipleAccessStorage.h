@@ -59,7 +59,7 @@ public:
     bool isBackupAllowed() const override;
     bool isRestoreAllowed() const override;
     void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const override;
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
+    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
     bool containsStorage(std::string_view storage_type) const;
 
 protected:

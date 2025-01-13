@@ -11,7 +11,7 @@ extern const int ILLEGAL_STATISTICS;
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
-    , data_type(data_type_)
+    , data_type(removeNullable(data_type_))
 {
 }
 
