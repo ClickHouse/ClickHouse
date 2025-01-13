@@ -114,6 +114,13 @@ struct ProjectionMutationContext
 
 using ProjectionMutationContextPtr = std::shared_ptr<ProjectionMutationContext>;
 
+enum class ExecuteTTLType : uint8_t
+{
+    NONE = 0,
+    NORMAL = 1,
+    RECALCULATE= 2,
+};
+
 struct MutationContext
 {
     MergeTreeData * data;
@@ -202,14 +209,6 @@ struct MutationContext
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
-
-
-enum class ExecuteTTLType : uint8_t
-{
-    NONE = 0,
-    NORMAL = 1,
-    RECALCULATE= 2,
-};
 
 
 namespace MutationHelpers
