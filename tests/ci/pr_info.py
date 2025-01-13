@@ -40,12 +40,12 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
-DOCS_FILES = [
-    "docker/docs",
+DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+
+DOCS_FILES = DOCS_ONLY_FILES + [
     "Settings.cpp",
     "FormatFactorySettings.h",
     "tests/ci/docs_check.py",
-    "aspell-dict.txt",
 ]
 RETRY_SLEEP = 0
 
@@ -446,7 +446,7 @@ class PRInfo:
             path_in_docs = f.startswith("docs/")
             if not (
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or any(docs_path in f for docs_path in DOCS_FILES)
+                or any(docs_path in f for docs_path in DOCS_ONLY_FILES)
             ):
                 return False
         return True
