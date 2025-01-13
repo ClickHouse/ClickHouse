@@ -415,6 +415,7 @@ class PRInfo:
                     "Settings.cpp",
                     "FormatFactorySettings.h",
                     "tests/ci/docs_check.py",
+                    "aspell-dict.txt",
                 ]
             ):
                 return True
@@ -442,6 +443,7 @@ class PRInfo:
                     "Settings.cpp",
                     "FormatFactorySettings.h",
                     "tests/ci/docs_check.py",
+                    "aspell-dict.txt",
                 ]
             ):
                 return False
