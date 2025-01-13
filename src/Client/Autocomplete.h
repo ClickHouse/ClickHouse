@@ -13,20 +13,11 @@
 #include <Parsers/Lexer.h>
 #include "AutocompleteModel.h"
 
-/// TODO: remove everythin in cpp + static/const where possible
+/// TODO: remove everything in cpp + static/const where possible
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int OK;
-extern const int LOGICAL_ERROR;
-extern const int UNKNOWN_PACKET_FROM_SERVER;
-extern const int DEADLOCK_AVOIDED;
-extern const int USER_SESSION_LIMIT_EXCEEDED;
-}
 
 class Autocomplete : public boost::noncopyable
 {

@@ -103,7 +103,7 @@ private:
     std::vector<GptVocab::id> current_query_ids;
 
 
-    DB::WriteBufferFromFileDescriptor out_err = DB::WriteBufferFromFileDescriptor(STDERR_FILENO, 4096);
+    DB::AutoCanceledWriteBuffer<DB::WriteBufferFromFileDescriptor> out_err = DB::AutoCanceledWriteBuffer<DB::WriteBufferFromFileDescriptor>(STDERR_FILENO, 4096);
 
     bool loadModel(const std::string & file_name);
 

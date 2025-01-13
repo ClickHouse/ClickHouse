@@ -22,7 +22,7 @@ private:
     KneserNey markov_identifiers = KneserNey(markov_order);
     KneserNey markov_operators = KneserNey(markov_order);
 
-    GPTJModel transformer_model = GPTJModel("ggml-model-f32.bin");
+    GPTJModel transformer_model = GPTJModel("ggml-model-f32.model");
 
     size_t recs_number = 4;
 

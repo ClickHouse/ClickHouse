@@ -548,34 +548,37 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto suggestion_callback = [&autocomplete, &suggest, this] (const String & context, size_t context_size)
     {
-        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters)) {
+        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters))
             return autocomplete.getPossibleNextWords<Replxx::completions_t>(context, context_size, word_break_characters);
-        }
+
         return suggest.getCompletions(context, context_size, word_break_characters);
     };
 
     auto hints_callback = [&autocomplete, this](const String & context, size_t context_size, Replxx::Color& color)
     {
         color = replxx::color::rgb666(5, 5, 0);
-        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters)) {
+        if (DB::Autocomplete::isLastCharSpace(context, word_break_characters))
             return autocomplete.getPossibleNextWords<Replxx::hints_t>(context, context_size, word_break_characters);
-        }
+
         return Replxx::hints_t{};
     };
 
-    Replxx::key_press_handler_t cycle_forward_handler = [this](char32_t) {
+    Replxx::key_press_handler_t cycle_forward_handler = [this](char32_t)
+    {
         //std::cout << hintIndex << "\n";
         rx.invoke(Replxx::ACTION::HINT_NEXT, 0);
         return Replxx::ACTION_RESULT::CONTINUE;
     };
 
     // Key handler for cycling hints backward
-    Replxx::key_press_handler_t cycle_backward_handler = [this](char32_t) {
+    Replxx::key_press_handler_t cycle_backward_handler = [this](char32_t)
+    {
         rx.invoke(Replxx::ACTION::HINT_PREVIOUS, 0);
         return Replxx::ACTION_RESULT::CONTINUE;
     };
 
-    Replxx::key_press_handler_t complete_hint_handler = [this](char32_t) {
+    Replxx::key_press_handler_t complete_hint_handler = [this](char32_t)
+    {
         rx.invoke(Replxx::ACTION::COMPLETE_LINE, 0);
         return Replxx::ACTION_RESULT::CONTINUE;
     };

@@ -1056,15 +1056,12 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         throw;
     }
 
-    if (have_error) {
+    if (have_error)
         processError(full_query);
-    }
 
-    if (!have_error) {
-        if (autocomplete) {
+    if (!have_error)
+        if (autocomplete)
             autocomplete->addQuery(full_query);
-        }
-    }
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -2619,11 +2616,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error)
                     processError(full_query);
 
-                if (!have_error) {
-                    if (autocomplete) {
+                if (!have_error)
+                    if (autocomplete)
                         autocomplete->addQuery(full_query);
-                    }
-                }
 
                 // Stop processing queries if needed.
                 if (have_error && !ignore_error)

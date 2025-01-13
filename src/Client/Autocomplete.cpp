@@ -1,11 +1,17 @@
 #include <Client/Autocomplete.h>
 #include <replxx.hxx>
 #include <base/defines.h>
-
-
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int OK;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int DEADLOCK_AVOIDED;
+    extern const int USER_SESSION_LIMIT_EXCEEDED;
+}
 
 template <>
 replxx::Replxx::completions_t

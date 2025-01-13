@@ -7,13 +7,17 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <fstream>
-#include <iostream>
 #include <numeric>
 #include <string>
 #include <vector>
 #include <Parsers/Lexer.h>
 #include <fmt/core.h>
+
+#include <IO/ReadBufferFromString.h>
+
+#include <incbin.h>
+
+INCBIN(ggml_model_f32, SOURCE_DIR "/programs/client/ggml-model-f32.model");
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4244 4267) // possible loss of data
@@ -60,21 +64,15 @@ const GptVocab::token GPTJModel::operator_token = "Operator";
 
 bool GPTJModel::loadModel(const std::string & file_name)
 {
-    out_err << fmt::format("Loading model from '{}' - please wait ...\n", file_name);
     out_err.next();
 
-    auto fin = std::ifstream(file_name, std::ios::binary);
-    if (!fin)
-    {
-        out_err << fmt::format("{}: failed to open '{}'\n", __func__, file_name);
-        out_err.next();
-        return false;
-    }
+    auto fin = DB::ReadBufferFromString({reinterpret_cast<const char *>(gggml_model_f32Data), gggml_model_f32Size});
+    size_t ignore = 0;
 
     // verify magic
     {
         uint32_t magic;
-        fin.read(reinterpret_cast<char *>(&magic), sizeof(magic));
+        ignore = fin.read(reinterpret_cast<char *>(&magic), sizeof(magic));
         if (magic != GGML_FILE_MAGIC)
         {
             out_err << fmt::format("{}: invalid model file '{}' (bad magic)\n", __func__, file_name);
@@ -87,13 +85,13 @@ bool GPTJModel::loadModel(const std::string & file_name)
     {
         auto & hparams = model.hparams;
 
-        fin.read(reinterpret_cast<char *>(&hparams.n_vocab), sizeof(hparams.n_vocab));
-        fin.read(reinterpret_cast<char *>(&hparams.n_ctx), sizeof(hparams.n_ctx));
-        fin.read(reinterpret_cast<char *>(&hparams.n_embd), sizeof(hparams.n_embd));
-        fin.read(reinterpret_cast<char *>(&hparams.n_head), sizeof(hparams.n_head));
-        fin.read(reinterpret_cast<char *>(&hparams.n_layer), sizeof(hparams.n_layer));
-        fin.read(reinterpret_cast<char *>(&hparams.n_rot), sizeof(hparams.n_rot));
-        fin.read(reinterpret_cast<char *>(&hparams.ftype), sizeof(hparams.ftype));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_vocab), sizeof(hparams.n_vocab));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_ctx), sizeof(hparams.n_ctx));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_embd), sizeof(hparams.n_embd));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_head), sizeof(hparams.n_head));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_layer), sizeof(hparams.n_layer));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.n_rot), sizeof(hparams.n_rot));
+        ignore = fin.read(reinterpret_cast<char *>(&hparams.ftype), sizeof(hparams.ftype));
 
         //const int32_t qntvr = hparams.ftype / GGML_QNT_VERSION_FACTOR;
 
@@ -112,7 +110,7 @@ bool GPTJModel::loadModel(const std::string & file_name)
     // load vocab
     {
         int32_t n_vocab = 0;
-        fin.read(reinterpret_cast<char *>(&n_vocab), sizeof(n_vocab));
+        ignore = fin.read(reinterpret_cast<char *>(&n_vocab), sizeof(n_vocab));
 
         if (n_vocab != model.hparams.n_vocab)
         {
@@ -128,10 +126,10 @@ bool GPTJModel::loadModel(const std::string & file_name)
         for (int i = 0; i < n_vocab; i++)
         {
             uint32_t len;
-            fin.read(reinterpret_cast<char *>(&len), sizeof(len));
+            ignore = fin.read(reinterpret_cast<char *>(&len), sizeof(len));
 
             buf.resize(len);
-            fin.read(reinterpret_cast<char *>(buf.data()), len);
+            ignore = fin.read(reinterpret_cast<char *>(buf.data()), len);
             word.assign(buf.data(), len);
 
             vocab.token_to_id[word] = i;
@@ -288,18 +286,15 @@ bool GPTJModel::loadModel(const std::string & file_name)
 
     // load weights
     {
-        int n_tensors = 0;
-        size_t total_size = 0;
-
         while (true)
         {
             int32_t n_dims;
             int32_t length;
             int32_t ttype;
 
-            fin.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
-            fin.read(reinterpret_cast<char *>(&length), sizeof(length));
-            fin.read(reinterpret_cast<char *>(&ttype), sizeof(ttype));
+            ignore = fin.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
+            ignore = fin.read(reinterpret_cast<char *>(&length), sizeof(length));
+            ignore = fin.read(reinterpret_cast<char *>(&ttype), sizeof(ttype));
 
             if (fin.eof())
             {
@@ -310,12 +305,12 @@ bool GPTJModel::loadModel(const std::string & file_name)
             int32_t ne[2] = {1, 1};
             for (int i = 0; i < n_dims; ++i)
             {
-                fin.read(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
+                ignore = fin.read(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
                 nelements *= ne[i];
             }
 
             std::string name(length, 0);
-            fin.read(name.data(), length);
+            ignore = fin.read(name.data(), length);
 
             if (model.tensors.find(name) == model.tensors.end())
             {
@@ -360,19 +355,11 @@ bool GPTJModel::loadModel(const std::string & file_name)
                 return false;
             }
 
-            fin.read(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
-
-            total_size += ggml_nbytes(tensor);
+            ignore = fin.read(reinterpret_cast<char *>(tensor->data), ggml_nbytes(tensor));
         }
-
-        out_err << fmt::format("Done loading model '{}'\n", file_name);
-        out_err.next();
-
-        out_err << fmt::format("{}: model size = {} MB / num tensors = {}\n", __func__, total_size / 1024.0 / 1024.0, n_tensors);
-        out_err.next();
     }
 
-    fin.close();
+    UNUSED(ignore);
 
     return true;
 }
