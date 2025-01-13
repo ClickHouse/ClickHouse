@@ -179,7 +179,7 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
+:::note
 Step and query cost estimation is not supported.
 :::
 
@@ -418,7 +418,7 @@ ExpressionTransform
 ```
 ### EXPLAIN ESTIMATE
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family.
 
 **Example**
 
@@ -473,6 +473,6 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::
