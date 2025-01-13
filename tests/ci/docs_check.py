@@ -116,8 +116,6 @@ def main():
 
     htmltest_log = test_output / "htmltest.log"
 
-    htmltest_existing_errors = {}
-
     test_sw.reset()
     with TeePopen(
         f"{cmd} htmltest -c /ClickHouse/docs/.htmltest.yml /output_path/build",
@@ -130,39 +128,12 @@ def main():
                 TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
             )
         else:
-            # FIXME: after all errors reported by htmltest are fixed, remove this code
-            # and check only exit code
-            new_htmltest_errors = False
-
-            with open(htmltest_log, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                for line in lines:
-                    if "hash does not exist" in line:
-                        # pylint: disable=invalid-character-esc
-                        # [31m  hash does not exist... => hash does not exist...
-                        error = line.split(" ", 1)[1].strip()
-                        if error in htmltest_existing_errors:
-                            continue
-
-                        new_htmltest_errors = True
-                        logging.info("new error: %s", error)
-
-            if new_htmltest_errors:
-                logging.info("New htmltest errors found")
-                test_results.append(
-                    TestResult(
-                        "htmltest", FAIL, test_sw.duration_seconds, [htmltest_log]
-                    )
+            logging.info("Run failed")
+            test_results.append(
+                TestResult(
+                    "htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log]
                 )
-
-                description = "Docs check failed (new 'hash does not exist' errors)"
-                build_status = FAIL
-                job_status = FAILURE
-
-            else:
-                test_results.append(
-                    TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
-                )
+            )
 
     JobReport(
         description=description,
