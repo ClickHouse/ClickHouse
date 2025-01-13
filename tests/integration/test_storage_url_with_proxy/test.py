@@ -59,6 +59,7 @@ def test_s3_with_proxy_list(cluster):
         """
         INSERT INTO FUNCTION
         s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV', 'key String, value String')
+        SETTINGS s3_truncate_on_insert=1
         VALUES ('color','red'),('size','10')
         """
     )
