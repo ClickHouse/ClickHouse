@@ -627,8 +627,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// We allow SETTINGS clause without ENGINE in order to support default_table_engine
-        if (s_settings.ignore(pos, expected))
+        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
+        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
+        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
+        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;

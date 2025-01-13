@@ -37,7 +37,7 @@ def started_cluster():
 
 
 def test_stop_waiting_for_offline_hosts(started_cluster):
-    timeout = 10
+    timeout = 5
     settings = {"distributed_ddl_task_timeout": timeout}
 
     node1.query(
@@ -49,40 +49,54 @@ def test_stop_waiting_for_offline_hosts(started_cluster):
         "CREATE TABLE test_table ON CLUSTER test_cluster (x Int) Engine=Memory",
         settings=settings,
     )
+    distributed_ddl_output_mode_pass_list = [
+        "null_status_on_timeout",
+        "never_throw",
+        "none_only_active",
+        "null_status_on_timeout_only_active",
+        "throw_only_active",
+    ]
+    distributed_ddl_output_mode_error_list = ["throw", "none"]
 
     try:
         node4.stop_clickhouse()
+        for distributed_ddl_output_mode in distributed_ddl_output_mode_pass_list:
+            settings = {
+                "distributed_ddl_task_timeout": timeout,
+                "distributed_ddl_output_mode": distributed_ddl_output_mode,
+            }
 
-        start = time.time()
-        assert "Code: 159. DB::Exception" in node1.query_and_get_error(
-            "DROP TABLE IF EXISTS test_table ON CLUSTER test_cluster SYNC",
-            settings=settings,
-        )
-        assert time.time() - start >= timeout
+            start = time.time()
+            print(f"distributed_ddl_output_mode {distributed_ddl_output_mode}")
+            node1.query(
+                f"CREATE TABLE test_table_{distributed_ddl_output_mode} ON CLUSTER test_cluster (x Int) Engine=Memory",
+                settings=settings,
+            )
 
-        start = time.time()
-        assert "Code: 159. DB::Exception" in node1.query_and_get_error(
-            "CREATE TABLE test_table ON CLUSTER test_cluster (x Int) Engine=Memory",
-            settings=settings,
-        )
-        assert time.time() - start >= timeout
+        for distributed_ddl_output_mode in distributed_ddl_output_mode_error_list:
+            settings = {
+                "distributed_ddl_task_timeout": timeout,
+                "distributed_ddl_output_mode": distributed_ddl_output_mode,
+            }
 
-        # set `distributed_ddl_output_mode` = `throw_only_active``
-        settings = {
-            "distributed_ddl_task_timeout": timeout,
-            "distributed_ddl_output_mode": "throw_only_active",
-        }
-
-        start = time.time()
-        node1.query(
-            "DROP TABLE IF EXISTS test_table ON CLUSTER test_cluster SYNC",
-            settings=settings,
-        )
-
-        start = time.time()
-        node1.query(
-            "CREATE TABLE test_table ON CLUSTER test_cluster (x Int) Engine=Memory",
-            settings=settings,
-        )
+            start = time.time()
+            print(f"distributed_ddl_output_mode {distributed_ddl_output_mode}")
+            assert "Code: 159. DB::Exception" in node1.query_and_get_error(
+                f"CREATE TABLE test_table_{distributed_ddl_output_mode} ON CLUSTER test_cluster (x Int) Engine=Memory",
+                settings=settings,
+            )
+            assert time.time() - start >= timeout
     finally:
         node4.start_clickhouse()
+
+    settings = {"distributed_ddl_task_timeout": timeout}
+    for distributed_ddl_output_mode in distributed_ddl_output_mode_pass_list:
+        node1.query(
+            f"DROP TABLE IF EXISTS test_table_{distributed_ddl_output_mode} ON CLUSTER test_cluster SYNC",
+            settings=settings,
+        )
+    for distributed_ddl_output_mode in distributed_ddl_output_mode_error_list:
+        node1.query(
+            f"DROP TABLE IF EXISTS test_table_{distributed_ddl_output_mode} ON CLUSTER test_cluster SYNC",
+            settings=settings,
+        )

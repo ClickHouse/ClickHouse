@@ -331,6 +331,13 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     /// check for non-rabbitmq-related settings
     modified_context->applySettingsChanges(rabbitmq_settings->getFormatSettings());
 
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    modified_context->setSetting("input_format_csv_detect_header", false);
+    modified_context->setSetting("input_format_tsv_detect_header", false);
+    modified_context->setSetting("input_format_custom_detect_header", false);
+
     return modified_context;
 }
 

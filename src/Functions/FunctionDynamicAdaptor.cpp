@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromMemory.h>
 
