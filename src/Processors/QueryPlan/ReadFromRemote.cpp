@@ -180,7 +180,7 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
 static ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & input_to_projection,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     const ContextPtr & context)
 {
@@ -250,14 +250,31 @@ static ASTPtr tryBuildAdditionalFilterAST(
             /// The column name can be taken from the projection name, or from the projection expression.
             /// It depends on the predicate and query stage.
 
-            auto it = input_to_projection.find(node->result_name);
-            if (it != input_to_projection.end())
-                /// In case of expression match, append full expression as an AST.
-                /// We rely on plan optimization that the result is (expected to be) valid.
-                res = it->second->toAST();
-            else if (projection_names.contains(node->result_name))
-                /// We can reuse the name from projection if there is one.
+            if (projection_names.contains(node->result_name))
+            {
+                /// The input name matches the projection name. Example:
+                /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
+                /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
+                /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
                 res = std::make_shared<ASTIdentifier>(node->result_name);
+            }
+            else
+            {
+                /// The input name matches the execution name of the projection. Example:
+                /// SELECT x, y FROM (
+                ///     SELECT number + 1 AS x, sum(number) AS y FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY x
+                /// ) WHERE x = 1
+                /// In this case, ReadFromRemote has `plus(__table1.number, 1_UInt8) UInt64` in header,
+                /// and filter DAG has input column with name `plus(__table1.number, 1_UInt8)`.
+                /// Here, filter is pushed down before the aggregation, and projection name can't be used.
+                /// However, we can match the input with the execution name of projection query tree.
+                /// Note: this may not cover all the cases.
+                auto it = execution_name_to_projection_query_tree.find(node->result_name);
+                if (it != execution_name_to_projection_query_tree.end())
+                    /// Append full expression as an AST.
+                    /// We rely on plan optimization that the result is (expected to be) valid.
+                    res = it->second->toAST();
+            }
         }
 
         if (node->type == ActionsDAG::ActionType::ALIAS)
@@ -361,15 +378,18 @@ static void addFilters(
     if (!query_node)
         return;
 
-    std::unordered_map<std::string, QueryTreeNodePtr> input_to_projection;
-    for (const auto & node : query_node->getProjection())
-        input_to_projection[calculateActionNodeName(node, *planner_context)] = node;
+    /// We are building a set with projection names and a map with execution names here.
+    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
 
     std::unordered_set<std::string> projection_names;
     for (const auto & col : query_node->getProjectionColumns())
         projection_names.insert(col.name);
 
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, input_to_projection, external_tables, context);
+    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    for (const auto & node : query_node->getProjection())
+        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
+
+    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
     if (!predicate)
         return;
 
