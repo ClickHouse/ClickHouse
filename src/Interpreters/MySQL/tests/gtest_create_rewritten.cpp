@@ -2,10 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <Parsers/IAST.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -24,8 +26,8 @@ static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr co
         context, "test_database", "test_database")[0];
 }
 
-static const char MATERIALIZEDMYSQL_TABLE_COLUMNS[] = ", `_sign` Int8 MATERIALIZED 1"
-                                                     ", `_version` UInt64 MATERIALIZED 1"
+static const char MATERIALIZEDMYSQL_TABLE_COLUMNS[] = ", `_sign` Int8() MATERIALIZED 1"
+                                                     ", `_version` UInt64() MATERIALIZED 1"
                                                      ", INDEX _version _version TYPE minmax GRANULARITY 1";
 
 TEST(MySQLCreateRewritten, ColumnsDataType)
@@ -62,7 +64,7 @@ TEST(MySQLCreateRewritten, ColumnsDataType)
             MATERIALIZEDMYSQL_TABLE_COLUMNS + ") ENGINE = "
             "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 
-        if (Poco::toUpper(test_type).contains("INT"))
+        if (Poco::toUpper(test_type).find("INT") != std::string::npos)
         {
             EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
                 "CREATE TABLE `test_database`.`test_table_1`(`key` INT NOT NULL PRIMARY KEY, test " + test_type + " UNSIGNED)", context_holder.context)),

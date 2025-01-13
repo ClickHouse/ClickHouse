@@ -1,8 +1,6 @@
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/QueryLimit.h>
-#include <IO/ReadSettings.h>
-#include <Common/CurrentThread.h>
+#include <Interpreters/Cache/Metadata.h>
+#include <Interpreters/Cache/FileCache.h>
 
 namespace DB
 {
@@ -53,7 +51,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     {
         it->second = std::make_shared<QueryContext>(
             settings.filesystem_cache_max_download_size,
-            !settings.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit);
+            !settings.skip_download_if_exceeds_query_cache);
     }
 
     return it->second;

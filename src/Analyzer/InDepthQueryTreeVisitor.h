@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 
 #include <Common/Exception.h>
+#include <Core/Settings.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>
@@ -202,7 +203,8 @@ private:
             }
             return;
         }
-        visit(child);
+        else
+            visit(child);
     }
 
     void visitChildren(VisitQueryTreeNodeType & expression)

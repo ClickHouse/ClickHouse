@@ -1,9 +1,8 @@
 ## sudo -H pip install redis
+import redis
+import pytest
 import struct
 import sys
-
-import pytest
-import redis
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster

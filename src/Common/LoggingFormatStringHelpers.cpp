@@ -1,5 +1,4 @@
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -9,11 +8,11 @@
     throw std::runtime_error(error);
 }
 
-std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::logged_messages;
-time_t LogFrequencyLimiterImpl::last_cleanup = 0;
-std::mutex LogFrequencyLimiterImpl::mutex;
+std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterIml::logged_messages;
+time_t LogFrequencyLimiterIml::last_cleanup = 0;
+std::mutex LogFrequencyLimiterIml::mutex;
 
-void LogFrequencyLimiterImpl::log(Poco::Message & message)
+void LogFrequencyLimiterIml::log(Poco::Message & message)
 {
     std::string_view pattern = message.getFormatString();
     if (pattern.empty())
@@ -27,7 +26,7 @@ void LogFrequencyLimiterImpl::log(Poco::Message & message)
     SipHash hash;
     hash.update(logger->name());
     /// Format strings are compile-time constants, so they are uniquely identified by pointer and size
-    hash.update(reinterpret_cast<uintptr_t>(pattern.data()));
+    hash.update(pattern.data());
     hash.update(pattern.size());
 
     time_t now = time(nullptr);
@@ -68,7 +67,7 @@ void LogFrequencyLimiterImpl::log(Poco::Message & message)
         channel->log(message);
 }
 
-void LogFrequencyLimiterImpl::cleanup(time_t too_old_threshold_s)
+void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
 {
     time_t now = time(nullptr);
     time_t old = now - too_old_threshold_s;

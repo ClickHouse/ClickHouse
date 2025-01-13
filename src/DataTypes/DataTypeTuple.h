@@ -52,7 +52,7 @@ public:
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
     bool haveMaximumSizeOfValue() const override;
-    bool hasDynamicSubcolumnsDeprecated() const override;
+    bool hasDynamicSubcolumns() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
@@ -61,7 +61,6 @@ public:
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
     SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
 
-    DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }

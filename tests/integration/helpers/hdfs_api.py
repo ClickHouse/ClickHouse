@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
-import gzip
 import io
-import logging
-import os
-import socket
+import gzip
 import subprocess
-import tempfile
 import time
 from tempfile import NamedTemporaryFile
-
 import requests
 import requests_kerberos as reqkerb
+import socket
+import tempfile
+import logging
+import os
 
 
 class mk_krb_conf(object):
@@ -111,9 +110,10 @@ class HDFSApi(object):
                         logging.debug(
                             "Stdout:\n{}\n".format(res.stdout.decode("utf-8"))
                         )
+                        logging.debug("Env:\n{}\n".format(env))
                         raise Exception(
                             "Command {} return non-zero code {}: {}".format(
-                                cmd, res.returncode, res.stderr.decode("utf-8")
+                                args, res.returncode, res.stderr.decode("utf-8")
                             )
                         )
 
@@ -227,6 +227,8 @@ class HDFSApi(object):
 
         logging.debug("HDFS api response:{}".format(response.headers))
 
+        # additional_params = '&'.join(
+        #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
         if self.kerberized:
             location = response.headers["Location"].replace(
                 "kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port)
@@ -237,62 +239,6 @@ class HDFSApi(object):
             )
 
         with open(fpath, mode="rb") as fh:
-            file_data = fh.read()
-            protocol = "http"  # self.protocol
-            response = self.req_wrapper(
-                requests.put,
-                201,
-                url="{location}".format(location=location),
-                data=file_data,
-                headers={"content-type": "text/plain", "host": str(self.hdfs_ip)},
-                params={"file": path, "user.name": self.user},
-                allow_redirects=False,
-                verify=False,
-                auth=self.kerberos_auth,
-            )
-            logging.debug(f"{response.content} {response.headers}")
-
-    def write_file(self, path, local_path):
-        logging.debug(
-            "write_data protocol:{} host:{} port:{} path: {} user:{}, principal:{}".format(
-                self.protocol,
-                self.host,
-                self.proxy_port,
-                path,
-                self.user,
-                self.principal,
-            )
-        )
-
-        response = self.req_wrapper(
-            requests.put,
-            307,
-            url="{protocol}://{ip}:{port}/webhdfs/v1{path}?op=CREATE".format(
-                protocol=self.protocol,
-                ip=self.hdfs_ip,
-                port=self.proxy_port,
-                path=path,
-                user=self.user,
-            ),
-            allow_redirects=False,
-            headers={"host": str(self.hdfs_ip)},
-            params={"overwrite": "true"},
-            verify=False,
-            auth=self.kerberos_auth,
-        )
-
-        logging.debug("HDFS api response:{}".format(response.headers))
-
-        if self.kerberized:
-            location = response.headers["Location"].replace(
-                "kerberizedhdfs1:1006", "{}:{}".format(self.hdfs_ip, self.data_port)
-            )
-        else:
-            location = response.headers["Location"].replace(
-                "hdfs1:50075", "{}:{}".format(self.hdfs_ip, self.data_port)
-            )
-
-        with open(local_path, mode="rb") as fh:
             file_data = fh.read()
             protocol = "http"  # self.protocol
             response = self.req_wrapper(

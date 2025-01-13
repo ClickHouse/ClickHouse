@@ -7,12 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 echo "create table test (x UInt64) engine=Memory;
-insert into test from infile 'data'; -- {clientError BAD_ARGUMENTS}" | $CLICKHOUSE_LOCAL -m 
+insert into test from infile 'data'; -- {clientError BAD_ARGUMENTS}" | $CLICKHOUSE_LOCAL -nm 
 
 echo "create table test (x UInt64) engine=Memory;
-insert into test from infile 'data';" | $CLICKHOUSE_LOCAL -m --ignore-error
+insert into test from infile 'data';" | $CLICKHOUSE_LOCAL -nm --ignore-error
 
 echo "create table test (x UInt64) engine=Memory;
 insert into test from infile 'data'; -- {clientError BAD_ARGUMENTS}
-select 1" | $CLICKHOUSE_LOCAL -m 
+select 1" | $CLICKHOUSE_LOCAL -nm 
 

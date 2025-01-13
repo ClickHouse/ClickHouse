@@ -1,26 +1,18 @@
-#include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_deprecated_error_prone_window_functions;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int DEPRECATED_FUNCTION;
 }
 
 namespace
@@ -39,18 +31,7 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
-            throw Exception(
-                ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
-                "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
-                name);
-
-        return std::make_shared<FunctionNeighbor>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNeighbor>(); }
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -88,12 +69,9 @@ public:
         if (!isInteger(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of second argument of function {} - should be an integer", arguments[1]->getName(), getName());
-        if (arguments[1]->isNullable())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {} - can not be Nullable",
-                arguments[1]->getName(),
-                getName());
+        else if (arguments[1]->isNullable())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {} - can not be Nullable", arguments[1]->getName(), getName());
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
@@ -108,29 +86,29 @@ public:
         const ColumnWithTypeAndName & offset_elem = arguments[1];
         bool has_defaults = arguments.size() == 3;
 
-        ColumnPtr source_column_cast = castColumn(source_elem, result_type);
+        ColumnPtr source_column_casted = castColumn(source_elem, result_type);
         ColumnPtr offset_column = offset_elem.column;
 
-        ColumnPtr default_column_cast;
+        ColumnPtr default_column_casted;
         if (has_defaults)
         {
             const ColumnWithTypeAndName & default_elem = arguments[2];
-            default_column_cast = castColumn(default_elem, result_type);
+            default_column_casted = castColumn(default_elem, result_type);
         }
 
-        bool source_is_constant = isColumnConst(*source_column_cast);
+        bool source_is_constant = isColumnConst(*source_column_casted);
         bool offset_is_constant = isColumnConst(*offset_column);
 
         bool default_is_constant = false;
         if (has_defaults)
-             default_is_constant = isColumnConst(*default_column_cast);
+             default_is_constant = isColumnConst(*default_column_casted);
 
         if (source_is_constant)
-            source_column_cast = assert_cast<const ColumnConst &>(*source_column_cast).getDataColumnPtr();
+            source_column_casted = assert_cast<const ColumnConst &>(*source_column_casted).getDataColumnPtr();
         if (offset_is_constant)
             offset_column = assert_cast<const ColumnConst &>(*offset_column).getDataColumnPtr();
         if (default_is_constant)
-            default_column_cast = assert_cast<const ColumnConst &>(*default_column_cast).getDataColumnPtr();
+            default_column_casted = assert_cast<const ColumnConst &>(*default_column_casted).getDataColumnPtr();
 
         if (offset_is_constant)
         {
@@ -177,42 +155,46 @@ public:
             {
                 /// Degenerate case, just copy source column as is.
                 return source_is_constant
-                    ? ColumnConst::create(source_column_cast, input_rows_count)
-                    : source_column_cast;
+                    ? ColumnConst::create(source_column_casted, input_rows_count)
+                    : source_column_casted;
             }
-            if (offset > 0)
+            else if (offset > 0)
             {
-                insert_range_from(source_is_constant, source_column_cast, offset, static_cast<Int64>(input_rows_count) - offset);
-                insert_range_from(default_is_constant, default_column_cast, static_cast<Int64>(input_rows_count) - offset, offset);
+                insert_range_from(source_is_constant, source_column_casted, offset, static_cast<Int64>(input_rows_count) - offset);
+                insert_range_from(default_is_constant, default_column_casted, static_cast<Int64>(input_rows_count) - offset, offset);
                 return result_column;
             }
+            else
+            {
+                insert_range_from(default_is_constant, default_column_casted, 0, -offset);
+                insert_range_from(source_is_constant, source_column_casted, 0, static_cast<Int64>(input_rows_count) + offset);
+                return result_column;
+            }
+        }
+        else
+        {
+            auto result_column = result_type->createColumn();
 
-            insert_range_from(default_is_constant, default_column_cast, 0, -offset);
-            insert_range_from(source_is_constant, source_column_cast, 0, static_cast<Int64>(input_rows_count) + offset);
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                Int64 offset = offset_column->getInt(row);
+
+                /// Protection from possible overflow.
+                if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
+
+                Int64 src_idx = row + offset;
+
+                if (src_idx >= 0 && src_idx < static_cast<Int64>(input_rows_count))
+                    result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
+                else if (has_defaults)
+                    result_column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);
+                else
+                    result_column->insertDefault();
+            }
+
             return result_column;
         }
-
-        auto result_column = result_type->createColumn();
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            Int64 offset = offset_column->getInt(row);
-
-            /// Protection from possible overflow.
-            if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large offset: {} in function {}", offset, getName());
-
-            Int64 src_idx = row + offset;
-
-            if (src_idx >= 0 && src_idx < static_cast<Int64>(input_rows_count))
-                result_column->insertFrom(*source_column_cast, source_is_constant ? 0 : src_idx);
-            else if (has_defaults)
-                result_column->insertFrom(*default_column_cast, default_is_constant ? 0 : row);
-            else
-                result_column->insertDefault();
-        }
-
-        return result_column;
     }
 };
 

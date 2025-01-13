@@ -1,15 +1,15 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <filesystem>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
+#include <Common/getRandomASCIIString.h>
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -40,12 +40,65 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
     return fs::exists(object.remote_path);
 }
 
+std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
+{
+    auto modified_settings = patchSettings(read_settings);
+    auto global_context = Context::getGlobalContextInstance();
+    auto read_buffer_creator =
+        [=] (bool /* restricted_seek */, const std::string & file_path)
+        -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
+    };
+
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator), objects, "file:", modified_settings,
+                global_context->getFilesystemCacheLog(), /* use_external_buffer */false);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator), objects, "file:", modified_settings,
+                global_context->getFilesystemCacheLog(), /* use_external_buffer */true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
+    }
+}
+
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
+    if (!read_settings.enable_filesystem_cache)
+        return IObjectStorage::patchSettings(read_settings);
+
     auto modified_settings{read_settings};
-    /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.local_fs_method = LocalFSReadMethod::pread;
-    modified_settings.direct_io_threshold = 0; /// Disable.
+    /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
+    switch (modified_settings.local_fs_method)
+    {
+        case LocalFSReadMethod::pread_threadpool:
+        case LocalFSReadMethod::pread_fake_async:
+        {
+            modified_settings.local_fs_method = LocalFSReadMethod::pread;
+            LOG_INFO(log, "Changing local filesystem read method to `pread`");
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
     return IObjectStorage::patchSettings(modified_settings);
 }
 
@@ -81,7 +134,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
 }
 
-void LocalObjectStorage::removeObject(const StoredObject & object) const
+void LocalObjectStorage::removeObject(const StoredObject & object)
 {
     /// For local object storage files are actually removed when "metadata" is removed.
     if (!exists(object))
@@ -91,7 +144,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
 }
 
-void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
+void LocalObjectStorage::removeObjects(const StoredObjects & objects)
 {
     for (const auto & object : objects)
         removeObject(object);
@@ -119,7 +172,7 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
     return object_metadata;
 }
 
-void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
+void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int /* max_keys */) const
 {
     for (const auto & entry : fs::directory_iterator(path))
     {
@@ -129,7 +182,8 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path())));
+        auto metadata = getObjectMetadata(entry.path());
+        children.emplace_back(entry.path(), std::move(metadata));
     }
 }
 
@@ -169,8 +223,12 @@ std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
 }
 
-ObjectStorageKey
-LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+void LocalObjectStorage::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
+{
+}
+
+ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     constexpr size_t key_name_total_size = 32;
     return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));

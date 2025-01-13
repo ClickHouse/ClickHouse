@@ -2,11 +2,9 @@
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/quoteString.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
@@ -18,15 +16,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool distributed_insert_skip_read_only_replicas;
-}
-
-namespace DistributedSetting
-{
-    extern const DistributedSettingsBool fsync_after_insert;
-}
 
 namespace ErrorCodes
 {
@@ -39,6 +28,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
@@ -60,7 +50,8 @@ bool isSplittableErrorCode(int code, bool remote)
 DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_)
     : parent(parent_)
     , split_batch_on_failure(parent.split_batch_on_failure)
-    , fsync(parent.storage.getDistributedSettingsRef()[DistributedSetting::fsync_after_insert])
+    , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
+    , dir_fsync(parent.dir_fsync)
 {}
 
 bool DistributedAsyncInsertBatch::isEnoughSize() const
@@ -183,7 +174,7 @@ bool DistributedAsyncInsertBatch::valid()
     {
         if (!fs::exists(file))
         {
-            LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
+            LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
             res = false;
         }
     }
@@ -206,16 +197,6 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
         UInt64 idx;
         in >> idx >> "\n";
         files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
-
-        ReadBufferFromFile header_buffer(files.back());
-        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
-        total_bytes += total_bytes;
-
-        if (header.rows)
-        {
-            total_rows += header.rows;
-            total_bytes += header.bytes;
-        }
     }
 
     recovered = true;
@@ -223,9 +204,10 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
 
 void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_changes)
 {
-    IConnectionPool::Entry connection;
     std::unique_ptr<RemoteInserter> remote;
     bool compression_expected = false;
+
+    IConnectionPool::Entry connection;
 
     /// Since the batch is sent as a whole (in case of failure, the whole batch
     /// will be repeated), we need to mark the whole batch as failed in case of
@@ -252,7 +234,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
                 auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
                 connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
@@ -311,7 +293,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
             auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+            auto result = parent.pool->getValidTryResult(results, insert_settings.distributed_insert_skip_read_only_replicas);
             auto connection = std::move(result.entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 

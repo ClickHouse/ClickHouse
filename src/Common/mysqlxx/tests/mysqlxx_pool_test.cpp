@@ -13,11 +13,13 @@ mysqlxx::Pool::Entry getWithFailover(mysqlxx::Pool & connections_pool)
 
     constexpr size_t max_tries = 3;
 
+    mysqlxx::Pool::Entry worker_connection;
+
     for (size_t try_no = 1; try_no <= max_tries; ++try_no)
     {
         try
         {
-            mysqlxx::Pool::Entry worker_connection = connections_pool.tryGet();
+            worker_connection = connections_pool.tryGet();
 
             if (!worker_connection.isNull())
             {
@@ -26,7 +28,7 @@ mysqlxx::Pool::Entry getWithFailover(mysqlxx::Pool & connections_pool)
         }
         catch (const Poco::Exception & e)
         {
-            if (e.displayText().contains("mysqlxx::Pool is full"))
+            if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos)
             {
                 std::cerr << e.displayText() << std::endl;
             }

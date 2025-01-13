@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
@@ -42,16 +41,13 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 {
 }
 
-void MergeTreeReaderStream::loadMarks()
-{
-    if (!marks_getter)
-        marks_getter = marks_loader->loadMarks();
-}
-
 void MergeTreeReaderStream::init()
 {
     if (initialized)
         return;
+
+    initialized = true;
+    marks_getter = marks_loader->loadMarks();
 
     /// Compute the size of the buffer.
     auto [max_mark_range_bytes, sum_mark_range_bytes] = estimateMarkRangeBytes(all_mark_ranges);
@@ -114,15 +110,11 @@ void MergeTreeReaderStream::init()
         data_buffer = non_cached_buffer.get();
         compressed_data_buffer = non_cached_buffer.get();
     }
-
-    initialized = true;
 }
 
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)
 {
     init();
-    loadMarks();
-
     const auto & mark = marks_getter->getMark(row_index, column_position);
 
     try
@@ -201,7 +193,7 @@ CompressedReadBufferBase * MergeTreeReaderStream::getCompressedDataBuffer()
     return compressed_data_buffer;
 }
 
-size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
+size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark) const
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
@@ -210,8 +202,7 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     if (marks_count == 0)
         return 0;
 
-    chassert(right_mark <= marks_count);
-    loadMarks();
+    assert(right_mark <= marks_count);
 
     if (right_mark == 0)
         return marks_getter->getMark(right_mark, 0).offset_in_compressed_file;
@@ -290,9 +281,9 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     return file_size;
 }
 
-std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumn::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
+std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumn::estimateMarkRangeBytes(const MarkRanges & mark_ranges) const
 {
-    loadMarks();
+    assert(marks_getter != nullptr);
 
     size_t max_range_bytes = 0;
     size_t sum_range_bytes = 0;
@@ -311,34 +302,7 @@ std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumn::estimateMarkRangeBy
     return {max_range_bytes, sum_range_bytes};
 }
 
-size_t MergeTreeReaderStreamSingleColumnWholePart::getRightOffset(size_t right_mark)
-{
-    if (right_mark != marks_count)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected one right mark: {}, got: {}",
-            marks_count, right_mark);
-    }
-    return file_size;
-}
-
-std::pair<size_t, size_t> MergeTreeReaderStreamSingleColumnWholePart::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
-{
-    if (!mark_ranges.isOneRangeForWholePart(marks_count))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected one mark range that covers the whole part, got: {}",
-            mark_ranges.describe());
-    }
-    return {file_size, file_size};
-}
-
-void MergeTreeReaderStreamSingleColumnWholePart::seekToMark(size_t)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderStreamSingleColumnWholePart cannot seek to marks");
-}
-
-size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position)
+size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position) const
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
@@ -347,8 +311,7 @@ size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t righ
     if (marks_count == 0)
         return 0;
 
-    chassert(right_mark_non_included <= marks_count);
-    loadMarks();
+    assert(right_mark_non_included <= marks_count);
 
     if (right_mark_non_included == 0)
         return marks_getter->getMark(right_mark_non_included, column_position).offset_in_compressed_file;
@@ -384,9 +347,9 @@ size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t righ
 }
 
 std::pair<size_t, size_t>
-MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position)
+MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const MarkRanges & mark_ranges, size_t column_position) const
 {
-    loadMarks();
+    assert(marks_getter != nullptr);
 
     /// As a maximal range we return the maximal size of a whole stripe.
     size_t max_range_bytes = 0;
@@ -423,9 +386,8 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     return {max_range_bytes, sum_range_bytes};
 }
 
-MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position)
+MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position) const
 {
-    loadMarks();
     const auto & current_mark = marks_getter->getMark(row_index, column_position);
 
     if (marks_getter->getNumColumns() == 1)
@@ -472,27 +434,27 @@ MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeM
     return marks_getter->getMark(mark_index + 1, column_position + 1);
 }
 
-size_t MergeTreeReaderStreamOneOfMultipleColumns::getRightOffset(size_t right_mark_non_included)
+size_t MergeTreeReaderStreamOneOfMultipleColumns::getRightOffset(size_t right_mark_non_included) const
 {
     return getRightOffsetOneColumn(right_mark_non_included, column_position);
 }
 
-std::pair<size_t, size_t> MergeTreeReaderStreamOneOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
+std::pair<size_t, size_t> MergeTreeReaderStreamOneOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges) const
 {
     return estimateMarkRangeBytesOneColumn(mark_ranges, column_position);
 }
 
-size_t MergeTreeReaderStreamAllOfMultipleColumns::getRightOffset(size_t right_mark_non_included)
+size_t MergeTreeReaderStreamAllOfMultipleColumns::getRightOffset(size_t right_mark_non_included) const
 {
     return getRightOffsetOneColumn(right_mark_non_included, marks_loader->getNumColumns() - 1);
 }
 
-std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges)
+std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMarkRangeBytes(const MarkRanges & mark_ranges) const
 {
     size_t max_range_bytes = 0;
     size_t sum_range_bytes = 0;
 
-    for (size_t i = 0; i < marks_loader->getNumColumns(); ++i)
+    for (size_t i = 0; i < marks_getter->getNumColumns(); ++i)
     {
         auto [current_max, current_sum] = estimateMarkRangeBytesOneColumn(mark_ranges, i);
 

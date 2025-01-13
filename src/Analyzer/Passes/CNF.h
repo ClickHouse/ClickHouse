@@ -3,7 +3,11 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Common/SipHash.h>
+
 #include <Interpreters/Context_fwd.h>
+
+#include <unordered_set>
 
 namespace DB::Analyzer
 {

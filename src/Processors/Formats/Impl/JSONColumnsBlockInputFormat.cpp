@@ -7,7 +7,7 @@
 namespace DB
 {
 
-JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_, const FormatSettings & format_settings_) : JSONColumnsReaderBase(in_), format_settings(format_settings_)
+JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_) : JSONColumnsReaderBase(in_)
 {
 }
 
@@ -18,7 +18,7 @@ void JSONColumnsReader::readChunkStart()
 
 std::optional<String> JSONColumnsReader::readColumnStart()
 {
-    auto name = JSONUtils::readFieldName(*in, format_settings.json);
+    auto name = JSONUtils::readFieldName(*in);
     JSONUtils::skipArrayStart(*in);
     return name;
 }
@@ -38,7 +38,7 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsReader>(buf, settings));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsReader>(buf));
         }
     );
     factory.markFormatSupportsSubsetOfColumns("JSONColumns");
@@ -50,7 +50,7 @@ void registerJSONColumnsSchemaReader(FormatFactory & factory)
         "JSONColumns",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf, settings));
+            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf));
         }
     );
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONColumns", [](const FormatSettings & settings)

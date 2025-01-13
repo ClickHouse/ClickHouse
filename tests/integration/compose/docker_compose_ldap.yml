@@ -1,6 +1,7 @@
+version: '2.3'
 services:
     openldap:
-        image: bitnami/openldap:2.6.8
+        image: bitnami/openldap:2.6.6
         restart: always
         environment:
             LDAP_ROOT: dc=example,dc=org
@@ -13,14 +14,8 @@ services:
             LDAP_PORT_NUMBER: ${LDAP_INTERNAL_PORT:-1389}
         ports:
             - ${LDAP_EXTERNAL_PORT:-1389}:${LDAP_INTERNAL_PORT:-1389}
-        volumes:
-            - /misc/openldap/initialized.sh:/docker-entrypoint-initdb.d/initialized.sh
         healthcheck:
-            test: >
-                test -f /tmp/.openldap-initialized
-                && ldapsearch -x -H ldap://localhost:$$LDAP_PORT_NUMBER -D $$LDAP_ADMIN_DN -w $$LDAP_ADMIN_PASSWORD -b $$LDAP_ROOT
-                | grep -c -E "member: cn=j(ohn|ane)doe"
-                | grep 2 >> /dev/null
+            test: "ldapsearch -x -b dc=example,dc=org cn > /dev/null"
             interval: 10s
             retries: 10
             timeout: 2s

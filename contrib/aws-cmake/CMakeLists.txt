@@ -57,7 +57,6 @@ endif()
 SET(AWS_SDK_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws")
 SET(AWS_SDK_CORE_DIR "${AWS_SDK_DIR}/src/aws-cpp-sdk-core")
 SET(AWS_SDK_S3_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-s3")
-SET(AWS_SDK_KMS_DIR "${AWS_SDK_DIR}/generated/src/aws-cpp-sdk-kms")
 
 SET(AWS_AUTH_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-auth")
 SET(AWS_CAL_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-cal")
@@ -126,7 +125,7 @@ configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 
 aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_VERSION_PATCH FULL_VERSION GIT_HASH)
-configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
+configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${AWS_CRT_DIR}/include/aws/crt/Config.h" @ONLY)
 
 list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
 
@@ -145,17 +144,6 @@ file(GLOB AWS_SDK_S3_SRC
 list(APPEND AWS_SOURCES ${AWS_SDK_S3_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_S3_DIR}/include/")
 
-
-if(CLICKHOUSE_CLOUD)
-    # aws-cpp-sdk-kms
-    file(GLOB AWS_SDK_KMS_SRC
-        "${AWS_SDK_KMS_DIR}/source/*.cpp"
-        "${AWS_SDK_KMS_DIR}/source/model/*.cpp"
-    )
-
-    list(APPEND AWS_SOURCES ${AWS_SDK_KMS_SRC})
-    list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_KMS_DIR}/include/")
-endif()
 
 # aws-c-auth
 file(GLOB AWS_AUTH_SRC

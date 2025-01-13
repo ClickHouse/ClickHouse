@@ -15,7 +15,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int TYPE_MISMATCH;
 }
 
 
@@ -80,14 +79,17 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
             return have_value;
         }
         /// The name has an escape sequence.
+        else
+        {
+            tmp.append(buf.position(), next_pos - buf.position());
+            buf.position() += next_pos + 1 - buf.position();
+            if (buf.eof())
+                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
 
-        tmp.append(buf.position(), next_pos - buf.position());
-        buf.position() += next_pos + 1 - buf.position();
-        if (buf.eof())
-            throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
-
-        tmp.push_back(parseEscapeSequence(*buf.position()));
-        ++buf.position();
+            tmp.push_back(parseEscapeSequence(*buf.position()));
+            ++buf.position();
+            continue;
+        }
     }
 
     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from TSKV format");
@@ -132,7 +134,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     /// If the key is not found, skip the value.
                     NullOutput sink;
-                    readEscapedStringInto<NullOutput,false>(sink, *in);
+                    readEscapedStringInto(sink, *in);
                 }
                 else
                 {
@@ -161,42 +163,34 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream after field in TSKV format: {}", name_ref.toString());
             }
-            if (*in->position() == '\t')
+            else if (*in->position() == '\t')
             {
                 ++in->position();
                 continue;
             }
-            if (*in->position() == '\n')
+            else if (*in->position() == '\n')
             {
                 ++in->position();
                 break;
             }
-
-            /// Possibly a garbage was written into column, remove it
-            if (index >= 0)
+            else
             {
-                columns[index]->popBack(1);
-                seen_columns[index] = read_columns[index] = false;
-            }
+                /// Possibly a garbage was written into column, remove it
+                if (index >= 0)
+                {
+                    columns[index]->popBack(1);
+                    seen_columns[index] = read_columns[index] = false;
+                }
 
-            throw Exception(
-                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Found garbage after field in TSKV format: {}", name_ref.toString());
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Found garbage after field in TSKV format: {}", name_ref.toString());
+            }
         }
     }
 
     /// Fill in the not met columns with default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-        {
-            const auto & type = header.getByPosition(i).type;
-            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Cannot insert NULL value into a column `{}` of type '{}'",
-                    header.getByPosition(i).name,
-                    type->getName());
-            type->insertDefaultInto(*columns[i]);
-        }
+            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set
     if (format_settings.defaults_for_omitted_fields)

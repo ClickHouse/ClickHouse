@@ -1,6 +1,5 @@
-#include <Formats/FormatFactory.h>
-#include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

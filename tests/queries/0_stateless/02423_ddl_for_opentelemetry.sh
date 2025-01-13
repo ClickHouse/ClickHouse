@@ -39,7 +39,7 @@ function check_span()
         extra_condition=""
     fi
 
-    ret=$(${CLICKHOUSE_CLIENT} -q "
+    ret=$(${CLICKHOUSE_CLIENT} -nq "
         SYSTEM FLUSH LOGS;
 
         SELECT count()

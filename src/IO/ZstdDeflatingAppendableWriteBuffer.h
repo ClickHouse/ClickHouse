@@ -27,7 +27,7 @@ class ZstdDeflatingAppendableWriteBuffer : public BufferWithOwnMemory<WriteBuffe
 public:
     using ZSTDLastBlock = const std::array<char, 3>;
     /// Frame end block. If we read non-empty file and see no such flag we should add it.
-    static constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
+    static inline constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
 
     ZstdDeflatingAppendableWriteBuffer(
         std::unique_ptr<WriteBufferFromFileBase> out_,
@@ -37,6 +37,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
+
+    ~ZstdDeflatingAppendableWriteBuffer() override;
 
     void sync() override
     {
@@ -60,8 +62,6 @@ private:
     void finalizeBefore();
     void finalizeAfter();
     void finalizeZstd();
-
-    void cancelImpl() noexcept override;
 
     /// Read three last bytes from non-empty compressed file and compares them with
     /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
