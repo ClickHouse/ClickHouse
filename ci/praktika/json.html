@@ -691,7 +691,6 @@
                         addFileButtonToStatus('files', targetData.links)
                     }
 
-
                     // Handle duration update if duration is null and start_time exists
                     if (targetData.duration === null && targetData.start_time) {
                         let duration = Math.floor(Date.now() / 1000 - targetData.start_time);

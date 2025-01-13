@@ -828,7 +828,7 @@ class Jobs:
             [RunnerLabels.STYLE_CHECK_ARM],
         ],
         requires=[
-            [ArtifactNames.DEB_AMD_RELEASE],
-            [ArtifactNames.DEB_ARM_RELEASE],
+            [ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.CH_AMD_RELEASE],
+            [ArtifactNames.DEB_ARM_RELEASE, ArtifactNames.CH_ARM_RELEASE],
         ],
     )

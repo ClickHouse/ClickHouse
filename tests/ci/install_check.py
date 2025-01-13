@@ -8,18 +8,19 @@ from pathlib import Path
 from shutil import copy2
 from typing import Dict
 
+from praktika.utils import Utils
+
 from build_download_helper import download_builds_filter
 from compress_files import compress_fast
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH
-from env_helper import TEMP_PATH as TEMP
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
-TEMP_PATH = Path("./ci/tmp" if TEMP == "./tmp" else TEMP)  # hack for praktika ci
+TEMP_PATH = Path(f"{Utils.cwd()}/ci/tmp/")
 LOGS_PATH = TEMP_PATH / "tests_logs"
 
 
@@ -167,7 +168,7 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
             f"--volume={LOGS_PATH}:/tests_logs --volume={TEMP_PATH}:/packages {image}"
         )
 
-        for retry in range(1, 4):
+        for retry in range(1):
             for file in LOGS_PATH.glob("*"):
                 file.unlink()
 
