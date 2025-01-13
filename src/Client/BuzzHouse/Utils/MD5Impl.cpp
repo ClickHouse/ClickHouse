@@ -5,7 +5,7 @@
 namespace BuzzHouse
 {
 
-void MD5Impl::hashFile(const std::string & file_path, Poco::DigestEngine::Digest & res)
+void MD5Impl::hashFile(const String & file_path, Poco::DigestEngine::Digest & res)
 {
     std::ifstream file(file_path, std::ios::binary);
 

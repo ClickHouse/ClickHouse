@@ -1,9 +1,9 @@
 #pragma once
 
+#include <base/types.h>
 #include <Poco/MD5Engine.h>
 
 #include <cstdint>
-#include <string>
 
 namespace BuzzHouse
 {
@@ -17,7 +17,7 @@ private:
     uint8_t input_buffer[input_buffer_size];
 
 public:
-    void hashFile(const std::string & file_path, Poco::DigestEngine::Digest & res);
+    void hashFile(const String & file_path, Poco::DigestEngine::Digest & res);
 };
 
 }

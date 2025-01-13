@@ -39,7 +39,7 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
 void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob)
 {
     const uint32_t nsuboption = rg.nextLargeNumber();
-    const std::string & last_col
+    const String & last_col
         = expr->path().sub_cols_size() ? expr->path().sub_cols(expr->path().sub_cols_size() - 1).column() : expr->path().col().column();
     const bool has_nested = last_col == "keys" || last_col == "values" || last_col == "null" || startsWith(last_col, "size");
 
@@ -556,7 +556,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     for (uint32_t i = 0; i < nparams; i++)
     {
         buf.resize(0);
-        buf += std::string(1, 'x' + i);
+        buf += String(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
         rel.cols.push_back(SQLRelationCol("", {buf}));
     }
@@ -1112,7 +1112,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     {
         SQLRelation rel("");
         const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-        const std::string cname_str = "c" + std::to_string(cname);
+        const String cname_str = "c" + std::to_string(cname);
 
         rel.cols.push_back(SQLRelationCol("", {cname_str}));
         this->levels[this->current_level].rels.push_back(std::move(rel));

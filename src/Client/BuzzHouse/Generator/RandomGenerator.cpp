@@ -74,7 +74,7 @@ bool RandomGenerator::nextBool()
 }
 
 //range [1970-01-01, 2149-06-06]
-void RandomGenerator::nextDate(std::string & ret)
+void RandomGenerator::nextDate(String & ret)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -95,7 +95,7 @@ void RandomGenerator::nextDate(std::string & ret)
 }
 
 //range [1900-01-01, 2299-12-31]
-void RandomGenerator::nextDate32(std::string & ret)
+void RandomGenerator::nextDate32(String & ret)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -116,7 +116,7 @@ void RandomGenerator::nextDate32(std::string & ret)
 }
 
 //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-void RandomGenerator::nextDateTime(std::string & ret)
+void RandomGenerator::nextDateTime(String & ret)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -158,7 +158,7 @@ void RandomGenerator::nextDateTime(std::string & ret)
 }
 
 //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-void RandomGenerator::nextDateTime64(std::string & ret)
+void RandomGenerator::nextDateTime64(String & ret)
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -210,14 +210,14 @@ double RandomGenerator::randomZeroOne()
     return zero_one(generator);
 }
 
-void RandomGenerator::nextJSONCol(std::string & ret)
+void RandomGenerator::nextJSONCol(String & ret)
 {
-    const std::string & pick = pickRandomlyFromVector(jcols);
+    const String & pick = pickRandomlyFromVector(jcols);
 
     ret += pick;
 }
 
-void RandomGenerator::nextString(std::string & ret, const std::string & delimiter, const bool allow_nasty, const uint32_t limit)
+void RandomGenerator::nextString(String & ret, const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
     bool use_bad_utf8 = false;
 
@@ -227,7 +227,7 @@ void RandomGenerator::nextString(std::string & ret, const std::string & delimite
         use_bad_utf8 = true;
     }
     ret += delimiter;
-    const std::string & pick = pickRandomlyFromVector(
+    const String & pick = pickRandomlyFromVector(
         use_bad_utf8 ? bad_utf8
                      : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
 
@@ -243,7 +243,7 @@ void RandomGenerator::nextString(std::string & ret, const std::string & delimite
 
             while (i < max_iterations)
             {
-                const std::string & npick = pickRandomlyFromVector(
+                const String & npick = pickRandomlyFromVector(
                     use_bad_utf8 ? bad_utf8
                                  : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                                : (this->nextBool() ? common_english : common_chinese)));
@@ -270,7 +270,7 @@ void RandomGenerator::nextString(std::string & ret, const std::string & delimite
 
 static const constexpr char hex_digits[] = "0123456789abcdef";
 
-void RandomGenerator::nextUUID(std::string & ret)
+void RandomGenerator::nextUUID(String & ret)
 {
     for (uint32_t i = 0; i < 8; i++)
     {
@@ -298,7 +298,7 @@ void RandomGenerator::nextUUID(std::string & ret)
     }
 }
 
-void RandomGenerator::nextIPv4(std::string & ret)
+void RandomGenerator::nextIPv4(String & ret)
 {
     ret += std::to_string(this->nextRandomUInt8());
     ret += ".";
@@ -309,7 +309,7 @@ void RandomGenerator::nextIPv4(std::string & ret)
     ret += std::to_string(this->nextRandomUInt8());
 }
 
-void RandomGenerator::nextIPv6(std::string & ret)
+void RandomGenerator::nextIPv6(String & ret)
 {
     for (uint32_t i = 0; i < 8; i++)
     {

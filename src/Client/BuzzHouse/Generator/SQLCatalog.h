@@ -124,7 +124,7 @@ public:
     std::optional<TableEngineOption> toption = std::nullopt;
     TableEngineValues teng = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    std::string file_comp;
+    String file_comp;
     InOutFormat file_format;
 
     bool isMergeTreeFamily() const
@@ -201,7 +201,7 @@ public:
     std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
     std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
     std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
-    std::unordered_map<uint32_t, std::string> frozen_partitions;
+    std::unordered_map<uint32_t, String> frozen_partitions;
 
     size_t numberOfInsertableColumns() const
     {
@@ -245,10 +245,10 @@ public:
 struct ColumnPathChainEntry
 {
 public:
-    const std::string cname;
+    const String cname;
     SQLType * tp = nullptr;
 
-    ColumnPathChainEntry(const std::string cn, SQLType * t) : cname(cn), tp(t) { }
+    ColumnPathChainEntry(const String cn, SQLType * t) : cname(cn), tp(t) { }
 };
 
 struct ColumnPathChain
@@ -265,7 +265,7 @@ public:
     {
     }
 
-    const std::string & getBottomName() const { return path[path.size() - 1].cname; }
+    const String & getBottomName() const { return path[path.size() - 1].cname; }
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
 };

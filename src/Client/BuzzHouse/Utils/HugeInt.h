@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 
 #include <Client/BuzzHouse/Utils/Nlimits.h>
+#include <base/types.h>
 
 namespace BuzzHouse
 {
@@ -25,7 +25,7 @@ public:
     HugeInt & operator=(const HugeInt & rhs) = default;
     HugeInt & operator=(HugeInt && rhs) = default;
 
-    void toString(std::string & res) const;
+    void toString(String & res) const;
 
     // comparison operators
     bool operator==(const HugeInt & rhs) const;

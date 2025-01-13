@@ -23,7 +23,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
     const bool can_shuffle,
     std::vector<ColumnPathChain> & entries)
 {
-    const std::string str_tname = getTableName(db, tname);
+    const String str_tname = getTableName(db, tname);
 
     buf.resize(0);
     buf += "DROP TABLE IF EXISTS ";
@@ -146,7 +146,7 @@ void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 
 #if defined USE_MYSQL && USE_MYSQL
 MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
-    const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const std::string & server)
+    const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
 {
     MYSQL * mcon = nullptr;
 
@@ -186,7 +186,7 @@ MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
     return nullptr;
 }
 
-void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string & tname, TableEngine * te)
+void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
@@ -199,26 +199,13 @@ void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, c
     }
 }
 
-std::string MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname)
+String MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname)
 {
-    std::string res;
-
-    if (is_clickhouse && db)
-    {
-        res += "d";
-        res += std::to_string(db->dname);
-        res += ".";
-    }
-    else if (!is_clickhouse)
-    {
-        res += "test.";
-    }
-    res += "t";
-    res += std::to_string(tname);
-    return res;
+    const auto prefix = is_clickhouse ? (db ? fmt::format("d{}", db->dname) : "") : "test";
+    return fmt::format("{}.t{}", prefix, tname);
 }
 
-void MySQLIntegration::truncateStatement(std::string & outbuf)
+void MySQLIntegration::truncateStatement(String & outbuf)
 {
     outbuf += "TRUNCATE";
     if (is_clickhouse)
@@ -240,7 +227,7 @@ void MySQLIntegration::optimizePeerTableOnRemote(const SQLTable & t)
     }
 }
 
-bool MySQLIntegration::performQuery(const std::string & query)
+bool MySQLIntegration::performQuery(const String & query)
 {
     if (!mysql_connection)
     {
@@ -265,14 +252,14 @@ bool MySQLIntegration::performQuery(const std::string & query)
     return true;
 }
 
-void MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const
+void MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const
 {
     tp->MySQLtypeName(rg, out, false);
 }
 
 #else
 MySQLIntegration *
-MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const std::string &)
+MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MySQL connector, skipping MySQL integration");
     return nullptr;
@@ -284,7 +271,7 @@ PostgreSQLIntegration *
 PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
     bool has_something = false;
-    std::string connection_str;
+    String connection_str;
     pqxx::connection * pcon = nullptr;
     PostgreSQLIntegration * psql = nullptr;
 
@@ -362,7 +349,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
     return nullptr;
 }
 
-void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string & tname, TableEngine * te)
+void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
@@ -376,17 +363,17 @@ void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase
     }
 }
 
-std::string PostgreSQLIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
+String PostgreSQLIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
 {
     return "test.t" + std::to_string(tname);
 }
 
-void PostgreSQLIntegration::truncateStatement(std::string & outbuf)
+void PostgreSQLIntegration::truncateStatement(String & outbuf)
 {
     outbuf += "TRUNCATE";
 }
 
-bool PostgreSQLIntegration::performQuery(const std::string & query)
+bool PostgreSQLIntegration::performQuery(const String & query)
 {
     if (!postgres_connection)
     {
@@ -409,7 +396,7 @@ bool PostgreSQLIntegration::performQuery(const std::string & query)
     }
 }
 
-void PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const
+void PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const
 {
     tp->PostgreSQLtypeName(rg, out, false);
 }
@@ -449,23 +436,23 @@ SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzCon
     }
 }
 
-void SQLiteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const std::string & tname, TableEngine * te)
+void SQLiteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
     te->add_params()->set_svalue(tname);
 }
 
-std::string SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
+String SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
 {
     return "t" + std::to_string(tname);
 }
 
-void SQLiteIntegration::truncateStatement(std::string & outbuf)
+void SQLiteIntegration::truncateStatement(String & outbuf)
 {
     outbuf += "DELETE FROM";
 }
 
-bool SQLiteIntegration::performQuery(const std::string & query)
+bool SQLiteIntegration::performQuery(const String & query)
 {
     char * err_msg = nullptr;
 
@@ -484,7 +471,7 @@ bool SQLiteIntegration::performQuery(const std::string & query)
     return true;
 }
 
-void SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const
+void SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const
 {
     tp->SQLitetypeName(rg, out, false);
 }
@@ -497,7 +484,7 @@ SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzCon
 }
 #endif
 
-void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const std::string &, TableEngine * te)
+void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
@@ -514,7 +501,7 @@ bool RedisIntegration::performIntegration(
 #if defined USE_MONGODB && USE_MONGODB
 MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
 {
-    std::string connection_str = "mongodb://";
+    String connection_str = "mongodb://";
 
     if (!scc.user.empty())
     {
@@ -563,7 +550,7 @@ MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const Fuzz
     }
 }
 
-void MongoDBIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const std::string & tname, TableEngine * te)
+void MongoDBIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
@@ -576,7 +563,7 @@ template <typename T>
 constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream::document>;
 
 template <typename T>
-void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, SQLType * tp)
+void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const String & cname, T & output, SQLType * tp)
 {
     IntType * itp;
     DateType * dtp;
@@ -870,7 +857,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 }
 
 void MongoDBIntegration::documentAppendArray(
-    RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, ArrayType * at)
+    RandomGenerator & rg, const String & cname, bsoncxx::builder::stream::document & document, ArrayType * at)
 {
     std::uniform_int_distribution<uint64_t> nested_rows_dist(0, fc.max_nested_rows);
     const uint64_t limit = nested_rows_dist(rg.generator);
@@ -943,7 +930,7 @@ void MongoDBIntegration::documentAppendArray(
 }
 
 void MongoDBIntegration::documentAppendAnyValue(
-    RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, SQLType * tp)
+    RandomGenerator & rg, const String & cname, bsoncxx::builder::stream::document & document, SQLType * tp)
 {
     Nullable * nl;
     ArrayType * at;
@@ -1016,7 +1003,7 @@ bool MongoDBIntegration::performIntegration(
         const bool permute = can_shuffle && rg.nextBool();
         const bool miss_cols = rg.nextBool();
         const uint32_t ndocuments = rg.nextMediumNumber();
-        const std::string str_tname = "t" + std::to_string(tname);
+        const String str_tname = "t" + std::to_string(tname);
         mongocxx::collection coll = database[str_tname];
 
         for (uint32_t j = 0; j < ndocuments; j++)
@@ -1061,7 +1048,7 @@ MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const Fuzz
 }
 #endif
 
-bool MinIOIntegration::sendRequest(const std::string & resource)
+bool MinIOIntegration::sendRequest(const String & resource)
 {
     struct tm ttm;
     ssize_t nbytes = 0;
@@ -1172,7 +1159,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     return created;
 }
 
-void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const std::string & tname, TableEngine * te)
+void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
     te->add_params()->set_svalue(
         "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname.substr(1)
@@ -1222,7 +1209,7 @@ ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fc)
 void ExternalIntegrations::createExternalDatabaseTable(
     RandomGenerator & rg, const IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te)
 {
-    const std::string & tname = "t" + std::to_string(b.tname);
+    const String & tname = "t" + std::to_string(b.tname);
 
     requires_external_call_check++;
     switch (dc)
@@ -1335,7 +1322,7 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
-bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const std::string & query)
+bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)
 {
     switch (pt)
     {

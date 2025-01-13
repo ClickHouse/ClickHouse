@@ -281,7 +281,7 @@ void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable &
     }
 }
 
-static std::unordered_map<std::string, CHSetting> queryOracleSettings;
+static std::unordered_map<String, CHSetting> queryOracleSettings;
 
 void loadFuzzerOracleSettings(const FuzzConfig &)
 {
@@ -305,7 +305,7 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     nsettings.clear();
     for (uint32_t i = 0; i < nsets; i++)
     {
-        const std::string & setting = rg.pickKeyRandomlyFromMap(queryOracleSettings);
+        const String & setting = rg.pickKeyRandomlyFromMap(queryOracleSettings);
         const CHSetting & chs = queryOracleSettings.at(setting);
         SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
 
@@ -560,7 +560,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success)
     first_success = success;
 }
 
-void QueryOracle::processSecondOracleQueryResult(const bool success, const std::string & oracle_name)
+void QueryOracle::processSecondOracleQueryResult(const bool success, const String & oracle_name)
 {
     if (success)
     {

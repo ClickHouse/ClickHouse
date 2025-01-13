@@ -4,30 +4,30 @@ namespace BuzzHouse
 {
 
 static std::optional<ServerCredentials> loadServerCredentials(
-    const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
+    const JSONParserImpl::Element & jobj, const String & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
     uint32_t port = default_port;
     uint32_t mysql_port = default_mysql_port;
-    std::string hostname = "localhost";
-    std::string unix_socket;
-    std::string user = "test";
-    std::string password;
-    std::string database = "test";
+    String hostname = "localhost";
+    String unix_socket;
+    String user = "test";
+    String password;
+    String database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    std::unordered_map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
-        {"hostname", [&](const JSONObjectType & value) { hostname = std::string(value.getString()); }},
-        {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
-        {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
-        {"unix_socket", [&](const JSONObjectType & value) { unix_socket = std::string(value.getString()); }},
-        {"user", [&](const JSONObjectType & value) { user = std::string(value.getString()); }},
-        {"password", [&](const JSONObjectType & value) { password = std::string(value.getString()); }},
-        {"database", [&](const JSONObjectType & value) { database = std::string(value.getString()); }},
-        {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(std::string(value.getString())); }}};
+    std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries
+        = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+           {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
+           {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
+           {"unix_socket", [&](const JSONObjectType & value) { unix_socket = String(value.getString()); }},
+           {"user", [&](const JSONObjectType & value) { user = String(value.getString()); }},
+           {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
+           {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
+           {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }}};
 
     for (const auto [key, value] : jobj.getObject())
     {
-        const std::string & nkey = std::string(key);
+        const String & nkey = String(key);
 
         if (config_entries.find(nkey) == config_entries.end())
         {
@@ -40,12 +40,12 @@ static std::optional<ServerCredentials> loadServerCredentials(
         ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, query_log_file));
 }
 
-FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), log(getLogger("BuzzHouse"))
+FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(getLogger("BuzzHouse"))
 {
     JSONParserImpl parser;
     JSONObjectType object;
     std::ifstream inputFile(path);
-    std::string fileContent;
+    String fileContent;
 
     buf.reserve(512);
     while (std::getline(inputFile, buf))
@@ -62,14 +62,14 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
         throw std::runtime_error("Parsed JSON value is not an object");
     }
 
-    static std::unordered_map<std::string, std::function<void(const JSONObjectType &)>> config_entries = {
+    static std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {
-             db_file_path = std::filesystem::path(std::string(value.getString()));
+             db_file_path = std::filesystem::path(String(value.getString()));
              fuzz_out = db_file_path / "fuzz.data";
          }},
-        {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(std::string(value.getString())); }},
+        {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
         {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
@@ -96,7 +96,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
         {"disabled_types",
          [&](const JSONObjectType & value)
          {
-             std::string input = std::string(value.getString());
+             String input = String(value.getString());
              std::transform(input.begin(), input.end(), input.begin(), ::tolower);
 
              static std::unordered_map<std::string_view, uint32_t> type_entries
@@ -134,7 +134,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
 
                  if (type_entries.find(entry) == type_entries.end())
                  {
-                     throw std::runtime_error("Unknown type optiom: " + std::string(entry));
+                     throw std::runtime_error("Unknown type optiom: " + String(entry));
                  }
                  type_mask &= (~type_entries.at(entry));
              }
@@ -142,7 +142,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
 
     for (const auto [key, value] : object.getObject())
     {
-        const std::string & nkey = std::string(key);
+        const String & nkey = String(key);
 
         if (config_entries.find(nkey) == config_entries.end())
         {
@@ -164,7 +164,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), lo
     }
 }
 
-bool FuzzConfig::processServerQuery(const std::string & input) const
+bool FuzzConfig::processServerQuery(const String & input) const
 {
     try
     {
@@ -177,7 +177,7 @@ bool FuzzConfig::processServerQuery(const std::string & input) const
     return true;
 }
 
-void FuzzConfig::loadServerSettings(std::vector<std::string> & out, const std::string & table, const std::string & col)
+void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col)
 {
     uint64_t found = 0;
 

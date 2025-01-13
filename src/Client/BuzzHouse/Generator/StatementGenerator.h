@@ -13,12 +13,12 @@ class QueryOracle;
 class SQLRelationCol
 {
 public:
-    std::string rel_name;
-    std::vector<std::string> path;
+    String rel_name;
+    std::vector<String> path;
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const std::string rname, const std::vector<std::string> names) : rel_name(rname), path(names) { }
+    SQLRelationCol(const String rname, const std::vector<String> names) : rel_name(rname), path(names) { }
 
     void AddRef(ColumnPath * cp) const
     {
@@ -35,12 +35,12 @@ public:
 class SQLRelation
 {
 public:
-    std::string name;
+    String name;
     std::vector<SQLRelationCol> cols;
 
     SQLRelation() = default;
 
-    explicit SQLRelation(const std::string n) : name(n) { }
+    explicit SQLRelation(const String n) : name(n) { }
 };
 
 class GroupCol
@@ -82,7 +82,7 @@ private:
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
 
-    std::string buf;
+    String buf;
 
     PeerQuery peer_query = PeerQuery::None;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
@@ -94,7 +94,7 @@ private:
     std::unordered_map<uint32_t, SQLView> staged_views, views;
     std::unordered_map<uint32_t, SQLFunction> staged_functions, functions;
 
-    std::vector<std::string> enum_values
+    std::vector<String> enum_values
         = {"'-1'",    "'0'",       "'1'",    "'10'",   "'1000'", "'is'",     "'was'",      "'are'",  "'be'",       "'have'", "'had'",
            "'were'",  "'can'",     "'said'", "'use'",  "','",    "'😀'",     "'😀😀😀😀'", "'名字'", "'兄弟姐妹'", "''",     "'\\n'",
            "x'c328'", "x'e28228'", "x'ff'",  "b'101'", "b'100'", "b'10001'", "' '",        "'c0'",   "'c1'",       "'11'"};
@@ -119,7 +119,7 @@ private:
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
     std::vector<std::reference_wrapper<const SQLFunction>> filtered_functions;
 
-    std::unordered_map<uint32_t, std::unordered_map<std::string, SQLRelation>> ctes;
+    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes;
     std::unordered_map<uint32_t, QueryLevel> levels;
 
     void setAllowNotDetermistic(const bool value) { allow_not_deterministic = value; }
@@ -224,16 +224,16 @@ public:
 private:
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
+    void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
 
-    void strAppendBottomValue(RandomGenerator & rg, std::string & ret, SQLType * tp);
-    void strAppendMap(RandomGenerator & rg, std::string & ret, MapType * mt);
-    void strAppendArray(RandomGenerator & rg, std::string & ret, ArrayType * at);
-    void strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, uint64_t limit);
-    void strAppendTuple(RandomGenerator & rg, std::string & ret, TupleType * at);
-    void strAppendVariant(RandomGenerator & rg, std::string & ret, VariantType * vtp);
-    void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, SQLType * tp);
-    void strAppendAnyValue(RandomGenerator & rg, std::string & ret, SQLType * tp);
+    void strAppendBottomValue(RandomGenerator & rg, String & ret, SQLType * tp);
+    void strAppendMap(RandomGenerator & rg, String & ret, MapType * mt);
+    void strAppendArray(RandomGenerator & rg, String & ret, ArrayType * at);
+    void strAppendArray(RandomGenerator & rg, String & ret, SQLType * tp, uint64_t limit);
+    void strAppendTuple(RandomGenerator & rg, String & ret, TupleType * at);
+    void strAppendVariant(RandomGenerator & rg, String & ret, VariantType * vtp);
+    void strAppendAnyValueInternal(RandomGenerator & rg, String & ret, SQLType * tp);
+    void strAppendAnyValue(RandomGenerator & rg, String & ret, SQLType * tp);
 
     void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
@@ -268,12 +268,11 @@ private:
     void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlterTable(RandomGenerator & rg, AlterTable * at);
-    void
-    setRandomSetting(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, std::string & ret, SetValue * set);
-    void generateSettingValues(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingValues * vals);
+    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, String & ret, SetValue * set);
+    void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
-        RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, size_t nvalues, SettingValues * vals);
-    void generateSettingList(RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingList * sl);
+        RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, size_t nvalues, SettingValues * vals);
+    void generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl);
     void generateAttach(RandomGenerator & rg, Attach * att);
     void generateDetach(RandomGenerator & rg, Detach * det);
     void generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
@@ -339,8 +338,8 @@ private:
 
         if (t.isMergeTreeFamily())
         {
-            const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
-            const std::string tname = "t" + std::to_string(t.tname);
+            const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
+            const String tname = "t" + std::to_string(t.tname);
             const bool table_has_partitions = rg.nextSmallNumber() < 9 && fc.tableHasPartitions<false>(dname, tname);
 
             if (table_has_partitions)

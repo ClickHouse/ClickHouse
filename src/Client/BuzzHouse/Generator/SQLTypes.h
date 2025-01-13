@@ -12,10 +12,10 @@ namespace BuzzHouse
 class SQLType
 {
 public:
-    virtual void typeName(std::string & ret, bool escape) const = 0;
-    virtual void MySQLtypeName(RandomGenerator & rg, std::string & ret, bool escape) const = 0;
-    virtual void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, bool escape) const = 0;
-    virtual void SQLitetypeName(RandomGenerator & rg, std::string & ret, bool escape) const = 0;
+    virtual void typeName(String & ret, bool escape) const = 0;
+    virtual void MySQLtypeName(RandomGenerator & rg, String & ret, bool escape) const = 0;
+    virtual void PostgreSQLtypeName(RandomGenerator & rg, String & ret, bool escape) const = 0;
+    virtual void SQLitetypeName(RandomGenerator & rg, String & ret, bool escape) const = 0;
 
     virtual ~SQLType() = default;
 };
@@ -25,10 +25,10 @@ SQLType * TypeDeepCopy(SQLType * tp);
 class BoolType : public SQLType
 {
 public:
-    void typeName(std::string & ret, const bool) const override { ret += "Bool"; }
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override { ret += "BOOL"; }
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override { ret += "BOOLEAN"; }
-    void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override { ret += "INTEGER"; }
+    void typeName(String & ret, const bool) const override { ret += "Bool"; }
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override { ret += "BOOL"; }
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override { ret += "BOOLEAN"; }
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override { ret += "INTEGER"; }
 
     ~BoolType() override = default;
 };
@@ -40,10 +40,10 @@ public:
     const bool is_unsigned;
     IntType(const uint32_t s, const bool isu) : size(s), is_unsigned(isu) { }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override;
 
     ~IntType() override = default;
 };
@@ -54,10 +54,10 @@ public:
     const uint32_t size;
     explicit FloatType(const uint32_t s) : size(s) { }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override;
 
     ~FloatType() override = default;
 };
@@ -68,10 +68,10 @@ public:
     const bool extended;
     explicit DateType(const bool ex) : extended(ex) { }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override;
 
     ~DateType() override = default;
 };
@@ -81,17 +81,17 @@ class DateTimeType : public SQLType
 public:
     const bool extended;
     const std::optional<const uint32_t> precision;
-    const std::optional<const std::string> timezone;
+    const std::optional<const String> timezone;
 
-    DateTimeType(const bool ex, const std::optional<const uint32_t> p, const std::optional<const std::string> t)
+    DateTimeType(const bool ex, const std::optional<const uint32_t> p, const std::optional<const String> t)
         : extended(ex), precision(p), timezone(t)
     {
     }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override;
 
     ~DateTimeType() override = default;
 };
@@ -107,10 +107,10 @@ public:
     {
     }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
 
     ~DecimalType() override = default;
 };
@@ -121,10 +121,10 @@ public:
     const std::optional<const uint32_t> precision;
     explicit StringType(const std::optional<const uint32_t> p) : precision(p) { }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool) const override;
 
     ~StringType() override = default;
 };
@@ -132,10 +132,10 @@ public:
 class UUIDType : public SQLType
 {
 public:
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool escape) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool escape) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool) const override;
 
     ~UUIDType() override = default;
 };
@@ -143,10 +143,10 @@ public:
 class EnumValue
 {
 public:
-    const std::string val;
+    const String val;
     const int32_t number;
 
-    EnumValue(const std::string v, const int32_t n) : val(v), number(n) { }
+    EnumValue(const String v, const int32_t n) : val(v), number(n) { }
 };
 
 class EnumType : public SQLType
@@ -156,10 +156,10 @@ public:
     const std::vector<EnumValue> values;
     EnumType(const uint32_t s, const std::vector<EnumValue> v) : size(s), values(v) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool) const override;
 
     ~EnumType() override = default;
 };
@@ -167,10 +167,10 @@ public:
 class IPv4Type : public SQLType
 {
 public:
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool) const override;
 
     ~IPv4Type() override = default;
 };
@@ -178,10 +178,10 @@ public:
 class IPv6Type : public SQLType
 {
 public:
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool) const override;
 
     ~IPv6Type() override = default;
 };
@@ -192,10 +192,10 @@ public:
     const std::optional<const uint32_t> ntypes;
     explicit DynamicType(const std::optional<const uint32_t> n) : ntypes(n) { }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~DynamicType() override = default;
 };
@@ -203,23 +203,23 @@ public:
 class JSubType
 {
 public:
-    const std::string cname;
+    const String cname;
     SQLType * subtype;
 
-    JSubType(const std::string & n, SQLType * s) : cname(n), subtype(s) { }
+    JSubType(const String & n, SQLType * s) : cname(n), subtype(s) { }
 };
 
 class JSONType : public SQLType
 {
 public:
-    const std::string desc;
+    const String desc;
     const std::vector<JSubType> subcols;
-    explicit JSONType(const std::string & s, const std::vector<JSubType> sc) : desc(s), subcols(sc) { }
+    explicit JSONType(const String & s, const std::vector<JSubType> sc) : desc(s), subcols(sc) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String & ret, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String & ret, const bool) const override;
 
     ~JSONType() override
     {
@@ -236,10 +236,10 @@ public:
     SQLType * subtype;
     explicit Nullable(SQLType * s) : subtype(s) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
-    void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
+    void PostgreSQLtypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
 
     ~Nullable() override { delete subtype; }
 };
@@ -250,10 +250,10 @@ public:
     SQLType * subtype;
     explicit LowCardinality(SQLType * s) : subtype(s) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
-    void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
-    void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
+    void PostgreSQLtypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
+    void SQLitetypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
 
     ~LowCardinality() override { delete subtype; }
 };
@@ -264,10 +264,10 @@ public:
     const GeoTypes geo_type;
     explicit GeoType(const GeoTypes & gt) : geo_type(gt) { }
 
-    void typeName(std::string & ret, const bool) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~GeoType() override = default;
 };
@@ -278,10 +278,10 @@ public:
     SQLType * subtype;
     explicit ArrayType(SQLType * s) : subtype(s) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator & rg, String & ret, const bool escape) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~ArrayType() override { delete subtype; }
 };
@@ -292,10 +292,10 @@ public:
     SQLType *key, *value;
     MapType(SQLType * k, SQLType * v) : key(k), value(v) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~MapType() override
     {
@@ -319,10 +319,10 @@ public:
     const std::vector<SubType> subtypes;
     explicit TupleType(const std::vector<SubType> s) : subtypes(s) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~TupleType() override
     {
@@ -339,10 +339,10 @@ public:
     const std::vector<SQLType *> subtypes;
     explicit VariantType(const std::vector<SQLType *> s) : subtypes(s) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~VariantType() override
     {
@@ -369,10 +369,10 @@ public:
     std::vector<NestedSubType> subtypes;
     explicit NestedType(std::vector<NestedSubType> s) : subtypes(s) { }
 
-    void typeName(std::string & ret, const bool escape) const override;
-    void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void PostgreSQLtypeName(RandomGenerator &, std::string &, const bool) const override;
-    void SQLitetypeName(RandomGenerator &, std::string &, const bool) const override;
+    void typeName(String & ret, const bool escape) const override;
+    void MySQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void PostgreSQLtypeName(RandomGenerator &, String &, const bool) const override;
+    void SQLitetypeName(RandomGenerator &, String &, const bool) const override;
 
     ~NestedType() override
     {
@@ -444,10 +444,10 @@ bool hasType(SQLType * tp)
     return false;
 }
 
-void appendDecimal(RandomGenerator & rg, std::string & ret, uint32_t left, uint32_t right);
-void strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, std::string & ret);
-void strBuildJSONElement(RandomGenerator & rg, std::string & ret);
-void strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, std::string & ret);
-void strAppendGeoValue(RandomGenerator & rg, std::string & ret, const GeoTypes & geo_type);
+void appendDecimal(RandomGenerator & rg, String & ret, uint32_t left, uint32_t right);
+void strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, String & ret);
+void strBuildJSONElement(RandomGenerator & rg, String & ret);
+void strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, String & ret);
+void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_type);
 
 }

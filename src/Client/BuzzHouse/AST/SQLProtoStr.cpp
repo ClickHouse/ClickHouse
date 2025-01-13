@@ -6,8 +6,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
-#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const TYPE &(VAR_NAME))
-#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const uint32_t quote, const TYPE &(VAR_NAME))
+#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
 
 namespace BuzzHouse
 {
@@ -112,7 +112,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-void convertToSQLString(std::string & ret, const std::string & s)
+void convertToSQLString(String & ret, const String & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -402,7 +402,7 @@ CONV_FN(LiteralValue, lit_val)
             ret += lit_val.no_quote_str();
             break;
         case LitValType::kHexString: {
-            const std::string & s = lit_val.hex_string();
+            const String & s = lit_val.hex_string();
             ret += "x'";
             for (size_t i = 0; i < s.length(); i++)
             {
@@ -686,7 +686,7 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
-void BottomTypeNameToString(std::string & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
+void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
     switch (btn.bottom_one_of_case())
@@ -1358,7 +1358,7 @@ CONV_FN(SQLWindowCall, wc)
 
 CONV_FN(FrameSpecSubLeftExpr, fssle)
 {
-    std::string next = FrameSpecSubLeftExpr_Which_Name(fssle.which());
+    String next = FrameSpecSubLeftExpr_Which_Name(fssle.which());
 
     if (fssle.which() > FrameSpecSubLeftExpr_Which_UNBOUNDED_PRECEDING && fssle.has_expr())
     {
@@ -1371,7 +1371,7 @@ CONV_FN(FrameSpecSubLeftExpr, fssle)
 
 CONV_FN(FrameSpecSubRightExpr, fsslr)
 {
-    std::string next = FrameSpecSubRightExpr_Which_Name(fsslr.which());
+    String next = FrameSpecSubRightExpr_Which_Name(fsslr.which());
 
     if (fsslr.which() > FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING && fsslr.has_expr())
     {
@@ -4042,7 +4042,7 @@ CONV_FN(ExplainQuery, explain)
         ret += " ";
         for (int i = 0; i < explain.opts_size(); i++)
         {
-            std::string ostr;
+            String ostr;
             const ExplainOption & eopt = explain.opts(i);
 
             if (i != 0)

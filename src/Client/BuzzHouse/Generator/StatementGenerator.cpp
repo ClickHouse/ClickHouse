@@ -13,9 +13,9 @@ void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) 
 }
 
 void StatementGenerator::setRandomSetting(
-    RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, std::string & ret, SetValue * set)
+    RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, String & ret, SetValue * set)
 {
-    const std::string & setting = rg.pickKeyRandomlyFromMap(settings);
+    const String & setting = rg.pickKeyRandomlyFromMap(settings);
 
     set->set_property(setting);
     ret.resize(0);
@@ -24,7 +24,7 @@ void StatementGenerator::setRandomSetting(
 }
 
 void StatementGenerator::generateSettingValues(
-    RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, const size_t nvalues, SettingValues * vals)
+    RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, const size_t nvalues, SettingValues * vals)
 {
     for (size_t i = 0; i < nvalues; i++)
     {
@@ -35,19 +35,18 @@ void StatementGenerator::generateSettingValues(
 }
 
 void StatementGenerator::generateSettingValues(
-    RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingValues * vals)
+    RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals)
 {
     generateSettingValues(rg, settings, std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 20) + 1)), vals);
 }
 
-void StatementGenerator::generateSettingList(
-    RandomGenerator & rg, const std::unordered_map<std::string, CHSetting> & settings, SettingList * sl)
+void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingList * sl)
 {
     const size_t nvalues = std::min<size_t>(settings.size(), static_cast<size_t>((rg.nextRandomUInt32() % 7) + 1));
 
     for (size_t i = 0; i < nvalues; i++)
     {
-        const std::string & next = rg.pickKeyRandomlyFromMap(settings);
+        const String & next = rg.pickKeyRandomlyFromMap(settings);
 
         if (i == 0)
         {
@@ -169,7 +168,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         tname = next.tname = this->table_counter++;
     }
-    const std::string vname = "v" + std::to_string(next.tname);
+    const String vname = "v" + std::to_string(next.tname);
 
     cv->set_replace(replace);
     next.is_materialized = rg.nextBool();
@@ -818,8 +817,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                                                                                     && !tt.isFileEngine();
                                                                             }))
                                                   .get());
-        const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
-        const std::string tname = "t" + std::to_string(t.tname);
+        const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
+        const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions<false>(dname, tname);
 
         at->set_is_temp(t.is_temp);
@@ -1568,7 +1567,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 FreezePartition * fp = ati->mutable_unfreeze_partition();
                 const uint32_t fname = rg.pickKeyRandomlyFromMap(t.frozen_partitions);
-                const std::string & partition_id = t.frozen_partitions[fname];
+                const String & partition_id = t.frozen_partitions[fname];
 
                 if (!partition_id.empty())
                 {
@@ -2777,10 +2776,10 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
 
 struct TestSetting
 {
-    const std::string tsetting;
-    const std::set<std::string> options;
+    const String tsetting;
+    const std::set<String> options;
 
-    TestSetting(const std::string & sett, const std::set<std::string> & noptions) : tsetting(sett), options(noptions) { }
+    TestSetting(const String & sett, const std::set<String> & noptions) : tsetting(sett), options(noptions) { }
 };
 
 static const std::vector<TestSetting> explain_settings{//QUERY TREE

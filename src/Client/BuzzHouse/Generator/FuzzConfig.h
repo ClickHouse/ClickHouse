@@ -4,7 +4,6 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
-#include <string>
 
 #include "config.h"
 
@@ -48,21 +47,21 @@ using JSONObjectType = JSONParserImpl::Element;
 class ServerCredentials
 {
 public:
-    std::string hostname;
+    String hostname;
     uint32_t port, mysql_port;
-    std::string unix_socket, user, password, database;
+    String unix_socket, user, password, database;
     std::filesystem::path query_log_file;
 
     ServerCredentials() : hostname("localhost"), port(0), mysql_port(0), user("test") { }
 
     ServerCredentials(
-        const std::string & h,
+        const String & h,
         const uint32_t p,
         const uint32_t mp,
-        const std::string & us,
-        const std::string & u,
-        const std::string & pass,
-        const std::string & db,
+        const String & us,
+        const String & u,
+        const String & pass,
+        const String & db,
         const std::filesystem::path & qlf)
         : hostname(h), port(p), mysql_port(mp), unix_socket(us), user(u), password(pass), database(db), query_log_file(qlf)
     {
@@ -77,12 +76,12 @@ public:
 class FuzzConfig
 {
 private:
-    std::string buf;
+    String buf;
     DB::ClientBase * cb = nullptr;
 
 public:
     LoggerPtr log;
-    std::vector<std::string> collations, storage_policies, timezones, disks;
+    std::vector<String> collations, storage_policies, timezones, disks;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
@@ -95,18 +94,18 @@ public:
 
     FuzzConfig() : cb(nullptr), log(getLogger("BuzzHouse")) { buf.reserve(512); }
 
-    FuzzConfig(DB::ClientBase * c, const std::string & path);
+    FuzzConfig(DB::ClientBase * c, const String & path);
 
-    bool processServerQuery(const std::string & input) const;
+    bool processServerQuery(const String & input) const;
 
 private:
-    void loadServerSettings(std::vector<std::string> & out, const std::string & table, const std::string & col);
+    void loadServerSettings(std::vector<String> & out, const String & table, const String & col);
 
 public:
     void loadServerConfigurations();
 
     template <bool IsDetached>
-    bool tableHasPartitions(const std::string & database, const std::string & table)
+    bool tableHasPartitions(const String & database, const String & table)
     {
         buf.resize(0);
         buf += R"(SELECT count() FROM "system".")";
@@ -142,7 +141,7 @@ public:
     }
 
     template <bool IsDetached, bool IsPartition>
-    void tableGetRandomPartitionOrPart(const std::string & database, const std::string & table, std::string & res)
+    void tableGetRandomPartitionOrPart(const String & database, const String & table, String & res)
     {
         //system.parts doesn't support sampling, so pick up a random part with a window function
         buf.resize(0);

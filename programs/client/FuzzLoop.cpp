@@ -334,13 +334,13 @@ bool Client::processWithFuzzing(const String & full_query)
 
 #if USE_BUZZHOUSE
 
-void Client::processQueryAndLog(std::ofstream & outf, const std::string & full_query)
+void Client::processQueryAndLog(std::ofstream & outf, const String & full_query)
 {
     processTextAsSingleQuery(full_query);
     outf << full_query << std::endl;
 }
 
-bool Client::processBuzzHouseQuery(const std::string & full_query)
+bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
     ASTPtr orig_ast;
@@ -400,7 +400,7 @@ static void finishBuzzHouse(int num)
 bool Client::buzzHouse()
 {
     bool server_up = true;
-    std::string full_query;
+    String full_query;
     BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
     BuzzHouse::ExternalIntegrations ei(fc);
 
@@ -424,7 +424,7 @@ bool Client::buzzHouse()
     }
     else
     {
-        std::string full_query2;
+        String full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool replica_setup = false;
         bool has_cloud_features = false;
@@ -538,8 +538,7 @@ bool Client::buzzHouse()
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
                 const uint32_t nopt = next_dist(rg.generator);
 
-                if ((correctness_oracle + settings_oracle + dump_oracle + peer_oracle) > 0
-                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
+                if (nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
                     qo.resetOracleValues();
                 }

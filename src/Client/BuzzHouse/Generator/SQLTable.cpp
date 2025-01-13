@@ -9,7 +9,7 @@ namespace BuzzHouse
 {
 
 void collectColumnPaths(
-    const std::string cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
+    const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths)
 {
     ArrayType * at = nullptr;
     MapType * mt = nullptr;
@@ -107,8 +107,7 @@ void StatementGenerator::flatTableColumnPath(const uint32_t flags, const SQLTabl
     }
 }
 
-void StatementGenerator::addTableRelation(
-    RandomGenerator & rg, const bool allow_internal_cols, const std::string & rel_name, const SQLTable & t)
+void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
     SQLRelation rel(rel_name);
 
@@ -118,7 +117,7 @@ void StatementGenerator::addTableRelation(
         [](const SQLColumn & c) { return !c.dmod.has_value() || c.dmod.value() != DModifier::DEF_EPHEMERAL; });
     for (const auto & entry : this->table_entries)
     {
-        std::vector<std::string> names;
+        std::vector<String> names;
 
         names.reserve(entry.path.size());
         for (const auto & path : entry.path)
@@ -677,8 +676,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
 
                         for (uint32_t i = 0; i < oecol.path().sub_cols_size() + UINT32_C(1) && ok; i++)
                         {
-                            const std::string & col
-                                = i == 0 ? oecol.path().col().column() : oecol.path().sub_cols(i - UINT32_C(1)).column();
+                            const String & col = i == 0 ? oecol.path().col().column() : oecol.path().sub_cols(i - UINT32_C(1)).column();
 
                             ok &= col == entry.path[i].cname;
                         }
@@ -717,7 +715,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
 }
 
-const std::vector<std::string> & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+const std::vector<String> & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
 void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {

@@ -19,9 +19,9 @@ private:
     PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
 
-    std::string buf;
+    String buf;
     std::set<uint32_t> found_tables;
-    std::vector<std::string> nsettings;
+    std::vector<String> nsettings;
 
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);
 
@@ -31,7 +31,7 @@ public:
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);
     void processFirstOracleQueryResult(bool success);
-    void processSecondOracleQueryResult(bool success, const std::string & oracle_name);
+    void processSecondOracleQueryResult(bool success, const String & oracle_name);
 
     /* Correctness query oracle */
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);

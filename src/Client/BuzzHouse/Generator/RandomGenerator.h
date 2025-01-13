@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <random>
 #include <set>
-#include <string>
 #include <tuple>
 #include <unordered_map>
 
@@ -53,7 +52,7 @@ private:
            std::uniform_int_distribution<uint32_t>(1, 30),
            std::uniform_int_distribution<uint32_t>(1, 31)};
 
-    const std::vector<std::string> common_english{
+    const std::vector<String> common_english{
         "is",     "was",   "are",   "be",    "have",  "had",   "were",     "can",   "said",  "use",   "do",      "will",  "would",
         "make",   "like",  "has",   "look",  "write", "go",    "see",      "could", "been",  "call",  "am",      "find",  "did",
         "get",    "come",  "made",  "may",   "take",  "know",  "live",     "give",  "think", "say",   "help",    "tell",  "follow",
@@ -63,16 +62,16 @@ private:
         "stop",   "miss",  "eat",   "watch", "let",   "cut",   "talk",     "being", "leave", "water", "day",     "part",  "sound",
         "work",   "place", "year",  "back",  "thing", "name",  "sentence", "man",   "line",  "boy"};
 
-    const std::vector<std::string> common_chinese{
+    const std::vector<String> common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e",  "",     "😉",   "\"",   "\\'", "\\t",
-                                                 "\\n",  "--",    "0",     "1",     "-1",   "{",    "}",    "(",    ")",   "[",
-                                                 "]",    ",",     ".",     ";",     ":",    "\\\\", "/",    "_",    "%",   "*",
-                                                 "\\0",  "{}",    "[]",    "()",    "null", "NULL", "TRUE", "FALSE"};
+    const std::vector<String> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e",  "",     "😉",   "\"",   "\\'", "\\t",
+                                            "\\n",  "--",    "0",     "1",     "-1",   "{",    "}",    "(",    ")",   "[",
+                                            "]",    ",",     ".",     ";",     ":",    "\\\\", "/",    "_",    "%",   "*",
+                                            "\\0",  "{}",    "[]",    "()",    "null", "NULL", "TRUE", "FALSE"};
 
     /* use bad_utf8 on x' strings! */
-    const std::vector<std::string> bad_utf8{
+    const std::vector<String> bad_utf8{
         "FF",
         "C328",
         "A0A1",
@@ -87,7 +86,7 @@ private:
         "C328FF",
         "AAC328"};
 
-    const std::vector<std::string> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+    const std::vector<String> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
     pcg64_fast generator;
@@ -148,16 +147,16 @@ public:
     bool nextBool();
 
     //range [1970-01-01, 2149-06-06]
-    void nextDate(std::string & ret);
+    void nextDate(String & ret);
 
     //range [1900-01-01, 2299-12-31]
-    void nextDate32(std::string & ret);
+    void nextDate32(String & ret);
 
     //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    void nextDateTime(std::string & ret);
+    void nextDateTime(String & ret);
 
     //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    void nextDateTime64(std::string & ret);
+    void nextDateTime64(String & ret);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -240,15 +239,15 @@ public:
         return std::make_tuple(it->first, it->second);
     }
 
-    void nextJSONCol(std::string & ret);
+    void nextJSONCol(String & ret);
 
-    void nextString(std::string & ret, const std::string & delimiter, bool allow_nasty, uint32_t limit);
+    void nextString(String & ret, const String & delimiter, bool allow_nasty, uint32_t limit);
 
-    void nextUUID(std::string & ret);
+    void nextUUID(String & ret);
 
-    void nextIPv4(std::string & ret);
+    void nextIPv4(String & ret);
 
-    void nextIPv6(std::string & ret);
+    void nextIPv6(String & ret);
 };
 
 }

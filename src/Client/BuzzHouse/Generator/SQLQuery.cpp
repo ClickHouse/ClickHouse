@@ -25,7 +25,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 
     for (uint32_t i = 0; i < nclauses; i++)
     {
-        const std::string cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
+        const String cname = "c" + std::to_string(this->levels[this->current_level].aliases_counter++);
         ExprColAlias * eca = i == 0 ? aj->mutable_constraint() : aj->add_other_constraints();
         Expr * expr = eca->mutable_expr();
 
@@ -108,7 +108,7 @@ void StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation 
 
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
-    std::string name;
+    String name;
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
     const uint32_t cte = 10 * static_cast<uint32_t>(!this->ctes.empty());
     const uint32_t table = 40
@@ -238,7 +238,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         GenerateSeriesFunc * gsf = tf->mutable_gseries();
         const GenerateSeriesFunc_GSName val = static_cast<GenerateSeriesFunc_GSName>(
             (rg.nextRandomUInt32() % static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX)) + 1);
-        const std::string & cname = val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
+        const String & cname = val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers ? "number" : "generate_series";
 
         gsf->set_fname(val);
         for (const auto & entry : this->levels)
@@ -394,9 +394,9 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
             //using clause
             const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
-            std::vector<std::vector<std::string>> cols1;
-            std::vector<std::vector<std::string>> cols2;
-            std::vector<std::vector<std::string>> intersect;
+            std::vector<std::vector<String>> cols1;
+            std::vector<std::vector<String>> cols2;
+            std::vector<std::vector<String>> intersect;
 
             cols1.reserve(rel1.cols.size());
             for (const auto & entry : rel1.cols)
@@ -420,7 +420,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
                     ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
-                    const std::vector<std::string> & npath = intersect[i];
+                    const std::vector<String> & npath = intersect[i];
 
                     for (size_t j = 0; j < npath.size(); j++)
                     {
@@ -849,7 +849,7 @@ void StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nc
         {
             for (const auto & entry : this->levels[this->current_level].projections)
             {
-                const std::string cname = "c" + std::to_string(entry);
+                const String cname = "c" + std::to_string(entry);
                 available_cols.push_back(GroupCol(SQLRelationCol("", {cname}), nullptr));
             }
         }
@@ -1054,7 +1054,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
     for (uint32_t i = 0; i < nclauses; i++)
     {
         CTEquery * cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
-        std::string name;
+        String name;
 
         name += "cte";
         name += std::to_string(i);
@@ -1165,7 +1165,7 @@ void StatementGenerator::generateSelect(
             if (!top)
             {
                 const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-                const std::string cname_str = "c" + std::to_string(cname);
+                const String cname_str = "c" + std::to_string(cname);
 
                 SQLRelation rel("");
                 rel.cols.push_back(SQLRelationCol("", {cname_str}));
