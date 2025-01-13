@@ -7969,6 +7969,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
+    /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
+    background_operations_assignee.trigger();
+
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
     DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
 
@@ -8473,6 +8476,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         intent_guard.reset();
         parts_holder.clear();
         cleanup_thread.wakeup();
+
+        /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
+        background_operations_assignee.trigger();
 
         waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
 
