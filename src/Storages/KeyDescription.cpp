@@ -159,7 +159,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
+        auto syntax_result = TreeRewriter(context).analyze(expr, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns

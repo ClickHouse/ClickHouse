@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include "Common/ISlotControl.h"
 #include <Common/AsyncLoader.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
@@ -22,6 +23,7 @@
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/isLocalAddress.h>
+#include <Common/ConcurrencyControl.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -289,7 +291,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
-
+    extern const ServerSettingsBool dictionaries_lazy_load;
 }
 
 namespace ErrorCodes
@@ -310,6 +312,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
 
@@ -367,6 +370,8 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
+    std::shared_ptr<IDisk> db_disk TSA_GUARDED_BY(mutex);
+
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
@@ -410,6 +415,8 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
+    UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -563,9 +570,7 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 
     ContextSharedPart()
-        : access_control(std::make_unique<AccessControl>())
-        , global_overcommit_tracker(&process_list)
-        , macros(std::make_unique<Macros>())
+        : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -1135,6 +1140,42 @@ String Context::getFilesystemCachesPath() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->filesystem_caches_path;
+}
+
+std::shared_ptr<IDisk> Context::getDatabaseDisk() const
+{
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->db_disk)
+            return shared->db_disk;
+    }
+
+    // This is called first time early during the initialization.
+    // Even if multiple threads try to get target_db_disk, only the first one will initialize the disks as there is another mutex in `getDiskMap()`
+    // It is not necessary to introduce a mutex here.
+    auto target_db_disk = [&]() -> std::shared_ptr<IDisk>
+    {
+        const auto & config = shared->getConfigRef();
+        const auto & disk_map = getDisksMap();
+        auto disk_name = config.getString("database_disk.disk", DiskSelector::DEFAULT_DISK_NAME);
+
+        LOG_INFO(shared->log, "Database disk name: {}", disk_name);
+
+        auto it = disk_map.find(disk_name);
+        if (it == disk_map.end())
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
+
+        chassert(it->second);
+
+        LOG_INFO(shared->log, "Database disk name: {}, path: {}", disk_name, it->second->getPath());
+        return it->second;
+    }();
+
+    std::lock_guard lock(shared->mutex);
+    if (shared->db_disk)
+        return shared->db_disk;
+
+    return shared->db_disk = target_db_disk;
 }
 
 String Context::getFilesystemCacheUser() const
@@ -1850,6 +1891,36 @@ void Context::setMutationWorkload(const String & value)
 {
     std::lock_guard lock(shared->mutex);
     shared->mutation_workload = value;
+}
+
+UInt64 Context::getConcurrentThreadsSoftLimitNum() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_soft_limit_num;
+}
+
+UInt64 Context::getConcurrentThreadsSoftLimitRatioToCores() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_soft_limit_ratio_to_cores;
+}
+
+UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
+{
+    std::lock_guard lock(shared->mutex);
+    SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
+    if (num > 0 && num < concurrent_threads_soft_limit)
+        concurrent_threads_soft_limit = num;
+    if (ratio_to_cores > 0)
+    {
+        auto value = ratio_to_cores * getNumberOfCPUCoresToUse();
+        if (value > 0 && value < concurrent_threads_soft_limit)
+            concurrent_threads_soft_limit = value;
+    }
+    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+    shared->concurrent_threads_soft_limit_num = num;
+    shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
+    return concurrent_threads_soft_limit;
 }
 
 
@@ -2961,15 +3032,15 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 }
 
 
-void Context::tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const
+void Context::tryCreateEmbeddedDictionaries() const
 {
-    if (!config.getBool("dictionaries_lazy_load", true))
+    if (!shared->server_settings[ServerSetting::dictionaries_lazy_load])
         static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
 void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
-    bool dictionaries_lazy_load = config.getBool("dictionaries_lazy_load", true);
+    bool dictionaries_lazy_load = shared->server_settings[ServerSetting::dictionaries_lazy_load];
     auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
     std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 
@@ -3109,6 +3180,16 @@ void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
+}
+
+BackupsInMemoryHolder & Context::getBackupsInMemory()
+{
+    return backups_in_memory;
+}
+
+const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+{
+    return backups_in_memory;
 }
 
 
@@ -3694,7 +3775,7 @@ ThrottlerPtr Context::getBackupsThrottler() const
     if (auto bandwidth = getSettingsRef()[Setting::max_backup_bandwidth])
     {
         std::lock_guard lock(mutex);
-        if (!backups_query_throttler)
+         if (!backups_query_throttler)
             backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
         throttler = backups_query_throttler;
     }
@@ -4872,14 +4953,16 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
+    auto db_disk = getDatabaseDisk();
+
     fs::path force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = fs::exists(force_file);
+    bool force_file_exists = db_disk->existsFile(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            fs::remove(force_file);
+            db_disk->removeFileIfExists(force_file);
             return;
         }
         catch (...)

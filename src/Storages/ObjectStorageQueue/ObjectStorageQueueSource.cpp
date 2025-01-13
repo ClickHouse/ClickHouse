@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -404,6 +405,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     std::shared_ptr<FileIterator> file_iterator_,
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
+    ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
     const CommitSettings & commit_settings_,
@@ -423,6 +425,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , file_iterator(file_iterator_)
     , configuration(configuration_)
     , object_storage(object_storage_)
+    , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
     , commit_settings(commit_settings_)
@@ -468,11 +471,72 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
-        if (!reader)
+        if (isCancelled())
+        {
+            if (reader)
+                reader->cancel();
+
+            /// Are there any started, but not finished files?
+            if (processed_files.empty() || processed_files.back().state != FileState::Processing)
+            {
+                /// No unfinished files, just stop processing.
+                break;
+            }
+
+            auto started_file = processed_files.back().metadata;
+            /// Something must have been already read.
+            chassert(started_file->getFileStatus()->processed_rows > 0);
+            /// Mark file as Cancelled, such files will not be set as Failed.
+            processed_files.back().state = FileState::Cancelled;
+            /// Throw exception to avoid inserting half processed file to destination table.
+            throw Exception(
+                ErrorCodes::QUERY_WAS_CANCELLED,
+                "Processing was cancelled (having unfinished file: {})", started_file->getPath());
+        }
+
+        if (shutdown_called)
+        {
+            LOG_TEST(log, "Shutdown was called");
+
+            /// Are there any started, but not finished files?
+            if (processed_files.empty() || processed_files.back().state != FileState::Processing)
+            {
+                /// No unfinished files, just stop processing.
+                break;
+            }
+
+            auto started_file = processed_files.back().metadata;
+            if (table_is_being_dropped)
+            {
+                /// Something must have been already read.
+                chassert(started_file->getFileStatus()->processed_rows > 0);
+                /// Mark file as Cancelled, such files will not be set as Failed.
+                processed_files.back().state = FileState::Cancelled;
+                /// Throw exception to avoid inserting half processed file to destination table.
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Table is being dropped (having unfinished file: {})", started_file->getPath());
+            }
+
+            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
+                     "Will process the file fully and then shutdown",
+                     started_file->getPath(), started_file->getFileStatus()->processed_rows);
+        }
+
+        FileMetadataPtr file_metadata;
+        if (reader)
+        {
+            chassert(processed_files.back().state == FileState::Processing);
+            chassert(processed_files.back().metadata->getPath() == reader.getObjectInfo()->getPath());
+
+            file_metadata = processed_files.back().metadata;
+        }
+        else
         {
             if (shutdown_called)
             {
                 LOG_TEST(log, "Shutdown called");
+                /// Stop processing.
                 break;
             }
 
@@ -497,65 +561,18 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 LOG_TEST(log, "No reader");
                 break;
             }
+
+            const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
+            file_metadata = object_info->file_metadata;
+            processed_files.emplace_back(file_metadata);
+            progress->processed_files += 1;
         }
 
-        const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
-        auto file_metadata = object_info->file_metadata;
+        chassert(file_metadata);
         auto file_status = file_metadata->getFileStatus();
-        const auto & path = reader.getObjectInfo()->getPath();
+        const auto & path = file_metadata->getPath();
 
-        if (isCancelled())
-        {
-            reader->cancel();
-
-            if (processed_rows_from_file)
-            {
-                try
-                {
-                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
-                }
-                catch (...)
-                {
-                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             object_info->relative_path, getCurrentExceptionMessage(true));
-                }
-            }
-
-            LOG_TEST(log, "Query is cancelled");
-            break;
-        }
-
-        if (shutdown_called)
-        {
-            LOG_TEST(log, "Shutdown called");
-
-            if (processed_rows_from_file == 0)
-                break;
-
-            if (table_is_being_dropped)
-            {
-                LOG_DEBUG(
-                    log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
-                    processed_rows_from_file, path);
-
-                try
-                {
-                    file_metadata->setFailed("Table is dropped", /* reduce_retry_count */true, /* overwrite_status */false);
-                }
-                catch (...)
-                {
-                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                              object_info->relative_path, getCurrentExceptionMessage(true));
-                }
-
-                /// Leave the file half processed. Table is being dropped, so we do not care.
-                break;
-            }
-
-            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
-                     "Will process the file fully and then shutdown",
-                     path, processed_rows_from_file);
-        }
+        LOG_TEST(log, "Processing file: {}", path);
 
         try
         {
@@ -567,9 +584,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
 
                 file_status->processed_rows += chunk.getNumRows();
-                processed_rows_from_file += chunk.getNumRows();
-                total_processed_rows += chunk.getNumRows();
-                total_processed_bytes += chunk.bytes();
+                progress->processed_rows += chunk.getNumRows();
+                progress->processed_bytes += chunk.bytes();
 
                 VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                     chunk, read_from_format_info.requested_virtual_columns,
@@ -586,68 +602,51 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
-            failed_during_read_files.push_back(file_metadata);
-            file_status->onFailed(getCurrentExceptionMessage(true));
+            processed_files.back().state = FileState::ErrorOnRead;
+            processed_files.back().exception_during_read = message;
 
-            if (processed_rows_from_file == 0)
-            {
-                if (file_status->retries < file_metadata->getMaxTries())
-                    file_iterator->returnForRetry(reader.getObjectInfo());
-
-                /// If we did not process any rows from the failed file,
-                /// commit all previously processed files,
-                /// not to lose the work already done.
-                return {};
-            }
-
-            throw;
+            /// Stop processing and commit what is already processed.
+            return {};
         }
 
+        processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
         file_status.reset();
         reader = {};
 
-        processed_rows_from_file = 0;
-        processed_files.push_back(file_metadata);
-
         if (commit_settings.max_processed_files_before_commit
-            && processed_files.size() == commit_settings.max_processed_files_before_commit)
+            && progress->processed_files == commit_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {})",
-                      total_processed_rows, total_processed_bytes, processed_files.size());
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
             break;
         }
 
         if (commit_settings.max_processed_rows_before_commit
-            && total_processed_rows == commit_settings.max_processed_rows_before_commit)
+            && progress->processed_rows == commit_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {})",
-                      total_processed_rows, total_processed_bytes, processed_files.size());
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
             break;
         }
-        if (commit_settings.max_processed_bytes_before_commit && total_processed_bytes == commit_settings.max_processed_bytes_before_commit)
+
+        if (commit_settings.max_processed_bytes_before_commit
+            && progress->processed_bytes == commit_settings.max_processed_bytes_before_commit)
         {
-            LOG_TRACE(
-                log,
-                "Number of max processed bytes before commit reached "
-                "(rows: {}, bytes: {}, files: {})",
-                total_processed_rows,
-                total_processed_bytes,
-                processed_files.size());
+            LOG_TRACE(log, "Number of max processed bytes before commit reached "
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
             break;
         }
+
         if (commit_settings.max_processing_time_sec_before_commit
-            && total_stopwatch.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
+            && progress->elapsed_time.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
         {
-            LOG_TRACE(
-                log,
-                "Max processing time before commit reached "
-                "(rows: {}, bytes: {}, files: {})",
-                total_processed_rows,
-                total_processed_bytes,
-                processed_files.size());
+            LOG_TRACE(log, "Max processing time before commit reached "
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
+                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
             break;
         }
     }
@@ -655,39 +654,53 @@ Chunk ObjectStorageQueueSource::generateImpl()
     return {};
 }
 
-void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
+void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 {
-    LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
-             processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
+    LOG_TEST(log, "Having {} files to commit (insert {}succeeded)", processed_files.size(), insert_succeeded ? "" : "hasn't ");
 
-    for (const auto & file_metadata : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
-        if (success)
+        switch (file_state)
         {
-            applyActionAfterProcessing(file_metadata->getPath());
-            file_metadata->setProcessed();
+            case FileState::Processed:
+            {
+                if (insert_succeeded)
+                {
+                    applyActionAfterProcessing(file_metadata->getPath());
+                    file_metadata->setProcessed();
+                }
+                else
+                {
+                    file_metadata->setFailed(exception_message, /* reduce_retry_count */false);
+                }
+                break;
+            }
+            case FileState::Cancelled: [[fallthrough]];
+            case FileState::Processing:
+            {
+                if (insert_succeeded)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected state {} of file {} while insert succeeded",
+                        file_state, file_metadata->getPath());
+                }
+
+                file_metadata->setFailed(exception_message, /* reduce_retry_count */false);
+                break;
+            }
+            case FileState::ErrorOnRead:
+            {
+                chassert(!exception_during_read.empty());
+                file_metadata->setFailed(exception_during_read, /* reduce_retry_count */true);
+                break;
+            }
         }
-        else
-        {
-            file_metadata->setFailed(
-                exception_message,
-                /* reduce_retry_count */false,
-                /* overwrite_status */true);
 
-        }
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */success);
-    }
-
-    for (const auto & file_metadata : failed_during_read_files)
-    {
-        /// `exception` from commit args is from insertion to storage.
-        /// Here we do not used it as failed_during_read_files were not inserted into storage, but skipped.
-        file_metadata->setFailed(
-            file_metadata->getFileStatus()->getException(),
-            /* reduce_retry_count */true,
-            /* overwrite_status */false);
-
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */false);
+        appendLogElement(
+            file_metadata->getPath(),
+            *file_metadata->getFileStatus(),
+            /* processed */insert_succeeded && file_state == FileState::Processed);
     }
 }
 

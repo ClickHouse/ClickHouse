@@ -1331,7 +1331,10 @@ void StorageReplicatedMergeTree::drop()
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
         zookeeper = getZooKeeperIfTableShutDown();
         /// Update zookeeper client, since existing may be expired, while ZooKeeper is required inside dropAllData().
-        current_zookeeper = zookeeper;
+        {
+            std::lock_guard lock(current_zookeeper_mutex);
+            current_zookeeper = zookeeper;
+        }
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
@@ -6901,6 +6904,8 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         /* is_attach */ true,
         /* allow_attach_while_readonly */ true);
 
+    results.reserve(loaded_parts.size());
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         const String old_name = loaded_parts[i]->name;
@@ -8363,6 +8368,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         ++idx;
     }
 
+    /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
+    background_operations_assignee.trigger();
+
     for (const auto & entry : entries)
         waitForLogEntryToBeProcessedIfNecessary(*entry, query_context);
 }
@@ -8902,6 +8910,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         intent_guard.reset();
         parts_holder.clear();
         cleanup_thread.wakeup();
+
+        /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
+        background_operations_assignee.trigger();
 
         waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
 
@@ -9693,7 +9704,7 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
 {
     auto settings = getSettings();
 
-    if (!part.isStoredOnDisk() || !(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+    if (!(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         return;
 
     if (!part.getDataPartStorage().supportZeroCopyReplication())
@@ -9748,7 +9759,7 @@ void StorageReplicatedMergeTree::lockSharedData(
 {
     auto settings = getSettings();
 
-    if (!part.isStoredOnDisk() || !(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+    if (!(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         return;
 
     if (!part.getDataPartStorage().supportZeroCopyReplication())
@@ -9802,12 +9813,6 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
     auto settings = getSettings();
     if (!(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
         return std::make_pair(true, NameSet{});
-
-    if (!part.isStoredOnDisk())
-    {
-        LOG_TRACE(log, "Part {} is not stored on disk, blobs can be removed", part.name);
-        return std::make_pair(true, NameSet{});
-    }
 
     if (!part.getDataPartStorage().supportZeroCopyReplication())
     {

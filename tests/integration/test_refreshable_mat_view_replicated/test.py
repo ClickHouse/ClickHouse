@@ -217,6 +217,11 @@ def fn_setup_tables():
     )
     node.query(f"INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
 
+    yield
+
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
+
 
 @pytest.mark.parametrize(
     "select_query",
@@ -280,7 +285,7 @@ def test_append(
 @pytest.mark.parametrize("if_not_exists", [True, False])
 @pytest.mark.parametrize("depends_on", [None, ["default.dummy_rmv"]])
 @pytest.mark.parametrize("empty", [True, False])
-@pytest.mark.parametrize("database_name", ["test_db"])  # None,
+@pytest.mark.parametrize("database_name", ["test_db"])
 @pytest.mark.parametrize(
     "settings",
     [
@@ -555,8 +560,8 @@ def test_long_query_cancel(fn_setup_tables):
 
 @pytest.fixture(scope="function")
 def fn3_setup_tables():
-    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv")
 
     node.query(
