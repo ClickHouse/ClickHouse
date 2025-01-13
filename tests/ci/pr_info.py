@@ -40,6 +40,13 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
+DOCS_FILES = [
+    "docker/docs",
+    "Settings.cpp",
+    "FormatFactorySettings.h",
+    "tests/ci/docs_check.py",
+    "aspell-dict.txt",
+]
 RETRY_SLEEP = 0
 
 
@@ -418,14 +425,7 @@ class PRInfo:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
             if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
-                docs_path in f
-                for docs_path in [
-                    "docker/docs",
-                    "Settings.cpp",
-                    "FormatFactorySettings.h",
-                    "tests/ci/docs_check.py",
-                    "aspell-dict.txt",
-                ]
+                docs_path in f for docs_path in DOCS_FILES
             ):
                 return True
         return False
@@ -445,15 +445,9 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
-                docs_path in f
-                for docs_path in [
-                    "docker/docs",
-                    "Settings.cpp",
-                    "FormatFactorySettings.h",
-                    "tests/ci/docs_check.py",
-                    "aspell-dict.txt",
-                ]
+            if not (
+                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
+                or any(docs_path in f for docs_path in DOCS_FILES)
             ):
                 return False
         return True
