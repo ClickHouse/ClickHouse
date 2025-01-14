@@ -99,6 +99,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
         {"disabled_types",
          [&](const JSONObjectType & value)
          {
+             using std::operator""sv;
+             constexpr auto delim{","sv};
              String input = String(value.getString());
              std::transform(input.begin(), input.end(), input.begin(), ::tolower);
 
@@ -131,13 +133,13 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
                     {"ipv6", allow_ipv6},
                     {"geo", allow_geo}};
 
-             for (const auto word : std::views::split(input, ","))
+             for (const auto word : std::views::split(input, delim))
              {
                  const auto & entry = std::string_view(word);
 
                  if (type_entries.find(entry) == type_entries.end())
                  {
-                     throw std::runtime_error("Unknown type optiom: " + String(entry));
+                     throw std::runtime_error("Unknown type option: " + String(entry));
                  }
                  type_mask &= (~type_entries.at(entry));
              }
