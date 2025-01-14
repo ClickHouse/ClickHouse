@@ -925,8 +925,6 @@ Chunk DWARFBlockInputFormat::read()
             delivery_queue.pop_front();
             wake_up_threads.notify_one();
             ok = true;
-            chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
-            total_rows += chunk.getNumRows();
             return chunk;
         }
 

@@ -268,8 +268,6 @@ Chunk ParallelParsingInputFormat::read()
         }
     }
 
-    res.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
-    total_rows += res.getNumRows();
     return res;
 }
 
