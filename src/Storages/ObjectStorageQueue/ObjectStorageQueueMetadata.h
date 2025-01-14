@@ -129,9 +129,7 @@ public:
     /// According to current *active* registered tables,
     /// check using a hash ring which table would process these paths.
     /// Leave only those paths which need to be processed by current table.
-    void filterOutForProcessor(Strings & paths, const std::string & processor_id);
-    /// Get ID for the specified table which is used for active tables.
-    static std::string getProcessorID(const StorageID & storage_id);
+    void filterOutForProcessor(Strings & paths, const StorageID & storage_id) const;
 
     /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;
@@ -146,6 +144,7 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+
     void migrateToBucketsInKeeper(size_t value);
 
     void registerNonActive(const StorageID & storage_id);
@@ -156,6 +155,9 @@ private:
 
     void updateRegistryFunc();
     void updateRegistry(const DB::Strings & registered_);
+
+    /// Get ID for the specified table which is used for active tables.
+    static std::string getProcessorID(const StorageID & storage_id);
 
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
@@ -174,11 +176,16 @@ private:
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
 
+    /// A set of currently known "active" servers.
+    /// The set is updated by updateRegistryFunc().
     NameSet active_servers;
-
+    /// Hash ring implementation.
     class ServersHashRing;
+    /// Hash ring object.
+    /// Can be updated by updateRegistryFunc(), when `active_servers` set changes.
     std::shared_ptr<ServersHashRing> active_servers_hash_ring;
-    std::mutex active_servers_mutex;
+    /// Guards `active_servers` and `active_servers_hash_ring`.
+    mutable SharedMutex active_servers_mutex;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

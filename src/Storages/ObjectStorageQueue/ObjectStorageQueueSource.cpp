@@ -74,7 +74,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , mode(metadata->getTableMetadata().getMode())
     , enable_hash_ring_filtering(enable_hash_ring_filtering_)
-    , processor_id(ObjectStorageQueueMetadata::getProcessorID(storage_id_))
+    , storage_id(storage_id_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -203,7 +203,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::Obje
         paths.push_back(object->getPath());
 
     if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
-        metadata->filterOutForProcessor(paths, processor_id);
+        metadata->filterOutForProcessor(paths, storage_id);
 
     if (mode == ObjectStorageQueueMode::UNORDERED)
         ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);

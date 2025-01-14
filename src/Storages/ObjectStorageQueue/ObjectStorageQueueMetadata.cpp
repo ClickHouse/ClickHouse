@@ -770,20 +770,21 @@ std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage
     return toString(Info::create(storage_id).hash());
 }
 
-void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const std::string & processor_id)
+void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const StorageID & storage_id) const
 {
-    std::lock_guard lock(active_servers_mutex);
+    std::shared_lock lock(active_servers_mutex);
     if (active_servers.empty() || !active_servers_hash_ring)
         return;
 
+    const auto self = getProcessorID(storage_id);
     Strings result;
     for (auto & path : paths)
     {
         const auto chosen = active_servers_hash_ring->chooseServer(ServersHashRing::hash(path));
-        if (chosen == processor_id)
+        if (chosen == self)
             result.emplace_back(std::move(path));
         else
-            LOG_TEST(log, "File {} should be processed by {}, skipping it ({})", path, chosen, processor_id);
+            LOG_TEST(log, "File {} should be processed by {}, skipping it ({})", path, chosen, self);
     }
     paths = std::move(result);
 }
@@ -841,11 +842,12 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
     if (registered_set == active_servers)
         return;
 
-    std::lock_guard lock(active_servers_mutex);
+    std::unique_lock lock(active_servers_mutex);
     active_servers = registered_set;
 
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(100, log); /// TODO: Add a setting.
+
     active_servers_hash_ring->rebuild(active_servers);
 }
 

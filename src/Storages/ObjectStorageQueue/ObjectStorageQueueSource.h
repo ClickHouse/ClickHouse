@@ -79,7 +79,7 @@ public:
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
-        const std::string processor_id;
+        const StorageID storage_id;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
