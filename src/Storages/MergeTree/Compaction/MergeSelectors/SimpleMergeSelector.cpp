@@ -1,15 +1,12 @@
-#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
-#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
-#include <Core/MergeSelectorAlgorithm.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 #include <base/interpolate.h>
 #include <Common/thread_local_rng.h>
 
 #include <cmath>
 #include <cassert>
-#include <iostream>
 #include <random>
-
 
 namespace DB
 {
@@ -33,12 +30,12 @@ void registerStochasticSimpleMergeSelector(MergeSelectorFactory & factory)
 namespace
 {
 
+using Iterator = PartsRange::const_iterator;
+
 /** Estimates best set of parts to merge within passed alternatives.
   */
 struct Estimator
 {
-    using Iterator = SimpleMergeSelector::PartsRange::const_iterator;
-
     void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
@@ -64,9 +61,9 @@ struct Estimator
         }
     }
 
-    SimpleMergeSelector::PartsRange getBest() const
+    PartsRange getBest() const
     {
-        return SimpleMergeSelector::PartsRange(best_begin, best_end);
+        return PartsRange(best_begin, best_end);
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -116,16 +113,23 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
-    size_t range_size,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
+    Iterator begin,
+    Iterator end,
+    const IMergeSelector::RangeFilter & range_filter,
     const SimpleMergeSelector::Settings & settings)
 {
+    if (range_filter && !range_filter({begin, end}))
+        return false;
+
     if (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
         return true;
 
-    if (settings.min_parts_to_merge_at_once && range_size < settings.min_parts_to_merge_at_once)
+    const size_t size = end - begin;
+
+    if (settings.min_parts_to_merge_at_once && size < settings.min_parts_to_merge_at_once)
         return false;
 
     /// Map size to 0..1 using logarithmic scale
@@ -158,7 +162,7 @@ bool allow(
         lowered_base = std::min(distribution(thread_local_rng), std::max(1.01, lowered_base));
     }
 
-    return (sum_size + range_size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= lowered_base;
+    return (sum_size + size * settings.size_fixed_cost_to_add) / (max_size + settings.size_fixed_cost_to_add) >= lowered_base;
 }
 
 
@@ -176,9 +180,10 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
     return right_boundary - parts_threshold;
 }
 
-void selectWithinPartition(
-    const SimpleMergeSelector::PartsRange & parts,
+void selectWithinPartsRange(
+    const PartsRange & parts,
     const size_t max_total_size_to_merge,
+    const IMergeSelector::RangeFilter & range_filter,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings,
     double min_size_to_lower_base_log,
@@ -208,9 +213,6 @@ void selectWithinPartition(
 
     for (; begin < parts_count; ++begin)
     {
-        if (!parts[begin].shall_participate_in_merges)
-            continue;
-
         size_t sum_size = parts[begin].size;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
@@ -219,9 +221,6 @@ void selectWithinPartition(
         {
             assert(end > begin);
             if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
-                break;
-
-            if (!parts[end - 1].shall_participate_in_merges)
                 break;
 
             size_t cur_size = parts[end - 1].size;
@@ -234,10 +233,13 @@ void selectWithinPartition(
             if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
                 break;
 
-            if (allow(sum_size, max_size, min_age, end - begin, parts_count, min_size_to_lower_base_log, max_size_to_lower_base_log, settings))
+            auto range_begin = parts.begin() + begin;
+            auto range_end = parts.begin() + end;
+
+            if (allow(sum_size, max_size, min_age, parts_count, min_size_to_lower_base_log, max_size_to_lower_base_log, range_begin, range_end, range_filter, settings))
                 estimator.consider(
-                    parts.begin() + begin,
-                    parts.begin() + end,
+                    range_begin,
+                    range_end,
                     sum_size,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     settings);
@@ -247,10 +249,10 @@ void selectWithinPartition(
 
 }
 
-
-SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
+PartsRange SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge,
+    RangeFilter range_filter) const
 {
     Estimator estimator;
 
@@ -259,7 +261,7 @@ SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
     const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
 
     for (const auto & part_range : parts_ranges)
-        selectWithinPartition(part_range, max_total_size_to_merge, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+        selectWithinPartsRange(part_range, max_total_size_to_merge, range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
     return estimator.getBest();
 }
