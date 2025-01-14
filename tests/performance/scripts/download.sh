@@ -23,8 +23,8 @@ dataset_paths["hits10"]="https://clickhouse-private-datasets.s3.amazonaws.com/hi
 dataset_paths["hits100"]="https://clickhouse-private-datasets.s3.amazonaws.com/hits_100m_single/partitions/hits_100m_single.tar"
 dataset_paths["hits1"]="https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar"
 dataset_paths["values"]="https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar"
-dataset_paths["tpch1"]="https://clickhouse-robert-schulze-datasets.s3.amazonaws.com/tpch1.tar"
-dataset_paths["tpch10"]="https://clickhouse-robert-schulze-datasets.s3.amazonaws.com/tpch10.tar"
+dataset_paths["tpch1"]="https://clickhouse-datasets.s3.amazonaws.com/h/1/tpch.tar"
+dataset_paths["tpch10"]="https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar"
 
 
 function download
