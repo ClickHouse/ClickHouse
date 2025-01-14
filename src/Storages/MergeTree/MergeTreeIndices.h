@@ -17,6 +17,7 @@
 #include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
+constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
 
 namespace DB
 {
@@ -70,6 +71,9 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
+
+    /// The in-memory size of the granule. Not expected to be 100% accurate.
+    virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;

@@ -373,6 +373,9 @@ class CI:
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
         ),
+        JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=1
+        ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
@@ -494,6 +497,21 @@ class CI:
             required_builds=[BuildNames.PACKAGE_TSAN],
         ),
         JobNames.AST_FUZZER_TEST_UBSAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_UBSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_DEBUG: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG],
+        ),
+        JobNames.BUZZHOUSE_TEST_ASAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ASAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_MSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_MSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_TSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_TSAN],
+        ),
+        JobNames.BUZZHOUSE_TEST_UBSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
