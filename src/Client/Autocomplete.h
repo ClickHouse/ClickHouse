@@ -82,7 +82,7 @@ private:
     size_t query_history_limit = 700;
 
     const String history_query = fmt::format(
-        "SELECT query FROM (SELECT query, query_start_time FROM system.query_log WHERE is_generated_query = 0 AND is_initial_query = 1 AND "
+        "SELECT query FROM (SELECT query, query_start_time FROM system.query_log WHERE is_initial_query = 1 AND "
         "type = 2 AND user IN (SELECT currentUser()) ORDER BY event_date DESC, event_time DESC LIMIT {}) AS recent_queries ORDER BY query_start_time "
         "ASC;",
         query_history_limit);
