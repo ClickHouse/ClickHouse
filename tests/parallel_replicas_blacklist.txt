@@ -49,6 +49,9 @@
     Sizes of columns doesn't match
 02861_filter_pushdown_const_bug
 
+    https://github.com/ClickHouse/ClickHouse/issues/74547
+02354_vector_search_multiple_marks
+
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
     clickhouse-test --no-shard
