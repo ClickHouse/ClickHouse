@@ -1,4 +1,5 @@
 # docker build -t clickhouse/docs-builder .
+# trigger rebuild in 74537
 FROM golang:alpine AS htmltest-builder
 
 ARG HTMLTEST_VERSION=0.17.0
@@ -16,7 +17,7 @@ RUN apk add --no-cache git openssh bash
 ARG CACHE_INVALIDATOR=0
 
 RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \
-    --depth=1 --branch=docusaurus_v3 /opt/clickhouse-docs
+    --depth=1 --branch=main /opt/clickhouse-docs
 
 WORKDIR /opt/clickhouse-docs
 
