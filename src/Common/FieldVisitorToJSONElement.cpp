@@ -60,7 +60,7 @@ String FieldVisitorToJSONElement::operator() (const Array & x) const
     WriteBufferFromOwnString wb;
 
     wb << '[';
-    for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+    for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb.write(", ", 2);
@@ -76,7 +76,7 @@ String FieldVisitorToJSONElement::operator() (const Tuple & x) const
     WriteBufferFromOwnString wb;
 
     wb << '[';
-    for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+    for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb.write(", ", 2);
