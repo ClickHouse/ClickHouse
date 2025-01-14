@@ -49,7 +49,7 @@ Chunk ORCBlockInputFormat::read()
     if (need_only_count)
     {
         auto chunk = getChunkForCount(file_reader->GetRawORCReader()->getStripe(stripe_current++)->getNumberOfRows());
-        chunk.setRowsReadBefore(total_rows);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
         total_rows += chunk.getNumRows();
         return chunk;
     }
@@ -83,7 +83,7 @@ Chunk ORCBlockInputFormat::read()
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     auto chunk = arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, block_missing_values_ptr);
-    chunk.setRowsReadBefore(total_rows);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
     total_rows += chunk.getNumRows();
     return chunk;
 }

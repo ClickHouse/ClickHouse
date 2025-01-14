@@ -955,7 +955,7 @@ Chunk ParquetBlockInputFormat::read()
     if (need_only_count)
     {
         auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
-        chunk.setRowsReadBefore(total_rows);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
         total_rows += chunk.getNumRows();
         return chunk;
     }
@@ -990,7 +990,7 @@ Chunk ParquetBlockInputFormat::read()
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
-            chunk.chunk.setRowsReadBefore(total_rows);
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
             total_rows += chunk.chunk.getNumRows();
             return std::move(chunk.chunk);
         }

@@ -32,7 +32,7 @@ Chunk OneInputFormat::read()
     auto column = ColumnUInt8::create();
     column->insertDefault();
     auto chunk = Chunk(Columns{std::move(column)}, 1);
-    chunk.setRowsReadBefore(total_rows);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
     ++total_rows;
     return chunk;
 }

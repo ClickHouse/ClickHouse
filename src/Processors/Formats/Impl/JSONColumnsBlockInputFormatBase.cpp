@@ -208,7 +208,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
     }
 
     auto chunk = Chunk(std::move(columns), rows);
-    chunk.setRowsReadBefore(total_rows);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
     total_rows += chunk.getNumRows();
     return chunk;
 }

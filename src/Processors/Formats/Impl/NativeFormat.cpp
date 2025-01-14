@@ -52,7 +52,7 @@ public:
 
         size_t num_rows = block.rows();
         auto chunk = Chunk(block.getColumns(), num_rows);
-        chunk.setRowsReadBefore(total_rows);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
         total_rows += num_rows;
         return chunk;
     }

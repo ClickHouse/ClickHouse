@@ -149,7 +149,7 @@ Chunk ValuesBlockInputFormat::read()
 
         total_rows += rows_in_block;
         auto chunk = getChunkForCount(rows_in_block);
-        chunk.setRowsReadBefore(total_rows_before);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
         return chunk;
     }
 
@@ -180,7 +180,7 @@ Chunk ValuesBlockInputFormat::read()
 
     size_t rows = columns[0]->size();
     auto chunk = Chunk{std::move(columns), rows};
-    chunk.setRowsReadBefore(total_rows_before);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
     return chunk;
 }
 

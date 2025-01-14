@@ -147,7 +147,7 @@ Chunk ParquetMetadataInputFormat::read()
     Chunk res;
     if (done)
     {
-        res.setRowsReadBefore(total_rows);
+        res.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
         total_rows += res.getNumRows();
         return res;
     }
@@ -237,7 +237,7 @@ Chunk ParquetMetadataInputFormat::read()
     }
 
     done = true;
-    res.setRowsReadBefore(total_rows);
+    res.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
     total_rows += res.getNumRows();
     return res;
 }
