@@ -138,8 +138,4 @@ SELECT * FROM file(data.parquet, ParquetMetadata) format PrettyJSONEachRow
 }
 ```
 
-## Format Settings
-
-## ParquetMetadata {data-format-parquet-metadata}
-
 
