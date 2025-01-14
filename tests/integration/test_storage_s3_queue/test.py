@@ -2498,7 +2498,7 @@ def test_list_and_delete_race(started_cluster):
 
     assert len(res1) + len(res2) == total_rows
     # (kssenii) I will fix this assert a tiny bit later
-    #assert (
+    # assert (
     #    node.contains_in_log("because of the race with list & delete")
     #    or node_2.contains_in_log("because of the race with list & delete")
     #    or node.contains_in_log(
@@ -2507,7 +2507,7 @@ def test_list_and_delete_race(started_cluster):
     #    or node_2.contains_in_log(
     #        f"StorageS3Queue (default.{table_name}): Skipping file"
     #    )
-    #)
+    # )
 
 
 def test_registry(started_cluster):
