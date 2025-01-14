@@ -103,9 +103,11 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool transform_null_in;
+    extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -690,6 +692,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
     const auto & scalar_type = scalar_column_with_type.type;
 
+    Field scalar_value;
+    scalar_column_with_type.column->get(0, scalar_value);
+
     const auto * scalar_type_name = scalar_block.safeGetByPosition(0).type->getFamilyName();
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -698,10 +703,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
         || !context->hasQueryContext() || !nearest_query_scope)
     {
-        ConstantValue constant_value{ scalar_column_with_type.column, scalar_type };
+        auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), scalar_type);
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
 
-        if (scalar_column_with_type.column->isNullAt(0))
+        if (constant_node->getValue().isNull())
         {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
             node = std::make_shared<ConstantNode>(std::move(constant_value), node);
@@ -724,7 +729,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     std::string get_scalar_function_name = "__getScalar";
 
-    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
+    auto scalar_query_hash_constant_value = std::make_shared<ConstantValue>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
+    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_constant_value));
 
     auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
@@ -866,7 +872,8 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             "{} numeric constant expression is not representable as UInt64",
             expression_description);
 
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
+    auto constant_value = std::make_shared<ConstantValue>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
+    auto result_constant_node = std::make_shared<ConstantNode>(std::move(constant_value));
     result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
 
     expression_node = std::move(result_constant_node);
@@ -3080,7 +3087,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getColumn();
+            argument_column.column = constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
             argument_column.type = constant_node->getResultType();
             argument_is_constant = true;
         }
@@ -3484,13 +3491,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (first_argument_constant_node && second_argument_constant_node)
         {
             const auto & first_argument_constant_type = first_argument_constant_node->getResultType();
-            const auto second_argument_constant_literal = second_argument_constant_node->getValue();
+            const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
             const auto & settings = scope.context->getSettingsRef();
 
             auto result_block = getSetElementsForConstantValue(
-                first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type, settings[Setting::transform_null_in]);
+                first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type,
+                GetSetElementParams{
+                    .transform_null_in = settings[Setting::transform_null_in],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                });
+
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
@@ -3506,7 +3518,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         argument_columns[1].type = std::make_shared<DataTypeSet>();
     }
 
-    ConstantNodePtr constant_node;
+    std::shared_ptr<ConstantValue> constant_value;
 
     try
     {
@@ -3535,7 +3547,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (all_arguments_constants)
             {
-                size_t num_rows = 1;
+                size_t num_rows = 0;
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
@@ -3562,7 +3574,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node);
+                Field column_constant_value;
+                column->get(0, column_constant_value);
+                constant_value = std::make_shared<ConstantValue>(std::move(column_constant_value), result_type);
             }
         }
 
@@ -3574,8 +3588,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         throw;
     }
 
-    if (constant_node)
-        node = std::move(constant_node);
+    if (constant_value)
+        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 
     return result_projection_names;
 }
@@ -4173,18 +4187,18 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
 
 void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const
 {
-    if (scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_order_by])
-        return;
-
-    auto check = [](const IDataType & type)
+    auto check = [&](const IDataType & type)
     {
-        if (isDynamic(type) || isVariant(type))
+        if (!scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_order_by] && (isDynamic(type) || isVariant(type)))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
                 "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
                 "its a JSON path subcolumn) or casting this column to a specific data type. "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
+
+        if (!scope.context->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by = 1 in order to allow it", type.getName());
     };
 
     check(*sorting_key_type);

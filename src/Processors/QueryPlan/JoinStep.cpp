@@ -147,7 +147,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (min_block_size_bytes && !has_low_cardinality && join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform([&](const Block & header)
-                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
     }
 
     return joined_pipeline;
@@ -250,7 +250,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         default_totals = true;
     }
 
-    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
+    auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {

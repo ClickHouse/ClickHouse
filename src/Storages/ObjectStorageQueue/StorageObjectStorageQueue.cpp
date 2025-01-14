@@ -69,6 +69,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
 }
 
 namespace ErrorCodes
@@ -168,6 +169,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , engine_name(engine_args->engine->name)
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
+    , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
@@ -570,21 +572,57 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            for (auto & source : sources)
-                source->commit(/* success */false, getCurrentExceptionMessage(true));
-
+            commit(/* insert_succeeded */false, sources, getCurrentExceptionMessage(true));
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        for (auto & source : sources)
-            source->commit(/* success */true);
-
+        commit(/* insert_succeeded */true, sources);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
 
+    LOG_TEST(log, "Processed rows: {}", total_rows);
     return total_rows > 0;
+}
+
+void StorageObjectStorageQueue::commit(
+    bool insert_succeeded,
+    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    const std::string & exception_message) const
+{
+    Coordination::Requests requests;
+    StoredObjects successful_objects;
+    for (auto & source : sources)
+        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
+
+    if (requests.empty())
+    {
+        LOG_TEST(log, "Nothing to commit");
+        return;
+    }
+
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    {
+        /// We do need to apply after-processing action before committing requests to keeper.
+        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
+        object_storage->removeObjectsIfExist(successful_objects);
+    }
+
+    auto zk_client = getZooKeeper();
+    Coordination::Responses responses;
+
+    auto code = zk_client->tryMulti(requests, responses);
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperMultiException(code, requests, responses);
+
+    for (auto & source : sources)
+        source->finalizeCommit(insert_succeeded, exception_message);
+
+    LOG_TRACE(
+        log, "Successfully committed {} requests for {} sources",
+        requests.size(), sources.size());
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
@@ -888,17 +926,21 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
-    auto settings = configuration->getQuerySettings(local_context);
-    auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context,
-        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
-
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
     return std::make_shared<FileIterator>(
-        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
+        files_metadata,
+        object_storage,
+        configuration,
+        list_objects_batch_size,
+        predicate,
+        getVirtualsList(),
+        local_context,
+        log,
+        file_deletion_enabled,
+        shutdown_called);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

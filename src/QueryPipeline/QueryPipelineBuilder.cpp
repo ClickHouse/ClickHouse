@@ -442,6 +442,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         const bool has_low_cardinality = std::ranges::any_of(
             right->getHeader(),
             [](const auto & column) { return column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type); });
+        auto filling_finish_counter = std::make_shared<FinishCounter>(max_streams);
+
         right->resize(max_streams);
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
@@ -456,7 +458,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     processors.emplace_back(squashing);
                     out = &squashing->getOutputPort();
                 }
-                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, filling_finish_counter);
                 connect(*out, adding_joined->getInputs().front());
                 processors.emplace_back(std::move(adding_joined));
             }
@@ -469,7 +471,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     {
         right->resize(1);
 
-        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+        auto filling_finish_counter = std::make_shared<FinishCounter>(1);
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, filling_finish_counter);
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();
@@ -481,11 +484,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     right->resize(num_streams_including_totals);
 
     /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
-    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(num_streams);
+    auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
-
 
     std::vector<OutputPort *> joined_output_ports;
     std::vector<OutputPort *> delayed_root_output_ports;
@@ -523,7 +525,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         }
 
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, finish_counter);
+            left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());

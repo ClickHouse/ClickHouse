@@ -107,7 +107,6 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
-    virtual bool isStoredOnDisk() const = 0;
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
@@ -168,9 +167,6 @@ public:
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
-
-    /// Throws an exception if part is not stored in on-disk format.
-    void assertOnDisk() const;
 
     void remove();
 
