@@ -426,6 +426,7 @@ bool Client::buzzHouse()
     {
         String full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
+        bool first = true;
         bool replica_setup = false;
         bool has_cloud_features = false;
         BuzzHouse::RandomGenerator rg(fc.seed);
@@ -454,37 +455,98 @@ bool Client::buzzHouse()
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
-        processQueryAndLog(
-            outf,
-            "SET engine_file_truncate_on_insert = 1, allow_aggregate_partitions_independently = 1, allow_archive_path_syntax = 1, "
-            "allow_asynchronous_read_from_io_pool_for_merge_tree = 1, allow_changing_replica_until_first_data_packet = 1, "
-            "allow_create_index_without_type = 1, allow_custom_error_code_in_throwif = 1, allow_ddl = 1, "
-            "allow_deprecated_database_ordinary = 1, allow_deprecated_error_prone_window_functions = 1, "
-            "allow_deprecated_snowflake_conversion_functions = 1, allow_deprecated_syntax_for_merge_tree = 1, allow_distributed_ddl = 1, "
-            "allow_drop_detached = 1, allow_execute_multiif_columnar = 1, allow_experimental_analyzer = 1, allow_experimental_codecs = 1, "
-            "allow_experimental_database_materialized_mysql = 1, allow_experimental_database_materialized_postgresql = 1, "
-            "allow_experimental_dynamic_type = 1, allow_experimental_full_text_index = 1, allow_experimental_funnel_functions = 1, "
-            "allow_experimental_hash_functions = 1, allow_experimental_inverted_index = 1, "
-            "allow_experimental_join_right_table_sorting = 1, allow_experimental_json_type = 1, "
-            "allow_experimental_kafka_offsets_storage_in_keeper = 1, allow_experimental_live_view = 1, "
-            "allow_experimental_materialized_postgresql_table = 1, allow_experimental_nlp_functions = 1, "
-            "allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_query_deduplication = 1, "
-            "allow_experimental_shared_set_join = 1, allow_experimental_statistics = 1, allow_experimental_time_series_table = 1, "
-            "allow_experimental_variant_type = 1, allow_experimental_vector_similarity_index = 1, allow_experimental_window_view = 1, "
-            "allow_get_client_http_header = 1, allow_hyperscan = 1, allow_introspection_functions = 1, "
-            "allow_materialized_view_with_bad_select = 1, allow_named_collection_override_by_default = 1, allow_non_metadata_alters = 1, "
-            "allow_nonconst_timezone_arguments = 1, allow_nondeterministic_mutations = 1, "
-            "allow_nondeterministic_optimize_skip_unused_shards = 1, allow_prefetched_read_pool_for_local_filesystem = 1, "
-            "allow_prefetched_read_pool_for_remote_filesystem = 1, allow_push_predicate_when_subquery_contains_with = 1, "
-            "allow_reorder_prewhere_conditions = 1, allow_settings_after_format_in_insert = 1, allow_simdjson = 1, "
-            "allow_statistics_optimize = 1, allow_suspicious_codecs = 1, allow_suspicious_fixed_string_types = 1, allow_suspicious_indices "
-            "= 1, allow_suspicious_low_cardinality_types = 1, allow_suspicious_primary_key = 1, allow_suspicious_ttl_expressions = 1, "
-            "allow_suspicious_variant_types = 1, allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1, "
-            "allow_unrestricted_reads_from_keeper = 1, enable_analyzer = 1, enable_zstd_qat_codec = 1, type_json_skip_duplicated_paths = "
-            "1, "
-            "allow_experimental_database_iceberg = 1, allow_experimental_bfloat16_type = 1, allow_not_comparable_types_in_order_by = 1, "
-            "allow_not_comparable_types_in_comparison_functions = 1;");
-        processQueryAndLog(outf, rg.nextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
+        std::vector<String> defaultSettings
+            = {"engine_file_truncate_on_insert",
+               "allow_aggregate_partitions_independently",
+               "allow_archive_path_syntax",
+               "allow_asynchronous_read_from_io_pool_for_merge_tree",
+               "allow_changing_replica_until_first_data_packet",
+               "allow_create_index_without_type",
+               "allow_custom_error_code_in_throwif",
+               "allow_ddl",
+               "allow_deprecated_database_ordinary",
+               "allow_deprecated_error_prone_window_functions",
+               "allow_deprecated_snowflake_conversion_functions",
+               "allow_deprecated_syntax_for_merge_tree",
+               "allow_distributed_ddl",
+               "allow_drop_detached",
+               "allow_execute_multiif_columnar",
+               "allow_experimental_analyzer",
+               "allow_experimental_codecs",
+               "allow_experimental_database_materialized_mysql",
+               "allow_experimental_database_materialized_postgresql",
+               "allow_experimental_dynamic_type",
+               "allow_experimental_full_text_index",
+               "allow_experimental_funnel_functions",
+               "allow_experimental_hash_functions",
+               "allow_experimental_inverted_index",
+               "allow_experimental_join_right_table_sorting",
+               "allow_experimental_json_type",
+               "allow_experimental_kafka_offsets_storage_in_keeper",
+               "allow_experimental_live_view",
+               "allow_experimental_materialized_postgresql_table",
+               "allow_experimental_nlp_functions",
+               "allow_experimental_parallel_reading_from_replicas",
+               "allow_experimental_query_deduplication",
+               "allow_experimental_shared_set_join",
+               "allow_experimental_statistics",
+               "allow_experimental_time_series_table",
+               "allow_experimental_variant_type",
+               "allow_experimental_vector_similarity_index",
+               "allow_experimental_window_view",
+               "allow_get_client_http_header",
+               "allow_hyperscan",
+               "allow_introspection_functions",
+               "allow_materialized_view_with_bad_select",
+               "allow_named_collection_override_by_default",
+               "allow_non_metadata_alters",
+               "allow_nonconst_timezone_arguments",
+               "allow_nondeterministic_mutations",
+               "allow_nondeterministic_optimize_skip_unused_shards",
+               "allow_prefetched_read_pool_for_local_filesystem",
+               "allow_prefetched_read_pool_for_remote_filesystem",
+               "allow_push_predicate_when_subquery_contains_with",
+               "allow_reorder_prewhere_conditions",
+               "allow_settings_after_format_in_insert",
+               "allow_simdjson",
+               "allow_statistics_optimize",
+               "allow_suspicious_codecs",
+               "allow_suspicious_fixed_string_types",
+               "allow_suspicious_indices",
+               "allow_suspicious_low_cardinality_types",
+               "allow_suspicious_primary_key",
+               "allow_suspicious_ttl_expressions",
+               "allow_suspicious_variant_types",
+               "allow_suspicious_types_in_group_by",
+               "allow_suspicious_types_in_order_by",
+               "allow_unrestricted_reads_from_keeper",
+               "enable_analyzer",
+               "enable_zstd_qat_codec",
+               "type_json_skip_duplicated_paths",
+               "allow_experimental_database_iceberg",
+               "allow_experimental_bfloat16_type",
+               "allow_not_comparable_types_in_order_by",
+               "allow_not_comparable_types_in_comparison_functions"};
+        defaultSettings.push_back(rg.nextBool() ? "s3_truncate_on_insert" : "s3_create_new_file_on_insert");
+
+        full_query.resize(0);
+        full_query += "SET ";
+        for (const auto & entry : defaultSettings)
+        {
+            if (!first)
+            {
+                full_query += ", ";
+            }
+            full_query += entry;
+            full_query += " = 1";
+            first = false;
+        }
+        full_query += ";";
+        processQueryAndLog(outf, full_query);
+        if (ei.hasClickHouseExtraServerConnection())
+        {
+            ei.setDefaultSettings(BuzzHouse::PeerTableDatabase::ClickHouse, defaultSettings);
+        }
 
         //Load server configurations for the fuzzer
         fc.loadServerConfigurations();

@@ -1383,4 +1383,16 @@ void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     }
 }
 
+void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const std::vector<String> & settings)
+{
+    for (const auto & entry : settings)
+    {
+        buf.resize(0);
+        buf += "SET ";
+        buf += entry;
+        buf += " = 1;";
+        clickhouse->performQueryOnServerOrRemote(pt, buf);
+    }
+}
+
 }

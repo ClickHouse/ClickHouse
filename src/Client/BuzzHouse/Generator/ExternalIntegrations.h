@@ -371,6 +371,8 @@ public:
 
     void getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
 
+    void setDefaultSettings(PeerTableDatabase pt, const std::vector<String> & settings);
+
     ~ExternalIntegrations()
     {
         delete mysql;
