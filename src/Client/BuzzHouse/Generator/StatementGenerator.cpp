@@ -2689,42 +2689,42 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     assert(this->ids.empty());
     if (create_table && nopt < (create_table + 1))
     {
-        return generateNextCreateTable(rg, sq->mutable_create_table());
+        generateNextCreateTable(rg, sq->mutable_create_table());
     }
     else if (create_view && nopt < (create_table + create_view + 1))
     {
-        return generateNextCreateView(rg, sq->mutable_create_view());
+        generateNextCreateView(rg, sq->mutable_create_view());
     }
     else if (drop && nopt < (create_table + create_view + drop + 1))
     {
-        return generateNextDrop(rg, sq->mutable_drop());
+        generateNextDrop(rg, sq->mutable_drop());
     }
     else if (insert && nopt < (create_table + create_view + drop + insert + 1))
     {
-        return generateNextInsert(rg, sq->mutable_insert());
+        generateNextInsert(rg, sq->mutable_insert());
     }
     else if (light_delete && nopt < (create_table + create_view + drop + insert + light_delete + 1))
     {
-        return generateNextDelete(rg, sq->mutable_del());
+        generateNextDelete(rg, sq->mutable_del());
     }
     else if (truncate && nopt < (create_table + create_view + drop + insert + light_delete + truncate + 1))
     {
-        return generateNextTruncate(rg, sq->mutable_trunc());
+        generateNextTruncate(rg, sq->mutable_trunc());
     }
     else if (optimize_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + 1))
     {
-        return generateNextOptimizeTable(rg, sq->mutable_opt());
+        generateNextOptimizeTable(rg, sq->mutable_opt());
     }
     else if (
         check_table && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + 1))
     {
-        return generateNextCheckTable(rg, sq->mutable_check());
+        generateNextCheckTable(rg, sq->mutable_check());
     }
     else if (
         desc_table
         && nopt < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table + 1))
     {
-        return generateNextDescTable(rg, sq->mutable_desc());
+        generateNextDescTable(rg, sq->mutable_desc());
     }
     else if (
         exchange_tables
@@ -2732,7 +2732,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + 1))
     {
-        return generateNextExchangeTables(rg, sq->mutable_exchange());
+        generateNextExchangeTables(rg, sq->mutable_exchange());
     }
     else if (
         alter_table
@@ -2740,7 +2740,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + 1))
     {
-        return generateAlterTable(rg, sq->mutable_alter_table());
+        generateAlterTable(rg, sq->mutable_alter_table());
     }
     else if (
         set_values
@@ -2748,7 +2748,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + 1))
     {
-        return generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
+        generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
     }
     else if (
         attach
@@ -2756,7 +2756,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + 1))
     {
-        return generateAttach(rg, sq->mutable_attach());
+        generateAttach(rg, sq->mutable_attach());
     }
     else if (
         detach
@@ -2764,7 +2764,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + 1))
     {
-        return generateDetach(rg, sq->mutable_detach());
+        generateDetach(rg, sq->mutable_detach());
     }
     else if (
         create_database
@@ -2772,7 +2772,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + create_database + 1))
     {
-        return generateNextCreateDatabase(rg, sq->mutable_create_database());
+        generateNextCreateDatabase(rg, sq->mutable_create_database());
     }
     else if (
         create_function
@@ -2780,7 +2780,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + 1))
     {
-        return generateNextCreateFunction(rg, sq->mutable_create_function());
+        generateNextCreateFunction(rg, sq->mutable_create_function());
     }
     else if (
         system_stmt
@@ -2788,9 +2788,9 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt + 1))
     {
-        return generateNextSystemStatement(rg, sq->mutable_system_cmd());
+        generateNextSystemStatement(rg, sq->mutable_system_cmd());
     }
-    return generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
+    generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
 }
 
 struct TestSetting

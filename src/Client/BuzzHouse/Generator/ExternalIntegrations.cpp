@@ -242,10 +242,9 @@ bool MySQLIntegration::performQuery(const String & query)
     }
     else
     {
-        MYSQL_ROW row;
         MYSQL_RES * result = mysql_store_result(mysql_connection);
 
-        while ((row = mysql_fetch_row(result)))
+        while (mysql_fetch_row(result))
             ;
         mysql_free_result(result);
     }
