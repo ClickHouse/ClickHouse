@@ -41,6 +41,10 @@
 #include <limits>
 #include <type_traits>
 
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Planner/Planner.h>
+
 namespace DB
 {
 
@@ -637,7 +641,6 @@ struct NameGreater         { static constexpr auto name = "greater"; };
 struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
-
 template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
@@ -881,6 +884,23 @@ private:
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
         Field string_value = left_const ? left_const->getField() : right_const->getField();
+
+        auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
+        {
+            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
+                return false;
+            if (!enum_values || string_value.getType() != Field::Types::String)
+                return false;
+            T res;
+            return !enum_values->tryGetValue(res, string_value.safeGet<String>());
+        };
+
+        if (is_string_not_in_enum(typeid_cast<const DataTypeEnum8 *>(type_to_compare.get()))
+         || is_string_not_in_enum(typeid_cast<const DataTypeEnum16 *>(type_to_compare.get())))
+        {
+            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+        }
+
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
