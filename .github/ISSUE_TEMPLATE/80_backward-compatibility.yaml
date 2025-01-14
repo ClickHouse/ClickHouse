@@ -36,7 +36,7 @@ body:
       label: Error message and/or stacktrace
       description: If applicable, add screenshots to help explain your problem.
     validations:
-      required: true
+      required: false
   - type: textarea
     attributes:
       label: Additional context

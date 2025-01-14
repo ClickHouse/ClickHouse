@@ -36,7 +36,7 @@ body:
       label: Expected performance
       description: What are your performance expectation, why do you think they are realistic? Has it been working faster in older ClickHouse releases? Is it working faster in some specific other system?
     validations:
-      required: true
+      required: false
   - type: textarea
     attributes:
       label: Additional context
