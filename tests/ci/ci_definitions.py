@@ -412,7 +412,7 @@ class CommonJobConfigs:
     INSTALL_TEST = JobConfig(
         job_name_keyword="install",
         digest=DigestConfig(
-            include_paths=["./tests/ci/install_check.py --download"],
+            include_paths=["./tests/ci/install_check.py"],
             docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
         ),
         run_command='install_check.py "$CHECK_NAME"',
@@ -671,6 +671,8 @@ REQUIRED_CHECKS = [
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
     JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
+    JobNames.INSTALL_TEST_AMD,
+    JobNames.INSTALL_TEST_AARCH64,
 ]
 
 # Jobs that run in Merge Queue if it's enabled

@@ -8,19 +8,17 @@ from pathlib import Path
 from shutil import copy2
 from typing import Dict
 
-from praktika.utils import Utils
-
 from build_download_helper import download_builds_filter
 from compress_files import compress_fast
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH
+from env_helper import REPO_COPY, REPORT_PATH
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
-TEMP_PATH = Path(f"{Utils.cwd()}/ci/tmp/")
+TEMP_PATH = Path(f"{REPO_COPY}/ci/tmp/")
 LOGS_PATH = TEMP_PATH / "tests_logs"
 
 
@@ -210,7 +208,7 @@ def parse_args() -> argparse.Namespace:
         "check_name",
         help="check name, used to download the packages",
     )
-    parser.add_argument("--download", default=False, help=argparse.SUPPRESS)
+    parser.add_argument("--download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-download",
         dest="download",
@@ -262,6 +260,7 @@ def main():
     prepare_test_scripts()
 
     if args.download:
+        print("Download packages")
 
         def filter_artifacts(path: str) -> bool:
             is_match = False
@@ -291,10 +290,13 @@ def main():
         subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
 
     if args.deb:
+        print("Test debian")
         test_results.extend(test_install_deb(deb_image))
     if args.rpm:
+        print("Test rpm")
         test_results.extend(test_install_rpm(rpm_image))
     if args.tgz:
+        print("Test tgz")
         test_results.extend(test_install_tgz(deb_image))
         test_results.extend(test_install_tgz(rpm_image))
 

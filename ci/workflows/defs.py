@@ -813,7 +813,7 @@ class Jobs:
     install_check_job = Job.Config(
         name=JobNames.INSTALL_CHECK,
         runs_on=["..."],
-        command="python3 ./tests/ci/install_check.py dummy_check_name --no-rpm --no-tgz",
+        command="python3 ./tests/ci/install_check.py dummy_check_name --no-rpm --no-tgz --no-download",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./tests/ci/install_check.py"],
         ),
