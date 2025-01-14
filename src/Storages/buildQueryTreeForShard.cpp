@@ -293,8 +293,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
-    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
+    QueryPlanOptimizationSettings optimization_settings(mutable_context);
+    BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
     size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];

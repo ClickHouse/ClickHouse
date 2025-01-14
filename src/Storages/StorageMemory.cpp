@@ -644,6 +644,7 @@ void registerStorageMemory(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
+        .has_builtin_setting_fn = MemorySettings::hasBuiltin,
     });
 }
 

@@ -3,9 +3,8 @@ slug: /en/getting-started/example-datasets/github
 sidebar_label: Github Repo
 sidebar_position: 1
 description: Analyze the ClickHouse GitHub repo or any repository of your choosing
+title: 'Writing Queries in ClickHouse using GitHub Data'
 ---
-
-# Writing Queries in ClickHouse using GitHub Data
 
 This dataset contains all of the commits and changes for the ClickHouse repository. It can be generated using the native `git-import` tool distributed with ClickHouse.
 
@@ -21,7 +20,7 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
 - `file_changes` - 53M - 266,051 rows
 - `line_changes` - 2.7G - 7,535,157 rows
 
-# Generating the data
+## Generating the data
 
 This is optional. We distribute the data freely - see [Downloading and inserting the data](#downloading-and-inserting-the-data).
 
@@ -64,7 +63,7 @@ CREATE TABLE git.commits
 
 - Linux - `~/clickhouse git-import` - 160 mins
 
-# Downloading and inserting the data
+## Downloading and inserting the data
 
 The following data can be used to reproduce a working environment. Alternatively, this dataset is available in play.clickhouse.com - see [Queries](#queries) for further details.
 
@@ -203,13 +202,13 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 0 rows in set. Elapsed: 50.535 sec. Processed 7.54 million rows, 2.09 GB (149.11 thousand rows/s., 41.40 MB/s.)
 ```
 
-# Queries
+## Queries
 
 The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
 This dataset is available in [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) in the `git_clickhouse` databases. We provide a link to this environment for all queries, adapting the database name as required. Note that play results may vary from the those presented here due to differences in time of data collection.
 
-## History of a single file
+### History of a single file
 
 The simplest of queries. Here we look at all commit messages for the `StorageReplicatedMergeTree.cpp`. Since these are likely more interesting, we sort by the most recent messages first.
 
@@ -284,7 +283,7 @@ LIMIT 10
 
 Note a more complex variant of this query exists where we find the [line-by-line commit history of a file](#line-by-line-commit-history-of-a-file) considering renames.
 
-## Find the current active files
+### Find the current active files
 
 This is important for later analysis when we only want to consider the current files in the repository. We estimate this set as the files which haven't been renamed or deleted (and then re-added/re-named).
 
@@ -413,7 +412,7 @@ The difference here is caused by a few factors:
 
 These differences shouldn't meaningfully impact our analysis. **We welcome improved versions of this query**.
 
-## List files with most modifications
+### List files with most modifications
 
 Limiting to current files, we consider the number of modifications to be the sum of deletes and additions.
 
@@ -468,7 +467,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.134 sec. Processed 798.15 thousand rows, 16.46 MB (5.95 million rows/s., 122.62 MB/s.)
 ```
 
-## What day of the week do commits usually occur?
+### What day of the week do commits usually occur?
 
 [play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
 
@@ -493,7 +492,7 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 This makes sense with some productivity drop-off on Fridays. Great to see people committing code at weekends! Big thanks to our contributors!
 
-## History of subdirectory/file - number of lines, commits and contributors over time
+### History of subdirectory/file - number of lines, commits and contributors over time
 
 This would produce a large query result that is unrealistic to show or visualize if unfiltered. We, therefore, allow a file or subdirectory to be filtered in the following example. Here we group by week using the `toStartOfWeek` function - adapt as required.
 
@@ -537,7 +536,7 @@ This data visualizes well. Below we use Superset.
 
 ![](./images/superset-commits-authors.png)
 
-## List files with maximum number of authors
+### List files with maximum number of authors
 
 Limit to current files only.
 
@@ -592,7 +591,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.239 sec. Processed 798.15 thousand rows, 14.13 MB (3.35 million rows/s., 59.22 MB/s.)
 ```
 
-## Oldest lines of code in the repository
+### Oldest lines of code in the repository
 
 Limited to current files only.
 
@@ -649,7 +648,7 @@ LIMIT 10
 10 rows in set. Elapsed: 1.101 sec. Processed 8.07 million rows, 905.86 MB (7.33 million rows/s., 823.13 MB/s.)
 ```
 
-## Files with longest history
+### Files with longest history
 
 Limited to current files only.
 
@@ -707,7 +706,7 @@ LIMIT 10
 
 Our core data structure, the Merge Tree, is obviously under constant evolution with a long history of edits!
 
-## Distribution of contributors with respect to docs and code over the month
+### Distribution of contributors with respect to docs and code over the month
 
 **During data capture the changes on the `docs/` folder have been filtered out due to a very commit dirty history. The results of this query are therefore not accurate.**
 
@@ -770,7 +769,7 @@ FROM
 
 Maybe a little more near the end of the month, but overall we keep a good even distribution. Again this is unreliable due to the filtering of the docs filter during data insertion.
 
-## Authors with the most diverse impact
+### Authors with the most diverse impact
 
 We consider diversity here to be the number of unique files an author has contributed to.
 
@@ -847,7 +846,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.106 sec. Processed 266.05 thousand rows, 21.04 MB (2.52 million rows/s., 198.93 MB/s.)
 ```
 
-## Favorite files for an author
+### Favorite files for an author
 
 Here we select our founder [Alexey Milovidov](https://github.com/alexey-milovidov) and limit our analysis to current files.
 
@@ -933,7 +932,7 @@ LIMIT 10
 
 This is maybe more reflective of his areas of interest.
 
-## Largest files with lowest number of authors
+### Largest files with lowest number of authors
 
 For this, we first need to identify the largest files. Estimating this via a full file reconstruction, for every file, from the history of commits will be very expensive!
 
@@ -1103,7 +1102,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.143 sec. Processed 798.15 thousand rows, 18.00 MB (5.58 million rows/s., 125.87 MB/s.)
 ```
 
-## Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories
+### Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories
 
 We interpret this as the number of lines added and removed by the day of the week. In this case, we focus on the [Functions directory](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
 
@@ -1228,7 +1227,7 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-## Matrix of authors that shows what authors tends to rewrite another authors code
+### Matrix of authors that shows what authors tends to rewrite another authors code
 
 The `sign = -1` indicates a code deletion. We exclude punctuation and the insertion of empty lines.
 
@@ -1284,7 +1283,7 @@ Alexey clearly likes removing other peoples code. Lets exclude him for a more ba
 
 ![](./images/superset-authors-matrix_v2.png)
 
-## Who is the highest percentage contributor per day of week?
+### Who is the highest percentage contributor per day of week?
 
 If we consider by just number of commits:
 
@@ -1399,7 +1398,7 @@ INNER JOIN
 7 rows in set. Elapsed: 0.014 sec. Processed 106.12 thousand rows, 1.38 MB (7.61 million rows/s., 98.65 MB/s.)
 ```
 
-## Distribution of code age across repository
+### Distribution of code age across repository
 
 We limit the analysis to the current files. For brevity, we restrict the results to a depth of 2 with 5 files per root folder. Adjust as required.
 
@@ -1482,7 +1481,7 @@ LIMIT 5 BY root
 24 rows in set. Elapsed: 0.129 sec. Processed 798.15 thousand rows, 15.11 MB (6.19 million rows/s., 117.08 MB/s.)
 ```
 
-## What percentage of code for an author has been removed by other authors?
+### What percentage of code for an author has been removed by other authors?
 
 For this question, we need the number of lines written by an author divided by the total number of lines they have had removed by another contributor.
 
@@ -1532,7 +1531,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.126 sec. Processed 15.07 million rows, 73.51 MB (119.97 million rows/s., 585.16 MB/s.)
 ```
 
-## List files that were rewritten most number of times?
+### List files that were rewritten most number of times?
 
 
 The simplest approach to this question might be to simply count the most number of line modifications per path (restricted to current files) e.g.:
@@ -1674,7 +1673,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.299 sec. Processed 798.15 thousand rows, 31.52 MB (2.67 million rows/s., 105.29 MB/s.)
 ```
 
-## What weekday does the code have the highest chance to stay in the repository?
+### What weekday does the code have the highest chance to stay in the repository?
 
 For this, we need to identify a line of code uniquely. We estimate this(as the same line may appear multiple times in a file) using the path and line contents.
 
@@ -1736,7 +1735,7 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 7 rows in set. Elapsed: 3.965 sec. Processed 15.07 million rows, 1.92 GB (3.80 million rows/s., 483.50 MB/s.)
 ```
 
-## Files sorted by average code age
+### Files sorted by average code age
 
 This query uses the same principle as [What weekday does the code have the highest chance to stay in the repository](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository) - by aiming to uniquely identify a line of code using the path and line contents.
 This allows us to identify the time between when a line was added and removed. We filter to current files and code only, however, and average the time for each file across lines.
@@ -1761,7 +1760,7 @@ WITH
                 path,
                 max(time) AS last_time,
                 argMax(change_type, time) AS change_type
-            FROM git.file_changes
+            FROM git.clickhouse_file_changes
             GROUP BY path
         )
         GROUP BY path
@@ -1826,7 +1825,7 @@ LIMIT 10
 10 rows in set. Elapsed: 3.134 sec. Processed 16.13 million rows, 1.83 GB (5.15 million rows/s., 582.99 MB/s.)
 ```
 
-## Who tends to write more tests / CPP code / comments?
+### Who tends to write more tests / CPP code / comments?
 
 There are a few ways we can address this question. Focusing on the code to test ratio, this query is relatively simple - count the number of contributions to folders containing `tests` and compute the ratio to total contributions.
 
@@ -1840,7 +1839,7 @@ SELECT
     countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
-FROM git.file_changes
+FROM git.clickhouse_file_changes
 GROUP BY author
 HAVING code > 20
 ORDER BY code DESC
@@ -1886,7 +1885,7 @@ WITH (
                 countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
                 countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
                 code / (code + test) AS ratio_code
-            FROM git.file_changes
+            FROM git.clickhouse_file_changes
             GROUP BY author
             HAVING code > 20
             ORDER BY code DESC
@@ -1932,7 +1931,7 @@ FROM
         countIf(line_type = 'Comment') AS comments,
         countIf(line_type = 'Code') AS code,
         if(comments > 0, comments / (comments + code), 0) AS ratio_comments
-    FROM git.line_changes
+    FROM git.clickhouse_line_changes
     GROUP BY
         author,
         commit_hash
@@ -1957,11 +1956,9 @@ LIMIT 10
 
 Note we sort by code contributions. Surprisingly high % for all our largest contributors and part of what makes our code so readable.
 
-## How does an authors commits change over time with respect to code/comments percentage?
+### How does an authors commits change over time with respect to code/comments percentage?
 
 To compute this by author is trivial,
-
-[play](#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZV9saW5lcywKICAgIGNvdW50SWYoKGxpbmVfdHlwZSA9ICdDb21tZW50JykgT1IgKGxpbmVfdHlwZSA9ICdQdW5jdCcpKSBBUyBjb21tZW50cywKICAgIGNvZGVfbGluZXMgLyAoY29tbWVudHMgKyBjb2RlX2xpbmVzKSBBUyByYXRpb19jb2RlLAogICAgdG9TdGFydE9mV2Vlayh0aW1lKSBBUyB3ZWVrCkZST00gZ2l0X2NsaWNraG91c2UubGluZV9jaGFuZ2VzCkdST1VQIEJZCiAgICB0aW1lLAogICAgYXV0aG9yCk9SREVSIEJZCiAgICBhdXRob3IgQVNDLAogICAgdGltZSBBU0MKTElNSVQgMTA=)
 
 ```sql
 SELECT
@@ -2075,9 +2072,9 @@ LIMIT 20
 
 Encouragingly, our comment % is pretty constant and doesn't degrade the longer authors contribute.
 
-## What is the average time before code will be rewritten and the median (half-life of code decay)?
+### What is the average time before code will be rewritten and the median (half-life of code decay)?
 
-We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
+We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
 
 [play](https://sql.clickhouse.com?query_id=WSHUEPJP9TNJUH7QITWWOR)
 
@@ -2135,9 +2132,9 @@ FROM rewrites
 1 row in set. Elapsed: 0.388 sec. Processed 266.05 thousand rows, 22.85 MB (685.82 thousand rows/s., 58.89 MB/s.)
 ```
 
-## What is the worst time to write code in sense that the code has highest chance to be re-written?
+### What is the worst time to write code in sense that the code has highest chance to be re-written?
 
-Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors), except we aggregate by day of week. Adjust as required e.g. month of year.
+Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times), except we aggregate by day of week. Adjust as required e.g. month of year.
 
 [play](https://sql.clickhouse.com?query_id=8PQNWEWHAJTGN6FTX59KH2)
 
@@ -2199,7 +2196,7 @@ GROUP BY dayOfWeek
 7 rows in set. Elapsed: 0.466 sec. Processed 7.54 million rows, 701.52 MB (16.15 million rows/s., 1.50 GB/s.)
 ```
 
-## Which authors code is the most sticky?
+### Which authors code is the most sticky?
 
 We define "sticky" as how long does an author's code stay before its rewritten. Similar to the previous question [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) - using the same metric for rewrites i.e. 50% additions and 50% deletions to the file. We compute the average rewrite time per author and only consider contributors with more than two files.
 
@@ -2276,7 +2273,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.555 sec. Processed 7.54 million rows, 720.60 MB (13.58 million rows/s., 1.30 GB/s.)
 ```
 
-## Most consecutive days of commits by an author
+### Most consecutive days of commits by an author
 
 This query first requires us to calculate the days when an author has committed. Using a window function, partitioning by author, we can compute the days between their commits. For each commit, if the time since the last commit was 1 day we mark it as consecutive (1) and 0 otherwise - storing this result in `consecutive_day`.
 
@@ -2331,7 +2328,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.025 sec. Processed 62.78 thousand rows, 395.47 KB (2.54 million rows/s., 16.02 MB/s.)
 ```
 
-## Line by line commit history of a file
+### Line by line commit history of a file
 
 Files can be renamed. When this occurs, we get a rename event, where the `path` column is set to the new path of the file and the `old_path` represents the previous location e.g.
 
@@ -2408,9 +2405,9 @@ FORMAT PrettyCompactMonoBlock
 3 rows in set. Elapsed: 0.170 sec. Processed 611.53 thousand rows, 41.76 MB (3.60 million rows/s., 246.07 MB/s.)
 ```
 
-# Unsolved Questions
+## Unsolved Questions
 
-## Git blame
+### Git blame
 
 This is particularly difficult to get an exact result due to the inability to currently keep state in array functions. This will be possible with an `arrayFold` or `arrayReduce`, which allows state to be held on each iteration.
 
