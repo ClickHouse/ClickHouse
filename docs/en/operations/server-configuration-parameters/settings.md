@@ -34,9 +34,9 @@ Default: `120`
 
 ## asynchronous_metric_log
 
-Enabled by default. 
+Enabled by default on ClickHouse Cloud deployments.
 
-Note: It is disabled by default for deployment installed using the [quick install method](../docs/en/install#quick-install). 
+If the setting is not enabled by default on your environment, depending on how ClickHouse was installed, you can follow the instruction below to enable or disable it.
 
 **Enabling**
 
