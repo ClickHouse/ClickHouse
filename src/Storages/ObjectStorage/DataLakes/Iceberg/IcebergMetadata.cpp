@@ -1,4 +1,3 @@
-#include "Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -15,6 +14,8 @@
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
+
+#include "Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h"
 
 #include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
