@@ -29,7 +29,6 @@ private:
     const static std::unordered_set<std::string> bare_words_operators;
     const static std::unordered_set<DB::TokenType> operator_types;
     const static std::unordered_set<std::string> short_tokens;
-    static const std::unordered_set<std::string> keywords;
 
     bool isBareWordEqualToString(const DB::Token & token, const std::string & str) const;
 

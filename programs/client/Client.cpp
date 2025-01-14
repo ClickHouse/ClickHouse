@@ -207,7 +207,6 @@ std::vector<String> Client::loadWarningMessages()
 
     std::vector<String> messages;
     auto client_info_copy = global_context->getClientInfo();
-    client_info_copy.is_generated = true;
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,
