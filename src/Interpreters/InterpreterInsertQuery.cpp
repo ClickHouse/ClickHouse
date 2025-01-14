@@ -378,7 +378,7 @@ Chain InterpreterInsertQuery::buildSink(
     return out;
 }
 
-bool InterpreterInsertQuery::shouldAddSquashingFroStorage(const StoragePtr & table) const
+bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table) const
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
@@ -466,8 +466,7 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
     StoragePtr table,
     size_t view_level,
     const StorageMetadataPtr & metadata_snapshot,
-    const Block & query_sample_block
-    )
+    const Block & query_sample_block)
 {
     chassert(presink_streams > 0);
     chassert(sink_streams > 0);
@@ -631,7 +630,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     pipeline.resize(1);
 
-    if (shouldAddSquashingFroStorage(table))
+    if (shouldAddSquashingForStorage(table))
     {
         pipeline.addSimpleTransform(
             [&](const Block & in_header) -> ProcessorPtr
@@ -687,7 +686,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     pipeline.resize(presink_chains.size());
 
-    if (shouldAddSquashingFroStorage(table))
+    if (shouldAddSquashingForStorage(table))
     {
         pipeline.addSimpleTransform(
             [&](const Block & in_header) -> ProcessorPtr
@@ -752,7 +751,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
 
-    if (shouldAddSquashingFroStorage(table))
+    if (shouldAddSquashingForStorage(table))
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 

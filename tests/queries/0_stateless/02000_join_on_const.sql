@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-CREATE TABLE t1 (id Int) ENGINE = Memory;
-CREATE TABLE t2 (id Int) ENGINE = Memory;
+CREATE TABLE t1 (id Int) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (id Int) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (2), (3);
