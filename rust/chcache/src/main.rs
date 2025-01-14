@@ -2,6 +2,11 @@ use blake3::Hasher;
 use log::{info, trace, warn};
 use std::fs;
 use std::path::Path;
+use memmap2::MmapOptions;
+use std::fs::OpenOptions;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::os::unix::fs::OpenOptionsExt;
+use std::ptr;
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(default)]
@@ -25,6 +30,63 @@ impl Default for Config {
             target_table: "default.build_cache".to_string(),
         }
     }
+}
+#[repr(C)]
+struct CacheStats {
+    cache_hit: AtomicUsize,
+    cache_miss: AtomicUsize,
+    invocation_count: AtomicUsize,
+}
+
+const SHM_FILE: &str = "/dev/shm/invocation_counter";
+const SHM_SIZE: usize = std::mem::size_of::<CacheStats>();
+fn increment_counter(cache_hit: bool) {
+    // Open or create the shared memory file
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600) // Permissions for the file
+        .open(SHM_FILE)
+        .expect("Failed to open or create shared memory file");
+
+    // Resize the file to fit the AtomicUsize
+    file.set_len(SHM_SIZE as u64)
+        .expect("Failed to set shared memory file size");
+
+    // Memory-map the file
+    let mut mmap = unsafe {
+        MmapOptions::new()
+            .len(SHM_SIZE)
+            .map_mut(&file)
+            .expect("Failed to map shared memory")
+    };
+
+    // Get a pointer to the shared memory
+    let cache_stats_ptr = mmap.as_mut_ptr() as *mut CacheStats;
+
+    // Initialize the counter if this is the first process
+    unsafe {
+        if ptr::read(cache_stats_ptr).invocation_count.load(Ordering::Relaxed) == 0 {
+            ptr::write(cache_stats_ptr, CacheStats {
+                invocation_count: AtomicUsize::new(0),
+                cache_hit: AtomicUsize::new(0),
+                cache_miss: AtomicUsize::new(0),
+            });
+        }
+    }
+
+    // Increment the counter atomically
+    unsafe {
+        (*cache_stats_ptr).invocation_count.fetch_add(1, Ordering::SeqCst) + 1;
+        (*cache_stats_ptr).cache_hit.fetch_add(cache_hit as usize, Ordering::SeqCst);
+        (*cache_stats_ptr).cache_miss.fetch_add(!cache_hit as usize, Ordering::SeqCst);
+    };
+
+    // Print the current invocation count
+    println!("Invocation count: {}", unsafe { (*cache_stats_ptr).invocation_count.load(Ordering::Relaxed) });
+    println!("Cache hits: {}", unsafe { (*cache_stats_ptr).cache_hit.load(Ordering::Relaxed) });
+    println!("Cache misses: {}", unsafe { (*cache_stats_ptr).cache_miss.load(Ordering::Relaxed) });
 }
 
 #[tokio::main]
@@ -271,7 +333,10 @@ async fn load_from_clickhouse(
     hash: &String,
     compiler_version: &String,
 ) -> Result<Option<Vec<u8>>, clickhouse::error::Error> {
-    let query = format!("SELECT ?fields FROM {} WHERE hash = ? and compiler_version = ? LIMIT 1", &config.source_table);
+    let query = format!(
+        "SELECT ?fields FROM {} WHERE hash = ? and compiler_version = ? LIMIT 1",
+        &config.source_table
+    );
 
     let mut cursor = client
         .query(&query)
@@ -314,25 +379,48 @@ async fn load_to_clickhouse(
     insert.end().await
 }
 
+fn show_help() {
+    eprintln!("Usage: chcache <compiler> <args>");
+    eprintln!("");
+    eprintln!("See docs at https://github.com/ClickHouse/ClickHouse/blob/master/rust/chcache/README.md");
+}
+
 async fn compiler_cache_entrypoint(config: &Config) {
     let compiler: String = std::env::args().nth(1).unwrap();
     let rest_of_args: Vec<String> = std::env::args().skip(2).collect();
 
-    trace!("Compiler: {}", compiler);
-    // assert!(compiler.contains("clang") || compiler.contains("clang++"));
+    if rest_of_args.len() < 2 {
+        show_help();
+        return;
+    }
 
+    trace!("Compiler: {}", compiler);
     trace!("Args: {:?}", rest_of_args);
 
-    let assumed_base_path = assume_base_path(&rest_of_args);
-    trace!("Assumed base path: {}", assumed_base_path);
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    let cwd = cwd.trim_end_matches('/').to_string();
+    trace!("Current working directory: {}", cwd);
 
-    let is_private = Path::new(&assumed_base_path).join("PRIVATE.md").exists();
+    let assumed_base_path = assume_base_path(&rest_of_args);
+
+    let is_private = Path::new(&cwd).join("PRIVATE.md").exists();
     trace!("Is private: {}", is_private);
 
     let stripped_args = rest_of_args
         .iter()
+        .map(|x| x.replace(&cwd, "/"))
+        .collect::<Vec<String>>();
+
+    let stripped_args = stripped_args
+        .iter()
         .map(|x| x.replace(&assumed_base_path, "/"))
         .collect::<Vec<String>>();
+
+    trace!("Stripped args: {:?}", stripped_args);
 
     let mut hasher = Hasher::new();
     stripped_args.iter().map(|x| x.as_bytes()).for_each(|x| {
@@ -378,6 +466,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
             did_load_from_cache = true;
 
             fs::write(get_output_from_args(&rest_of_args), &bytes).expect("Unable to write file");
+            increment_counter(true);
 
             bytes
         }
@@ -393,6 +482,8 @@ async fn compiler_cache_entrypoint(config: &Config) {
                         fs::write(get_output_from_args(&rest_of_args), &bytes)
                             .expect("Unable to write file");
 
+                        increment_counter(true);
+
                         bytes
                     }
                     Ok(None) | Err(_) => {
@@ -405,6 +496,9 @@ async fn compiler_cache_entrypoint(config: &Config) {
                             eprintln!("{}", String::from_utf8_lossy(&output.stderr));
                             return;
                         }
+
+                        increment_counter(false);
+
                         fs::read(get_output_from_args(&rest_of_args)).expect("Unable to read file")
                     }
                 };
@@ -422,14 +516,26 @@ async fn compiler_cache_entrypoint(config: &Config) {
     };
 
     if should_upload {
+        let mut tries = 3;
         loop {
-            let upload_result =
-                load_to_clickhouse(config, &client, &total_hash, &compiler_version, &compiled_bytes).await;
+            let upload_result = load_to_clickhouse(
+                config,
+                &client,
+                &total_hash,
+                &compiler_version,
+                &compiled_bytes,
+            )
+            .await;
             if upload_result.is_ok() {
                 info!("Uploaded to ClickHouse");
                 break;
             }
             warn!("Failed to upload to ClickHouse, retrying...");
+
+            tries -= 1;
+            if tries == 0 {
+                break;
+            }
         }
     }
 }

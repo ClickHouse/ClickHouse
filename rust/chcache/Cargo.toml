@@ -8,6 +8,7 @@ blake3 = "1.5.4"
 clickhouse = { version = "0.13.1", features = ["rustls-tls"] }
 env_logger = { version = "0.11.5", default-features = false }
 log = "0.4.22"
+memmap2 = "0.9.5"
 serde = { version = "1.0.215", features = ["serde_derive"] }
 serde_bytes = "0.11.15"
 tokio = { version = "1.42.0", features = ["rt-multi-thread"] }
