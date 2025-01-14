@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 
-#include <map>
 #include <optional>
 
 
@@ -21,25 +20,17 @@ namespace ErrorCodes
 }
 
 /// A class that is used for locking a block number in a partition.
-/// Before 22.11 it used to create a secondary ephemeral node in `temp_path` with "abandonable_lock-" prefix
-/// and a main ephemeral node with `path_prefix` that references the secondary node. The reasons for this two-level scheme are historical.
-/// Since 22.11 it creates single ephemeral node with `path_prefix` that references persistent fake "secondary node".
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
     template<typename T>
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
+        const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
 protected:
     EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_ = "");
 
 public:
     EphemeralLockInZooKeeper() = delete;
-
-    /// Fake "secondary node" names for blocks with and without "deduplication_path"
-    static constexpr const char * LEGACY_LOCK_INSERT = "abandonable_lock-insert";
-    static constexpr const char * LEGACY_LOCK_OTHER = "abandonable_lock-other";
-    static constexpr const char * LEGACY_LOCK_PREFIX = "/temp/abandonable_lock-";
 
     EphemeralLockInZooKeeper(EphemeralLockInZooKeeper && rhs) noexcept
     {
@@ -111,7 +102,7 @@ private:
 
 template<typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
+    const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path);
 
 /// Acquires block number locks in all partitions.
 class EphemeralLocksInAllPartitions : public boost::noncopyable

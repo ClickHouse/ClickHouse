@@ -895,16 +895,6 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     /// To track "lost forever" parts count, just for `system.replicas` table
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lost_part_count", String(), zkutil::CreateMode::Persistent));
 
-    /// As for now, "/temp" node must exist, but we want to be able to remove it in future
-    if (zookeeper->exists(zookeeper_path + "/temp"))
-    {
-        /// For block numbers allocation (since 22.11)
-        futures.push_back(zookeeper->asyncTryCreateNoThrow(
-            zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT, String(), zkutil::CreateMode::Persistent));
-        futures.push_back(zookeeper->asyncTryCreateNoThrow(
-            zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER, String(), zkutil::CreateMode::Persistent));
-    }
-
     for (auto & future : futures)
     {
         auto res = future.get();
@@ -1003,12 +993,6 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp", "",
             zkutil::CreateMode::Persistent));
-
-        /// The following 2 nodes were added in 22.11
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT, "",
-                                                   zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER, "",
-                                                   zkutil::CreateMode::Persistent));
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name,
             zkutil::CreateMode::Persistent));
@@ -8251,57 +8235,21 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
     if (queries_in_progress.empty())
         return;
 
-    Strings paths_to_get;
+    Strings queries_to_cancel;
     for (const auto & block : queries_in_progress)
     {
         if (!startsWith(block, "block-"))
             continue;
+
         Int64 block_number = parse<Int64>(block.substr(strlen("block-")));
         if (min_block_num <= block_number && block_number <= max_block_num)
-            paths_to_get.push_back(partition_path / block);
+            queries_to_cancel.push_back(partition_path / block);
     }
 
-    auto results = zookeeper.tryGet(paths_to_get);
-    for (size_t i = 0; i < paths_to_get.size(); ++i)
+    for (const auto & query_block_number : queries_to_cancel)
     {
-        auto & result = results[i];
-
-        /// The query already finished
-        if (result.error == Coordination::Error::ZNONODE)
-            continue;
-
-        /// The query is not an insert (it does not have block_id)
-        if (result.data.ends_with(EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER))
-            continue;
-
-        if (result.data.ends_with(EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT))
-        {
-            /// Remove block number, so insert will fail to commit (it will try to remove this node too)
-            LOG_WARNING(log, "Some query is trying to concurrently insert block {}, will cancel it", paths_to_get[i]);
-            zookeeper.tryRemove(paths_to_get[i]);
-        }
-        else
-        {
-            constexpr const char * old_version_warning = "Ephemeral lock {} (referencing {}) is created by a replica "
-                "that running old version of ClickHouse (< 22.11). Cannot remove it, will wait for this lock to disappear. "
-                "Upgrade remaining hosts in the cluster to address this warning.";
-            constexpr const char * new_version_warning = "Ephemeral lock {} has unexpected content ({}), "
-                "probably it is created by a replica that running newer version of ClickHouse. "
-                "Cannot remove it, will wait for this lock to disappear. Upgrade remaining hosts in the cluster to address this warning.";
-
-            if (result.data.starts_with(zookeeper_path + EphemeralLockInZooKeeper::LEGACY_LOCK_PREFIX))
-                LOG_WARNING(log, old_version_warning, paths_to_get[i], result.data);
-            else
-                LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
-
-            Stopwatch time_waiting;
-            const auto & stop_waiting = [this, &time_waiting]()
-            {
-                auto timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.seconds();
-                return partial_shutdown_called || (timeout < time_waiting.elapsedSeconds());
-            };
-            zookeeper.waitForDisappear(paths_to_get[i], stop_waiting);
-        }
+        LOG_WARNING(log, "Some query with block number {} is running concurrently, will cancel it", query_block_number);
+        zookeeper.tryRemove(query_block_number);
     }
 }
 
