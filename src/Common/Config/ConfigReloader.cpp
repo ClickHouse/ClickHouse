@@ -13,6 +13,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_RELOAD_CONFIG;
+}
+
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
         const std::vector<std::string>& extra_paths_,
@@ -118,60 +123,60 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         ConfigProcessor::LoadedConfig loaded_config;
 
         LOG_DEBUG(log, "Loading config '{}'", config_path);
-
         try
         {
-            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
-            if (loaded_config.has_zk_includes)
-                loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (Coordination::isHardwareError(e.code))
-                need_reload_from_zk = true;
+            try
+            {
+                loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
+                if (loaded_config.has_zk_includes)
+                    loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+                        zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
+            }
+            catch (const Coordination::Exception & e)
+            {
+                if (Coordination::isHardwareError(e.code))
+                    need_reload_from_zk = true;
 
-            if (throw_on_error)
-                throw;
+                PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+                throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, "ZooKeeper error when loading config from '{}' config: {}", config_path, message.text);
+            }
+            catch (...)
+            {
+                PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+                throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, "Error loading config from '{}' config: {}", config_path, message.text);
+            }
+            config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
-            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
-            return std::nullopt;
+            /** We should remember last modification time if and only if config was successfully loaded
+            * Otherwise a race condition could occur during config files update:
+            *  File is contain raw (and non-valid) data, therefore config is not applied.
+            *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
+            */
+            if (!loaded_config.loaded_from_preprocessed)
+            {
+                files = std::move(new_files);
+                need_reload_from_zk = false;
+            }
+
+            LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);
+
+            try
+            {
+                updater(loaded_config.configuration, initial_loading);
+            }
+            catch (...)
+            {
+                PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+                throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, "Error updating configuration from '{}' config: {}", config_path, message.text);
+            }
         }
         catch (...)
         {
+            PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
             if (throw_on_error)
                 throw;
-
-            tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
-            return std::nullopt;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
-
-        /** We should remember last modification time if and only if config was successfully loaded
-         * Otherwise a race condition could occur during config files update:
-         *  File is contain raw (and non-valid) data, therefore config is not applied.
-         *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
-         */
-        if (!loaded_config.loaded_from_preprocessed)
-        {
-            files = std::move(new_files);
-            need_reload_from_zk = false;
-        }
-
-        LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);
-
-        try
-        {
-            updater(loaded_config.configuration, initial_loading);
-        }
-        catch (...)
-        {
-            if (throw_on_error)
-                throw;
-            tryLogCurrentException(log, "Error updating configuration from '" + config_path + "' config.");
-            return std::nullopt;
-        }
-
         LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", config_path);
         return loaded_config;
     }
