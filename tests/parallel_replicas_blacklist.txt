@@ -49,10 +49,6 @@
     Sizes of columns doesn't match
 02861_filter_pushdown_const_bug
 
-    https://github.com/ClickHouse/ClickHouse/issues/74547
-02354_vector_search_multiple_marks
-02354_vector_search_expansion_search
-
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
     clickhouse-test --no-shard
@@ -231,7 +227,7 @@
 01710_aggregate_projections
 01710_projection_analysis_reuse_partition
 01710_projections_in_distributed_query
-03290_force_normal_projection
+
 
     WINDOW VIEW
 01047_window_view_parser_inner_table
@@ -270,6 +266,7 @@
 01084_window_view_with_table_identifier
 01087_window_view_alter_query
 01088_window_view_default_column
+
 
     analyzer=0 (partially supported)
 02918_join_pm_lc_crash
@@ -442,8 +439,7 @@
 03147_datetime64_constant_index_analysis
     !!!max rows: 8.19 thousand, current rows: 1.05 million
 03171_indexing_by_hilbert_curve
-    !!!max rows: 20.00 million, current rows: 22.00 million
-02435_rollback_cancelled_queries
+
 
     max rows: 3.00, current rows: 8.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:38554) (comment: 00319_index_for_like.sql) (in query: SELECT `__table1`.`s` AS `s` FROM `test_l6on3y96`.`index_for_like` AS `__table1` WHERE `__table1`.`s` LIKE 'Hello, World%')
 00319_index_for_like
