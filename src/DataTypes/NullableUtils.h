@@ -1,5 +1,7 @@
 #pragma once
+
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
