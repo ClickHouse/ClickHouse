@@ -95,7 +95,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
-            {"validate_enum_literals_in_opearators", false, false, "A new setting"},
+            {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
         });
