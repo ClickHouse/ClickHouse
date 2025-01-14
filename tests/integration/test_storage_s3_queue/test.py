@@ -369,9 +369,11 @@ def create_mv(
     node,
     src_table_name,
     dst_table_name,
+    mv_name=None,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
 ):
-    mv_name = f"{src_table_name}_mv"
+    if mv_name is None:
+        mv_name = f"{src_table_name}_mv"
     node.query(
         f"""
         DROP TABLE IF EXISTS {dst_table_name};
@@ -955,8 +957,8 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 300
-    row_num = 50
+    files_to_generate = 1000
+    row_num = 10
     total_rows = row_num * files_to_generate
 
     for instance in [node, node_2]:
@@ -2736,7 +2738,7 @@ def test_migration(started_cluster, setting_prefix):
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
-    mv_name = f"{src_table_name}_mv"
+    mv_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
@@ -2767,7 +2769,7 @@ def test_migration(started_cluster, setting_prefix):
     )
 
     for node in [node1, node2]:
-        create_mv(node, f"r.{table_name}", dst_table_name)
+        create_mv(node, f"r.{table_name}", dst_table_name, mv_name=mv_name)
 
     start_ind = [0]
     expected_rows = [0]

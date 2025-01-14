@@ -508,7 +508,7 @@ void StorageObjectStorageQueue::threadFunc()
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_processing_interval_ms);
         task->scheduleAfter(reschedule_processing_interval_ms);
 
-        if (reschedule_processing_interval_ms > 1000) /// TODO: Add a setting?
+        if (reschedule_processing_interval_ms > 5000) /// TODO: Add a setting
         {
             try
             {

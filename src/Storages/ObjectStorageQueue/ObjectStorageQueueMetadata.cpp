@@ -538,7 +538,8 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, boo
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
-    const auto table_path = zookeeper_path / "registry" / getProcessorID(storage_id);
+    const auto id = getProcessorID(storage_id);
+    const auto table_path = zookeeper_path / "registry" / id;
     const auto self = Info::create(storage_id);
 
     auto zk_client = getZooKeeper();
@@ -551,7 +552,7 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
         && code != Coordination::Error::ZNODEEXISTS)
         throw zkutil::KeeperException(code);
 
-    LOG_TRACE(log, "Added {} to active registry", self.table_id);
+    LOG_TRACE(log, "Added {} to active registry ({})", self.table_id, id);
 }
 
 void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
@@ -784,7 +785,7 @@ void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const St
         if (chosen == self)
             result.emplace_back(std::move(path));
         else
-            LOG_TEST(log, "Will skip file {}: it should be processed by {} (self: {})", path, chosen, self);
+            LOG_TEST(log, "Will skip file {}: it should be processed by {} (self {})", path, chosen, self);
     }
     paths = std::move(result);
 }
@@ -846,7 +847,7 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
     active_servers = registered_set;
 
     if (!active_servers_hash_ring)
-        active_servers_hash_ring = std::make_shared<ServersHashRing>(100, log); /// TODO: Add a setting.
+        active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.
 
     active_servers_hash_ring->rebuild(active_servers);
 }
