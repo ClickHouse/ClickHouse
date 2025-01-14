@@ -315,6 +315,7 @@ def create_table(
     mode,
     files_path,
     engine_name="S3Queue",
+    version = None,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     additional_settings={},
     file_format="CSV",
@@ -333,6 +334,9 @@ def create_table(
         "keeper_path": f"/clickhouse/test_{table_name}",
         "mode": f"{mode}",
     }
+    if version is None:
+        settings["enable_hash_ring_filtering"] = 1
+
     settings.update(additional_settings)
 
     engine_def = None
@@ -1841,6 +1845,7 @@ def test_upgrade(started_cluster):
         table_name,
         "ordered",
         files_path,
+        version = "23.12",
         additional_settings={
             "keeper_path": keeper_path,
             "after_processing": "keep",
@@ -2078,6 +2083,7 @@ def test_upgrade_2(started_cluster):
         table_name,
         "ordered",
         files_path,
+        version = "24.5",
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_current_shard_num": 0,
@@ -2645,7 +2651,7 @@ def test_upgrade_3(started_cluster):
     files_to_generate = 10
 
     create_table(
-        started_cluster, node, table_name, "ordered", files_path, no_settings=True
+        started_cluster, node, table_name, "ordered", files_path, no_settings=True, version = "24.5"
     )
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
@@ -2744,6 +2750,7 @@ def test_migration(started_cluster, setting_prefix):
         table_name,
         "ordered",
         files_path,
+        version = "24.5",
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_polling_min_timeout_ms": 100,

@@ -465,10 +465,10 @@ void StorageObjectStorageQueue::threadFunc()
     if (shutdown_called)
         return;
 
+    const auto storage_id = getStorageID();
     try
     {
         const size_t dependencies_count = getDependencies();
-        const auto storage_id = getStorageID();
         if (dependencies_count)
         {
             mv_attached.store(true);
@@ -507,6 +507,18 @@ void StorageObjectStorageQueue::threadFunc()
     {
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_processing_interval_ms);
         task->scheduleAfter(reschedule_processing_interval_ms);
+
+        if (reschedule_processing_interval_ms > 1000) /// TODO: Add a setting?
+        {
+            try
+            {
+                files_metadata->unregister(storage_id, /* active */true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
+        }
     }
 }
 
