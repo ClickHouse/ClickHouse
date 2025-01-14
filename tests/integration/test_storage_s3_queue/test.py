@@ -315,7 +315,7 @@ def create_table(
     mode,
     files_path,
     engine_name="S3Queue",
-    version = None,
+    version=None,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     additional_settings={},
     file_format="CSV",
@@ -1845,7 +1845,7 @@ def test_upgrade(started_cluster):
         table_name,
         "ordered",
         files_path,
-        version = "23.12",
+        version="23.12",
         additional_settings={
             "keeper_path": keeper_path,
             "after_processing": "keep",
@@ -2083,7 +2083,7 @@ def test_upgrade_2(started_cluster):
         table_name,
         "ordered",
         files_path,
-        version = "24.5",
+        version="24.5",
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_current_shard_num": 0,
@@ -2651,7 +2651,13 @@ def test_upgrade_3(started_cluster):
     files_to_generate = 10
 
     create_table(
-        started_cluster, node, table_name, "ordered", files_path, no_settings=True, version = "24.5"
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        no_settings=True,
+        version="24.5",
     )
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
@@ -2750,7 +2756,7 @@ def test_migration(started_cluster, setting_prefix):
         table_name,
         "ordered",
         files_path,
-        version = "24.5",
+        version="24.5",
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_polling_min_timeout_ms": 100,
