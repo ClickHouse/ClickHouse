@@ -1,11 +1,11 @@
-{"a":"0"}	{'a':'UInt8'}
+{"a":0}	{'a':'UInt8'}
 {}	{}
-{"a":"42"}	{'a':'Int8'}
+{"a":42}	{'a':'Int8'}
 {"a":42.42}	{'a':'Float64'}
-{"a":["1","2","3"]}	{'a':'Array(Int8)'}
-{"a":{"b":"42"}}	{'a.b':'Int8'}
-{"a":[{"b":"42"}]}	{'a':'Array(JSON)'}
-{"a":["1","str",["1"]]}	{'a':'Tuple(Int8, String, Array(Int8))'}
+{"a":[1,2,3]}	{'a':'Array(Int8)'}
+{"a":{"b":42}}	{'a.b':'Int8'}
+{"a":[{"b":42}]}	{'a':'Array(JSON)'}
+{"a":[1,"str",[1]]}	{'a':'Tuple(Int8, String, Array(Int8))'}
 {"a":false}	{'a':'Bool'}
 {"a":null}	{'a':'Nullable(UInt32)'}
 {"a":"42"}	{'a':'Int64'}
