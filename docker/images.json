@@ -59,10 +59,6 @@
         "name": "altinityinfra/stress-test",
         "dependent": []
     },
-    "docker/test/upgrade": {
-        "name": "altinityinfra/upgrade-check",
-        "dependent": []
-    },
     "docker/test/integration/runner": {
         "only_amd64": true,
         "name": "altinityinfra/integration-tests-runner",

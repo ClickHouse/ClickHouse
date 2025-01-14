@@ -471,7 +471,7 @@ class CommonJobConfigs:
         digest=DigestConfig(
             include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
             exclude_files=[".md"],
-            docker=["altinityinfra/upgrade-check"],
+            docker=["altinityinfra/stress-test"],
         ),
         run_command="upgrade_check.py",
         runner_type=Runners.FUNC_TESTER,
