@@ -215,8 +215,8 @@ void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, c
 
 String MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname)
 {
-    const auto prefix = is_clickhouse ? (db ? fmt::format("d{}", db->dname) : "") : "test";
-    return fmt::format("{}.t{}", prefix, tname);
+    const auto prefix = is_clickhouse ? (db ? fmt::format("d{}.", db->dname) : "") : "test.";
+    return fmt::format("{}t{}", prefix, tname);
 }
 
 void MySQLIntegration::truncateStatement(String & outbuf)
