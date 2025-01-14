@@ -29,7 +29,7 @@ env:
 
 jobs:
   DockerBuildAarch64:
-    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-snapshot-22.04-arm, altinity-startup-snapshot, altinity-setup-none]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_aarch64) != '[]'
     steps:
@@ -44,7 +44,7 @@ jobs:
             --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
             --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_aarch64) }}'
   DockerBuildAmd64:
-    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_amd64) != '[]'
     steps:
@@ -60,7 +60,7 @@ jobs:
             --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_amd64) }}'
   DockerMultiArchManifest:
     needs: [DockerBuildAmd64, DockerBuildAarch64]
-    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     if: |
       !failure() && !cancelled() && (toJson(fromJson(inputs.data).docker_data.missing_multi) != '[]' || inputs.set_latest)
     steps:

@@ -1,13 +1,9 @@
 self-hosted-runner:
   labels:
-    - builder
-    - func-tester
-    - func-tester-aarch64
+    - altinity-builder
+    - altinity-func-tester
+    - altinity-func-tester-aarch64
     - fuzzer-unit-tester
-    - altinity-on-demand
-    - altinity-type-cpx51
-    - altinity-in-ash
-    - altinity-image-x86-system-ubuntu-22.04
-    - style-checker
-    - style-checker-aarch64
+    - altinity-style-checker
+    - altinity-style-checker-aarch64
     - release-maker

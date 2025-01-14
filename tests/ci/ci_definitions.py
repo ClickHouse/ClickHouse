@@ -57,12 +57,12 @@ class Runners(metaclass=WithIter):
     GitHub runner's labels
     """
 
-    BUILDER = "builder"
-    BUILDER_AARCH64 = "builder-aarch64"
-    STYLE_CHECKER = "style-checker"
-    STYLE_CHECKER_AARCH64 = "style-checker-aarch64"
-    FUNC_TESTER = "func-tester"
-    FUNC_TESTER_AARCH64 = "func-tester-aarch64"
+    BUILDER = "altinity-builder"
+    BUILDER_AARCH64 = "altinity-builder-aarch64"
+    STYLE_CHECKER = "altinity-style-checker"
+    STYLE_CHECKER_AARCH64 = "altinity-style-checker-aarch64"
+    FUNC_TESTER = "altinity-func-tester"
+    FUNC_TESTER_AARCH64 = "altinity-func-tester-aarch64"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
