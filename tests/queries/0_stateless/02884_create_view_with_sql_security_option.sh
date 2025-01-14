@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,6 +9,9 @@ user1="user02884_1_${CLICKHOUSE_DATABASE}_$RANDOM"
 user2="user02884_2_${CLICKHOUSE_DATABASE}_$RANDOM"
 user3="user02884_3_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
+
+#https://github.com/ClickHouse/ClickHouse/issues/74411
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan=1"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.test_table (s String) ENGINE = MergeTree ORDER BY s;

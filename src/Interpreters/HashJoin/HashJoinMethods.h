@@ -66,7 +66,7 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
 public:
-    static size_t insertFromBlockImpl(
+    static void insertFromBlockImpl(
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
@@ -100,7 +100,7 @@ private:
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
 
     template <typename KeyGetter, typename HashMap, typename Selector>
-    static size_t insertFromBlockImplTypeCase(
+    static void insertFromBlockImplTypeCase(
         HashJoin & join,
         HashMap & map,
         const ColumnRawPtrs & key_columns,
