@@ -118,7 +118,6 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
             }
-            newt.set_create_opt(CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace);
 
             buf.resize(0);
             CreateTableToString(buf, newt);

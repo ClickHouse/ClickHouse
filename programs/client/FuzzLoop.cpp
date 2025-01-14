@@ -434,10 +434,12 @@ bool Client::buzzHouse()
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
         BuzzHouse::SQLQuery sq4;
-        int nsuccessfull_create_database = 0;
-        int total_create_database_tries = 0;
-        int nsuccessfull_create_table = 0;
-        int total_create_table_tries = 0;
+        uint32_t nsuccessfull_create_database = 0;
+        uint32_t total_create_database_tries = 0;
+        const uint32_t max_initial_databases = std::min(UINT32_C(3), fc.max_databases);
+        uint32_t nsuccessfull_create_table = 0;
+        uint32_t total_create_table_tries = 0;
+        const uint32_t max_initial_tables = std::min(UINT32_C(10), fc.max_tables);
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -500,7 +502,7 @@ bool Client::buzzHouse()
             sq1.Clear();
             full_query.resize(0);
 
-            if (total_create_database_tries < 10 && nsuccessfull_create_database < 3)
+            if (total_create_database_tries < 10 && nsuccessfull_create_database < max_initial_databases)
             {
                 gen.generateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
@@ -513,7 +515,7 @@ bool Client::buzzHouse()
             }
             else if (
                 gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
-                && nsuccessfull_create_table < 10)
+                && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
