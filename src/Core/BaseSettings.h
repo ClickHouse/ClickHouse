@@ -540,7 +540,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
             break;
 
         std::string_view name = TTraits::resolveName(read_name);
-        size_t index = accessor.find(name);
+        auto ref = accessor.findRef(name);
 
         using Flags = BaseSettingsHelpers::Flags;
         UInt64 flags{0};
@@ -549,18 +549,18 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         bool is_important = (flags & Flags::IMPORTANT);
         bool is_custom = (flags & Flags::CUSTOM);
 
-        if (index != static_cast<size_t>(-1))
+        if (ref)
         {
             if (is_custom)
             {
                 SettingFieldCustom temp;
                 temp.parseFromString(BaseSettingsHelpers::readString(in));
-                accessor.setValue(*this, index, static_cast<Field>(temp));
+                // *ref = static_cast<Field>(temp);
             }
             else if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
-                accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
+                ref->setValueString(*this, BaseSettingsHelpers::readString(in));
             else
-                accessor.readBinary(*this, index, in);
+                ref->readBinary(*this, in);
         }
         else if (is_custom && Traits::allow_custom_settings)
         {
@@ -894,10 +894,12 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         \
         class Accessor \
         { \
+            struct FieldInfo; \
         public: \
             static const Accessor & instance(); \
             size_t size() const { return field_infos.size(); } \
             size_t find(std::string_view name) const; \
+            Accessor::FieldInfo * findRef(std::string_view name) const; \
             const String & getName(size_t index) const { return field_infos[index].name; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
@@ -938,6 +940,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
+            std::unordered_map<std::string_view, Accessor::FieldInfo *> name_to_fieldinfo_map; \
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
@@ -1010,8 +1013,9 @@ struct DefineAliases
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
             for (size_t i : collections::range(res.field_infos.size())) \
             { \
-                const auto & info = res.field_infos[i]; \
+                auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \
+                res.name_to_fieldinfo_map.emplace(info.name, &res.field_infos[i]); \
             } \
             return res; \
         }(); \
@@ -1026,6 +1030,14 @@ struct DefineAliases
         if (it != name_to_index_map.end()) \
             return it->second; \
         return static_cast<size_t>(-1); \
+    } \
+    \
+    SETTINGS_TRAITS_NAME::Accessor::FieldInfo * SETTINGS_TRAITS_NAME::Accessor::findRef(std::string_view name) const \
+    { \
+        auto it = name_to_fieldinfo_map.find(name); \
+        if (it != name_to_fieldinfo_map.end()) \
+            return it->second; \
+        return nullptr; \
     } \
     \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
