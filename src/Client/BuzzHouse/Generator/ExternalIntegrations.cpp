@@ -1172,7 +1172,7 @@ bool MinIOIntegration::performIntegration(
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
 
-ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fc)
+ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fcc) : fc(fcc)
 {
     if (fc.mysql_server.has_value())
     {
@@ -1334,6 +1334,40 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
             return sqlite->performQuery(query);
         case PeerTableDatabase::None:
             return false;
+    }
+}
+
+void ExternalIntegrations::getPerformanceMetricsForLastQuery(
+    const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
+{
+    buf.resize(0);
+    buf += "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '";
+    buf += fc.fuzz_out.generic_string();
+    buf += "' TRUNCATE FORMAT TabSeparated;";
+
+    switch (pt)
+    {
+        case PeerTableDatabase::ClickHouse:
+            clickhouse->performQuery(buf);
+            break;
+        case PeerTableDatabase::MySQL:
+        case PeerTableDatabase::PostgreSQL:
+        case PeerTableDatabase::SQLite:
+            assert(0);
+            break;
+        case PeerTableDatabase::None:
+            clickhouse->fc.processServerQuery(buf);
+    }
+
+    std::ifstream infile(fc.fuzz_out);
+    buf.resize(0);
+    if (std::getline(infile, buf))
+    {
+        auto tabchar = buf.find("\t");
+
+        tabchar++;
+        query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
+        memory_usage = static_cast<uint64_t>(std::stoull(buf, &tabchar));
     }
 }
 

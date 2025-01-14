@@ -278,6 +278,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         next.ncols,
         next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
         cv->mutable_select());
+    this->levels.clear();
     this->allow_in_expression_alias = true;
     if (next.is_deterministic)
     {
@@ -479,6 +480,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
         generateSelect(rg, false, false, (rg.nextLargeNumber() % 5) + 1, std::numeric_limits<uint32_t>::max(), dt->mutable_sel());
+        this->levels.clear();
     }
     else if (desc_function && nopt < (desc_table + desc_view + desc_query + desc_function + 1))
     {
@@ -590,6 +592,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         }
         generateSelect(
             rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), isel->mutable_select());
+        this->levels.clear();
         if (rg.nextSmallNumber() < 3)
         {
             generateSettingValues(rg, serverSettings, isel->mutable_setting_values());
@@ -798,6 +801,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
                     ati->mutable_modify_query());
+                this->levels.clear();
                 this->allow_in_expression_alias = true;
                 if (v.is_deterministic)
                 {

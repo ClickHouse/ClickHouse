@@ -543,6 +543,7 @@ void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     first_success = second_sucess = other_steps_sucess = can_test_query_success = true;
+    this->query_duration_ms1 = this->memory_usage1 = this->query_duration_ms2 = this->memory_usage2 = 0;
 }
 
 void QueryOracle::setIntermediateStepSuccess(const bool success)
@@ -550,16 +551,21 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
     other_steps_sucess &= success;
 }
 
-void QueryOracle::processFirstOracleQueryResult(const bool success)
+void QueryOracle::processFirstOracleQueryResult(const bool success, const bool measure_performance, ExternalIntegrations & ei)
 {
     if (success)
     {
         md5_hash1.hashFile(qfile.generic_string(), first_digest);
+        if (measure_performance)
+        {
+            ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
+        }
     }
     first_success = success;
 }
 
-void QueryOracle::processSecondOracleQueryResult(const bool success, const String & oracle_name)
+void QueryOracle::processSecondOracleQueryResult(
+    const bool success, const bool measure_performance, ExternalIntegrations & ei, const String & oracle_name)
 {
     if (success)
     {
@@ -570,11 +576,36 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, const Strin
     {
         if (can_test_query_success && first_success != second_sucess)
         {
-            throw std::runtime_error(oracle_name + " oracle failed with different success results");
+            throw std::runtime_error(fmt::format("{}: failed with different success results", oracle_name));
         }
-        if (first_success && second_sucess && first_digest != second_digest)
+        if (first_success && second_sucess)
         {
-            throw std::runtime_error(oracle_name + " oracle failed with different result sets");
+            if (first_digest != second_digest)
+            {
+                throw std::runtime_error(fmt::format("{}: failed with different result sets", oracle_name));
+            }
+            if (measure_performance)
+            {
+                ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2);
+                if (this->query_duration_ms1
+                    > static_cast<uint64_t>(this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
+                {
+                    throw std::runtime_error(fmt::format(
+                        "{}: ClickHouse peer table query was faster than the server: {} ms vs {} ms",
+                        oracle_name,
+                        std::to_string(this->query_duration_ms1),
+                        std::to_string(this->query_duration_ms2)));
+                }
+                if (this->memory_usage1
+                    > static_cast<uint64_t>(this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
+                {
+                    throw std::runtime_error(fmt::format(
+                        "{}: ClickHouse peer table query used less memory than the server: {} vs {}",
+                        oracle_name,
+                        std::to_string(this->memory_usage1),
+                        std::to_string(this->memory_usage2)));
+                }
+            }
         }
     }
 }

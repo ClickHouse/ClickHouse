@@ -15,6 +15,7 @@ private:
 
     MD5Impl md5_hash1, md5_hash2;
     Poco::DigestEngine::Digest first_digest, second_digest;
+    uint64_t query_duration_ms1 = 0, memory_usage1 = 0, query_duration_ms2 = 0, memory_usage2 = 0;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
@@ -30,8 +31,8 @@ public:
 
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);
-    void processFirstOracleQueryResult(bool success);
-    void processSecondOracleQueryResult(bool success, const String & oracle_name);
+    void processFirstOracleQueryResult(bool success, bool measure_performance, ExternalIntegrations & ei);
+    void processSecondOracleQueryResult(bool success, bool measure_performance, ExternalIntegrations & ei, const String & oracle_name);
 
     /* Correctness query oracle */
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);

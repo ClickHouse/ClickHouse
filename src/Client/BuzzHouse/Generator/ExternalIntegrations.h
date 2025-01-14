@@ -306,6 +306,8 @@ public:
 class ExternalIntegrations
 {
 private:
+    const FuzzConfig & fc;
+    String buf;
     MySQLIntegration * mysql = nullptr;
     PostgreSQLIntegration * postresql = nullptr;
     SQLiteIntegration * sqlite = nullptr;
@@ -349,7 +351,7 @@ public:
         next_calls_succeeded.clear();
     }
 
-    explicit ExternalIntegrations(const FuzzConfig & fc);
+    explicit ExternalIntegrations(const FuzzConfig & fcc);
 
     void createExternalDatabaseTable(
         RandomGenerator & rg, IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
@@ -364,6 +366,8 @@ public:
     void dropPeerTableOnRemote(const SQLTable & t);
 
     bool performQuery(PeerTableDatabase pt, const String & query);
+
+    void getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
 
     ~ExternalIntegrations()
     {
