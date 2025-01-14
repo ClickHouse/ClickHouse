@@ -497,6 +497,14 @@ namespace
             return self;
         }
 
+        UInt128 hash() const
+        {
+            SipHash hash;
+            hash.update(hostname);
+            hash.update(table_id);
+            return hash.get128();
+        }
+
         std::string serialize() const
         {
             WriteBufferFromOwnString buf;
@@ -530,14 +538,12 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, boo
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
-    const auto registry_path = zookeeper_path
-        / "registry"
-        / (storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName());
+    const auto table_path = zookeeper_path / "registry" / getProcessorID(storage_id);
     const auto self = Info::create(storage_id);
 
     auto zk_client = getZooKeeper();
     auto code = zk_client->tryCreate(
-        registry_path,
+        table_path,
         self.serialize(),
         zkutil::CreateMode::Ephemeral);
 
@@ -609,20 +615,9 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     Strings registered;
     if (active)
     {
-        Strings children;
-        auto code = zk_client->tryGetChildren(registry_path, children);
-        if (code == Coordination::Error::ZNONODE)
-            return registered;
-
-        if (code != Coordination::Error::ZOK)
+        auto code = zk_client->tryGetChildren(registry_path, registered);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(code);
-
-        for (const auto & child : children)
-        {
-            std::string data;
-            if (zk_client->tryGet(registry_path / child, data))
-                registered.push_back(data);
-        }
     }
     else
     {
@@ -645,8 +640,7 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
 {
     const auto zk_client = getZooKeeper();
     const auto registry_path = zookeeper_path / "registry";
-    const auto table_path = registry_path
-        / (storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName());
+    const auto table_path = registry_path / getProcessorID(storage_id);
 
     zk_client->tryRemove(table_path);
     const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
@@ -773,7 +767,7 @@ private:
 
 std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)
 {
-    return Info::create(storage_id).serialize();
+    return toString(Info::create(storage_id).hash());
 }
 
 void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const std::string & processor_id)
@@ -849,6 +843,7 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
 
     std::lock_guard lock(active_servers_mutex);
     active_servers = registered_set;
+
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(100, log); /// TODO: Add a setting.
     active_servers_hash_ring->rebuild(active_servers);
