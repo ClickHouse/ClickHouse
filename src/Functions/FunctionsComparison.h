@@ -641,17 +641,6 @@ struct NameGreater         { static constexpr auto name = "greater"; };
 struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
-struct ComparisonParams
-{
-    bool check_decimal_overflow;
-    bool validate_enum_literals_in_operators;
-
-    explicit ComparisonParams(const ContextPtr & context)
-        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_operators(false)
-    {}
-};
-
 template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
@@ -899,8 +888,6 @@ private:
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
         {
             if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
-                return false;
-            if (params.validate_enum_literals_in_operators)
                 return false;
             if (!enum_values || string_value.getType() != Field::Types::String)
                 return false;
@@ -1344,7 +1331,7 @@ public:
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
                 ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
                 return executeDecimal<Op, Name>(
-                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow);
+                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow);
             }
 
             /// Check does another data type is comparable to Decimal, includes Int and Float.
@@ -1367,7 +1354,7 @@ public:
                     = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
                 return executeImpl(new_arguments, result_type, input_rows_count);
             }
-            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, params.check_decimal_overflow);
+            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, check_decimal_overflow);
         }
         if (date_and_datetime)
         {
@@ -1378,7 +1365,7 @@ public:
                   || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
                   || (res = executeDecimal<Op, Name>(
-                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow))))
+                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow))))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
