@@ -11,7 +11,7 @@ class QueryOracle
 {
 private:
     const FuzzConfig & fc;
-    const std::filesystem::path qfile;
+    const std::filesystem::path qfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
     Poco::DigestEngine::Digest first_digest, second_digest;
@@ -27,7 +27,11 @@ private:
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);
 
 public:
-    explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc), qfile(ffc.db_file_path / "query.data") { buf.reserve(4096); }
+    explicit QueryOracle(const FuzzConfig & ffc)
+        : fc(ffc), qfile(ffc.db_file_path / "query.data"), qfile_peer(ffc.db_file_path / "peer.data")
+    {
+        buf.reserve(4096);
+    }
 
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);

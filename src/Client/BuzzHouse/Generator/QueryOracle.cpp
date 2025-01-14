@@ -517,6 +517,11 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().select().sel()), gen);
     }
+    else if (this->peer_query == PeerQuery::ClickHouseOnly)
+    {
+        SelectIntoFile & sif = const_cast<SelectIntoFile &>(sq2.inner_query().select().intofile());
+        sif.set_path(qfile_peer.generic_string());
+    }
     for (const auto & entry : found_tables)
     {
         SQLQuery next;
@@ -575,7 +580,7 @@ void QueryOracle::processSecondOracleQueryResult(
 {
     if (success)
     {
-        md5_hash2.hashFile(qfile.generic_string(), second_digest);
+        md5_hash2.hashFile((this->peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qfile).generic_string(), second_digest);
     }
     second_sucess = success;
     if (other_steps_sucess)
