@@ -1,4 +1,4 @@
-from praktika import Workflow
+from praktika import Job, Workflow
 
 from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS, Jobs
 
@@ -33,6 +33,24 @@ workflow = Workflow.Config(
     enable_merge_ready_status=True,
 )
 
+workflow_dispatch = Workflow.Config(
+    name="Dispatch Test",
+    event=Workflow.Event.DISPATCH,
+    jobs=[
+        Job.Config(
+            name="test",
+            runs_on=["ubuntu-latest"],
+            command="echo Hello ${{ github.event.inputs.name }}",
+        )
+    ],
+    inputs=[
+        Workflow.Config.InputConfig(
+            name="name", description="user name", is_required=True, default_value=""
+        )
+    ],
+)
+
 WORKFLOWS = [
     workflow,
+    workflow_dispatch,
 ]
