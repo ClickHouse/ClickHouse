@@ -34,5 +34,5 @@ EOD
 # Remove %%LOGO%% from the file with one line below
 sed -i '/^%%LOGO%%/,+1d' "$R"
 
-# Replace each %%IMAGE%% with our `clickhouse/clickhouse-server`
-sed -i '/%%IMAGE%%/s:%%IMAGE%%:clickhouse/clickhouse-server:g' $R
+# Replace each %%IMAGE%% with our `altinity/clickhouse-server`
+sed -i '/%%IMAGE%%/s:%%IMAGE%%:altinity/clickhouse-server:g' $R

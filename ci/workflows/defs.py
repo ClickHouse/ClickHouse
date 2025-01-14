@@ -50,7 +50,7 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     # Docker.Config(
-    #     name="clickhouse/cctools",
+    #     name="altinityinfra/cctools",
     #     path="./ci/docker/packager/cctools",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
