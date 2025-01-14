@@ -81,7 +81,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
@@ -141,6 +140,8 @@ namespace ProfileEvents
     extern const Event PartsLockHoldMicroseconds;
     extern const Event LoadedDataParts;
     extern const Event LoadedDataPartsMicroseconds;
+    extern const Event RestorePartsSkippedFiles;
+    extern const Event RestorePartsSkippedBytes;
 }
 
 namespace CurrentMetrics
@@ -5993,8 +5994,13 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
-        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME))
+        if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME) ||
+            filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
+        {
+            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
+            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(part_path_in_backup_fs / filename));
             continue;
+        }
 
         size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite);
         reservation->update(reservation->getSize() - file_size);
@@ -8165,7 +8171,7 @@ catch (...)
     tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
-StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
+MergeTreeData::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
 {
     std::lock_guard lock(pinned_part_uuids_mutex);
     return pinned_part_uuids;
@@ -8417,51 +8423,6 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
         }
     }
     return result;
-}
-
-bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason)
-{
-    auto remove_broken_parts_from_consideration = [](auto & parts)
-    {
-        std::set<String> broken_projection_parts;
-        for (const auto & [name, part] : parts)
-        {
-            if (part->is_broken)
-                broken_projection_parts.emplace(name);
-        }
-        for (const auto & name : broken_projection_parts)
-            parts.erase(name);
-    };
-
-    auto left_projection_parts = left->getProjectionParts();
-    auto right_projection_parts = right->getProjectionParts();
-
-    remove_broken_parts_from_consideration(left_projection_parts);
-    remove_broken_parts_from_consideration(right_projection_parts);
-
-    if (left_projection_parts.size() != right_projection_parts.size())
-    {
-        out_reason = PreformattedMessage::create(
-            "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
-            left_projection_parts.size(),
-            left->name,
-            right_projection_parts.size(),
-            right->name
-        );
-        return false;
-    }
-
-    for (const auto & [name, _] : left_projection_parts)
-    {
-        if (!right_projection_parts.contains(name))
-        {
-            out_reason = PreformattedMessage::create(
-                "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
-            );
-            return false;
-        }
-    }
-    return true;
 }
 
 bool MergeTreeData::canUsePolymorphicParts() const
