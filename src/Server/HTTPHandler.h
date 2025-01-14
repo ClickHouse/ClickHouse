@@ -35,7 +35,7 @@ using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
 struct HTTPHandlerConnectionConfig
 {
-    std::optional<BasicCredentials> credentials;
+    std::optional<AlwaysAllowCredentials> credentials;
 
     /// TODO:
     /// String quota;

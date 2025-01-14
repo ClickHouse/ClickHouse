@@ -11,7 +11,7 @@ slug: /ru/operations/system-tables/stack_trace
 
 -   `thread_name` ([String](../../sql-reference/data-types/string.md)) — имя потока.
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор потока.
--   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](#system_tables-query_log).
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](/docs/ru/operations/system-tables/query_log).
 -   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — [трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
 
 **Пример**

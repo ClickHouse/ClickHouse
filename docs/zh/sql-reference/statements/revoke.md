@@ -46,4 +46,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
-{## [原始文档](https://clickhouse.com/docs/en/operations/settings/settings/) ##}
+[原始文档](/docs/en/operations/settings/settings)
