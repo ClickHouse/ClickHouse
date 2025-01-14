@@ -78,10 +78,6 @@ RUN arch=${TARGETARCH:-amd64} \
     && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o ./mc \
     && chmod +x ./mc ./minio
 
-RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
-    && tar -xvf hadoop-3.3.1.tar.gz \
-    && rm -rf hadoop-3.3.1.tar.gz
-
 # Donwload mongosh
 RUN wget -qO- https://www.mongodb.org/static/pgp/server-7.0.asc | sudo tee /etc/apt/trusted.gpg.d/server-7.0.asc \
     && echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
