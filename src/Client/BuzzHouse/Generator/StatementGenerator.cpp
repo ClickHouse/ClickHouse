@@ -2790,7 +2790,19 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     {
         generateNextSystemStatement(rg, sq->mutable_system_cmd());
     }
-    generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
+    else if (
+        select_query
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
+               + select_query + 1))
+    {
+        generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
+    }
+    else
+    {
+        assert(0);
+    }
 }
 
 struct TestSetting
