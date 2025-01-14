@@ -293,6 +293,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
+    M(SkippingIndexCacheSize, "Size of the skipping index cache in bytes") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \

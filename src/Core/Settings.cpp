@@ -5872,7 +5872,11 @@ Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
-    DECLARE(Bool, validate_enum_literals_in_opearators, false, R"(
+    DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
+When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
+If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
+)", 0) \
+    DECLARE(Bool, validate_enum_literals_in_operators, false, R"(
 If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
 )", 0) \
     \

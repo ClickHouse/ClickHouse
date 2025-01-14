@@ -20,15 +20,19 @@ public:
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }
 
-    void setProcessedAtStartRequests(
+    /// Return vector of indexes of filtered paths.
+    static std::vector<size_t> filterOutProcessedAndFailed(
+        const std::vector<std::string> & paths,
+        const std::filesystem::path & zk_path_,
+        LoggerPtr log_);
+
+    void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void setProcessedImpl() override;
-
-    void setProcessedImpl(bool remove_processing_nodes_only);
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
 };
 
 }
