@@ -29,6 +29,8 @@ public:
 
     void handleQuery(MongoDB::OpMsgMessage::Ptr message, DB::MongoDB::MessageWriter writer);
 
+    ~MongoDBHandler() override;
+
 private:
     constexpr static const auto handler_name = "MongoDBHandler";
     LoggerPtr log = getLogger(handler_name);

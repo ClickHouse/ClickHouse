@@ -109,7 +109,6 @@ void MongoDBHandler::run()
 {
     LOG_INFO(log, "MongoDB has new connection");
     setThreadName(this->handler_name);
-    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MONGODB);
 
@@ -162,6 +161,9 @@ void MongoDBHandler::run()
         }
         in->next();
     }
+}
+
+MongoDBHandler::~MongoDBHandler() {
     out->finalize();
 }
 
