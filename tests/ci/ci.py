@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -934,7 +935,7 @@ def _upload_build_profile_data(
 
 def _add_build_to_version_history(
     pr_info: PRInfo,
-    job_report: JobReport,
+    start_time: str,
     version: str,
     docker_tag: str,
     ch_helper: ClickHouseHelper,
@@ -942,11 +943,14 @@ def _add_build_to_version_history(
     # with some probability we will not silently break this logic
     assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
 
+    commit = get_commit(GitHub(get_best_robot_token()), pr_info.sha)
+    parents = [p.sha for p in commit.parents]
     data = {
-        "check_start_time": job_report.start_time,
+        "check_start_time": start_time,
         "pull_request_number": pr_info.number,
         "pull_request_url": pr_info.pr_html_url,
         "commit_sha": pr_info.sha,
+        "parent_commits_sha": parents,
         "commit_url": pr_info.commit_html_url,
         "version": version,
         "docker_tag": docker_tag,
@@ -1159,6 +1163,14 @@ def main() -> int:
                 },
             }
         result["docker_data"] = docker_data
+        ch_helper = ClickHouseHelper()
+        _add_build_to_version_history(
+            pr_info,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            result["version"],
+            result["build"],
+            ch_helper,
+        )
     ### CONFIGURE action: end
 
     ### PRE action: start
@@ -1294,14 +1306,6 @@ def main() -> int:
                 db="default", table="checks", events=prepared_events
             )
 
-            if "DockerServerImage" in args.job_name and indata is not None:
-                _add_build_to_version_history(
-                    pr_info,
-                    job_report,
-                    indata["version"],
-                    indata["build"],
-                    ch_helper,
-                )
         elif job_report.job_skipped:
             print(f"Skipped after rerun check {[args.job_name]} - do nothing")
         else:

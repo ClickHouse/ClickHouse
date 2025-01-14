@@ -1039,10 +1039,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits
 
 其中 `schema.capnp` 描述如下：6y2
 
+```
     struct Message {
       SearchPhrase @0 :Text;
       c @1 :Uint64;
     }
+```
 
 格式文件存储的目录可以在服务配置中的 [format_schema_path](../operations/server-configuration-parameters/settings.md) 指定。
 
@@ -1122,7 +1124,7 @@ ClickHouse在输入和输出protobuf消息采用`length-delimited` 格式。
 
 ClickHouse Avro格式支持读取和写入 [Avro数据文件](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-### 数据类型匹配{#sql_reference/data_types-matching} {#data-types-matching-sql_referencedata_types-matching}
+### 数据类型匹配{#data_types-matching}
 
 下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
@@ -1187,7 +1189,7 @@ AvroConfluent支持解码单个对象的Avro消息，这常用于 [Kafka](https:
 
 架构注册表URL配置为 [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
-### 数据类型匹配{#sql_reference/data_types-matching-1} {#data-types-matching-sql_referencedata_types-matching-1}
+### 数据类型匹配 {#data-types-matching-sql_reference}
 
 和 [Avro](#data-format-avro)相同。
 
@@ -1230,7 +1232,7 @@ SELECT * FROM topic1_stream;
 
 [Apache Parquet](http://parquet.apache.org/) 是Hadoop生态系统中普遍使用的列式存储格式。 ClickHouse支持此格式的读写操作。
 
-### 数据类型匹配{#sql_reference/data_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
+### 数据类型匹配 {#data-types-matching-sql_reference}
 
 下表显示了Clickhouse支持的数据类型以及它们在 `INSERT` 和 `SELECT` 查询如何对应Clickhouse的 [data types](../sql-reference/data-types/index.md) 。
 
@@ -1286,7 +1288,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 ## ORC {#data-format-orc}
 [Apache ORC](https://orc.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。
 
-### 数据类型匹配{#sql_reference/data_types-matching-3} {#data-types-matching-sql_referencedata_types-matching-3}
+### 数据类型匹配 {#data-types-matching-sql_reference}
 
 下表显示了支持的数据类型以及它们如何在`SELECT`与`INSERT`查询中匹配ClickHouse的 [数据类型](../sql-reference/data-types/index.md)。
 

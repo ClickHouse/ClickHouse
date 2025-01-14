@@ -2927,6 +2927,7 @@ Outputs the following columns:
    - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
 
 Example: find compilation units that have the most function definitions (including template instantiations and functions from included header files):
+
 ```sql
 SELECT
     unit_name,
