@@ -160,10 +160,6 @@
         "name": "altinityinfra/install-rpm-test",
         "dependent": []
     },
-    "docker/docs/builder": {
-        "name": "altinityinfra/docs-builder",
-        "dependent": []
-    },
     "docker/test/sqllogic": {
         "name": "altinityinfra/sqllogic-test",
         "dependent": []
