@@ -3253,7 +3253,7 @@ def main(args):
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
 
-    if args.parallel_replicas is True:
+    if args.no_parallel_replicas is True:
         skip_list_parallel_replicas = try_get_skip_list(
             base_dir, "../parallel_replicas_blacklist.txt"
         )
@@ -3748,12 +3748,6 @@ def parse_args():
         action="store_true",
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
-    )
-    parser.add_argument(
-        "--parallel-replicas",
-        action="store_true",
-        default=False,
-        help="Skip certain tests specific to the parallel replicas configuration",
     )
 
     parser.add_argument(
