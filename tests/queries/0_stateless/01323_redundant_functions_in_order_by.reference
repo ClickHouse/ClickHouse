@@ -37,7 +37,9 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY x ASC
+    ORDER BY
+        x ASC,
+        exp(x) ASC
 )
 QUERY id: 0
   PROJECTION COLUMNS
@@ -71,7 +73,9 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY x ASC
+    ORDER BY
+        x ASC,
+        exp(exp(x)) ASC
 )
 QUERY id: 0
   PROJECTION COLUMNS
@@ -142,11 +146,7 @@ QUERY id: 0
             EXPRESSION
               COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
-SELECT
-    key,
-    a,
-    b,
-    c
+SELECT *
 FROM
 (
     SELECT number + 2 AS key
@@ -154,7 +154,7 @@ FROM
 ) AS s
 ALL FULL OUTER JOIN test AS t USING (key)
 ORDER BY
-    key ASC,
+    s.key ASC,
     t.key ASC
 QUERY id: 0
   PROJECTION COLUMNS
@@ -210,7 +210,8 @@ SELECT
 FROM test
 ORDER BY
     key ASC,
-    a ASC
+    a ASC,
+    exp(key + a) ASC
 QUERY id: 0
   PROJECTION COLUMNS
     key UInt64
@@ -359,11 +360,7 @@ FROM
         exp(x) ASC,
         x ASC
 )
-SELECT
-    key,
-    a,
-    b,
-    c
+SELECT *
 FROM
 (
     SELECT number + 2 AS key
@@ -371,7 +368,7 @@ FROM
 ) AS s
 ALL FULL OUTER JOIN test AS t USING (key)
 ORDER BY
-    key ASC,
+    s.key ASC,
     t.key ASC
 SELECT
     key,
