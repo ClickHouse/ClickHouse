@@ -117,4 +117,46 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coord
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 }
 
+std::vector<size_t> ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
+    const std::vector<std::string> & paths, const std::filesystem::path & zk_path_, LoggerPtr log_)
+{
+    std::vector<std::string> check_paths;
+    for (const auto & path : paths)
+    {
+        const auto node_name = getNodeName(path);
+        check_paths.push_back(zk_path_ / "processed" / node_name);
+        check_paths.push_back(zk_path_ / "failed" / node_name);
+    }
+
+    auto zk_client = getZooKeeper();
+    auto responses = zk_client->tryGet(check_paths);
+
+    auto check_code = [&](auto code, const std::string & path)
+    {
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    std::vector<size_t> result;
+    for (size_t i = 0; i < responses.size();)
+    {
+        check_code(responses[i].error, check_paths[i]);
+        check_code(responses[i + 1].error, check_paths[i]);
+
+        if (responses[i].error == Coordination::Error::ZNONODE
+            && responses[i + 1].error == Coordination::Error::ZNONODE)
+        {
+            result.push_back(i / 2);
+        }
+        else
+        {
+            LOG_TEST(log_, "Skipping file {}: {}",
+                     paths[i / 2],
+                     responses[i].error == Coordination::Error::ZOK ? "Processed" : "Failed");
+        }
+        i += 2;
+    }
+    return result;
+}
+
 }
