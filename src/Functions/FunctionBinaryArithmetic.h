@@ -1190,9 +1190,10 @@ class FunctionBinaryArithmetic : public IFunction
         return column_to;
     }
 
-    ColumnPtr executeDateTime64Subtraction(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_row_count) const
+    ColumnPtr executeDateTime64Subtraction(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                           size_t input_row_count) const
     {
-        using OpImpl = DecimalBinaryOperation<Op, Decimal64, false>;
+        using OpImpl = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ true>;
         using ColumnDateTime64 = DataTypeDateTime64::ColumnType;
         using ColumnDateTime = DataTypeDateTime::ColumnType;
 
@@ -1211,7 +1212,7 @@ class FunctionBinaryArithmetic : public IFunction
         if (!type)
             return nullptr;
 
-        // Process column information for both arguments
+        /// Process column information for both arguments
         auto process = [type] (struct ColumnInfo & to_be_checked, const DataTypePtr & other_type)
         {
             const auto * col_raw = to_be_checked.argument.column.get();
@@ -1222,12 +1223,14 @@ class FunctionBinaryArithmetic : public IFunction
                 if (WhichDataType(to_be_checked.argument.type).isDateTime())
                 {
                     to_be_checked.const_val = checkAndGetColumnConst<ColumnDateTime>(col_raw)->template getValue<UInt32>();
+                    /// the output type is the same as the other argument, which is DateTime64
                     to_be_checked.scale = type->getScaleMultiplier();
                 }
                 else
                 {
                     to_be_checked.const_val = checkAndGetColumnConst<ColumnDateTime64>(col_raw)->template getValue<Decimal64>().value;
-                    to_be_checked.scale = type->scaleFactorFor(*checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get()), false);
+                    const auto & from_type = *checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get());
+                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
                 }
             }
             else
@@ -1236,12 +1239,14 @@ class FunctionBinaryArithmetic : public IFunction
                 {
                     to_be_checked.converted_col = castColumn(to_be_checked.argument, other_type);
                     to_be_checked.col = checkAndGetColumn<ColumnDateTime64>(to_be_checked.converted_col.get());
+                    /// the DateTime argument is already scaled up by calling castColumn
                     to_be_checked.scale = 1;
                 }
                 else
                 {
                     to_be_checked.col = checkAndGetColumn<ColumnDateTime64>(col_raw);
-                    to_be_checked.scale = type->scaleFactorFor(*checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get()), false);
+                    const auto & from_type = *checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get());
+                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
                 }
 
                 if (!to_be_checked.col)
@@ -1266,13 +1271,22 @@ class FunctionBinaryArithmetic : public IFunction
         auto col_res = ColumnDecimal<Decimal64>::create(input_row_count, type->getScale());
         auto & vec_res = col_res->getData();
 
-        // Process based on whether the columns are constant or not
+        /// Process based on whether the column is constant or not
         if (cols[0].is_const)
-            OpImpl::template process<OpCase::LeftConstant, true, true>(cols[0].const_val, cols[1].col->getData(), vec_res, cols[0].scale, cols[1].scale);
+        {
+            OpImpl::template process<OpCase::LeftConstant, true, true>(cols[0].const_val, cols[1].col->getData(),
+                                                                       vec_res, cols[0].scale, cols[1].scale);
+        }
         else if (cols[1].is_const)
-            OpImpl::template process<OpCase::RightConstant, true, true>(cols[0].col->getData(), cols[1].const_val, vec_res, cols[0].scale, cols[1].scale);
+        {
+            OpImpl::template process<OpCase::RightConstant, true, true>(cols[0].col->getData(), cols[1].const_val,
+                                                                        vec_res, cols[0].scale, cols[1].scale);
+        }
         else
-            OpImpl::template process<OpCase::Vector, true, true>(cols[0].col->getData(), cols[1].col->getData(), vec_res, cols[0].scale, cols[1].scale);
+        {
+            OpImpl::template process<OpCase::Vector, true, true>(cols[0].col->getData(), cols[1].col->getData(),
+                                                                 vec_res, cols[0].scale, cols[1].scale);
+        }
 
         return col_res;
     }
