@@ -34,7 +34,7 @@ Default: `120`
 
 ## asynchronous_metric_log
 
-It is enabled by default. 
+Enabled by default. 
 
 Note: It is disabled by default for deployment installed using the [quick install method](../docs/en/install#quick-install). 
 
