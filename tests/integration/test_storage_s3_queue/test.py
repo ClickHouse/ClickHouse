@@ -2906,7 +2906,7 @@ def test_migration(started_cluster, setting_prefix):
 
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
-def test_skipping_processed_and_failed_files(started_cluster, mode):
+def test_filtering_files(started_cluster, mode):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
@@ -2934,6 +2934,9 @@ def test_skipping_processed_and_failed_files(started_cluster, mode):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
         },
         database_name="r",
     )
@@ -2976,10 +2979,32 @@ def test_skipping_processed_and_failed_files(started_cluster, mode):
         time.sleep(1)
     assert node2.contains_in_log(f"StorageS3Queue (r.{table_name}): Processed rows: 0")
 
+    found_1_global = False
+    found_2_global = False
+    if mode == "unordered":
+        is_unordered = True
+    else:
+        is_unordered = False
+
     for file in files:
-        assert node2.contains_in_log(
+        found_1 = node2.contains_in_log(
             f"StorageS3Queue (r.{table_name}): Skipping file {file[0]}: Processed"
         )
+        found_1_global = found_1_global or found_1
+
+        if is_unordered:
+            found_2 = node2.contains_in_log(
+                f"Will skip file {file[0]}: it should be processed by"
+            )
+            found_2_global = found_2_global or found_2
+        else:
+            found_2 = False
+
+        assert found_1 or found_2, "Failed with file " + file[0]
+
+    assert found_1_global
+    if is_unordered:
+        assert found_2_global
 
     assert node2.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"

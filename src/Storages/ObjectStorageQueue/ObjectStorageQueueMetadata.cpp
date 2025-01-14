@@ -784,7 +784,7 @@ void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const St
         if (chosen == self)
             result.emplace_back(std::move(path));
         else
-            LOG_TEST(log, "File {} should be processed by {}, skipping it ({})", path, chosen, self);
+            LOG_TEST(log, "Will skip file {}: it should be processed by {} (self: {})", path, chosen, self);
     }
     paths = std::move(result);
 }
