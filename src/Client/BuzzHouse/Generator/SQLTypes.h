@@ -3,7 +3,6 @@
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
-#include <memory>
 #include <optional>
 
 namespace BuzzHouse
