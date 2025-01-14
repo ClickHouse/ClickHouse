@@ -752,6 +752,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"notify_newest_block_number", false, false, "Cloud sync"},
             {"allow_reduce_blocking_parts_task", false, false, "Cloud sync"},
             /// Release closed. Please use 25.2
+            {"max_postpone_time_for_failed_replicated_fetches_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "New setting"},
+            {"max_postpone_time_for_failed_replicated_merges_ms", 1ULL * 60 * 1000, 1ULL * 60 * 1000, "New setting"},
+            {"max_postpone_time_for_failed_replicated_tasks_ms", 5ULL * 60 * 1000, 5ULL * 60 * 1000, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {

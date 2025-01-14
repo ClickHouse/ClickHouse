@@ -1461,6 +1461,7 @@ protected:
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
+<<<<<<< HEAD
     class PartMutationBackoffPolicy
     {
         struct PartMutationInfo
@@ -1546,6 +1547,8 @@ protected:
     /// Controls postponing logic for failed mutations.
     PartMutationBackoffPolicy mutation_backoff_policy;
 
+=======
+>>>>>>> 15b340342c2 (Enable  postpone policies for replicated tasks)
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
     /// mechanisms for parts locking
