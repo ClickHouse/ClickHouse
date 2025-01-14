@@ -114,6 +114,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool enable_parallel_replicas;
 }
 
 namespace ErrorCodes
@@ -2040,7 +2041,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    if (!settings[Setting::query_plan_use_new_logical_join_step])
+    if (!settings[Setting::query_plan_use_new_logical_join_step] || settings[Setting::enable_parallel_replicas])
         return buildQueryPlanForJoinNodeLegacy(
             join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 
@@ -2050,11 +2051,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         outer_scope_columns,
         join_node,
         planner_context);
-
-    if (!join_step_logical)
-        /// FIXME(@vdimir): Fall back for unsupported cases
-        return buildQueryPlanForJoinNodeLegacy(
-            join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 
     join_step_logical->setPreparedJoinStorage(
         tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
