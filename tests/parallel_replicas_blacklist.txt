@@ -51,6 +51,7 @@
 
     https://github.com/ClickHouse/ClickHouse/issues/74547
 02354_vector_search_multiple_marks
+02354_vector_search_expansion_search
 
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
