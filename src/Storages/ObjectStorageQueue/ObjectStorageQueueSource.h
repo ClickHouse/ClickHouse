@@ -35,22 +35,23 @@ public:
         FileMetadataPtr file_metadata;
     };
 
-    class FileIterator : public StorageObjectStorageSource::IIterator
+    class FileIterator : public StorageObjectStorageSource::IIterator, WithContext
     {
     public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
-            std::unique_ptr<Source::GlobIterator> glob_iterator_,
             ObjectStoragePtr object_storage_,
+            ConfigurationPtr configuration_,
+            size_t list_objects_batch_size_,
+            const ActionsDAG::Node * predicate_,
+            const NamesAndTypesList & virtual_columns_,
+            ContextPtr context_,
+            LoggerPtr logger_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_,
-            LoggerPtr logger_);
+            std::atomic<bool> & shutdown_called_);
 
         bool isFinished() const;
 
-        /// Note:
-        /// List results in s3 are always returned in UTF-8 binary order.
-        /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
         Source::ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
@@ -71,8 +72,23 @@ public:
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const std::unique_ptr<Source::GlobIterator> glob_iterator;
+        const ConfigurationPtr configuration;
+        const NamesAndTypesList virtual_columns;
         const bool file_deletion_on_processed_enabled;
+        const ObjectStorageQueueMode mode;
+
+        ObjectStorageIteratorPtr object_storage_iterator;
+        std::unique_ptr<re2::RE2> matcher;
+        ExpressionActionsPtr filter_expr;
+        bool recursive{false};
+
+        Source::ObjectInfos object_infos;
+        bool is_finished = false;
+        std::mutex next_mutex;
+        size_t index = 0;
+
+        Source::ObjectInfoPtr next();
+        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
