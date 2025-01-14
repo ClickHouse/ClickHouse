@@ -548,7 +548,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                     buf += ", ";
                 }
                 if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                    || rg.nextLargeNumber() < 2)
+                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
                 {
                     buf += "DEFAULT";
                 }
@@ -1078,7 +1078,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                             buf.resize(0);
                             if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                                || rg.nextLargeNumber() < 2)
+                                || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
                             {
                                 buf += "DEFAULT";
                             }
