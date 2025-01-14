@@ -121,6 +121,8 @@ public:
     ///     We also want to register nodes only for a period when they are active.
     ///     For this we create ephemeral nodes in "zookeeper_path / registry / <node_info>"
     void registerIfNot(const StorageID & storage_id, bool active);
+    /// Unregister table.
+    /// Return the number of remaining (after unregistering) registered tables.
     size_t unregister(const StorageID & storage_id, bool active);
     Strings getRegistered(bool active);
 
@@ -153,7 +155,7 @@ private:
     size_t unregisterActive(const StorageID & storage_id);
 
     void updateRegistryFunc();
-    void updateRegistry(const DB::Strings & registered_processors);
+    void updateRegistry(const DB::Strings & registered_);
 
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
@@ -172,13 +174,11 @@ private:
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
 
-    using RegisteredProcessor = std::string;
-    using ProcessorsSet = std::set<RegisteredProcessor>;
-    ProcessorsSet registered_processors;
+    NameSet active_servers;
 
     class ServersHashRing;
-    std::shared_ptr<ServersHashRing> servers_hash_ring;
-    std::mutex registered_processors_mutex;
+    std::shared_ptr<ServersHashRing> active_servers_hash_ring;
+    std::mutex active_servers_mutex;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

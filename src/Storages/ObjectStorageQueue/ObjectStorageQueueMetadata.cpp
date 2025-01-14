@@ -609,7 +609,14 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     Strings registered;
     if (active)
     {
-        auto children = zk_client->getChildren(registry_path);
+        Strings children;
+        auto code = zk_client->tryGetChildren(registry_path, children);
+        if (code == Coordination::Error::ZNONODE)
+            return registered;
+
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperException(code);
+
         for (const auto & child : children)
         {
             std::string data;
@@ -636,15 +643,19 @@ size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool
 
 size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 {
+    const auto zk_client = getZooKeeper();
     const auto registry_path = zookeeper_path / "registry";
-    const auto path = registry_path / (storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName());
-    const auto self = Info::create(storage_id);
+    const auto table_path = registry_path
+        / (storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName());
 
-    auto zk_client = getZooKeeper();
-    zk_client->tryRemove(path);
+    zk_client->tryRemove(table_path);
+    const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
-    LOG_TRACE(log, "Removed {} from active registry", self.table_id);
-    return zk_client->getChildren(registry_path).size();
+    LOG_TRACE(
+        log, "Removed {} from active registry (remaining: {})",
+        storage_id.getFullTableName(), remaining_nodes_num);
+
+    return remaining_nodes_num;
 }
 
 size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id)
@@ -715,7 +726,7 @@ class ObjectStorageQueueMetadata::ServersHashRing
 public:
     ServersHashRing(size_t total_nodes_, LoggerPtr log_) : total_nodes(total_nodes_), log(log_) {}
 
-    void rebuild(const ProcessorsSet & servers)
+    void rebuild(const NameSet & servers)
     {
         virtual_nodes.clear();
         if (servers.empty())
@@ -732,7 +743,7 @@ public:
         nodes_num = servers.size();
     }
 
-    RegisteredProcessor chooseServer(const UInt128 & hash) const
+    std::string chooseServer(const UInt128 & hash) const
     {
         if (virtual_nodes.empty())
             return {};
@@ -756,7 +767,7 @@ public:
 private:
     const size_t total_nodes;
     LoggerPtr log;
-    std::map<UInt128, RegisteredProcessor> virtual_nodes;
+    std::map<UInt128, std::string> virtual_nodes;
     size_t nodes_num;
 };
 
@@ -767,14 +778,14 @@ std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage
 
 void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const std::string & processor_id)
 {
-    std::lock_guard lock(registered_processors_mutex);
-    if (registered_processors.empty() || !servers_hash_ring)
+    std::lock_guard lock(active_servers_mutex);
+    if (active_servers.empty() || !active_servers_hash_ring)
         return;
 
     Strings result;
     for (auto & path : paths)
     {
-        const auto chosen = servers_hash_ring->chooseServer(ServersHashRing::hash(path));
+        const auto chosen = active_servers_hash_ring->chooseServer(ServersHashRing::hash(path));
         if (chosen == processor_id)
             result.emplace_back(std::move(path));
         else
@@ -798,18 +809,17 @@ void ObjectStorageQueueMetadata::updateRegistryFunc()
             {
                 if (Coordination::isHardwareError(e.code))
                 {
-                    LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
-                            DB::getCurrentExceptionMessage(true));
+                    LOG_INFO(
+                        log, "Lost ZooKeeper connection, will try to connect again: {}",
+                        DB::getCurrentExceptionMessage(true));
 
-                    sleepForSeconds(1);
-                }
-                else if (e.code == Coordination::Error::ZNONODE)
-                {
                     sleepForSeconds(1);
                 }
                 else
+                {
                     DB::tryLogCurrentException(log);
-
+                    chassert(false);
+                }
                 continue;
             }
             catch (...)
@@ -831,20 +841,17 @@ void ObjectStorageQueueMetadata::updateRegistryFunc()
     }
 }
 
-void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & new_registered_processors)
+void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
 {
-    ProcessorsSet new_servers_set(new_registered_processors.begin(), new_registered_processors.end());
-    if (new_servers_set.size() != new_registered_processors.size())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Servers' registered names are not unique");
-
-    if (new_servers_set == registered_processors)
+    NameSet registered_set(registered_.begin(), registered_.end());
+    if (registered_set == active_servers)
         return;
 
-    std::lock_guard lock(registered_processors_mutex);
-    registered_processors = new_servers_set;
-    if (!servers_hash_ring)
-        servers_hash_ring = std::make_shared<ServersHashRing>(100, log); /// TODO: Add a setting.
-    servers_hash_ring->rebuild(registered_processors);
+    std::lock_guard lock(active_servers_mutex);
+    active_servers = registered_set;
+    if (!active_servers_hash_ring)
+        active_servers_hash_ring = std::make_shared<ServersHashRing>(100, log); /// TODO: Add a setting.
+    active_servers_hash_ring->rebuild(active_servers);
 }
 
 void ObjectStorageQueueMetadata::cleanupThreadFunc()
