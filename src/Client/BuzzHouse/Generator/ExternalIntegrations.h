@@ -82,8 +82,8 @@ public:
     bool performIntegration(
         RandomGenerator & rg,
         std::shared_ptr<SQLDatabase> db,
-        const uint32_t tname,
-        const bool can_shuffle,
+        uint32_t tname,
+        bool can_shuffle,
         std::vector<ColumnPathChain> & entries) override;
 
     bool dropPeerTableOnRemote(const SQLTable & t);
@@ -92,7 +92,7 @@ public:
 
     bool performCreatePeerTable(
         RandomGenerator & rg,
-        const bool is_clickhouse_integration,
+        bool is_clickhouse_integration,
         const SQLTable & t,
         const CreateTable * ct,
         std::vector<ColumnPathChain> & entries);
@@ -118,11 +118,11 @@ public:
     }
 
     static MySQLIntegration *
-    testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server);
+    testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials & scc, bool read_log, const String & server);
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
 
-    String getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname) override;
+    String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
 
     void truncateStatement(String & outbuf) override;
 
@@ -143,7 +143,7 @@ public:
 public:
     MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static MySQLIntegration * testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &);
+    static MySQLIntegration * testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, bool, const String &);
 
     ~MySQLIntegration() override = default;
 #endif
@@ -161,12 +161,11 @@ public:
     {
     }
 
-    static PostgreSQLIntegration *
-    testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log);
+    static PostgreSQLIntegration * testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
 
-    String getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname) override;
+    String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
     void truncateStatement(String & outbuf) override;
 
@@ -179,7 +178,7 @@ public:
 public:
     PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static PostgreSQLIntegration * testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, const bool);
+    static PostgreSQLIntegration * testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, bool);
 
     ~PostgreSQLIntegration() override = default;
 #endif
@@ -203,7 +202,7 @@ public:
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 
-    String getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname) override;
+    String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
     void truncateStatement(String & outbuf) override;
 
@@ -237,8 +236,7 @@ public:
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te) override;
 
-    bool performIntegration(
-        RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t, const bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, std::vector<ColumnPathChain> &) override;
 
     ~RedisIntegration() override = default;
 };
@@ -275,8 +273,8 @@ public:
     bool performIntegration(
         RandomGenerator & rg,
         std::shared_ptr<SQLDatabase>,
-        const uint32_t tname,
-        const bool can_shuffle,
+        uint32_t tname,
+        bool can_shuffle,
         std::vector<ColumnPathChain> & entries) override;
 
     ~MongoDBIntegration() override = default;
@@ -300,8 +298,7 @@ public:
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
-    bool performIntegration(
-        RandomGenerator &, std::shared_ptr<SQLDatabase>, const uint32_t tname, const bool, std::vector<ColumnPathChain> &) override;
+    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
 };
@@ -355,14 +352,10 @@ public:
     explicit ExternalIntegrations(const FuzzConfig & fc);
 
     void createExternalDatabaseTable(
-        RandomGenerator & rg, const IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
+        RandomGenerator & rg, IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
     void createPeerTable(
-        RandomGenerator & rg,
-        const PeerTableDatabase pt,
-        const SQLTable & t,
-        const CreateTable * ct,
-        std::vector<ColumnPathChain> & entries);
+        RandomGenerator & rg, PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
 
     void truncatePeerTableOnRemote(const SQLTable & t);
 
@@ -370,7 +363,7 @@ public:
 
     void dropPeerTableOnRemote(const SQLTable & t);
 
-    bool performQuery(const PeerTableDatabase pt, const String & query);
+    bool performQuery(PeerTableDatabase pt, const String & query);
 
     ~ExternalIntegrations()
     {

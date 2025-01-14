@@ -675,7 +675,14 @@ void ArrayType::PostgreSQLtypeName(RandomGenerator & rg, String & ret, const boo
             break;
         }
     }
-    nsubtype->PostgreSQLtypeName(rg, ret, escape);
+    if (nsubtype)
+    {
+        nsubtype->PostgreSQLtypeName(rg, ret, escape);
+    }
+    else
+    {
+        ret += "INT";
+    }
     ret += "[]";
 }
 
