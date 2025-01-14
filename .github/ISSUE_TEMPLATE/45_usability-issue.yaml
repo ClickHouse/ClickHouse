@@ -1,6 +1,6 @@
-name: Unexpected behaviour
-description: Some feature is working in non-obvious way
-labels: ["unexpected behaviour"]
+name: Usability issue
+description: Report something can be made more convenient to use
+labels: ["usability"]
 body:
   - type: markdown
     attributes:

@@ -1,6 +1,6 @@
-name: Unexpected behaviour
-description: Some feature is working in non-obvious way
-labels: ["unexpected behaviour"]
+name: Incomplete implementation
+description: Implementation of existing feature is not finished
+labels: ["unfinished code"]
 body:
   - type: markdown
     attributes:

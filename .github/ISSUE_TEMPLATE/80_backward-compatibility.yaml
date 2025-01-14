@@ -1,6 +1,6 @@
-name: Unexpected behaviour
-description: Some feature is working in non-obvious way
-labels: ["unexpected behaviour"]
+name: Backward compatibility issue
+description: Report the case when the behaviour of a new version can break existing use cases
+labels: ["backward compatibility"]
 body:
   - type: markdown
     attributes:
@@ -31,12 +31,6 @@ body:
       render: markdown
     validations:
       required: true
-  - type: textarea
-    attributes:
-      label: Expected behavior
-      description: A clear and concise description of what you expected to happen.
-    validations:
-      required: false
   - type: textarea
     attributes:
       label: Error message and/or stacktrace

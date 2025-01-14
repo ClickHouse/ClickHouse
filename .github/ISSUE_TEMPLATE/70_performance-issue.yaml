@@ -1,6 +1,6 @@
-name: Unexpected behaviour
-description: Some feature is working in non-obvious way
-labels: ["unexpected behaviour"]
+name: Performance issue
+description: Report something working slower than expected
+labels: ["performance"]
 body:
   - type: markdown
     attributes:
@@ -14,8 +14,8 @@ body:
       required: false
   - type: textarea
     attributes:
-      label: Describe the unexpected behaviour
-      description: A clear and concise description of what works not as it is supposed to.
+      label: Describe the situation
+      description: What exactly works slower than expected?
     validations:
       required: true
   - type: textarea
@@ -33,14 +33,8 @@ body:
       required: true
   - type: textarea
     attributes:
-      label: Expected behavior
-      description: A clear and concise description of what you expected to happen.
-    validations:
-      required: false
-  - type: textarea
-    attributes:
-      label: Error message and/or stacktrace
-      description: If applicable, add screenshots to help explain your problem.
+      label: Expected performance
+      description: What are your performance expectation, why do you think they are realistic? Has it been working faster in older ClickHouse releases? Is it working faster in some specific other system?
     validations:
       required: false
   - type: textarea
