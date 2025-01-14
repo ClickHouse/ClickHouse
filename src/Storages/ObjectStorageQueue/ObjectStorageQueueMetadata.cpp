@@ -133,7 +133,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
-    , buckets_num(getBucketsNum(table_metadata_))
+    , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
@@ -169,11 +169,6 @@ void ObjectStorageQueueMetadata::shutdown()
         update_registry_thread->join();
 }
 
-ObjectStorageQueueMetadata::FileStatusPtr ObjectStorageQueueMetadata::getFileStatus(const std::string & path)
-{
-    return local_file_statuses->get(path, /* create */false);
-}
-
 ObjectStorageQueueMetadata::FileStatuses ObjectStorageQueueMetadata::getFileStatuses() const
 {
     return local_file_statuses->getAll();
@@ -203,13 +198,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 log);
     }
-}
-
-size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueTableMetadata & metadata)
-{
-    if (metadata.buckets)
-        return metadata.buckets;
-    return metadata.processing_threads_num;
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -387,7 +375,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     size_t buckets_num = 0;
     if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::ORDERED)
     {
-        buckets_num = getBucketsNum(table_metadata);
+        buckets_num = table_metadata.getBucketsNum();
         if (buckets_num == 0)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -534,8 +522,35 @@ namespace
 
 void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, bool active)
 {
-    const auto registry_path = zookeeper_path / (active ? "registry_active" : "registry");
-    const auto registry_path_active = zookeeper_path / "registry_active";
+    if (active)
+        registerActive(storage_id);
+    else
+        registerNonActive(storage_id);
+}
+
+void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
+{
+    const auto registry_path = zookeeper_path
+        / "registry"
+        / (storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName());
+    const auto self = Info::create(storage_id);
+
+    auto zk_client = getZooKeeper();
+    auto code = zk_client->tryCreate(
+        registry_path,
+        self.serialize(),
+        zkutil::CreateMode::Ephemeral);
+
+    if (code != Coordination::Error::ZOK
+        && code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException(code);
+
+    LOG_TRACE(log, "Added {} to active registry", self.table_id);
+}
+
+void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
+{
+    const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
 
     Coordination::Error code;
@@ -570,11 +585,11 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, boo
             code = zk_client->tryCreate(
                 registry_path,
                 self.serialize(),
-                active ? zkutil::CreateMode::Ephemeral : zkutil::CreateMode::Persistent);
+                zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)
         {
-            LOG_TRACE(log, "Added {} to {}registry", self.table_id, active ? "active ": "");
+            LOG_TRACE(log, "Added {} to registry", self.table_id);
             return;
         }
 
@@ -589,20 +604,52 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, boo
 
 Strings ObjectStorageQueueMetadata::getRegistered(bool active)
 {
-    const auto registry_path = zookeeper_path / (active ? "registry_active" : "registry");
-    std::string registry_str;
+    const auto registry_path = zookeeper_path / "registry";
     auto zk_client = getZooKeeper();
-    if (!zk_client->tryGet(registry_path, registry_str))
-        return {};
-
     Strings registered;
-    splitInto<','>(registered, registry_str);
+    if (active)
+    {
+        auto children = zk_client->getChildren(registry_path);
+        for (const auto & child : children)
+        {
+            std::string data;
+            if (zk_client->tryGet(registry_path / child, data))
+                registered.push_back(data);
+        }
+    }
+    else
+    {
+        std::string registry_str;
+        if (zk_client->tryGet(registry_path, registry_str))
+            splitInto<','>(registered, registry_str);
+    }
     return registered;
 }
 
 size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active)
 {
-    const auto registry_path = zookeeper_path / (active ? "registry_active" : "registry");
+    if (active)
+        return unregisterActive(storage_id);
+    else
+        return unregisterNonActive(storage_id);
+}
+
+size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
+{
+    const auto registry_path = zookeeper_path / "registry";
+    const auto path = registry_path / (storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName());
+    const auto self = Info::create(storage_id);
+
+    auto zk_client = getZooKeeper();
+    zk_client->tryRemove(path);
+
+    LOG_TRACE(log, "Removed {} from active registry", self.table_id);
+    return zk_client->getChildren(registry_path).size();
+}
+
+size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id)
+{
+    const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
 
     Coordination::Error code = Coordination::Error::ZOK;
@@ -615,11 +662,8 @@ size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool
         bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
         if (!node_exists)
         {
-            if (!active)
-            {
-                LOG_WARNING(log, "Cannot unregister: registry does not exist");
-                chassert(false);
-            }
+            LOG_WARNING(log, "Cannot unregister: registry does not exist");
+            chassert(false);
             return 0;
         }
 
