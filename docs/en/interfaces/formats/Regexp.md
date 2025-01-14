@@ -16,9 +16,9 @@ When working with the `Regexp` format, you can use the following settings:
 
     - CSV (similarly to [CSV](/docs/en/interfaces/formats/CSV)
     - JSON (similarly to [JSONEachRow](/docs/en/interfaces/formats/JSONEachRow)
-    - Escaped (similarly to [TSV](/docs/en/interfaces/formats/TabSeparated/TabSeparated)
+    - Escaped (similarly to [TSV](/docs/en/interfaces/formats/TabSeparated)
     - Quoted (similarly to [Values](/docs/en/interfaces/formats/Values)
-    - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/docs/en/interfaces/formats/TabSeparated/TabSeparatedRaw)
+    - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/docs/en/interfaces/formats/TabSeparated)
 
 - `format_regexp_skip_unmatched` — [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
