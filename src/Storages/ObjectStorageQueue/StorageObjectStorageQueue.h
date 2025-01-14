@@ -74,6 +74,7 @@ private:
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
+    const size_t list_objects_batch_size;
 
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
