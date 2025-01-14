@@ -1,7 +1,0 @@
-SELECT 1
-FROM
-(
-    SELECT 1
-    FROM system.one
-) AS tx
-ALL INNER JOIN t0 ON _CAST(true, \'Bool\')
