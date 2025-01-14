@@ -676,6 +676,14 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         )
         assert len(cluster_secondary_queries) == 1
 
+    select_remote_cluster = (
+        instance.query(f"SELECT * FROM remote('node2',{table_function_expr_cluster})")
+        .strip()
+        .split()
+    )
+    assert len(select_remote_cluster) == 600
+    assert select_remote_cluster == select_regular
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])

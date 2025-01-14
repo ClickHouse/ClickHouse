@@ -42,7 +42,7 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
-    void setRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
+    void setIsRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
