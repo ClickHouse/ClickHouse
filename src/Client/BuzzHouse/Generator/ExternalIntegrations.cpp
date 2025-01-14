@@ -143,6 +143,21 @@ void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
     (void)performQuery(buf);
 }
 
+void ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
+{
+    switch (pt)
+    {
+        case PeerTableDatabase::ClickHouse:
+        case PeerTableDatabase::MySQL:
+        case PeerTableDatabase::PostgreSQL:
+        case PeerTableDatabase::SQLite:
+            (void)performQuery(query);
+            break;
+        case PeerTableDatabase::None:
+            (void)fc.processServerQuery(query);
+    }
+}
+
 #if defined USE_MYSQL && USE_MYSQL
 MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
     const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
@@ -213,16 +228,26 @@ void MySQLIntegration::truncateStatement(String & outbuf)
     }
 }
 
-void MySQLIntegration::optimizePeerTableOnRemote(const SQLTable & t)
+void MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
     assert(t.hasDatabasePeer());
-    if (is_clickhouse && t.supportsFinal())
+    if (is_clickhouse && t.isMergeTreeFamily())
     {
+        buf.resize(0);
+        buf += "ALTER TABLE ";
+        buf += getTableName(t.db, t.tname);
+        buf += " APPLY DELETED MASK;";
+        performQueryOnServerOrRemote(pt, buf);
+
         buf.resize(0);
         buf += "OPTIMIZE TABLE ";
         buf += getTableName(t.db, t.tname);
-        buf += " FINAL;";
-        (void)performQuery(buf);
+        if (t.supportsFinal())
+        {
+            buf += " FINAL";
+        }
+        buf += ";";
+        performQueryOnServerOrRemote(pt, buf);
     }
 }
 
@@ -1284,12 +1309,12 @@ void ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)
     }
 }
 
-void ExternalIntegrations::optimizePeerTableOnRemote(const SQLTable & t)
+void ExternalIntegrations::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
     switch (t.peer_table)
     {
         case PeerTableDatabase::ClickHouse:
-            clickhouse->optimizePeerTableOnRemote(t);
+            clickhouse->optimizeTableForOracle(pt, t);
             break;
         case PeerTableDatabase::MySQL:
         case PeerTableDatabase::PostgreSQL:
@@ -1344,20 +1369,7 @@ void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     buf += "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '";
     buf += fc.fuzz_out.generic_string();
     buf += "' TRUNCATE FORMAT TabSeparated;";
-
-    switch (pt)
-    {
-        case PeerTableDatabase::ClickHouse:
-            clickhouse->performQuery(buf);
-            break;
-        case PeerTableDatabase::MySQL:
-        case PeerTableDatabase::PostgreSQL:
-        case PeerTableDatabase::SQLite:
-            assert(0);
-            break;
-        case PeerTableDatabase::None:
-            clickhouse->fc.processServerQuery(buf);
-    }
+    clickhouse->performQueryOnServerOrRemote(pt, buf);
 
     std::ifstream infile(fc.fuzz_out);
     buf.resize(0);

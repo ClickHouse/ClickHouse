@@ -88,7 +88,7 @@ public:
 
     bool dropPeerTableOnRemote(const SQLTable & t);
 
-    virtual void optimizePeerTableOnRemote(const SQLTable &) { }
+    virtual void optimizeTableForOracle(PeerTableDatabase, const SQLTable &) { }
 
     bool performCreatePeerTable(
         RandomGenerator & rg,
@@ -100,6 +100,8 @@ public:
     void virtual truncateStatement(String &) { }
 
     void truncatePeerTableOnRemote(const SQLTable & t);
+
+    void performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
 
     ~ClickHouseIntegratedDatabase() override = default;
 };
@@ -126,7 +128,7 @@ public:
 
     void truncateStatement(String & outbuf) override;
 
-    void optimizePeerTableOnRemote(const SQLTable & t) override;
+    void optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 
     bool performQuery(const String & query) override;
 
@@ -361,7 +363,7 @@ public:
 
     void truncatePeerTableOnRemote(const SQLTable & t);
 
-    void optimizePeerTableOnRemote(const SQLTable & t);
+    void optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t);
 
     void dropPeerTableOnRemote(const SQLTable & t);
 

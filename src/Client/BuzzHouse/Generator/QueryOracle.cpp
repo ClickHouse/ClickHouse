@@ -491,12 +491,18 @@ void QueryOracle::truncatePeerTables(const StatementGenerator & gen) const
     }
 }
 
-void QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
+void QueryOracle::optimizePeerTables(const StatementGenerator & gen, const bool measure_performance) const
 {
     for (const auto & entry : found_tables)
     {
         //lastly optimize tables
-        gen.connections.optimizePeerTableOnRemote(gen.tables.at(entry));
+        const auto & ntable = gen.tables.at(entry);
+
+        gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
+        if (measure_performance)
+        {
+            gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
+        }
     }
 }
 

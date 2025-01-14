@@ -51,7 +51,7 @@ public:
 
     /* Replace query with peer tables */
     void truncatePeerTables(const StatementGenerator & gen) const;
-    void optimizePeerTables(const StatementGenerator & gen) const;
+    void optimizePeerTables(const StatementGenerator & gen, bool measure_performance) const;
     void replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
