@@ -1205,6 +1205,7 @@ void StatementGenerator::generateTopSelect(
     assert(this->levels.empty());
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, ts->mutable_sel());
+    this->levels.clear();
     if (rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();

@@ -1545,6 +1545,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
                 static_cast<uint32_t>(next.numberOfInsertableColumns()),
                 std::numeric_limits<uint32_t>::max(),
                 ct->mutable_as_select_stmt());
+            this->levels.clear();
         }
     }
     else
