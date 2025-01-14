@@ -1,0 +1,196 @@
+2020-10-01	0
+2020-10-01	0
+2020-10-01	0
+2020-10-01	0
+2020-10-01	0
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
+            (ReadFromMergeTree)
+            ReverseTransform
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+                ReverseTransform
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+2020-10-01	9
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        MergingSortedTransform 2 → 1
+          (Expression)
+          ExpressionTransform × 2
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+2020-10-11	0
+2020-10-11	0
+2020-10-11	0
+2020-10-11	0
+2020-10-11	0
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+2020-10-11	0	0
+2020-10-11	0	10
+2020-10-11	0	20
+2020-10-11	0	30
+2020-10-11	0	40
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromMergeTree)
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+2020-10-12	0
+2020-10-12	1
+2020-10-12	2
+2020-10-12	3
+2020-10-12	4
+SELECT
+    date,
+    i
+FROM t_read_in_order
+WHERE date = \'2020-10-12\'
+ORDER BY i DESC
+LIMIT 5
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          ReverseTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+2020-10-12	99999
+2020-10-12	99998
+2020-10-12	99997
+2020-10-12	99996
+2020-10-12	99995
+1	2
+1	2
+1	3
+1	3
+1	4
+1	4
+========
+1	4
+1	4
+1	3
+1	3
+1	2
+1	2
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        VirtualRowTransform
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        VirtualRowTransform
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
+2020-10-10 00:00:00	0.01
