@@ -136,7 +136,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
                                         return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine();
                                     }));
     const uint32_t tudf = 5;
-    const uint32_t system_table = 5;
+    const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
     const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);

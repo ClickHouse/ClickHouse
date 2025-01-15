@@ -930,8 +930,8 @@ void loadSystemTables(const bool has_cloud_features)
            {"ProfileEvents", new MapType(new StringType(std::nullopt), new IntType(64, true))},
            {"Settings", new MapType(new StringType(std::nullopt), new StringType(std::nullopt))},
            {"current_database", new StringType(std::nullopt)}}},
-         /*{"metrics", not deterministic
-          {{"metric", new StringType(std::nullopt)}, {"value", new IntType(64, false)}, {"description", new StringType(std::nullopt)}}},*/
+         {"metrics",
+          {{"metric", new StringType(std::nullopt)}, {"value", new IntType(64, false)}, {"description", new StringType(std::nullopt)}}},
          {"merges",
           {{"database", new StringType(std::nullopt)},
            {"table", new StringType(std::nullopt)},
