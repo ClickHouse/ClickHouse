@@ -329,7 +329,7 @@ void BaseSettings<TTraits>::resetToDefault()
     for (size_t i : collections::range(accessor.size()))
     {
         if (auto * setting_field = accessor.getSettingFieldPtr(i, *this); setting_field->changed)
-            accessor.resetValueToDefault(*this, i);
+            *setting_field = static_cast<Field>(*accessor.getDefault(i));
     }
 
     if constexpr (Traits::allow_custom_settings)
@@ -343,7 +343,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
-        accessor.resetValueToDefault(*this, index);
+        *accessor.getSettingFieldPtr(index, *this) = static_cast<Field>(*accessor.getDefault(index));
         return;
     }
 
@@ -832,7 +832,7 @@ String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString() const
         if (custom_setting)
             return custom_setting->second.toString();
     }
-    return accessor->getDefaultValueString(index);
+    return accessor->getDefault(index)->toString();
 }
 
 template <typename TTraits>
@@ -922,6 +922,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             const SettingFieldBase * findSettingFieldPtr(std::string_view name, const Data & data) const; \
             SettingFieldBase * getSettingFieldPtr(size_t index, Data & data) const; \
             const SettingFieldBase * getSettingFieldPtr(size_t index, const Data & data) const; \
+            SettingFieldBase * getDefault(size_t index, Data & data) const; \
+            std::unique_ptr<SettingFieldBase> getDefault(size_t index) const \
+            { \
+                return field_infos[index].get_default_function(); \
+            } \
             const String & getName(size_t index) const \
             { \
                 return field_infos[index].name; \
@@ -942,14 +947,6 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             { \
                 return BaseSettingsHelpers::getTier(field_infos[index].flags); \
             } \
-            void resetValueToDefault(Data & data, size_t index) const \
-            { \
-                return field_infos[index].reset_value_to_default_function(data); \
-            } \
-            String getDefaultValueString(size_t index) const \
-            { \
-                return field_infos[index].get_default_value_string_function(); \
-            } \
 \
         private: \
             Accessor(); \
@@ -960,8 +957,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const char * description; \
                 UInt64 flags; \
                 SettingFieldBase * (*get_setting_field_function)(Data & data); \
-                void (*reset_value_to_default_function)(Data &); \
-                String (*get_default_value_string_function)(); \
+                std::unique_ptr<SettingFieldBase> (*get_default_function)(); \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
@@ -1092,6 +1088,6 @@ struct DefineAliases
         DESCRIPTION, \
         static_cast<UInt64>(FLAGS), \
         [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
-        [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
-        []() -> String { return SettingField##TYPE{DEFAULT}.toString(); }});
+        []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
+    });
 }
