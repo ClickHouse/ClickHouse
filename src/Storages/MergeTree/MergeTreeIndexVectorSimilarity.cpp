@@ -378,8 +378,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId(); /// TODO move down
 
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     if (WhichDataType(nested_type_index).isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (WhichDataType(nested_type_index).isFloat64())
