@@ -311,7 +311,6 @@ void DisksApp::addOptions()
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
-    command_descriptions.emplace("init", makeCommandInit());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());

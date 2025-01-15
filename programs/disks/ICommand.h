@@ -130,8 +130,7 @@ DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
 DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 DB::CommandPtr makeCommandTouch();
-DB::CommandPtr makeCommandInit();
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
 #endif
 }

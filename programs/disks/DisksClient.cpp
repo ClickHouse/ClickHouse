@@ -1,4 +1,5 @@
 #include "DisksClient.h"
+#include <optional>
 #include <Client/ClientBase.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
@@ -226,6 +227,19 @@ const DiskWithPath & DisksClient::getDiskWithPath(const String & disk) const
 
 DiskWithPath & DisksClient::getDiskWithPath(const String & disk)
 {
+    try
+    {
+        return disks_with_paths.at(disk);
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "The disk '{}' is unknown or uninitialized", disk);
+    }
+}
+
+DiskWithPath & DisksClient::getDiskWithPathLazyInitialization(const String & disk)
+{
+    addDisk(disk, std::nullopt);
     try
     {
         return disks_with_paths.at(disk);

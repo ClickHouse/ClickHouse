@@ -24,6 +24,7 @@ public:
         String disk = getValueFromCommandLineOptions<String>(options, "disk");
         std::optional<String> path = getValueFromCommandLineOptionsWithOptional<String>(options, "path");
 
+        client.addDisk(disk, path);
         client.switchToDisk(disk, path);
     }
 };

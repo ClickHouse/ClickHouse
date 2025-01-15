@@ -178,9 +178,6 @@ class DisksClient(object):
     def ln(self, path_from: str, path_to: str):
         self.execute_query(f"link {path_from} {path_to}")
 
-    def init_disk(self, disk_name: str):
-        self.execute_query(f"init {disk_name}")
-
     def read(self, path_from: str, path_to: Optional[str] = None):
         path_to_adding = f"--path-to {path_to} " if path_to is not None else ""
         output = self.execute_query(f"read {path_from} {path_to_adding}")
@@ -208,14 +205,11 @@ class DisksClient(object):
         else:
             return DisksClient.local_client
 
-
 def test_disks_app_interactive_list_disks():
     client = DisksClient.getLocalDisksClient(True)
     expected_disks_with_path = [
         ("default", "/"),
-        ("local", client.working_path),
     ]
-    client.init_disk("local")
     assert expected_disks_with_path == client.list_disks()[0]
     assert client.current_disk_with_path() == ("default", "/")
     client.switch_disk("local")
@@ -223,11 +217,16 @@ def test_disks_app_interactive_list_disks():
         "local",
         client.working_path,
     )
+    expected_disks_with_path = [
+        ("default", "/"),
+        ("local", client.working_path),
+    ]
+    assert expected_disks_with_path == client.list_disks()[0]
+
 
 
 def test_disks_app_interactive_list_files_local():
     client = DisksClient.getLocalDisksClient(True)
-    client.init_disk("local")
     client.switch_disk("local")
     excepted_listed_files = sorted(os.listdir("test_disks_app_interactive/"))
     listed_files = sorted(client.ls("test_disks_app_interactive/"))
@@ -307,7 +306,6 @@ def test_disks_app_interactive_cp_and_read():
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
-    client.init_disk("local")
     client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
     read_text = client.read("a.txt")
     assert initial_text == read_text
@@ -330,7 +328,6 @@ def test_disks_app_interactive_test_move_and_write():
     with open("a.txt", "w") as file:
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
-    client.init_disk("local")
     client.switch_disk("default")
     client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
     files = client.ls(".")
@@ -343,4 +340,6 @@ def test_disks_app_interactive_test_move_and_write():
     client.write("b.txt", "c.txt")
     read_text = client.read("c.txt")
     assert read_text == initial_text
+    client.rm("b.txt")
+    client.rm("c.txt")
     os.remove("a.txt")

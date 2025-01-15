@@ -71,6 +71,8 @@ public:
 
     DiskWithPath & getDiskWithPath(const String & disk);
 
+    DiskWithPath & getDiskWithPathLazyInitialization(const String & disk);
+
     const DiskWithPath & getCurrentDiskWithPath() const;
 
     DiskWithPath & getCurrentDiskWithPath();
