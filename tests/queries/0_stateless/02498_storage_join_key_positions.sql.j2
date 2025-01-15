@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- It generates plan with _reading_ from storage join, but reading from storage join with complex keys is currently not supported.
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;
 DROP TABLE IF EXISTS tjj;
