@@ -17,7 +17,10 @@ Chunk IInputFormat::generate()
     try
     {
         auto chunk = read();
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(already_read_rows));
+        if (!chunk.getChunkInfos().get<ChunkInfoReadRowsBefore>())
+        {
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(already_read_rows));
+        }
         already_read_rows += chunk.getNumRows();
         return chunk;
     }
