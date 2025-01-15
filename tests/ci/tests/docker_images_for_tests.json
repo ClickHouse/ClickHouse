@@ -123,10 +123,6 @@
             "docker/test/sqltest"
          ]
     },
-    "docker/test/integration/kerberized_hadoop": {
-        "name": "altinityinfra/kerberized-hadoop",
-        "dependent": []
-    },
     "docker/test/sqlancer": {
         "name": "altinityinfra/sqlancer-test",
         "dependent": []
