@@ -173,6 +173,18 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                 ///         1,
                 ///         1
                 /// )
+                ///
+                /// Will be transformed into the following query with output 1 instead of 0:
+                ///
+                /// SELECT count()
+                /// FROM
+                /// (
+                ///     SELECT
+                ///         1 AS a, -- we must keep at least 1 column
+                ///     INTERSECT ALL
+                ///     SELECT
+                ///         1
+                /// );
                 if (union_node->getUnionMode() > SelectUnionMode::UNION_DISTINCT)
                     continue;
             }
