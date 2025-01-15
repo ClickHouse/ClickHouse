@@ -192,7 +192,7 @@ ObjectStorageQueueSource::FileIterator::next()
                     const auto & object = new_batch[i];
                     file_metadatas[i] = metadata->getFileMetadata(
                         object->relative_path,
-                        /* bucket_info */{}); /// No buckets for Unorderd mode.
+                        /* bucket_info */{}); /// No buckets for Unordered mode.
                     result_indexes[i] = file_metadatas[i]->prepareSetProcessingRequests(requests);
                 }
 
