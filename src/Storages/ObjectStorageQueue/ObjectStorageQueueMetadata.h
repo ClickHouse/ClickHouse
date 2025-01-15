@@ -74,6 +74,7 @@ public:
         LoggerPtr log);
 
     ObjectStorageType getType() const { return storage_type; }
+    std::string getPath() const { return zookeeper_path; }
 
     void registerIfNot(const StorageID & storage_id);
     size_t unregister(const StorageID & storage_id);
@@ -87,6 +88,7 @@ public:
 
     /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;
+    size_t getBucketsNum() const { return buckets_num; }
     Bucket getBucketForPath(const std::string & path) const;
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
