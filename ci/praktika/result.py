@@ -178,7 +178,7 @@ class Result(MetaClasses.Serializable):
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []
-        for result_dict in obj["results"] or []:
+        for result_dict in obj.get("results", []):
             sub_res = cls.from_dict(result_dict)
             sub_results.append(sub_res)
         obj["results"] = sub_results
@@ -188,7 +188,7 @@ class Result(MetaClasses.Serializable):
         if self.duration:
             return self
         if self.start_time:
-            self.duration = datetime.datetime.utcnow().timestamp() - self.start_time
+            self.duration = datetime.datetime.now().timestamp() - self.start_time
         else:
             print(
                 f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
@@ -405,7 +405,7 @@ class ResultInfo:
     GH_STATUS_ERROR = "Failed to set GH commit status"
 
     NOT_FINALIZED = (
-        "Job did not not provide Result: job script bug, died CI runner or praktika bug"
+        "Job did not provide Result: job script bug, died CI runner or praktika bug"
     )
 
     S3_ERROR = "S3 call failure"

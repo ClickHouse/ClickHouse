@@ -45,6 +45,10 @@ class Runner:
             INSTANCE_TYPE="",
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
+            PR_BODY="",
+            USER_LOGIN="",
+            FORK_NAME="",
+            PR_LABELS=[],
         ).dump()
         workflow_config = RunConfig(
             name=workflow.name,
@@ -259,7 +263,14 @@ class Runner:
                 info=ResultInfo.NOT_FOUND_IMPOSSIBLE,
             ).dump()
 
-        result = Result.from_fs(job.name)
+        try:
+            result = Result.from_fs(job.name)
+        except Exception as e:  # json.decoder.JSONDecodeError
+            print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            result = Result.create_from(
+                status=Result.Status.ERROR,
+                info=f"Failed to read Result json, ex: [{e}]",
+            ).dump()
 
         if not result.is_completed():
             info = f"ERROR: {ResultInfo.KILLED}"
