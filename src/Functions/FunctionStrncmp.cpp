@@ -16,9 +16,6 @@
 #include <Interpreters/Context.h>
 #include <Common/memcmpSmall.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -42,15 +39,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeInt32>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeInt8>(); }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeInt32>(); }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeInt8>(); }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         checkArguments(arguments);
-        auto compare_result_column = ColumnInt32::create();
+        auto compare_result_column = ColumnInt8::create();
         compare_result_column->getData().resize(arguments[0].column->size());
 
         auto a_col = arguments[0].column;
@@ -73,11 +70,11 @@ public:
 
         if (a_string && b_const_string)
         {
-            executeStringConst<true>(*a_string, offset_a, String(b_const_string->getDataAt(0)), offset_b, n, result);
+            executeStringWithConst<true>(*a_string, offset_a, String(b_const_string->getDataAt(0)), offset_b, n, result);
         }
         else if (a_string && b_string)
         {
-            executeStringString(*a_string, offset_a, *b_string, offset_b, n, result);
+            executeStringWithString(*a_string, offset_a, *b_string, offset_b, n, result);
         }
         else if (a_fixed_string && b_fixed_string)
         {
@@ -93,7 +90,7 @@ public:
         }
         else if (a_const_string && b_string)
         {
-            executeStringConst<false>(*b_string, offset_b, String(a_const_string->getDataAt(0)), offset_a, n, result);
+            executeStringWithConst<false>(*b_string, offset_b, String(a_const_string->getDataAt(0)), offset_a, n, result);
         }
         else if (a_fixed_string && b_const_string)
         {
@@ -129,35 +126,35 @@ public:
 private:
     void checkArguments(const ColumnsWithTypeAndName & args) const
     {
-        if (args.size() != 5) [[unlikely]]
+        if (args.size() != 5)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires 5 arguments, but got {}.", getName(), args.size());
 
-        if (!WhichDataType(args[0].type).isStringOrFixedString()) [[unlikely]]
+        if (!WhichDataType(args[0].type).isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Function {}'s 1st argument must be a string, but got {}.", getName(), args[0].type->getName());
 
-        if (!WhichDataType(args[1].type).isNativeUInt() || !args[1].column->isConst()) [[unlikely]]
+        if (!WhichDataType(args[1].type).isNativeUInt() || !args[1].column->isConst())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function {}'s 2nd argument must be a constant integer, but got {}.",
                 getName(),
                 args[1].column->getName());
 
-        if (!WhichDataType(args[2].type).isStringOrFixedString()) [[unlikely]]
+        if (!WhichDataType(args[2].type).isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function {}'s 3rd argument must be a string, but got {}.",
                 getName(),
                 args[2].column->getName());
 
-        if (!WhichDataType(args[3].type).isNativeUInt() || !args[3].column->isConst()) [[unlikely]]
+        if (!WhichDataType(args[3].type).isNativeUInt() || !args[3].column->isConst())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function {}'s 4th argument must be a constant integer, but got {}.",
                 getName(),
                 args[3].column->getName());
 
-        if (!WhichDataType(args[4].type).isNativeUInt() || !args[4].column->isConst()) [[unlikely]]
+        if (!WhichDataType(args[4].type).isNativeUInt() || !args[4].column->isConst())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Function {}'s 5th argument must be a constant integer, but got {}.",
@@ -166,45 +163,88 @@ private:
     }
 
     template <bool positive = true>
-    void executeStringConst(
-        const ColumnString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int32> & result) const
+    static Int8 compareStrings(const char * a, size_t a_len, const char * b, size_t b_len)
+    {
+        if constexpr (positive)
+            return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_len, b, b_len));
+        else
+            return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(b, a_len, a, b_len));
+    }
+
+    template <bool positive = true>
+    static bool compareOverflowStrings(size_t a_str_len, size_t offset_a, size_t b_str_len, size_t offset_b, size_t n, Int8 & result)
+    {
+        if (offset_a >= a_str_len && offset_b >= b_str_len)
+        {
+            result = 0;
+            return true;
+        }
+        else if (offset_a >= a_str_len)
+        {
+            if constexpr (positive)
+                result = -1;
+            else
+                result = 1;
+            return true;
+        }
+        else if (offset_b >= b_str_len)
+        {
+            if constexpr (positive)
+                result = 1;
+            else
+                result = -1;
+            return true;
+        }
+        return false;
+    }
+
+    template <bool positive = true>
+    static bool compareOverflowStrings(
+        size_t a_str_len, size_t offset_a, size_t b_str_len, size_t offset_b, size_t n, PaddedPODArray<Int8> & result, size_t rows)
+    {
+        bool is_overflow = false;
+        Int8 res = 0;
+        if (offset_a >= a_str_len && offset_b >= b_str_len)
+        {
+            res = 0;
+            is_overflow = true;
+        }
+        else if (offset_a >= a_str_len)
+        {
+            if constexpr (positive)
+                res = -1;
+            else
+                res = 1;
+            is_overflow = true;
+        }
+        else if (offset_b >= b_str_len)
+        {
+            if constexpr (positive)
+                res = 1;
+            else
+                res = -1;
+            is_overflow = true;
+        }
+        for (size_t i = 0; i < rows; ++i)
+            result[i] = res;
+        return is_overflow;
+    }
+    template <bool positive = true>
+    void executeStringWithConst(
+        const ColumnString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int8> & result) const
     {
         const auto & a_strs_data = a_strs.getChars();
         const auto & a_offsets = a_strs.getOffsets();
         size_t prev_a_offset = 0;
-        auto b_n = offset_b >= b_str.size() ? 0 : std::min(n, b_str.size() - offset_b);
+        auto b_len = offset_b >= b_str.size() ? 0 : std::min(n, b_str.size() - offset_b);
         for (size_t i = 0, size = a_strs.size(); i < size; ++i)
         {
             const auto * a_str = a_strs_data.data() + prev_a_offset + offset_a;
             size_t a_str_len = a_offsets[i] - prev_a_offset - 1;
-            if (offset_a >= a_str_len && offset_b >= b_str.size()) [[unlikely]]
-            {
-                result[i] = 0;
-            }
-            else if (offset_b >= b_str.size()) [[unlikely]]
-            {
-                if constexpr (positive)
-                    result[i] = 1;
-                else
-                    result[i] = -1;
-            }
-            else if (offset_a >= a_str_len) [[unlikely]]
-            {
-                if constexpr (positive)
-                    result[i] = -1;
-                else
-                    result[i] = 1;
-            }
-            else
-            {
-                auto a_n = std::min(n, a_str_len - offset_a);
-                if constexpr (positive)
-                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                        reinterpret_cast<const char *>(a_str), a_n, b_str.data() + offset_b, b_n);
-                else
-                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                        b_str.data() + offset_b, b_n, reinterpret_cast<const char *>(a_str), a_n);
-            }
+            if (comapareOverflowStrings<positive>(a_str_len, offset_a, b_str.size(), offset_b, n, result[i]))
+                continue;
+            result[i] = compareStrings<positive>(
+                reinterpret_cast<const char *>(a_str), std::min(n, a_str_len - offset_a), b_str.data() + offset_b, b_n);
 
             prev_a_offset = a_offsets[i];
         }
@@ -212,7 +252,7 @@ private:
 
     template <bool positive = true>
     void executeFixedStringConst(
-        const ColumnFixedString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int32> & result)
+        const ColumnFixedString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int8> & result)
         const
     {
         size_t a_str_len = a_strs.getN();
@@ -311,7 +351,7 @@ private:
         }
     }
 
-    void executeStringString(
+    void executeStringWithString(
         const ColumnString & a_strs,
         size_t offset_a,
         const ColumnString & b_strs,
