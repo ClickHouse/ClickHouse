@@ -539,7 +539,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         {
             //use a different file for the peer database
             FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
-            ff.set_path(qfile.generic_string());
+            ff.set_path(qfile_peer.generic_string());
         }
     }
     for (const auto & entry : found_tables)
