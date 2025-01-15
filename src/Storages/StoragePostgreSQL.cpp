@@ -8,7 +8,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
@@ -535,7 +534,6 @@ SinkToStoragePtr StoragePostgreSQL::write(
 {
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
-
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
 {
