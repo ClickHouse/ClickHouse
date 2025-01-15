@@ -6,7 +6,7 @@ keywords : [TabSeparatedWithNamesAndTypes]
 
 | Input | Output | Alias                                          |
 |-------|--------|------------------------------------------------|
-| 	✔    | 	✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndNames` |
+| 	✔    | 	✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndTypes` |
 
 ## Description
 

@@ -106,7 +106,7 @@ See [TabSeparated](../interfaces/formats/TabSeparated/TabSeparated.md)
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
-See [TabSeparatedRaw](/en/interfaces/formats/TabSeparatedRaw).
+See [TabSeparatedRaw](/en/interfaces/formats/TabSeparatedRaw)
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
@@ -118,17 +118,11 @@ See [TabSeparatedWithNamesAndTypes](../interfaces/formats/TabSeparated/TabSepara
 
 ## TabSeparatedRawWithNames {#tabseparatedrawwithnames}
 
-Differs from `TabSeparatedWithNames` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
-
-This format is also available under the names `TSVRawWithNames`, `RawWithNames`.
+See [TabSeparatedRawWithNames](../interfaces/formats/TabSeparated/TabSeparatedRawWithNames.md)
 
 ## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
-Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
-
-This format is also available under the names `TSVRawWithNamesAndNames`, `RawWithNamesAndNames`.
+See [TabSeparatedRawWithNamesAndTypes](../interfaces/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes.md)
 
 ## Template {#format-template}
 
