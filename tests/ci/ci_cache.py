@@ -983,7 +983,6 @@ if __name__ == "__main__":
         "ClickBench (aarch64)": "45c07c4aa6",
         "Docker server image": "6a24d5b187",
         "Docker keeper image": "6a24d5b187",
-        "Docs check": "4764154c62",
         "Fast test": "cb269133f2",
         "Style check": "ffffffffff",
         "Stateful tests (ubsan, ParallelReplicas)": "32a9a1aba9",
