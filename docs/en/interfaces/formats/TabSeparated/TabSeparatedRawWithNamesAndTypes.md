@@ -4,7 +4,7 @@ slug : /en/interfaces/formats/TabSeparatedRawWithNamesAndTypes
 keywords : [TabSeparatedRawWithNamesAndTypes, TSVRawWithNamesAndNames, RawWithNamesAndNames]
 input_format: true
 output_format: true
-alias: ['TSVRawWithNamesAndNames', 'RawWithNamesAndNames']
+alias: ['TSVRawWithNamesAndTypes', 'RawWithNamesAndNames']
 ---
 
 | Input | Output | Alias                                             |
