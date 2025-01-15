@@ -8,6 +8,7 @@ import os
 import random
 import threading
 import time
+import uuid
 
 import pytest
 from azure.storage.blob import BlobServiceClient
@@ -76,21 +77,64 @@ def test_select_all(cluster):
     )
     print(get_azure_file_content("test_cluster_select_all.csv", port))
 
+    query_id_pure = str(uuid.uuid4())
     pure_azure = azure_query(
         node,
         f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV','auto')",
+        query_id=query_id_pure,
     )
     print(pure_azure)
+    query_id_distributed = str(uuid.uuid4())
     distributed_azure = azure_query(
         node,
         f"SELECT * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
-        f"'auto')"
-        "",
+        f"'auto')",
+        query_id=query_id_distributed,
     )
     print(distributed_azure)
+    query_id_distributed_alt_syntax = str(uuid.uuid4())
+    distributed_azure_alt_syntax = azure_query(
+        node,
+        f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
+        f"'auto') "
+        f"SETTINGS object_storage_cluster_function_cluster='simple_cluster'",
+        query_id=query_id_distributed_alt_syntax,
+    )
+    print(distributed_azure_alt_syntax)
     assert TSV(pure_azure) == TSV(distributed_azure)
+    assert TSV(pure_azure) == TSV(distributed_azure_alt_syntax)
+    for _, node_ in cluster.instances.items():
+        node_.query("SYSTEM FLUSH LOGS")
+    nodes_pure = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('simple_cluster', system.query_log)
+            WHERE type='QueryFinish'
+            AND initial_query_id='{query_id_pure}'
+        """,
+    )
+    assert int(nodes_pure) == 1
+    nodes_distributed = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('simple_cluster', system.query_log)
+            WHERE type='QueryFinish'
+            AND initial_query_id='{query_id_distributed}'
+        """,
+    )
+    assert int(nodes_distributed) == 3
+    nodes_distributed_alt_syntax = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('simple_cluster', system.query_log)
+            WHERE type='QueryFinish'
+            AND initial_query_id='{query_id_distributed_alt_syntax}'
+        """,
+    )
+    assert int(nodes_distributed_alt_syntax) == 3
 
 
 def test_count(cluster):
@@ -120,7 +164,16 @@ def test_count(cluster):
         f"'auto', 'key UInt64')",
     )
     print(distributed_azure)
+    distributed_azure_alt_syntax = azure_query(
+        node,
+        f"SELECT count(*) from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_count.csv', "
+        f"'devstoreaccount1','Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
+        f"'auto', 'key UInt64')"
+        f"SETTINGS object_storage_cluster_function_cluster='simple_cluster'",
+    )
+    print(distributed_azure_alt_syntax)
     assert TSV(pure_azure) == TSV(distributed_azure)
+    assert TSV(pure_azure) == TSV(distributed_azure_alt_syntax)
 
 
 def test_union_all(cluster):
