@@ -89,11 +89,15 @@ CREATE TABLE nestedt
     )
 )
 ENGINE = TinyLog
-
+```
+```sql
 INSERT INTO nestedt Values ( 1, [1], ['a'])
-
+```
+```sql
 SELECT * FROM nestedt FORMAT TSV
+```
 
+```response
 1  [1]    ['a']
 ```
 
