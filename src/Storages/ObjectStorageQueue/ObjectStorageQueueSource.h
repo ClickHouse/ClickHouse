@@ -54,7 +54,7 @@ public:
 
         bool isFinished() const;
 
-        Source::ObjectInfoPtr nextImpl(size_t id) override;
+        Source::ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 

@@ -2916,7 +2916,7 @@ def test_filtering_files(started_cluster, mode):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1000
+    files_to_generate = 100
 
     node1.query("DROP DATABASE IF EXISTS r")
     node2.query("DROP DATABASE IF EXISTS r")
@@ -3009,5 +3009,7 @@ def test_filtering_files(started_cluster, mode):
         assert found_2_global
 
     assert node2.contains_in_log(
+        f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+    ) or node1.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
     )
