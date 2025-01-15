@@ -1,5 +1,6 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include <unordered_set>
+#include "Common/Exception.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -17,6 +18,7 @@ namespace DB::ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace Iceberg
@@ -30,11 +32,6 @@ const std::vector<DataFileEntry> & ManifestFileContent::getDataFiles() const
 const std::vector<DataFileEntry> & ManifestFileContent::getPositionalDeleteFiles() const
 {
     return impl->positional_delete_files;
-}
-
-const std::vector<DataFileEntry> & ManifestFileContent::getEqualityDeleteFiles() const
-{
-    return impl->equality_delete_files;
 }
 
 Int32 ManifestFileContent::getSchemaId() const
@@ -176,8 +173,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
                 break;
             }
             case Iceberg::DataFileContent::EQUALITY_DELETES: {
-                this->equality_delete_files.push_back({file_path, status, content_type});
-                break;
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Equality deletes are not implemented yet.");
             }
         }
     }

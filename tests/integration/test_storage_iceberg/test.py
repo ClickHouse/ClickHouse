@@ -1545,6 +1545,16 @@ def test_row_based_deletes(started_cluster, storage_type):
         == 90
     )
 
+    # check that filters are applied after deletes
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} WHERE id >= 10 SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
+            )
+        )
+        == 90
+    )
+
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
     default_upload_directory(
         started_cluster,
@@ -1562,22 +1572,6 @@ def test_row_based_deletes(started_cluster, storage_type):
         == 80
     )
 
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 54")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
-    )
-    assert (
-        int(
-            instance.query(
-                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
-            )
-        )
-        == 79
-    )
-
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
     default_upload_directory(
         started_cluster,
@@ -1592,7 +1586,7 @@ def test_row_based_deletes(started_cluster, storage_type):
                 f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
             )
         )
-        == 69
+        == 70
     )
 
     spark.sql(
@@ -1612,7 +1606,7 @@ def test_row_based_deletes(started_cluster, storage_type):
                 f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
             )
         )
-        == 169
+        == 170
     )
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150")
@@ -1629,7 +1623,7 @@ def test_row_based_deletes(started_cluster, storage_type):
                 f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=true"
             )
         )
-        == 119
+        == 120
     )
 
 

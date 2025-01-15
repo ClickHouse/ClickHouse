@@ -48,7 +48,6 @@ public:
     Int32 schema_id;
     std::vector<DataFileEntry> data_files;
     std::vector<DataFileEntry> positional_delete_files;
-    std::vector<DataFileEntry> equality_delete_files;
 };
 
 }

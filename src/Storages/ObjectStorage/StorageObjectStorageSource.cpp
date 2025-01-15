@@ -37,7 +37,6 @@
 #include "Processors/Formats/IInputFormat.h"
 #include "Processors/ISource.h"
 #include "Storages/MergeTree/KeyCondition.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/PositionalDeleteTransform.h"
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -523,7 +522,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     });
 
     const auto & positional_delete_objects = file_iterator->getPositionalDeleteObjects();
-    const auto & equality_delete_objects = file_iterator->getEqualityDeleteObjects();
 
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
 
@@ -578,39 +576,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         return std::make_shared<PositionalDeleteTransform>(header, delete_sources, object_info->getPath());
     });
-
-    for (const auto & equality_delete_object_info : equality_delete_objects)
-    {
-        int delete_sequence_id = equality_delete_object_info->metadata ? std::stoi(equality_delete_object_info->metadata->attributes["sequence_id"]) : -1;
-        if (source_sequence_id >= delete_sequence_id)
-            continue;
-
-        delete_read_buf.push_back(nullptr);
-        delete_read_buf_schema.push_back(nullptr);
-        delete_block.push_back({});
-
-        auto delete_format = getInputFormat(
-            delete_read_buf.back(),
-            delete_read_buf_schema.back(),
-            delete_block.back(),
-            object_storage,
-            configuration,
-            read_from_format_info,
-            format_settings,
-            equality_delete_object_info,
-            context_,
-            log,
-            max_block_size,
-            max_parsing_threads,
-            need_only_count,
-            true
-        );
-
-        builder.addSimpleTransform([&, delete_format](const Block & header)
-        {
-            return std::make_shared<EqualityDeleteTransform>(header, delete_format);
-        });
-    }
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -948,12 +913,6 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
             case DataFileMeta::DataFileType::DATA_FILE:
             {
                 keys.push_back(key);
-                object_info->metadata->attributes["sequence_id"] = std::to_string(sequence_id);
-                break;
-            }
-            case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE:
-            {
-                equality_delete_objects.push_back(object_info);
                 object_info->metadata->attributes["sequence_id"] = std::to_string(sequence_id);
                 break;
             }

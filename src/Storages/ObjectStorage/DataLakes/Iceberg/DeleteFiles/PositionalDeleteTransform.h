@@ -52,6 +52,7 @@ protected:
                 if (!delete_chunk)
                     break;
 
+                size_t chunk_rows_read_before = chunk.getChunkInfos().get<ChunkInfoReadRowsBefore>()->read_rows_before;
                 int position_index = getPositionColumnIndex(delete_source_id);
                 int filename_index = getFilenameColumnIndex(delete_source_id);
 
@@ -63,7 +64,7 @@ protected:
                     break;
 
                 auto last_position = position_column->get64(delete_chunk.getNumRows() - 1);
-                if (last_position < chunk_rows_iterator && last_filename == source_filename)
+                if (last_position < chunk_rows_read_before && last_filename == source_filename)
                     break;
 
                 auto first_filename = filename_column->getDataAt(0).toString();
@@ -75,7 +76,7 @@ protected:
                 }
 
                 auto first_position = position_column->get64(0);
-                if (first_position >= chunk_rows_iterator + chunk.getNumRows() && last_filename == source_filename)
+                if (first_position >= chunk_rows_read_before + chunk.getNumRows() && last_filename == source_filename)
                 {
                     unprocessed_delete_chunk[delete_source_id] = std::move(delete_chunk);
                     break;
@@ -88,9 +89,9 @@ protected:
                     auto filename_to_delete = filename_column->getDataAt(i).toString();
                     if (cropPrefix(std::move(filename_to_delete)) == source_filename)
                     {
-                        if (position_to_delete - chunk_rows_iterator < chunk.getNumRows())
+                        if (position_to_delete - chunk_rows_read_before < chunk.getNumRows())
                         {
-                            should_delete[position_to_delete - chunk_rows_iterator] = false;
+                            should_delete[position_to_delete - chunk_rows_read_before] = false;
                             --num_rows_after_filtration;
                         }
                         else
@@ -112,7 +113,6 @@ protected:
             column = column->filter(should_delete, -1);
 
         chunk.setColumns(std::move(columns), num_rows_after_filtration);
-        chunk_rows_iterator += num_rows;
     }
 
 private:
@@ -121,7 +121,6 @@ private:
     Block header;
 
     std::vector<std::optional<Chunk>> unprocessed_delete_chunk;
-    size_t chunk_rows_iterator = 0;
 
     std::vector<std::optional<int>> filename_column_index;
     std::vector<std::optional<int>> position_column_index;

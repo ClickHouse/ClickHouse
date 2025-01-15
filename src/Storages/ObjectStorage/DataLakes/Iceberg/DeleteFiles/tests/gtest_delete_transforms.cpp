@@ -19,7 +19,6 @@
 #include <Common/tests/gtest_global_register.h>
 #include "Processors/Executors/StreamingFormatExecutor.h"
 #include "Processors/Formats/IInputFormat.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h"
 
 
 using namespace DB;
@@ -84,33 +83,6 @@ std::shared_ptr<ChunksSource> makePositionalDeleteSource(const std::vector<std::
     return std::make_shared<ChunksSource>(header, std::move(chunks));
 }
 
-std::shared_ptr<ChunksSource> makeEqualityDeleteSource(const std::vector<std::vector<int>> & values, const std::string & key)
-{
-    Block header;
-    auto key_column_type = std::make_shared<DataTypeInt64>();
-    header.insert(ColumnWithTypeAndName(key_column_type, key));
-
-    Chunks chunks;
-    for (const auto & batch : values)
-    {
-        Chunk chunk;
-        Columns columns;
-
-        auto key_column = key_column_type->createColumn();
-        auto value_column = key_column_type->createColumn();
-
-        for (auto value : batch)
-        {
-            key_column->insert(value);
-        }
-        columns.push_back(std::move(key_column));
-        chunk = Chunk(Columns{std::move(columns)}, values[0].size());
-        chunks.push_back(std::move(chunk));
-    }
-
-    return std::make_shared<ChunksSource>(header, std::move(chunks));
-}
-
 
 std::shared_ptr<ChunksSource> makeDataSource(const std::vector<std::vector<std::pair<int, int>>> & values)
 {
@@ -121,6 +93,7 @@ std::shared_ptr<ChunksSource> makeDataSource(const std::vector<std::vector<std::
     header.insert(ColumnWithTypeAndName(value_column_type, "value"));
 
     Chunks chunks;
+    size_t total_rows = 0;
     for (const auto & batch : values)
     {
         Chunk chunk;
@@ -137,6 +110,8 @@ std::shared_ptr<ChunksSource> makeDataSource(const std::vector<std::vector<std::
         columns.push_back(std::move(key_column));
         columns.push_back(std::move(value_column));
         chunk = Chunk(Columns{std::move(columns)}, values[0].size());
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
+        total_rows += values[0].size();
         chunks.push_back(std::move(chunk));
     }
 
@@ -230,45 +205,4 @@ TEST(IcebergDeletesTest, ChunkCached)
 
     out_buf.finalize();
     ASSERT_EQ(out_buf.str(), "(1,-1),(3,-1),(4,-1),(6,-1)");
-}
-
-TEST(IcebergDeletesTest, EqualityDeleteSimple)
-{
-    tryRegisterFormats();
-
-    auto delete_file = makeEqualityDeleteSource({{1, 2, 6}}, "key");
-
-    auto source = makeDataSource({{{1, -1}, {2, -1}, {3, -1}}, {{4, -1}, {5, -1}, {6, -1}}});
-
-    QueryPipelineBuilder pipeline_builder;
-    pipeline_builder.init(Pipe(source));
-    pipeline_builder.addSimpleTransform(
-        [delete_file](const Block & block) -> SimpleTransformPtr { return std::make_shared<EqualityDeleteTransform>(block, delete_file); });
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-
-    WriteBufferFromOwnString out_buf;
-    Block sample;
-    {
-        ColumnWithTypeAndName col;
-        col.type = std::make_shared<DataTypeInt64>();
-        col.name = "key";
-        sample.insert(std::move(col));
-    }
-    {
-        ColumnWithTypeAndName col;
-        col.type = std::make_shared<DataTypeInt64>();
-        col.name = "value";
-        sample.insert(std::move(col));
-    }
-
-    const auto & context_holder = getContext();
-
-    auto output = FormatFactory::instance().getOutputFormat("Values", out_buf, sample, context_holder.context);
-
-    pipeline.complete(output);
-    CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
-
-    out_buf.finalize();
-    ASSERT_EQ(out_buf.str(), "(3,-1),(4,-1),(5,-1)");
 }

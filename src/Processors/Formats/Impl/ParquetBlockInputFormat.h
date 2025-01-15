@@ -220,6 +220,7 @@ private:
         //  (at most max_pending_chunks_per_row_group)
 
         size_t next_chunk_idx = 0;
+        std::vector<size_t> chunk_sizes;
         size_t num_pending_chunks = 0;
 
         size_t total_rows = 0;
@@ -331,6 +332,7 @@ private:
     Block header;
 
     std::vector<RowGroupBatchState> row_group_batches;
+    std::vector<int> skipped_total_row_group_sizes = {0};
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;
     size_t row_group_batches_completed = 0;
 

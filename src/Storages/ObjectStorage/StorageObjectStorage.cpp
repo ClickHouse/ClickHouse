@@ -33,7 +33,6 @@
 #include "Storages/prepareReadingFromFormat.h"
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/PositionalDeleteTransform.h>
 
 #include <Processors/Executors/CompletedPipelineExecutor.h>

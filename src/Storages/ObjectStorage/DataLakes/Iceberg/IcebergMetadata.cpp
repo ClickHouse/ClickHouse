@@ -379,10 +379,6 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
     {
         manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
     }
-    for (const auto & data_file : manifest_file_entry.getContent().getEqualityDeleteFiles())
-    {
-        manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
-    }
 
     schema_processor.addIcebergTableSchema(schema_object);
     return manifest_file_entry;
@@ -440,21 +436,6 @@ DataFileInfos IcebergMetadata::getDataFiles() const
                 });
             }
         }
-
-        for (const auto & data_file : manifest_entry.getContent().getEqualityDeleteFiles())
-        {
-            if (data_file.status != ManifestEntryStatus::DELETED)
-            {
-                data_files.push_back(DataFileInfo{
-                    .filename = data_file.data_file_name,
-                    .meta = std::make_shared<DataFileMeta>(DataFileMeta{
-                        .type = DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE,
-                        .sequence_number = current_snapshot->getSequenceId()
-                    })
-                });
-            }
-        }
-
     }
 
     cached_files_for_current_snapshot.emplace(std::move(data_files));

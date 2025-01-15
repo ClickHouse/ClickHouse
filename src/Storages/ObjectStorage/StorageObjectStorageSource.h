@@ -194,17 +194,11 @@ public:
         return positional_delete_objects;
     }
 
-    const std::vector<ObjectInfoPtr> & getEqualityDeleteObjects() const
-    {
-        return equality_delete_objects;
-    }
-
 protected:
     virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
     LoggerPtr logger;
 
     std::vector<ObjectInfoPtr> positional_delete_objects;
-    std::vector<ObjectInfoPtr> equality_delete_objects;
 };
 
 class StorageObjectStorageSource::ReadTaskIterator : public IIterator
