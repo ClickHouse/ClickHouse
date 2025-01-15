@@ -950,6 +950,17 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"split_intersecting_parts_ranges_into_layers_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"split_parts_ranges_into_intersecting_and_non_intersecting_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"splitby_max_substrings_includes_remaining_string", CHSetting(trueOrFalse, {}, false)},
+    {"storage_file_read_method",
+     CHSetting(
+         [](RandomGenerator & rg, String & ret)
+         {
+             const std::vector<String> & choices = {"read", "pread", "mmap"};
+             ret += "'";
+             ret += rg.pickRandomlyFromVector(choices);
+             ret += "'";
+         },
+         {},
+         false)},
     {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
     {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},

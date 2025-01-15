@@ -536,9 +536,10 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
+    Select & nsel = const_cast<Select &>(
+        measure_performance ? sq2.inner_query().select().sel() : sq2.inner_query().insert().insert_select().select());
     //replace references
-    findTablesWithPeersAndReplace(
-        rg, const_cast<Select &>(sq2.inner_query().insert().insert_select().select()), gen, peer_query != PeerQuery::ClickHouseOnly);
+    findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         //use a different file for the peer database

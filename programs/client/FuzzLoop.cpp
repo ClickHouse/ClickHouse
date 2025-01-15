@@ -596,7 +596,7 @@ bool Client::buzzHouse()
                     * static_cast<uint32_t>(fc.use_dump_table_oracle
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
                 const uint32_t peer_oracle
-                    = 15 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
+                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
                 const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query;
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
