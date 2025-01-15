@@ -185,13 +185,6 @@ void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges
             buffer << " { " << node->formatASTForErrorMessage() << " }\n";
     }
 
-    if (!non_cached_identifier_lookups_during_expression_resolve.empty())
-    {
-        buffer << "Non cached identifier lookups during expression resolve " << non_cached_identifier_lookups_during_expression_resolve.size() << '\n';
-        for (const auto & identifier_lookup : non_cached_identifier_lookups_during_expression_resolve)
-            buffer << "Identifier lookup " << identifier_lookup.dump() << " }\n";
-    }
-
     buffer << "Table expression node to data: " << table_expression_node_to_data.size() << '\n';
     for (const auto & [table_expression_node, table_expression_data] : table_expression_node_to_data)
         buffer << " { " << table_expression_node->formatASTForErrorMessage() << " data:\n  " << table_expression_data.dump() << " }\n";

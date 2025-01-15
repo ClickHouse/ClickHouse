@@ -1204,7 +1204,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 identifier_lookup.identifier.getFullName(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        scope.non_cached_identifier_lookups_during_expression_resolve.insert(identifier_lookup);
         return {};
     }
 
@@ -3661,10 +3660,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             scope.aliases.node_to_remove_aliases.push_back(node);
     }
 
-    bool is_duplicated_alias = scope.aliases.nodes_with_duplicated_aliases.contains(node);
-    if (is_duplicated_alias)
-        scope.non_cached_identifier_lookups_during_expression_resolve.insert({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
-
     scope.pushExpressionNode(node);
 
     auto node_type = node->getNodeType();
@@ -3929,15 +3924,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
     }
 
-    if (is_duplicated_alias)
-        scope.non_cached_identifier_lookups_during_expression_resolve.erase({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
-
     resolved_expressions.emplace(node, result_projection_names);
 
     scope.popExpressionNode();
-    bool expression_was_root = scope.expressions_in_resolve_process_stack.empty();
-    if (expression_was_root)
-        scope.non_cached_identifier_lookups_during_expression_resolve.clear();
 
     return result_projection_names;
 }
@@ -4351,9 +4340,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, resolve_settings);
 
                 scope.popExpressionNode();
-                bool expression_was_root = scope.expressions_in_resolve_process_stack.empty();
-                if (expression_was_root)
-                    scope.non_cached_identifier_lookups_during_expression_resolve.clear();
 
                 auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
 
