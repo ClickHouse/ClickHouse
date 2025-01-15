@@ -501,7 +501,7 @@ StorageKeeperMap::StorageKeeperMap(
                     {
                         /// if we have leftover lock from previous try, we need to recreate the ephemeral with our session
                         Coordination::Requests drop_lock_requests{
-                            zkutil::makeSetRequest(zk_dropped_lock_version_path, toString(getStorageID().uuid), drop_lock_version),
+                            zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, drop_lock_version),
                             zkutil::makeRemoveRequest(zk_dropped_lock_path, drop_lock_version),
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                         };
@@ -533,7 +533,7 @@ StorageKeeperMap::StorageKeeperMap(
                     {
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
-                            zkutil::makeSetRequest(zk_dropped_lock_version_path, toString(getStorageID().uuid), -1),
+                            zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
                         };
 
                         Coordination::Responses drop_lock_responses;
@@ -782,7 +782,7 @@ void StorageKeeperMap::drop()
     ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, toString(getStorageID().uuid), -1));
+    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
 
     auto code = client->tryMulti(ops, responses);
 
