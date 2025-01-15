@@ -708,6 +708,10 @@ bool Client::buzzHouse()
                     qo.generateOracleSelectQuery(rg, nquery, gen, sq1);
                     qo.replaceQueryWithTablePeers(rg, sq1, gen, peer_queries, sq2);
 
+                    if (clickhouse_only)
+                    {
+                        ei.replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
+                    }
                     qo.truncatePeerTables(gen);
                     for (const auto & entry : peer_queries)
                     {

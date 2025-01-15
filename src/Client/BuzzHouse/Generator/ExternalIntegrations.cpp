@@ -1394,4 +1394,37 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
     }
 }
 
+void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
+{
+    buf.resize(0);
+    buf += "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '";
+    buf += fc.fuzz_out.generic_string();
+    buf += "' TRUNCATE FORMAT TabSeparated;";
+    fc.processServerQuery(buf);
+
+    std::ifstream infile(fc.fuzz_out);
+    buf.resize(0);
+    while (std::getline(infile, buf))
+    {
+        const auto tabchar = buf.find('\t');
+        const auto nname = buf.substr(0, tabchar);
+        const auto nvalue = buf.substr(tabchar + 1);
+
+        buf2.resize(0);
+        buf2 += "SET ";
+        buf2 += nname;
+        buf2 += " = '";
+        for (const auto & c : nvalue)
+        {
+            if (c == '\'')
+            {
+                buf2 += '\\';
+            }
+            buf2 += c;
+        }
+        buf2 += "';";
+        clickhouse->performQueryOnServerOrRemote(pt, buf2);
+    }
+}
+
 }

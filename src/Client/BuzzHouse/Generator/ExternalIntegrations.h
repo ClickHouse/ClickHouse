@@ -309,7 +309,7 @@ class ExternalIntegrations
 {
 private:
     const FuzzConfig & fc;
-    String buf;
+    String buf, buf2;
     MySQLIntegration * mysql = nullptr;
     PostgreSQLIntegration * postresql = nullptr;
     SQLiteIntegration * sqlite = nullptr;
@@ -372,6 +372,8 @@ public:
     void getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
 
     void setDefaultSettings(PeerTableDatabase pt, const std::vector<String> & settings);
+
+    void replicateSettings(const PeerTableDatabase pt);
 
     ~ExternalIntegrations()
     {
