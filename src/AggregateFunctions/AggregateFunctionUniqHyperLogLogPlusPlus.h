@@ -1,29 +1,30 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitors.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
+#include <Parsers/NullsAction.h>
 namespace DB
 {
 
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ILLEGAL_COLUMN;
-extern const int LOGICAL_ERROR;
+extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 struct HyperLogLogPlusPlusData
 {
     // HyperLogLogPlusPlusData(Float64 relative_sd_ = 0.05)
-    HyperLogLogPlusPlusData()
-        // : relative_sd(relative_sd_)
-        : relative_sd(0.05)
+    explicit HyperLogLogPlusPlusData(double relative_sd_ = 0.05)
+        : relative_sd(relative_sd_)
         , p(static_cast<UInt64>(std::ceil(2.0 + std::log(1.106 / relative_sd / std::log(2.0)))))
         , idx_shift(64 - p)
         , w_padding(1ULL << (p - 1))
@@ -2984,9 +2985,20 @@ class AggregateFunctionUniqHyperLogLogPlusPlus final
     : public IAggregateFunctionDataHelper<HyperLogLogPlusPlusData, AggregateFunctionUniqHyperLogLogPlusPlus>
 {
 public:
-    explicit AggregateFunctionUniqHyperLogLogPlusPlus(const DataTypes & argument_types_)
+    explicit AggregateFunctionUniqHyperLogLogPlusPlus(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper(argument_types_, {}, createResultType())
     {
+        if (params.empty())
+            relative_sd = 0.05;
+        else if (params.size() == 1)
+        {
+            relative_sd = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+            if (isNaN(relative_sd) || relative_sd < 0 || relative_sd > 1)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Relative standard deviation must be in the range [0, 1]");
+        }
+        else
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one parameter: relative_sd", getName());
     }
 
     String getName() const override { return "uniqHLLPP"; }
@@ -2994,6 +3006,11 @@ public:
     static DataTypePtr createResultType() { return std::make_shared<DataTypeUInt64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    {
+        new (place) Data(relative_sd);
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -3010,10 +3027,25 @@ public:
         data(place).deserialize(buf);
     }
 
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// Return normalized state type: quantiles*(1)(...)
+        Array params{0.05};
+        AggregateFunctionProperties properties = {.returns_default_when_only_null = true, .is_order_dependent = false};
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, this->argument_types, params, properties),
+            this->argument_types,
+            params);
+    }
+
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).query());
     }
+
+private:
+    /// Defines the maximum relative standard deviation allowed.
+    Float64 relative_sd;
 };
 
 }

@@ -10,11 +10,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionUniqHyperLogLogPlusPlus(
-    const std::string & name, const DataTypes & argument_types, const Array & , const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     if (argument_types.size() != 1)
         throw Exception(
@@ -31,7 +37,7 @@ AggregateFunctionPtr createAggregateFunctionUniqHyperLogLogPlusPlus(
             name,
             argument_types[0]->getName());
 
-    return std::make_shared<AggregateFunctionUniqHyperLogLogPlusPlus>(argument_types);
+    return std::make_shared<AggregateFunctionUniqHyperLogLogPlusPlus>(argument_types, params);
 }
 
 }
