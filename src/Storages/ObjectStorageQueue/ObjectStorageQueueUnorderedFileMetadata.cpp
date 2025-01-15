@@ -82,7 +82,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 {
     const auto zk_client = getZooKeeper();
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
-    auto processor_info = getProcessorInfo(processing_id.value());
 
     while (true)
     {
