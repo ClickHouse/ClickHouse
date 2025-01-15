@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use log::{info, trace, warn};
+use log::{trace, info, warn, error};
 use std::fs;
 use std::path::Path;
 
@@ -422,6 +422,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
     };
 
     if should_upload {
+        let mut tries = 3;
         loop {
             let upload_result =
                 load_to_clickhouse(config, &client, &total_hash, &compiler_version, &compiled_bytes).await;
@@ -430,6 +431,12 @@ async fn compiler_cache_entrypoint(config: &Config) {
                 break;
             }
             warn!("Failed to upload to ClickHouse, retrying...");
+
+            tries -= 1;
+            if tries == 0 {
+                error!("Failed to upload to ClickHouse: {}", upload_result.err().unwrap());
+                break;
+            }
         }
     }
 }
