@@ -627,9 +627,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
-            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
             {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
             {"add_minmax_index_for_string_columns", false, false, "New setting"},
+            {"materialize_skip_indexes_on_merge", true, true, "New setting"},
             {"merge_max_bytes_to_prewarm_cache", 1ULL * 1024 * 1024 * 1024, 1ULL * 1024 * 1024 * 1024, "Cloud sync"},
             {"merge_total_max_bytes_to_prewarm_cache", 15ULL * 1024 * 1024 * 1024, 15ULL * 1024 * 1024 * 1024, "Cloud sync"},
             {"reduce_blocking_parts_sleep_ms", 5000, 5000, "Cloud sync"},
