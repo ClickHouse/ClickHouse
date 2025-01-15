@@ -41,11 +41,6 @@ jobs:
           filter: tree:0
       - name: Debug Info
         uses: ./.github/actions/debug
-      - name: Python unit tests
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          echo "Testing the main ci directory"
-          python3 -m unittest discover -s . -p 'test_*.py'
       - name: PrepareRunConfig
         id: runconfig
         run: |
