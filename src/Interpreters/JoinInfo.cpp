@@ -9,13 +9,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
 {
 #define DECLARE_JOIN_SETTINGS_EXTERN(type, name) \
-    extern const Settings##type name;
+    extern const Settings##type name; // NOLINT
 
     APPLY_FOR_JOIN_SETTINGS(DECLARE_JOIN_SETTINGS_EXTERN)
 #undef DECLARE_JOIN_SETTINGS_EXTERN
@@ -81,18 +81,6 @@ String toString(const JoinCondition & condition)
         format_conditions("Right filter", condition.right_filter_conditions),
         format_conditions("Residual filter", condition.residual_conditions)
     );
-}
-
-String toString(const JoinExpression & expression)
-{
-    UNUSED(expression);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}", __PRETTY_FUNCTION__);
-}
-
-String toString(const JoinInfo & join_info)
-{
-    UNUSED(join_info);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}", __PRETTY_FUNCTION__);
 }
 
 

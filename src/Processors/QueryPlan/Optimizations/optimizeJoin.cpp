@@ -25,14 +25,22 @@
 #include <memory>
 
 
-namespace DB::Setting
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
 {
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
-namespace DB::QueryPlanOptimizations
+namespace QueryPlanOptimizations
 {
 
 static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
@@ -359,6 +367,8 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     join_step->setSwapInputs();
 
     return true;
+}
+
 }
 
 }

@@ -51,9 +51,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 

@@ -139,8 +139,6 @@ std::string_view toString(PredicateOperator op);
 String toString(const JoinActionRef & predicate);
 String toString(const JoinPredicate & predicate);
 String toString(const JoinCondition & condition);
-String toString(const JoinExpression & expression);
-String toString(const JoinInfo & join_info);
 
 #define APPLY_FOR_JOIN_SETTINGS(M) \
     M(JoinAlgorithm, join_algorithm) \
@@ -183,6 +181,8 @@ String toString(const JoinInfo & join_info);
     \
     M(UInt64, cross_to_inner_join_rewrite) \
 
+
+/// Subset of query settings that are relevant to join and used to configure join algorithms.
 struct JoinSettings
 {
 #define DECLARE_JOIN_SETTING_FILEDS(type, name) \

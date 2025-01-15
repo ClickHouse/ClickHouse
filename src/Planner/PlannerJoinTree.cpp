@@ -114,7 +114,6 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_bytes;
-    extern const SettingsBool allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ErrorCodes
