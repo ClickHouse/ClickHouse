@@ -906,11 +906,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         { \
             LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
-\
+        \
         class Accessor \
         { \
             struct FieldInfo; \
-\
+        \
         public: \
             static const Accessor & instance(); \
             size_t size() const \
@@ -922,10 +922,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             const SettingFieldBase * findSettingFieldPtr(std::string_view name, const Data & data) const; \
             SettingFieldBase * getSettingFieldPtr(size_t index, Data & data) const; \
             const SettingFieldBase * getSettingFieldPtr(size_t index, const Data & data) const; \
-            SettingFieldBase * getDefault(size_t index, Data & data) const; \
-            std::unique_ptr<SettingFieldBase> getDefault(size_t index) const \
+            const SettingFieldBase * getDefault(size_t index) const \
             { \
-                return field_infos[index].get_default_function(); \
+                return field_infos[index].default_value.get(); \
             } \
             const String & getName(size_t index) const \
             { \
@@ -947,7 +946,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             { \
                 return BaseSettingsHelpers::getTier(field_infos[index].flags); \
             } \
-\
+            \
         private: \
             Accessor(); \
             struct FieldInfo \
@@ -956,17 +955,16 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const char * type; \
                 const char * description; \
                 UInt64 flags; \
+                std::unique_ptr<SettingFieldBase> default_value; \
                 SettingFieldBase * (*get_setting_field_function)(Data & data); \
-                std::unique_ptr<SettingFieldBase> (*get_default_function)(); \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
-            std::unordered_map<std::string_view, SettingFieldBase *> name_to_setting_field_map; \
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
-\
+        \
         static inline const AliasMap aliases_to_settings = DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
-\
+        \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
@@ -979,7 +977,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             }(); \
             return setting_to_aliases_mapping; \
         } \
-\
+        \
         static std::string_view resolveName(std::string_view name) \
         { \
             if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
@@ -1040,11 +1038,11 @@ struct DefineAliases
         }(); \
         return the_instance; \
     } \
-\
+    \
     SETTINGS_TRAITS_NAME::Accessor::Accessor() \
     { \
     } \
-\
+    \
     size_t SETTINGS_TRAITS_NAME::Accessor::find(std::string_view name) const \
     { \
         auto it = name_to_index_map.find(name); \
@@ -1052,7 +1050,6 @@ struct DefineAliases
             return it->second; \
         return static_cast<size_t>(-1); \
     } \
-\
     SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, Data & data) const \
     { \
         auto it = name_to_index_map.find(name); \
@@ -1077,7 +1074,7 @@ struct DefineAliases
         chassert(index < field_infos.size()); \
         return field_infos[index].get_setting_field_function(*const_cast<Data *>(&data)); \
     } \
-\
+    \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
 /// NOLINTNEXTLINE
@@ -1087,7 +1084,7 @@ struct DefineAliases
         #TYPE, \
         DESCRIPTION, \
         static_cast<UInt64>(FLAGS), \
+        std::make_unique<SettingField##TYPE>(DEFAULT), \
         [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
-        []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
     });
 }
