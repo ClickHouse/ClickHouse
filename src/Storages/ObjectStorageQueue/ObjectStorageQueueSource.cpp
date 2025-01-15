@@ -5,9 +5,13 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -34,9 +38,10 @@ namespace ObjectStorageQueueSetting
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -49,19 +54,55 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
-    std::unique_ptr<Source::GlobIterator> glob_iterator_,
     ObjectStoragePtr object_storage_,
+    ConfigurationPtr configuration_,
+    size_t list_objects_batch_size_,
+    const ActionsDAG::Node * predicate_,
+    const NamesAndTypesList & virtual_columns_,
+    ContextPtr context_,
+    LoggerPtr logger_,
     bool file_deletion_on_processed_enabled_,
-    std::atomic<bool> & shutdown_called_,
-    LoggerPtr logger_)
-    : StorageObjectStorageSource::IIterator("ObjectStorageQueueIterator")
+    std::atomic<bool> & shutdown_called_)
+    : IIterator("ObjectStorageQueueFileIterator")
+    , WithContext(context_)
     , metadata(metadata_)
     , object_storage(object_storage_)
-    , glob_iterator(std::move(glob_iterator_))
+    , configuration(configuration_)
+    , virtual_columns(virtual_columns_)
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
+    , mode(metadata->getTableMetadata().getMode())
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
+    if (configuration->isNamespaceWithGlobs())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
+
+    if (!configuration->isPathWithGlobs())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Using glob iterator with path without globs is not allowed (used path: {})",
+            configuration->getPath());
+    }
+
+    const auto globbed_key = configuration_->getPath();
+    object_storage_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), list_objects_batch_size_);
+
+    matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
+    if (!matcher->ok())
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "Cannot compile regex from glob ({}): {}",
+            globbed_key, matcher->error());
+    }
+
+    recursive = globbed_key == "/**";
+    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
+    {
+        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
+        filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+    }
 }
 
 bool ObjectStorageQueueSource::FileIterator::isFinished() const
@@ -74,7 +115,100 @@ bool ObjectStorageQueueSource::FileIterator::isFinished() const
 
 size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
+    /// Copied from StorageObjectStorageSource::estimateKeysCount().
+    if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
+        return std::numeric_limits<size_t>::max();
+    else
+        return object_infos.size();
+}
+
+ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next()
+{
+    std::lock_guard lock(next_mutex);
+
+    bool current_batch_processed = object_infos.empty() || index >= object_infos.size();
+    if (is_finished && current_batch_processed)
+        return {};
+
+    if (current_batch_processed)
+    {
+        Source::ObjectInfos new_batch;
+        while (new_batch.empty())
+        {
+            auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
+            if (!result.has_value())
+            {
+                is_finished = true;
+                return {};
+            }
+
+            new_batch = std::move(result.value());
+            for (auto it = new_batch.begin(); it != new_batch.end();)
+            {
+                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                    it = new_batch.erase(it);
+                else
+                    ++it;
+            }
+
+            if (filter_expr)
+            {
+                std::vector<String> paths;
+                paths.reserve(new_batch.size());
+                for (const auto & object_info : new_batch)
+                    paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+
+                VirtualColumnUtils::filterByPathOrFile(
+                    new_batch, paths, filter_expr, virtual_columns, getContext());
+
+                LOG_TEST(logger, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
+
+                size_t previous_size = new_batch.size();
+                filterOutProcessedAndFailed(new_batch);
+
+                LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
+            }
+            else
+            {
+                size_t previous_size = new_batch.size();
+                filterOutProcessedAndFailed(new_batch);
+                LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
+            }
+        }
+
+        index = 0;
+        object_infos = std::move(new_batch);
+    }
+
+    if (index >= object_infos.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Index out of bound for blob metadata. Index: {}, size: {}",
+            index, object_infos.size());
+    }
+
+    return object_infos[index++];
+}
+
+void ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::ObjectInfos & objects)
+{
+    std::vector<std::string> paths;
+    paths.reserve(objects.size());
+    for (const auto & object : objects)
+        paths.push_back(object->getPath());
+
+    std::vector<size_t> indexes;
+    if (mode == ObjectStorageQueueMode::UNORDERED)
+        indexes = ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
+    else
+        indexes = ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+
+    Source::ObjectInfos result;
+    result.reserve(indexes.size());
+    for (const auto & idx : indexes)
+        result.push_back(std::move(objects[idx]));
+    objects = std::move(result);
 }
 
 ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::nextImpl(size_t processor)
@@ -94,7 +228,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
             std::lock_guard lock(mutex);
             if (objects_to_retry.empty())
             {
-                object_info = glob_iterator->next(processor);
+                object_info = next();
                 if (!object_info)
                     iterator_finished = true;
             }
@@ -219,7 +353,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
     while (true)
     {
-        /// Each processing thread gets next path from glob_iterator->next()
+        /// Each processing thread gets next path
         /// and checks if corresponding bucket is already acquired by someone.
         /// In case it is already acquired, they put the key into listed_keys_cache,
         /// so that the thread who acquired the bucket will be able to see
@@ -344,7 +478,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             return {};
         }
 
-        auto object_info = glob_iterator->next(processor);
+        auto object_info = next();
         if (object_info)
         {
             const auto bucket = metadata->getBucketForPath(object_info->relative_path);

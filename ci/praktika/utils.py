@@ -420,7 +420,7 @@ class Utils:
 
     @staticmethod
     def timestamp():
-        return datetime.utcnow().timestamp()
+        return datetime.now().timestamp()
 
     @staticmethod
     def timestamp_to_str(timestamp):
@@ -558,11 +558,11 @@ class Utils:
 
     class Stopwatch:
         def __init__(self):
-            self.start_time = datetime.utcnow().timestamp()
+            self.start_time = datetime.now().timestamp()
 
         @property
         def duration(self) -> float:
-            return datetime.utcnow().timestamp() - self.start_time
+            return datetime.now().timestamp() - self.start_time
 
 
 class TeePopen:
