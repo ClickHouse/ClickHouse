@@ -1256,13 +1256,13 @@ class FunctionBinaryArithmetic : public IFunction
             return true;
         };
 
-        // Process both columns
+        /// Process both columns
         if (!process(cols[0], cols[1].argument.type))
             return nullptr;
         if (!process(cols[1], cols[0].argument.type))
             return nullptr;
 
-        // Handle constant values
+        /// Handle constant values
         if (cols[0].is_const && cols[1].is_const)
         {
             auto res = helperInvokeEither</* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck, Decimal64>(
@@ -1273,22 +1273,18 @@ class FunctionBinaryArithmetic : public IFunction
         auto col_res = ColumnDecimal<Decimal64>::create(input_row_count, type->getScale());
         auto & vec_res = col_res->getData();
 
+        auto invoke = [&]<OpCase op_case>(const auto& col0, const auto& col1)
+        {
+            helperInvokeEither<op_case, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
+                col0, col1, vec_res, cols[0].scale, cols[1].scale, nullptr);
+        };
         /// Process based on whether the column is constant or not
         if (cols[0].is_const)
-        {
-            helperInvokeEither<OpCase::LeftConstant, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
-                cols[0].const_val, cols[1].col->getData(), vec_res, cols[0].scale, cols[1].scale, nullptr);
-        }
+            invoke.template operator()<OpCase::LeftConstant>(cols[0].const_val, cols[1].col->getData());
         else if (cols[1].is_const)
-        {
-            helperInvokeEither<OpCase::RightConstant, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
-                cols[0].col->getData(), cols[1].const_val, vec_res, cols[0].scale, cols[1].scale, nullptr);
-        }
+            invoke.template operator()<OpCase::RightConstant>(cols[0].col->getData(), cols[1].const_val);
         else
-        {
-            helperInvokeEither<OpCase::Vector, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
-                cols[0].col->getData(), cols[1].col->getData(), vec_res, cols[0].scale, cols[1].scale, nullptr);
-        }
+            invoke.template operator()<OpCase::Vector>(cols[0].col->getData(), cols[1].col->getData());
 
         return col_res;
     }
