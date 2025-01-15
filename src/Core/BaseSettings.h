@@ -956,7 +956,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const char * description; \
                 UInt64 flags; \
                 std::unique_ptr<SettingFieldBase> default_value; \
-                SettingFieldBase * (*get_setting_field_function)(Data & data); \
+                uintptr_t offset_in_Data; \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
@@ -1054,27 +1054,29 @@ struct DefineAliases
     { \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
-            return field_infos[it->second].get_setting_field_function(data); \
+            return reinterpret_cast<SettingFieldBase *>(reinterpret_cast<char *>(&data) + field_infos[it->second].offset_in_Data); \
         return nullptr; \
     } \
     const SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, const Data & data) const \
     { \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
-            return field_infos[it->second].get_setting_field_function(*const_cast<Data *>(&data)); \
+            return reinterpret_cast<const SettingFieldBase *>( \
+                reinterpret_cast<char *>(const_cast<Data *>(&data)) + field_infos[it->second].offset_in_Data); \
         return nullptr; \
     } \
     SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::getSettingFieldPtr(size_t index, Data & data) const \
     { \
         chassert(index < field_infos.size()); \
-        return field_infos[index].get_setting_field_function(data); \
+        return reinterpret_cast<SettingFieldBase *>(reinterpret_cast<char *>(&data) + field_infos[index].offset_in_Data); \
     } \
     const SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::getSettingFieldPtr(size_t index, const Data & data) const \
     { \
         chassert(index < field_infos.size()); \
-        return field_infos[index].get_setting_field_function(*const_cast<Data *>(&data)); \
+        return reinterpret_cast<const SettingFieldBase *>( \
+            reinterpret_cast<char *>(const_cast<Data *>(&data)) + field_infos[index].offset_in_Data); \
     } \
-    \
+\
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
 /// NOLINTNEXTLINE
@@ -1085,6 +1087,8 @@ struct DefineAliases
         DESCRIPTION, \
         static_cast<UInt64>(FLAGS), \
         std::make_unique<SettingField##TYPE>(DEFAULT), \
-        [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
+        reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->NAME), \
     });
 }
+
+// static_cast<char *>(&(static_cast<Data *>(nullptr)->*NAME)) - static_cast<char *>(nullptr),
