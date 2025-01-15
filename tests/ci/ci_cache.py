@@ -41,7 +41,7 @@ class CiCache:
         release - for jobs being executed on the release branch including master branch (not a PR branch)
     """
 
-    _REQUIRED_DIGESTS = [CI.JobNames.DOCS_CHECK, CI.BuildNames.PACKAGE_RELEASE]
+    _REQUIRED_DIGESTS = [CI.BuildNames.PACKAGE_RELEASE]
     _S3_CACHE_PREFIX = "CI_cache_v1"
     _CACHE_BUILD_REPORT_PREFIX = "build_report"
     _RECORD_FILE_EXTENSION = ".ci"

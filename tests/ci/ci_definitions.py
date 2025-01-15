@@ -635,7 +635,6 @@ REQUIRED_CHECKS = [
     StatusNames.PR_CHECK,
     StatusNames.SYNC,
     JobNames.BUILD_CHECK,
-    JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,
     JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
