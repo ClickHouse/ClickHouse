@@ -88,7 +88,7 @@ protected:
     bool need_only_count = false;
 
 private:
-    size_t total_rows = 0;
+    size_t already_read_rows = 0;
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
