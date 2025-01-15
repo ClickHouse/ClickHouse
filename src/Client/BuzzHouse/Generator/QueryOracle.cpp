@@ -348,38 +348,47 @@ void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
-    TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
-
+    InsertSelect * insel = nullptr;
+    Select * sel = nullptr;
+    const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
     peer_query = pq;
     measure_performance = peer_query == PeerQuery::ClickHouseOnly && rg.nextBool();
-
     const bool global_aggregate = !measure_performance && rg.nextSmallNumber() < 4;
+
+    if (measure_performance)
+    {
+        //when measuring performance, don't insert into file
+        sel = sq2.mutable_inner_query()->mutable_select()->mutable_sel();
+    }
+    else
+    {
+        Insert * ins = sq2.mutable_inner_query()->mutable_insert();
+        FileFunc * ff = ins->mutable_tfunction()->mutable_file();
+
+        ff->set_path(qfile.generic_string());
+        ff->set_outformat(OutFormat::OUT_CSV);
+        insel = ins->mutable_insert_select();
+        sel = insel->mutable_select();
+    }
+
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.generatingPeerQuery(pq);
     gen.setAllowEngineUDF(peer_query != PeerQuery::ClickHouseOnly);
-    gen.generateTopSelect(rg, global_aggregate, std::numeric_limits<uint32_t>::max(), ts);
+    gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), sel);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.generatingPeerQuery(PeerQuery::None);
     gen.setAllowEngineUDF(true);
 
-    if (!measure_performance)
+    if (!measure_performance && !global_aggregate)
     {
-        SelectIntoFile * sif = ts->mutable_intofile();
-
-        if (!global_aggregate)
-        {
-            //if not global aggregate, use ORDER BY clause
-            Select * osel = ts->release_sel();
-            SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();
-            nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(
-                osel);
-            nsel->mutable_orderby()->set_oall(true);
-        }
-        ts->set_format(OutFormat::OUT_CSV);
-        sif->set_path(qfile.generic_string());
-        sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+        //if not global aggregate, use ORDER BY clause
+        Select * osel = insel->release_select();
+        SelectStatementCore * nsel = insel->mutable_select()->mutable_select_core();
+        nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(
+            osel);
+        nsel->mutable_orderby()->set_oall(true);
     }
 }
 
@@ -519,14 +528,19 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    if (peer_query == PeerQuery::AllPeers)
+    if (!measure_performance)
     {
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().select().sel()), gen);
-    }
-    else if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
-    {
-        SelectIntoFile & sif = const_cast<SelectIntoFile &>(sq2.inner_query().select().intofile());
-        sif.set_path(qfile_peer.generic_string());
+        if (peer_query == PeerQuery::AllPeers)
+        {
+            //replace references
+            findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().insert().insert_select().select()), gen);
+        }
+        else if (peer_query == PeerQuery::ClickHouseOnly)
+        {
+            //use a different file for the peer database
+            FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
+            ff.set_path(qfile.generic_string());
+        }
     }
     for (const auto & entry : found_tables)
     {

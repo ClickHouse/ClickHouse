@@ -1746,9 +1746,12 @@ CONV_FN(FileFunc, ff)
     {
         ret += "CSV";
     }
-    ret += "', '";
-    ret += ff.structure();
-    ret += "'";
+    if (ff.has_structure())
+    {
+        ret += ", '";
+        ret += ff.structure();
+        ret += "'";
+    }
     if (ff.has_fcomp())
     {
         ret += ", '";
