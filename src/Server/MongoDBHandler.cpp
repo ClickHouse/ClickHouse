@@ -163,7 +163,8 @@ void MongoDBHandler::run()
     }
 }
 
-MongoDBHandler::~MongoDBHandler() {
+MongoDBHandler::~MongoDBHandler()
+{
     out->finalize();
 }
 
