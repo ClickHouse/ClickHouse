@@ -159,10 +159,9 @@ def main():
     validate_bugfix_check = args.validate_bugfix
 
     # temporary hack for praktika based CI
-    is_new_ci = False
+    is_new_ci = check_name.startswith("amd_") or check_name.startswith("arm_")
     job_batch, total_batches = None, None
-    if check_name.startswith("amd_") or check_name.startswith("arm_"):
-        is_new_ci = True
+    if is_new_ci:
         for option in check_name.split(","):
             if "/" in option:
                 job_batch = int(option.split("/")[0]) - 1
@@ -189,6 +188,12 @@ def main():
 
     images = [get_docker_image(image_) for image_ in IMAGES]
 
+    if is_new_ci:
+        # yet another hack until docker is fixed in praktika
+        for image in images:
+            if image.name == "clickhouse/integration-test":
+                image.version = "latest"
+
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -201,8 +206,7 @@ def main():
     if validate_bugfix_check:
         download_last_release(build_path, debug=True)
     else:
-        if check_name.startswith("amd_") or check_name.startswith("arm_"):
-            # temporary hack for praktika based CI
+        if is_new_ci:
             print("Copy input *.deb artifacts")
             assert Shell.check(
                 f"cp {REPO_COPY}/ci/tmp/*.deb {build_path}", verbose=True
