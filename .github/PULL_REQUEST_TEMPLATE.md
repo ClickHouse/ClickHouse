@@ -45,8 +45,7 @@ At a minimum, the following information should be added (but add more as needed)
 
 #### CI Settings (Only check the boxes if you know what you are doing)
 
-All builds in Builds_1 and Builds_2 stages are always mandatory
-and will run independently of the checks below:
+All builds in Builds_1 and Builds_2 stages are always mandatory and will run independently of the checks below:
 
 - [ ] <!---ci_set_required--> Allow: All Required Checks
 - [ ] <!---ci_include_stateless--> Allow: Stateless tests
@@ -71,5 +70,5 @@ and will run independently of the checks below:
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---woolen_wolfdog--> Woolen Wolfdog
 - [ ] <!---upload_all--> Upload binaries for special builds
-- [ ] <!---no_merge_commit--> Disable merge-commit
+- [x] <!---no_merge_commit--> Disable merge-commit
 - [ ] <!---no_ci_cache--> Disable CI cache
