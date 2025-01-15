@@ -155,7 +155,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
                 f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
             if output:
-                info = f"outdated workflows: [{', '.join(output)}], run [praktika yaml] to update"
+                info = f"outdated workflows: [{output}], run [praktika yaml] to update"
                 status = Result.Status.FAILED
                 print("ERROR: ", info)
             elif exit_code == 0 and not err:

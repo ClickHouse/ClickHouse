@@ -206,7 +206,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/docs-builder",
         path="./docker/docs/builder",
-        platforms=[Docker.Platforms.ARM],
+        platforms=[Docker.Platforms.AMD],
         depends_on=[],
     ),
     Docker.Config(
@@ -906,7 +906,7 @@ class Jobs:
     )
     docs_job = Job.Config(
         name=JobNames.Docs,
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
         command="python3 ./tests/ci/docs_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
