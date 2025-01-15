@@ -21,8 +21,7 @@ struct ScopeAliases
     std::unordered_map<std::string, Identifier> transitive_aliases;
 
     /// Nodes with duplicated aliases
-    std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
-    std::vector<QueryTreeNodePtr> cloned_nodes_with_duplicated_aliases;
+    QueryTreeNodes nodes_with_duplicated_aliases;
 
     /// Cloned resolved expressions with aliases that must be removed
     QueryTreeNodes node_to_remove_aliases;

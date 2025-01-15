@@ -72,10 +72,7 @@ public:
 private:
     void addDuplicatingAlias(const QueryTreeNodePtr & node)
     {
-        aliases.nodes_with_duplicated_aliases.emplace(node);
-        auto cloned_node = node->clone();
-        aliases.cloned_nodes_with_duplicated_aliases.emplace_back(cloned_node);
-        aliases.nodes_with_duplicated_aliases.emplace(cloned_node);
+        aliases.nodes_with_duplicated_aliases.emplace_back(node);
     }
 
     void updateAliasesIfNeeded(const QueryTreeNodePtr & node, bool is_lambda_node)
@@ -89,28 +86,24 @@ private:
 
         const auto & alias = node->getAlias();
 
+        auto cloned_alias_node = node->clone();
+
         if (is_lambda_node)
         {
-            if (aliases.alias_name_to_expression_node.contains(alias))
-                addDuplicatingAlias(node);
-
-            auto [_, inserted] = aliases.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
-            if (!inserted)
-                addDuplicatingAlias(node);
-
-            return;
+            auto [_, inserted] = aliases.alias_name_to_lambda_node.insert(std::make_pair(alias, cloned_alias_node));
+            if (!inserted || aliases.alias_name_to_expression_node.contains(alias))
+                addDuplicatingAlias(cloned_alias_node);
         }
+        else
+        {
+            auto [_, inserted] = aliases.alias_name_to_expression_node.insert(std::make_pair(alias, cloned_alias_node));
+            if (!inserted || aliases.alias_name_to_lambda_node.contains(alias))
+                addDuplicatingAlias(cloned_alias_node);
 
-        if (aliases.alias_name_to_lambda_node.contains(alias))
-            addDuplicatingAlias(node);
-
-        auto [_, inserted] = aliases.alias_name_to_expression_node.insert(std::make_pair(alias, node));
-        if (!inserted)
-            addDuplicatingAlias(node);
-
-        /// If node is identifier put it into transitive aliases map.
-        if (const auto * identifier = typeid_cast<const IdentifierNode *>(node.get()))
-            aliases.transitive_aliases.insert(std::make_pair(alias, identifier->getIdentifier()));
+            /// If node is identifier put it into transitive aliases map.
+            if (const auto * identifier = typeid_cast<const IdentifierNode *>(node.get()))
+                aliases.transitive_aliases.insert(std::make_pair(alias, identifier->getIdentifier()));
+        }
     }
 
     ScopeAliases & aliases;

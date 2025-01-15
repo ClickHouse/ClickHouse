@@ -76,14 +76,14 @@ QUERY id: 0, group_by_type: grouping_sets
               LIST id: 51, nodes: 2
                 CONSTANT id: 52, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
                   EXPRESSION
-                    FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
+                    FUNCTION id: 53, function_name: log, function_type: ordinary, result_type: Float64
                       ARGUMENTS
-                        LIST id: 6, nodes: 1
-                          CONSTANT id: 7, constant_value: UInt64_2, constant_value_type: UInt8
-                FUNCTION id: 53, function_name: avg, function_type: aggregate, result_type: Float64
+                        LIST id: 54, nodes: 1
+                          CONSTANT id: 55, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 56, function_name: avg, function_type: aggregate, result_type: Float64
                   ARGUMENTS
-                    LIST id: 54, nodes: 1
-                      COLUMN id: 55, column_name: number, result_type: UInt64, source_id: 11
+                    LIST id: 57, nodes: 1
+                      COLUMN id: 58, column_name: number, result_type: UInt64, source_id: 11
 QUERY id: 0, group_by_type: grouping_sets
   PROJECTION COLUMNS
     k Float64
@@ -153,14 +153,14 @@ QUERY id: 0, group_by_type: grouping_sets
               LIST id: 44, nodes: 2
                 CONSTANT id: 45, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
                   EXPRESSION
-                    FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
+                    FUNCTION id: 46, function_name: log, function_type: ordinary, result_type: Float64
                       ARGUMENTS
-                        LIST id: 6, nodes: 1
-                          CONSTANT id: 7, constant_value: UInt64_2, constant_value_type: UInt8
-                FUNCTION id: 46, function_name: avg, function_type: aggregate, result_type: Float64
+                        LIST id: 47, nodes: 1
+                          CONSTANT id: 48, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 49, function_name: avg, function_type: aggregate, result_type: Float64
                   ARGUMENTS
-                    LIST id: 47, nodes: 1
-                      COLUMN id: 48, column_name: number, result_type: UInt64, source_id: 11
+                    LIST id: 50, nodes: 1
+                      COLUMN id: 51, column_name: number, result_type: UInt64, source_id: 11
 QUERY id: 0, group_by_type: grouping_sets
   PROJECTION COLUMNS
     k Float64
@@ -238,14 +238,14 @@ QUERY id: 0, group_by_type: grouping_sets
               LIST id: 50, nodes: 2
                 CONSTANT id: 51, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
                   EXPRESSION
-                    FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
+                    FUNCTION id: 52, function_name: log, function_type: ordinary, result_type: Float64
                       ARGUMENTS
-                        LIST id: 6, nodes: 1
-                          CONSTANT id: 7, constant_value: UInt64_2, constant_value_type: UInt8
-                FUNCTION id: 52, function_name: avg, function_type: aggregate, result_type: Float64
+                        LIST id: 53, nodes: 1
+                          CONSTANT id: 54, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 55, function_name: avg, function_type: aggregate, result_type: Float64
                   ARGUMENTS
-                    LIST id: 53, nodes: 1
-                      COLUMN id: 54, column_name: number, result_type: UInt64, source_id: 11
+                    LIST id: 56, nodes: 1
+                      COLUMN id: 57, column_name: number, result_type: UInt64, source_id: 11
 QUERY id: 0, group_by_type: grouping_sets
   PROJECTION COLUMNS
     count() UInt64

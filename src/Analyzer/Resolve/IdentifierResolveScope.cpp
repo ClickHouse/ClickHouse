@@ -167,13 +167,7 @@ void dump_list(WriteBuffer & buffer, const String & list_name, const std::ranges
     dump_mapping(buffer, "CTE name to query node", cte_name_to_query_node);
     dump_mapping(buffer, "WINDOW name to window node", window_name_to_window_node);
 
-    if (!aliases.nodes_with_duplicated_aliases.empty())
-    {
-        buffer << "Nodes with duplicated aliases size " << aliases.nodes_with_duplicated_aliases.size() << '\n';
-        for (const auto & node : aliases.nodes_with_duplicated_aliases)
-            buffer << " { " << node->formatASTForErrorMessage() << " }\n";
-    }
-
+    dump_list(buffer, "Nodes with duplicated aliases size ", aliases.nodes_with_duplicated_aliases);
     dump_list(buffer, "Nodes to remove aliases ", aliases.node_to_remove_aliases);
 
     expressions_in_resolve_process_stack.dump(buffer);

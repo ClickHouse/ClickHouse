@@ -1178,7 +1178,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     QueryTreeNodePtr alias_node = *it;
 
     auto node_type = alias_node->getNodeType();
-    if (!IdentifierResolver::isTableExpressionNodeType(node_type))
+    if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
         scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
@@ -5669,13 +5669,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * After scope nodes are resolved, we can compare node with duplicate alias with
       * node from scope alias table.
       */
-    for (const auto & node_with_duplicated_alias : scope.aliases.cloned_nodes_with_duplicated_aliases)
+    for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
         auto node_alias = node->getAlias();
 
-        /// Add current alias to non cached set, because in case of cyclic alias identifier should not be substituted from cache.
-        /// See 02896_cyclic_aliases_crash.
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;
