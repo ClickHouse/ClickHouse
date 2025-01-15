@@ -349,32 +349,38 @@ void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
-    SelectIntoFile * sif = ts->mutable_intofile();
-    const bool global_aggregate = rg.nextSmallNumber() < 4;
 
-    this->peer_query = pq;
+    peer_query = pq;
+    measure_performance = peer_query == PeerQuery::ClickHouseOnly && rg.nextBool();
+
+    const bool global_aggregate = !measure_performance && rg.nextSmallNumber() < 4;
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.generatingPeerQuery(pq);
-    gen.setAllowEngineUDF(this->peer_query != PeerQuery::ClickHouseOnly);
+    gen.setAllowEngineUDF(peer_query != PeerQuery::ClickHouseOnly);
     gen.generateTopSelect(rg, global_aggregate, std::numeric_limits<uint32_t>::max(), ts);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.generatingPeerQuery(PeerQuery::None);
     gen.setAllowEngineUDF(true);
 
-    if (!global_aggregate)
+    if (!measure_performance)
     {
-        //if not global aggregate, use ORDER BY clause
-        Select * osel = ts->release_sel();
-        SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();
-        nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(
-            osel);
-        nsel->mutable_orderby()->set_oall(true);
+        SelectIntoFile * sif = ts->mutable_intofile();
+
+        if (!global_aggregate)
+        {
+            //if not global aggregate, use ORDER BY clause
+            Select * osel = ts->release_sel();
+            SelectStatementCore * nsel = ts->mutable_sel()->mutable_select_core();
+            nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(
+                osel);
+            nsel->mutable_orderby()->set_oall(true);
+        }
+        ts->set_format(OutFormat::OUT_CSV);
+        sif->set_path(qfile.generic_string());
+        sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
     }
-    ts->set_format(OutFormat::OUT_CSV);
-    sif->set_path(qfile.generic_string());
-    sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
 void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen)
@@ -491,7 +497,7 @@ void QueryOracle::truncatePeerTables(const StatementGenerator & gen) const
     }
 }
 
-void QueryOracle::optimizePeerTables(const StatementGenerator & gen, const bool measure_performance) const
+void QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
 {
     for (const auto & entry : found_tables)
     {
@@ -513,11 +519,11 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    if (this->peer_query == PeerQuery::AllPeers)
+    if (peer_query == PeerQuery::AllPeers)
     {
         findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().select().sel()), gen);
     }
-    else if (this->peer_query == PeerQuery::ClickHouseOnly)
+    else if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         SelectIntoFile & sif = const_cast<SelectIntoFile &>(sq2.inner_query().select().intofile());
         sif.set_path(qfile_peer.generic_string());
@@ -553,8 +559,9 @@ void QueryOracle::replaceQueryWithTablePeers(
 void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
-    first_success = second_sucess = other_steps_sucess = can_test_query_success = true;
-    this->query_duration_ms1 = this->memory_usage1 = this->query_duration_ms2 = this->memory_usage2 = 0;
+    measure_performance = false;
+    first_success = other_steps_sucess = can_test_query_success = true;
+    query_duration_ms1 = memory_usage1 = query_duration_ms2 = memory_usage2 = 0;
 }
 
 void QueryOracle::setIntermediateStepSuccess(const bool success)
@@ -562,39 +569,32 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
     other_steps_sucess &= success;
 }
 
-void QueryOracle::processFirstOracleQueryResult(const bool success, const bool measure_performance, ExternalIntegrations & ei)
+void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalIntegrations & ei)
 {
     if (success)
     {
-        md5_hash1.hashFile(qfile.generic_string(), first_digest);
         if (measure_performance)
         {
             ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
+        }
+        else
+        {
+            md5_hash1.hashFile(qfile.generic_string(), first_digest);
         }
     }
     first_success = success;
 }
 
-void QueryOracle::processSecondOracleQueryResult(
-    const bool success, const bool measure_performance, ExternalIntegrations & ei, const String & oracle_name)
+void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalIntegrations & ei, const String & oracle_name)
 {
-    if (success)
-    {
-        md5_hash2.hashFile((this->peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qfile).generic_string(), second_digest);
-    }
-    second_sucess = success;
     if (other_steps_sucess)
     {
-        if (can_test_query_success && first_success != second_sucess)
+        if (can_test_query_success && first_success != success)
         {
             throw std::runtime_error(fmt::format("{}: failed with different success results", oracle_name));
         }
-        if (first_success && second_sucess)
+        if (first_success && success)
         {
-            if (first_digest != second_digest)
-            {
-                throw std::runtime_error(fmt::format("{}: failed with different result sets", oracle_name));
-            }
             if (measure_performance)
             {
                 ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2);
@@ -615,6 +615,14 @@ void QueryOracle::processSecondOracleQueryResult(
                         oracle_name,
                         std::to_string(this->memory_usage1),
                         std::to_string(this->memory_usage2)));
+                }
+            }
+            else
+            {
+                md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qfile).generic_string(), second_digest);
+                if (first_digest != second_digest)
+                {
+                    throw std::runtime_error(fmt::format("{}: failed with different result sets", oracle_name));
                 }
             }
         }

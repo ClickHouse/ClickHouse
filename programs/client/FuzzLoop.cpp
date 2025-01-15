@@ -613,7 +613,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    qo.processFirstOracleQueryResult(!have_error, false, ei);
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     sq2.Clear();
                     full_query.resize(0);
@@ -621,7 +621,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    qo.processSecondOracleQueryResult(!have_error, false, ei, "Correctness query");
+                    qo.processSecondOracleQueryResult(!have_error, ei, "Correctness query");
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
@@ -638,7 +638,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    qo.processFirstOracleQueryResult(!have_error, false, ei);
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     sq3.Clear();
                     full_query.resize(0);
@@ -650,7 +650,7 @@ bool Client::buzzHouse()
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    qo.processSecondOracleQueryResult(!have_error, false, ei, "Multi setting query");
+                    qo.processSecondOracleQueryResult(!have_error, ei, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
@@ -663,7 +663,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    qo.processFirstOracleQueryResult(!have_error, false, ei);
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     sq2.Clear();
                     qo.generateExportQuery(rg, gen, t, sq2);
@@ -690,7 +690,7 @@ bool Client::buzzHouse()
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    qo.processSecondOracleQueryResult(!have_error, false, ei, "Dump and read table");
+                    qo.processSecondOracleQueryResult(!have_error, ei, "Dump and read table");
                 }
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
@@ -717,13 +717,13 @@ bool Client::buzzHouse()
                         server_up &= processBuzzHouseQuery(full_query2);
                         qo.setIntermediateStepSuccess(!have_error);
                     }
-                    qo.optimizePeerTables(gen, clickhouse_only);
+                    qo.optimizePeerTables(gen);
 
                     full_query.resize(0);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    qo.processFirstOracleQueryResult(!have_error, clickhouse_only, ei);
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     full_query2.resize(0);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
@@ -737,7 +737,7 @@ bool Client::buzzHouse()
                         server_up &= processBuzzHouseQuery(full_query2);
                         has_success = !have_error;
                     }
-                    qo.processSecondOracleQueryResult(has_success, clickhouse_only, ei, "Peer table query");
+                    qo.processSecondOracleQueryResult(has_success, ei, "Peer table query");
                 }
                 else if (run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query + 1))
                 {

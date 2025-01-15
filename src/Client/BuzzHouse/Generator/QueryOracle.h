@@ -18,7 +18,7 @@ private:
     uint64_t query_duration_ms1 = 0, memory_usage1 = 0, query_duration_ms2 = 0, memory_usage2 = 0;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, second_sucess = true, other_steps_sucess = true, can_test_query_success = true;
+    bool first_success = true, other_steps_sucess = true, can_test_query_success = true, measure_performance = false;
 
     String buf;
     std::unordered_set<uint32_t> found_tables;
@@ -35,8 +35,8 @@ public:
 
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);
-    void processFirstOracleQueryResult(bool success, bool measure_performance, ExternalIntegrations & ei);
-    void processSecondOracleQueryResult(bool success, bool measure_performance, ExternalIntegrations & ei, const String & oracle_name);
+    void processFirstOracleQueryResult(bool success, ExternalIntegrations & ei);
+    void processSecondOracleQueryResult(bool success, ExternalIntegrations & ei, const String & oracle_name);
 
     /* Correctness query oracle */
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
@@ -55,7 +55,7 @@ public:
 
     /* Replace query with peer tables */
     void truncatePeerTables(const StatementGenerator & gen) const;
-    void optimizePeerTables(const StatementGenerator & gen, bool measure_performance) const;
+    void optimizePeerTables(const StatementGenerator & gen) const;
     void replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
