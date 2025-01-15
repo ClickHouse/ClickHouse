@@ -639,16 +639,37 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         table_function=True,
         run_on_cluster=True,
     )
+    query_id_cluster = str(uuid.uuid4())
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+        instance.query(
+            f"SELECT * FROM {table_function_expr_cluster}", query_id=query_id_cluster
+        )
+        .strip()
+        .split()
+    )
+
+    # Cluster Query with node1 as coordinator with alternative syntax
+    query_id_cluster_alt_syntax = str(uuid.uuid4())
+    select_cluster_alt_syntax = (
+        instance.query(
+            f"""
+            SELECT * FROM {table_function_expr}
+            SETTINGS object_storage_cluster_function_cluster='cluster_simple'
+            """,
+            query_id=query_id_cluster_alt_syntax,
+        )
+        .strip()
+        .split()
     )
 
     # Simple size check
     assert len(select_regular) == 600
     assert len(select_cluster) == 600
+    assert len(select_cluster_alt_syntax) == 600
 
     # Actual check
     assert select_cluster == select_regular
+    assert select_cluster_alt_syntax == select_regular
 
     # Check query_log
     for replica in started_cluster.instances.values():
@@ -660,11 +681,29 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
                 f"""
                 SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
                 WHERE
-                    type = 'QueryStart' AND
-                    positionCaseInsensitive(query, '{storage_type}Cluster') != 0 AND
-                    position(query, '{TABLE_NAME}') != 0 AND
-                    position(query, 'system.query_log') = 0 AND
-                    NOT is_initial_query
+                    type = 'QueryStart'
+                    AND NOT is_initial_query
+                    AND initial_query_id='{query_id_cluster}'
+            """
+            )
+            .strip()
+            .split("\n")
+        )
+
+        logging.info(
+            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
+        )
+        assert len(cluster_secondary_queries) == 1
+
+    for node_name, replica in started_cluster.instances.items():
+        cluster_secondary_queries = (
+            replica.query(
+                f"""
+                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
+                WHERE
+                    type = 'QueryStart'
+                    AND NOT is_initial_query
+                    AND initial_query_id='{query_id_cluster_alt_syntax}'
             """
             )
             .strip()

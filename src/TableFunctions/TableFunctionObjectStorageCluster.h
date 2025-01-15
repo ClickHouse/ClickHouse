@@ -10,8 +10,6 @@ namespace DB
 
 class Context;
 
-class StorageS3Settings;
-class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
 
