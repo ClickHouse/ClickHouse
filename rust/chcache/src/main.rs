@@ -323,6 +323,15 @@ async fn compiler_cache_entrypoint(config: &Config) {
 
     trace!("Args: {:?}", rest_of_args);
 
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap()
+        .trim_end_matches('/')
+        .to_string();
+    trace!("Current working directory: {}", cwd);
+
     let assumed_base_path = assume_base_path(&rest_of_args);
     trace!("Assumed base path: {}", assumed_base_path);
 
@@ -330,6 +339,11 @@ async fn compiler_cache_entrypoint(config: &Config) {
     trace!("Is private: {}", is_private);
 
     let stripped_args = rest_of_args
+        .iter()
+        .map(|x| x.replace(&cwd, "/"))
+        .collect::<Vec<String>>();
+
+    let stripped_args = stripped_args
         .iter()
         .map(|x| x.replace(&assumed_base_path, "/"))
         .collect::<Vec<String>>();
