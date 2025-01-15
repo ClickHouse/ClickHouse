@@ -54,10 +54,12 @@ materialize(toDateTime('2023-10-01 12:00:00')) - materialize(toDateTime64('2023-
 
 -- Test overflow
 SELECT
-toDateTime64('2299-12-31 23:59:59.99999999', 9) - toDateTime64('1900-01-01 00:00:00', 0); -- { serverError DECIMAL_OVERFLOW }
+materialize(toDateTime64('2262-04-11 23:47:16', 9)) - toDateTime64('1900-01-01 00:00:00', 9) FORMAT Null; -- { serverError DECIMAL_OVERFLOW }
 
 SELECT
-materialize(toDateTime64('2262-04-11 23:47:16', 8)) - toDateTime64('1900-01-01 00:00:00', 9); -- { serverError DECIMAL_OVERFLOW }
+materialize(toDateTime64('1900-01-01 00:00:00', 0)) - materialize(toDateTime64('2262-04-11 23:47:16', 9)); -- { serverError DECIMAL_OVERFLOW }
 
 SELECT
-materialize(toDateTime64('1900-01-01 00:00:00', 0)) -  materialize(toDateTime64('2299-12-31 23:59:59.99999999', 9)); -- { serverError DECIMAL_OVERFLOW }
+materialize(toDateTime64('2262-04-11 23:47:16', 9)) - toDateTime64('1900-01-01 00:00:00', 9),
+materialize(toDateTime64('1900-01-01 00:00:00', 0)) - materialize(toDateTime64('2262-04-11 23:47:16', 9))
+SETTINGS decimal_check_overflow=0 FORMAT Null;

@@ -1193,7 +1193,8 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeDateTime64Subtraction(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                            size_t input_row_count) const
     {
-        using OpImpl = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ true>;
+        using OpImplCheck = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ true>;
+        using OpImpl = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ false>;
         using ColumnDateTime64 = DataTypeDateTime64::ColumnType;
         using ColumnDateTime = DataTypeDateTime::ColumnType;
 
@@ -1264,7 +1265,8 @@ class FunctionBinaryArithmetic : public IFunction
         // Handle constant values
         if (cols[0].is_const && cols[1].is_const)
         {
-            auto res = OpImpl::template process<true, true>(cols[0].const_val, cols[1].const_val, cols[0].scale, cols[1].scale);
+            auto res = helperInvokeEither</* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck, Decimal64>(
+                cols[0].const_val, cols[1].const_val, cols[0].scale, cols[1].scale);
             return type->createColumnConst(input_row_count, toField(res, type->getScale()));
         }
 
@@ -1274,18 +1276,18 @@ class FunctionBinaryArithmetic : public IFunction
         /// Process based on whether the column is constant or not
         if (cols[0].is_const)
         {
-            OpImpl::template process<OpCase::LeftConstant, true, true>(cols[0].const_val, cols[1].col->getData(),
-                                                                       vec_res, cols[0].scale, cols[1].scale);
+            helperInvokeEither<OpCase::LeftConstant, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
+                cols[0].const_val, cols[1].col->getData(), vec_res, cols[0].scale, cols[1].scale, nullptr);
         }
         else if (cols[1].is_const)
         {
-            OpImpl::template process<OpCase::RightConstant, true, true>(cols[0].col->getData(), cols[1].const_val,
-                                                                        vec_res, cols[0].scale, cols[1].scale);
+            helperInvokeEither<OpCase::RightConstant, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
+                cols[0].col->getData(), cols[1].const_val, vec_res, cols[0].scale, cols[1].scale, nullptr);
         }
         else
         {
-            OpImpl::template process<OpCase::Vector, true, true>(cols[0].col->getData(), cols[1].col->getData(),
-                                                                 vec_res, cols[0].scale, cols[1].scale);
+            helperInvokeEither<OpCase::Vector, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
+                cols[0].col->getData(), cols[1].col->getData(), vec_res, cols[0].scale, cols[1].scale, nullptr);
         }
 
         return col_res;
@@ -1488,6 +1490,16 @@ class FunctionBinaryArithmetic : public IFunction
             OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
     }
 
+    template <bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck, typename ResultType, typename A, typename B>
+    ResultType helperInvokeEither(A a, B b, auto scale_a, auto scale_b) const
+        requires(!is_decimal<A> && !is_decimal<B>)
+    {
+        if (check_decimal_overflow)
+            return OpImplCheck::template process<left_decimal, right_decimal>(a, b, scale_a, scale_b);
+        else
+            return OpImpl::template process<left_decimal, right_decimal>(a, b, scale_a, scale_b);
+    }
+
     template <class LeftDataType, class RightDataType, class ResultDataType>
     ColumnPtr executeNumericWithDecimal(
         const auto & left, const auto & right,
@@ -1547,9 +1559,10 @@ class FunctionBinaryArithmetic : public IFunction
 
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
-                res = check_decimal_overflow
-                    ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
-                    : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
+            {
+                res = helperInvokeEither<left_is_decimal, right_is_decimal, OpImpl, OpImplCheck, ResultType>(
+                     const_a, const_b, scale_a, scale_b);
+            }
 
             return ResultDataType(type.getPrecision(), type.getScale())
                 .createColumnConst(col_left_const->size(), toField(res, type.getScale()));
