@@ -174,8 +174,8 @@ bool ReadBufferFromS3::nextImpl()
     offset += working_buffer.size();
 
     // release result if possible to free pooled HTTP session for better reuse
-    bool isReadUntilPosition = read_until_position && read_until_position == offset;
-    if (impl->isStreamEof() || isReadUntilPosition)
+    bool is_read_until_position = read_until_position && read_until_position == offset;
+    if (impl->isStreamEof() || is_read_until_position)
         impl->releaseResult();
 
     if (read_settings.remote_throttler)

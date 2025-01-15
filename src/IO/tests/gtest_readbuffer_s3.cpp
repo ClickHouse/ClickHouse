@@ -30,7 +30,8 @@ class StringHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
 {
 public:
     explicit StringHTTPBasicStreamBuf(std::string body) : BasicBufferedStreamBuf(body.size(), IOS::in), bodyStream(std::stringstream(body))
-    {}
+    {
+    }
 
 private:
     std::stringstream bodyStream;
@@ -55,21 +56,22 @@ struct ClientFake : DB::S3::Client
                   "test_region", DB::RemoteHostFilter(), 1, 0, true, false, {}, {}, "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())
-    {}
+    {
+    }
 
     std::optional<GetObjectFn> getObjectImpl;
 
     void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::streambuf * sb)
     {
-        std::weak_ptr weakSessionPtr = session;
+        std::weak_ptr weak_session_ptr = session;
         getObjectImpl
-            = [weakSessionPtr, sb]([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+            = [weak_session_ptr, sb]([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
         {
-            auto responseStream = Aws::Utils::Stream::ResponseStream(
-                Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", weakSessionPtr.lock(), sb));
-            Aws::AmazonWebServiceResult awsStream(std::move(responseStream), Aws::Http::HeaderValueCollection());
-            DB::S3::Model::GetObjectResult getObjectResult(std::move(awsStream));
-            return DB::S3::Model::GetObjectOutcome(std::move(getObjectResult));
+            auto response_stream = Aws::Utils::Stream::ResponseStream(
+                Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", weak_session_ptr.lock(), sb));
+            Aws::AmazonWebServiceResult aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
+            DB::S3::Model::GetObjectResult result(std::move(aws_result));
+            return DB::S3::Model::GetObjectOutcome(std::move(result));
         };
     }
 
@@ -96,8 +98,8 @@ TEST(ReadBufferFromS3Test, RetainsSessionWhenPending)
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), readSettings);
 
     auto session = std::make_shared<CountedSession>();
-    auto streamBuf = std::make_shared<StringHTTPBasicStreamBuf>("123456789");
-    client->setGetObjectSuccess(session, streamBuf.get());
+    auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("123456789");
+    client->setGetObjectSuccess(session, stream_buf.get());
 
     readAndAssert(subject, "123");
 
@@ -116,8 +118,8 @@ TEST(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), readSettings);
 
     auto session = std::make_shared<CountedSession>();
-    const auto streamBuf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
-    client->setGetObjectSuccess(session, streamBuf.get());
+    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
+    client->setGetObjectSuccess(session, stream_buf.get());
 
     readAndAssert(subject, "1234");
 
@@ -136,8 +138,8 @@ TEST(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), readSettings);
 
     auto session = std::make_shared<CountedSession>();
-    const auto streamBuf = std::make_shared<StringHTTPBasicStreamBuf>("123456");
-    client->setGetObjectSuccess(session, streamBuf.get());
+    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("123456");
+    client->setGetObjectSuccess(session, stream_buf.get());
 
     subject.setReadUntilPosition(4);
     readAndAssert(subject, "1234");
