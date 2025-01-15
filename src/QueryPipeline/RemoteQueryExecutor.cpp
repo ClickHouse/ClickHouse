@@ -561,6 +561,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
+        read_context->resume();
+        if (read_context->isInProgress())
+            return ReadResult(read_context->getFileDescriptor());
 
         auto read_result = processPacket(read_context->getPacket());
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
@@ -989,13 +992,12 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
         recreate_read_context = false;
     }
 
-    // if not in processing current packet, read only packet type first
-    if (!packet_in_progress)
-        read_context->readOnlyPacketTypeNext();
-
     read_context->resume();
     if (read_context->isInProgress()) // <- nothing to process
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No packet type received yet");
         return false;
+    }
 
     packet_in_progress = true;
 
@@ -1005,9 +1007,12 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
     if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
     {
         // resume reading packet
-        // read_context->resume();
-        // if (!read_context->isInProgress()) // data is not arrived yet
-        //     return false;
+        read_context->resume();
+        if (read_context->isInProgress()) // data is not arrived yet
+        {
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No data yet. Packet type = {}", Protocol::Server::toString(packet_type));
+            return false;
+        }
 
         packet_in_progress = false;
         processPacket(read_context->getPacket());

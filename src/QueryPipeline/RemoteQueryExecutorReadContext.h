@@ -37,11 +37,9 @@ public:
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
-    Packet getPacket() { return std::move(packet); }
+    Packet getPacket();
 
-    UInt64 getPacketType() const { return packet.type; }
-
-    void readOnlyPacketTypeNext() { read_only_packet_type_next = true; }
+    UInt64 getPacketType();
 
 private:
     bool checkTimeout(bool blocking = false);
@@ -63,10 +61,9 @@ private:
         void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
-    std::atomic_bool read_only_packet_type_next = false;
-
     std::atomic_bool is_in_progress = false;
-    Packet packet;
+    std::optional<Packet> packet;
+    std::optional<UInt64> packet_type;
 
     RemoteQueryExecutor & executor;
 

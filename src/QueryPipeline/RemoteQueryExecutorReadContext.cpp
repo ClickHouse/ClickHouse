@@ -1,3 +1,5 @@
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #if defined(OS_LINUX)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -47,20 +49,21 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
 
     while (true)
     {
-        if (read_context.read_only_packet_type_next)
-        {
-            read_context.read_only_packet_type_next = false;
-            read_context.packet.type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
-        }
-        else
-            read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
+        read_context.packet_type.reset();
+        read_context.packet.reset();
 
+        read_context.packet_type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+        suspend_callback();
+        read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
         suspend_callback();
     }
 }
 
-void RemoteQueryExecutorReadContext::processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
+void RemoteQueryExecutorReadContext::processAsyncEvent(
+    int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
+
     connection_fd = fd;
     epoll.add(connection_fd, events);
     timeout = socket_timeout;
@@ -156,6 +159,28 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
         [[maybe_unused]] int err = close(pipe_fd[1]);
         chassert(!err || errno == EINTR);
     }
+}
+
+
+UInt64 RemoteQueryExecutorReadContext::getPacketType()
+{
+    // if (!packet_type)
+    //     resume();
+    // chassert(!isInProgress());
+
+    return packet_type.value();
+}
+
+Packet RemoteQueryExecutorReadContext::getPacket()
+{
+    // if (!packet)
+    //     resume();
+    // chassert(!isInProgress());
+
+    Packet p{std::move(packet.value())};
+    packet.reset();
+    packet_type.reset();
+    return p;
 }
 
 }
