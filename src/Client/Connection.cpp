@@ -12,7 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include "Common/logger_useful.h"
