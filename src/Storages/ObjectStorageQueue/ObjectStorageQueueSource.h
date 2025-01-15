@@ -87,11 +87,12 @@ public:
         bool recursive{false};
 
         Source::ObjectInfos object_infos;
+        std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
-        Source::ObjectInfoPtr next();
+        std::pair<Source::ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(Source::ObjectInfos & objects);
         void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
