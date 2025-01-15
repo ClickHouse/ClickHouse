@@ -2549,11 +2549,11 @@ strncmp(a_str, a_offset, b_str, b_offset, n);
 ```
 
 **Arguments**
-- `a_str` — The string to be compared.
-- `a_offset` — Compare `a_str` from offset `a_offset`
-- `b_str` — The other string to be compared.
-- `b_offset` — Compare `b_str` from offset `b_offset`
-- `n` Compare `n` bytes in `a_str` and `b_str`.
+- `a_str` — The first string to compare.
+- `a_offset` — The starting position (zero-based index) in `a_str` from which the comparison begins.
+- `b_str` — The second string to compare.
+- `b_offset` — The starting position (zero-based index) in `b_str` from which the comparison begins.
+- `n` — The number of bytes to compare in both strings, starting from their respective offsets.
 
 **Returned value**
 - -1 — If `a_str`[`a_offset`: `a_offset` + `n`] < `b_str`[`b_offset`:`b_offset` + `n`].

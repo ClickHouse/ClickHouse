@@ -20,8 +20,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 // usage:
@@ -50,64 +50,68 @@ public:
         auto compare_result_column = ColumnInt8::create();
         compare_result_column->getData().resize(arguments[0].column->size());
 
-        auto a_col = arguments[0].column;
-        a_col = recursiveRemoveSparse(a_col->convertToFullColumnIfLowCardinality());
-        const auto * a_string = checkAndGetColumn<ColumnString>(a_col.get());
-        const auto * a_fixed_string = checkAndGetColumn<ColumnFixedString>(a_col.get());
-        const auto * a_const_string = checkAndGetColumn<ColumnConst>(a_col.get());
+        auto first_str_col = arguments[0].column;
+        first_str_col = recursiveRemoveSparse(first_str_col->convertToFullColumnIfLowCardinality());
+        const auto * first_string = checkAndGetColumn<ColumnString>(first_str_col.get());
+        const auto * first_fixed_string = checkAndGetColumn<ColumnFixedString>(first_str_col.get());
+        const auto * first_const_string = checkAndGetColumn<ColumnConst>(first_str_col.get());
 
-        auto b_col = arguments[2].column;
-        b_col = recursiveRemoveSparse(b_col->convertToFullColumnIfLowCardinality());
-        const auto * b_string = checkAndGetColumn<ColumnString>(b_col.get());
-        const auto * b_fixed_string = checkAndGetColumn<ColumnFixedString>(b_col.get());
-        const auto * b_const_string = checkAndGetColumn<ColumnConst>(b_col.get());
+        auto second_str_col = arguments[2].column;
+        second_str_col = recursiveRemoveSparse(second_str_col->convertToFullColumnIfLowCardinality());
+        const auto * second_string = checkAndGetColumn<ColumnString>(second_str_col.get());
+        const auto * second_fixed_string = checkAndGetColumn<ColumnFixedString>(second_str_col.get());
+        const auto * second_const_string = checkAndGetColumn<ColumnConst>(second_str_col.get());
 
-        auto offset_a = arguments[1].column->getUInt(0);
-        auto offset_b = arguments[3].column->getUInt(0);
-        auto n = arguments[4].column->getUInt(0);
+        auto first_offset = arguments[1].column->getUInt(0);
+        auto second_offset = arguments[3].column->getUInt(0);
+        auto bytes = arguments[4].column->getUInt(0);
 
         auto & result = compare_result_column->getData();
 
-        if (a_string && b_const_string)
+        if (first_string && second_const_string)
         {
-            executeStringWithConst<true>(*a_string, offset_a, String(b_const_string->getDataAt(0)), offset_b, n, result);
+            executeStringWithConstString<true>(
+                *first_string, first_offset, String(second_const_string->getDataAt(0)), second_offset, bytes, result);
         }
-        else if (a_string && b_string)
+        else if (first_string && second_string)
         {
-            executeStringWithString(*a_string, offset_a, *b_string, offset_b, n, result);
+            executeStringWithString(*first_string, first_offset, *second_string, second_offset, bytes, result);
         }
-        else if (a_fixed_string && b_fixed_string)
+        else if (first_fixed_string && second_fixed_string)
         {
-            executeFixedStringFixedString(*a_fixed_string, offset_a, *b_fixed_string, offset_b, n, result);
+            executeFixedStringWithFixedString(*first_fixed_string, first_offset, *second_fixed_string, second_offset, bytes, result);
         }
-        else if (a_fixed_string && b_string)
+        else if (first_fixed_string && second_string)
         {
-            executeFixedStringString<true>(*a_fixed_string, offset_a, *b_string, offset_b, n, result);
+            executeFixedStringWithString<true>(*first_fixed_string, first_offset, *second_string, second_offset, bytes, result);
         }
-        else if (a_string && b_fixed_string)
+        else if (first_string && second_fixed_string)
         {
-            executeFixedStringString<false>(*b_fixed_string, offset_b, *a_string, offset_a, n, result);
+            executeFixedStringWithString<false>(*second_fixed_string, second_offset, *first_string, first_offset, bytes, result);
         }
-        else if (a_const_string && b_string)
+        else if (first_const_string && second_string)
         {
-            executeStringWithConst<false>(*b_string, offset_b, String(a_const_string->getDataAt(0)), offset_a, n, result);
+            executeStringWithConstString<false>(
+                *second_string, second_offset, String(first_const_string->getDataAt(0)), first_offset, bytes, result);
         }
-        else if (a_fixed_string && b_const_string)
+        else if (first_fixed_string && second_const_string)
         {
-            executeFixedStringConst<true>(*a_fixed_string, offset_a, String(b_const_string->getDataAt(0)), offset_b, n, result);
+            executeFixedStringWithConst<true>(
+                *first_fixed_string, first_offset, String(second_const_string->getDataAt(0)), second_offset, bytes, result);
         }
-        else if (b_fixed_string && a_const_string)
+        else if (second_fixed_string && first_const_string)
         {
-            executeFixedStringConst<false>(*b_fixed_string, offset_b, String(a_const_string->getDataAt(0)), offset_a, n, result);
+            executeFixedStringWithConst<false>(
+                *second_fixed_string, second_offset, String(first_const_string->getDataAt(0)), first_offset, bytes, result);
         }
-        else if (a_const_string && b_const_string)
+        else if (first_const_string && second_const_string)
         {
-            executeConstConst(
-                String(a_const_string->getDataAt(0)),
-                offset_a,
-                String(b_const_string->getDataAt(0)),
-                offset_b,
-                n,
+            executeConstWithConst(
+                String(first_const_string->getDataAt(0)),
+                first_offset,
+                String(second_const_string->getDataAt(0)),
+                second_offset,
+                bytes,
                 arguments[0].column->size(),
                 result);
         }
@@ -116,8 +120,8 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal columns {} and {} of arguments of function {}",
-                a_col->getName(),
-                b_col->getName(),
+                first_str_col->getName(),
+                second_str_col->getName(),
                 getName());
         }
         return std::move(compare_result_column);
@@ -131,55 +135,58 @@ private:
 
         if (!WhichDataType(args[0].type).isStringOrFixedString())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Function {}'s 1st argument must be a string, but got {}.", getName(), args[0].type->getName());
+                ErrorCodes::BAD_ARGUMENTS,
+                "The first argument of function {} must be a string, but got {}.",
+                getName(),
+                args[0].type->getName());
 
         if (!WhichDataType(args[1].type).isNativeUInt() || !args[1].column->isConst())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function {}'s 2nd argument must be a constant integer, but got {}.",
+                "The second argument of function {} must be a constant non-negative, but got {}.",
                 getName(),
                 args[1].column->getName());
 
         if (!WhichDataType(args[2].type).isStringOrFixedString())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function {}'s 3rd argument must be a string, but got {}.",
+                "The third argument of function {} must be a string, but got {}.",
                 getName(),
                 args[2].column->getName());
 
         if (!WhichDataType(args[3].type).isNativeUInt() || !args[3].column->isConst())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function {}'s 4th argument must be a constant integer, but got {}.",
+                "The fourth argument of function {} must be a constant non-negative, but got {}.",
                 getName(),
                 args[3].column->getName());
 
         if (!WhichDataType(args[4].type).isNativeUInt() || !args[4].column->isConst())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Function {}'s 5th argument must be a constant integer, but got {}.",
+                "The fifth argument of function {} must be a constant non-negative, but got {}.",
                 getName(),
                 args[4].column->getName());
     }
 
-    template <bool positive = true>
-    static Int8 compareStrings(const char * a, size_t a_len, const char * b, size_t b_len)
+    template <bool positive>
+    static Int8 normalComparison(const char * first_str, size_t first_str_len, const char * second_str, size_t second_str_len)
     {
         if constexpr (positive)
-            return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(a, a_len, b, b_len));
+            return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(first_str, first_str_len, second_str, second_str_len));
         else
-            return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(b, a_len, a, b_len));
+            return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(second_str, second_str_len, first_str, first_str_len));
     }
 
-    template <bool positive = true>
-    static bool compareOverflowStrings(size_t a_str_len, size_t offset_a, size_t b_str_len, size_t offset_b, size_t n, Int8 & result)
+    template <bool positive>
+    static bool isOverflowComparison(size_t first_str_len, size_t first_offset, size_t second_str_len, size_t second_offset, Int8 & result)
     {
-        if (offset_a >= a_str_len && offset_b >= b_str_len)
+        if (first_offset >= first_str_len && second_offset >= second_str_len)
         {
             result = 0;
             return true;
         }
-        else if (offset_a >= a_str_len)
+        else if (first_offset >= first_str_len)
         {
             if constexpr (positive)
                 result = -1;
@@ -187,7 +194,7 @@ private:
                 result = 1;
             return true;
         }
-        else if (offset_b >= b_str_len)
+        else if (second_offset >= second_str_len)
         {
             if constexpr (positive)
                 result = 1;
@@ -198,18 +205,18 @@ private:
         return false;
     }
 
-    template <bool positive = true>
-    static bool compareOverflowStrings(
-        size_t a_str_len, size_t offset_a, size_t b_str_len, size_t offset_b, size_t n, PaddedPODArray<Int8> & result, size_t rows)
+    template <bool positive>
+    static bool isOverflowComparison(
+        size_t first_str_len, size_t first_offset, size_t second_str_len, size_t scond_offset, PaddedPODArray<Int8> & result, size_t rows)
     {
         bool is_overflow = false;
         Int8 res = 0;
-        if (offset_a >= a_str_len && offset_b >= b_str_len)
+        if (first_offset >= first_str_len && scond_offset >= second_str_len)
         {
             res = 0;
             is_overflow = true;
         }
-        else if (offset_a >= a_str_len)
+        else if (first_offset >= first_str_len)
         {
             if constexpr (positive)
                 res = -1;
@@ -217,7 +224,7 @@ private:
                 res = 1;
             is_overflow = true;
         }
-        else if (offset_b >= b_str_len)
+        else if (scond_offset >= second_str_len)
         {
             if constexpr (positive)
                 res = 1;
@@ -229,239 +236,181 @@ private:
             result[i] = res;
         return is_overflow;
     }
-    template <bool positive = true>
-    void executeStringWithConst(
-        const ColumnString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int8> & result) const
-    {
-        const auto & a_strs_data = a_strs.getChars();
-        const auto & a_offsets = a_strs.getOffsets();
-        size_t prev_a_offset = 0;
-        auto b_len = offset_b >= b_str.size() ? 0 : std::min(n, b_str.size() - offset_b);
-        for (size_t i = 0, size = a_strs.size(); i < size; ++i)
-        {
-            const auto * a_str = a_strs_data.data() + prev_a_offset + offset_a;
-            size_t a_str_len = a_offsets[i] - prev_a_offset - 1;
-            if (comapareOverflowStrings<positive>(a_str_len, offset_a, b_str.size(), offset_b, n, result[i]))
-                continue;
-            result[i] = compareStrings<positive>(
-                reinterpret_cast<const char *>(a_str), std::min(n, a_str_len - offset_a), b_str.data() + offset_b, b_n);
 
-            prev_a_offset = a_offsets[i];
+    template <bool positive = true>
+    void executeStringWithConstString(
+        const ColumnString & first_strs,
+        size_t first_offset,
+        const String & second_str,
+        size_t second_offset,
+        size_t bytes,
+        PaddedPODArray<Int8> & result) const
+    {
+        const auto & first_strs_data = first_strs.getChars();
+        const auto & first_offsets = first_strs.getOffsets();
+        size_t prev_first_offset = 0;
+        auto second_str_bytes = second_offset >= second_str.size() ? 0 : std::min(bytes, second_str.size() - second_offset);
+        for (size_t i = 0, size = first_strs.size(); i < size; ++i)
+        {
+            size_t first_str_len = first_offsets[i] - prev_first_offset - 1;
+            if (!isOverflowComparison<positive>(first_str_len, first_offset, second_str.size(), second_offset, result[i]))
+            {
+                const auto * first_str = first_strs_data.data() + prev_first_offset + first_offset;
+                result[i] = normalComparison<positive>(
+                    reinterpret_cast<const char *>(first_str),
+                    std::min(bytes, first_str_len - first_offset),
+                    second_str.data() + second_offset,
+                    second_str_bytes);
+            }
+
+            prev_first_offset = first_offsets[i];
         }
     }
 
     template <bool positive = true>
-    void executeFixedStringConst(
-        const ColumnFixedString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int8> & result)
-        const
+    void executeFixedStringWithConst(
+        const ColumnFixedString & first_strs,
+        size_t first_offset,
+        const String & second_str,
+        size_t second_offset,
+        size_t bytes,
+        PaddedPODArray<Int8> & result) const
     {
-        size_t a_str_len = a_strs.getN();
-        if (a_str_len <= offset_a && b_str.size() <= offset_b) [[unlikely]]
-        {
-            for (size_t i = 0; i < a_strs.size(); ++i)
-                result[i] = 0;
-        }
-        else if (a_str_len <= offset_a) [[unlikely]]
-        {
-            for (size_t i = 0; i < a_strs.size(); ++i)
-            {
-                if constexpr (positive)
-                    result[i] = -1;
-                else
-                    result[i] = 1;
-            }
-        }
-        else if (b_str.size() <= offset_b) [[unlikely]]
-        {
-            for (size_t i = 0; i < a_strs.size(); ++i)
-            {
-                if constexpr (positive)
-                    result[i] = 1;
-                else
-                    result[i] = -1;
-            }
-        }
-        else
-        {
-            const auto & a_strs_data = a_strs.getChars();
-            auto a_n = std::min(n, a_str_len - offset_a);
-            auto b_n = std::min(n, b_str.size() - offset_b);
-            const char * b_str_p = b_str.data() + offset_b;
-            for (size_t i = 0; i < a_strs.size(); ++i)
-            {
-                const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
+        size_t rows = first_strs.size();
+        size_t first_str_len = first_strs.getN();
+        if (isOverflowComparison<positive>(first_str_len, first_offset, second_str.size(), second_offset, result, rows))
+            return;
 
-                if constexpr (positive)
-                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(reinterpret_cast<const char *>(a_str), a_n, b_str_p, b_n);
-                else
-                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(b_str_p, b_n, reinterpret_cast<const char *>(a_str), a_n);
-            }
+        const auto & first_strs_data = first_strs.getChars();
+        auto first_str_bytes = std::min(bytes, first_str_len - first_offset);
+        auto second_str_bytes = std::min(bytes, second_str.size() - second_offset);
+        const char * second_str_p = second_str.data() + second_offset;
+        for (size_t i = 0; i < first_strs.size(); ++i)
+        {
+            const auto * first_str = reinterpret_cast<const char *>(first_strs_data.data() + i * first_str_len + first_offset);
+            result[i] = normalComparison<positive>(first_str, first_str_bytes, second_str_p, second_str_bytes);
         }
     }
 
     template <bool positive = true>
-    void executeFixedStringString(
-        const ColumnFixedString & a_strs,
-        size_t offset_a,
-        const ColumnString & b_strs,
-        size_t offset_b,
-        size_t n,
-        PaddedPODArray<Int32> & result) const
+    void executeFixedStringWithString(
+        const ColumnFixedString & fist_strs,
+        size_t first_offset,
+        const ColumnString & second_strs,
+        size_t second_offset,
+        size_t bytes,
+        PaddedPODArray<Int8> & result) const
     {
-        auto a_str_len = a_strs.getN();
-        const auto & a_strs_data = a_strs.getChars();
-        const auto & b_strs_data = b_strs.getChars();
-        const auto & b_offsets = b_strs.getOffsets();
-        ColumnString::Offset prev_b_offset = 0;
-        for (size_t i = 0, size = a_strs.size(); i < size; ++i)
+        auto first_str_len = fist_strs.getN();
+        const auto & first_strs_data = fist_strs.getChars();
+        const auto & second_strs_data = second_strs.getChars();
+        const auto & second_offsets = second_strs.getOffsets();
+        ColumnString::Offset prev_second_offset = 0;
+        for (size_t i = 0, rows = fist_strs.size(); i < rows; ++i)
         {
-            const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
-            auto a_n = std::min(n, a_str_len - offset_a);
-            const auto * b_str = b_strs_data.data() + prev_b_offset + offset_b;
-            size_t b_str_len = b_offsets[i] - prev_b_offset - 1;
-            if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
+            const auto * first_str = reinterpret_cast<const char *>(first_strs_data.data() + i * first_str_len + first_offset);
+            auto first_str_bytes = std::min(bytes, first_str_len - first_offset);
+            const auto * second_str = reinterpret_cast<const char *>(second_strs_data.data() + prev_second_offset + second_offset);
+            size_t second_str_len = second_offsets[i] - prev_second_offset - 1;
+            if (!isOverflowComparison<positive>(first_str_len, first_offset, second_str_len, second_offset, result[i]))
             {
-                result[i] = 0;
+                auto second_str_bytes = second_offset >= second_str_len ? 0 : std::min(bytes, second_str_len - second_offset);
+                result[i] = normalComparison<positive>(first_str, first_str_bytes, second_str, second_str_bytes);
             }
-            else if (offset_b >= b_str_len) [[unlikely]]
-            {
-                if constexpr (positive)
-                    result[i] = 1;
-                else
-                    result[i] = -1;
-            }
-            else if (offset_a >= a_str_len) [[unlikely]]
-            {
-                if constexpr (positive)
-                    result[i] = -1;
-                else
-                    result[i] = 1;
-            }
-            else
-            {
-                auto b_n = offset_b >= b_str_len ? 0 : std::min(n, b_str_len - offset_b);
-                if constexpr (positive)
-                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                        reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
-                else
-                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                        reinterpret_cast<const char *>(b_str), b_n, reinterpret_cast<const char *>(a_str), a_n);
-            }
-            prev_b_offset = b_offsets[i];
+
+            prev_second_offset = second_offsets[i];
         }
     }
 
     void executeStringWithString(
-        const ColumnString & a_strs,
-        size_t offset_a,
-        const ColumnString & b_strs,
-        size_t offset_b,
-        size_t n,
-        PaddedPODArray<Int32> & result) const
+        const ColumnString & fist_strs,
+        size_t first_offset,
+        const ColumnString & second_strs,
+        size_t second_offset,
+        size_t bytes,
+        PaddedPODArray<Int8> & result) const
     {
-        const auto & a_strs_data = a_strs.getChars();
-        const auto & a_offsets = a_strs.getOffsets();
-        const auto & b_strs_data = b_strs.getChars();
-        const auto & b_offsets = b_strs.getOffsets();
-        ColumnString::Offset prev_a_offset = 0;
-        ColumnString::Offset prev_b_offset = 0;
-        for (size_t i = 0, size = a_strs.size(); i < size; ++i)
+        const auto & first_strs_data = fist_strs.getChars();
+        const auto & first_offsets = fist_strs.getOffsets();
+        const auto & second_strs_data = second_strs.getChars();
+        const auto & second_offsets = second_strs.getOffsets();
+        ColumnString::Offset prev_first_offset = 0;
+        ColumnString::Offset prev_second_offset = 0;
+        for (size_t i = 0, size = fist_strs.size(); i < size; ++i)
         {
-            const auto * a_str = a_strs_data.data() + prev_a_offset + offset_a;
-            size_t a_str_len = a_offsets[i] - prev_a_offset - 1;
-            const auto * b_str = b_strs_data.data() + prev_b_offset + offset_b;
-            size_t b_str_len = b_offsets[i] - prev_b_offset - 1;
+            const auto * first_str = reinterpret_cast<const char *>(first_strs_data.data() + prev_first_offset + first_offset);
+            size_t first_str_len = first_offsets[i] - prev_first_offset - 1;
+            const auto * second_str = reinterpret_cast<const char *>(second_strs_data.data() + prev_second_offset + second_offset);
+            size_t second_str_len = second_offsets[i] - prev_second_offset - 1;
 
-            if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
+            if (!isOverflowComparison<true>(first_str_len, first_offset, second_str_len, second_offset, result[i]))
             {
-                result[i] = 0;
-            }
-            else if (offset_a >= a_str_len) [[unlikely]]
-            {
-                result[i] = -1;
-            }
-            else if (offset_b >= b_str_len) [[unlikely]]
-            {
-                result[i] = 1;
-            }
-            else
-            {
-                auto a_n = std::min(n, a_str_len - offset_a);
-                auto b_n = std::min(n, b_str_len - offset_b);
-                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                    reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
+                auto first_str_bytes = std::min(bytes, first_str_len - first_offset);
+                auto second_str_bytes = std::min(bytes, second_str_len - second_offset);
+                result[i] = normalComparison<true>(first_str, first_str_bytes, second_str, second_str_bytes);
             }
 
-            prev_a_offset = a_offsets[i];
-            prev_b_offset = b_offsets[i];
+            prev_first_offset = first_offsets[i];
+            prev_second_offset = second_offsets[i];
         }
     }
 
-    void executeFixedStringFixedString(
-        const ColumnFixedString & a_strs,
-        size_t offset_a,
-        const ColumnFixedString & b_strs,
-        size_t offset_b,
-        size_t n,
-        PaddedPODArray<Int32> & result) const
+    void executeFixedStringWithFixedString(
+        const ColumnFixedString & first_strs,
+        size_t first_offset,
+        const ColumnFixedString & second_strs,
+        size_t second_offset,
+        size_t bytes,
+        PaddedPODArray<Int8> & result) const
     {
-        size_t a_str_len = a_strs.getN();
-        size_t b_str_len = b_strs.getN();
-        if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
+        size_t rows = first_strs.size();
+        size_t first_str_len = first_strs.getN();
+        size_t second_str_len = second_strs.getN();
+        if (isOverflowComparison<true>(first_str_len, first_offset, second_str_len, second_offset, result, rows))
+            return;
+
+        const auto & first_strs_data = first_strs.getChars();
+        const auto & second_strs_data = second_strs.getChars();
+        auto first_str_bytes = std::min(bytes, first_str_len - first_offset);
+        auto second_str_bytes = std::min(bytes, second_str_len - second_offset);
+        for (size_t i = 0; i < rows; ++i)
         {
-            for (size_t i = 0; i < a_strs.size(); ++i)
-                result[i] = 0;
-        }
-        else if (offset_a >= a_str_len) [[unlikely]]
-        {
-            for (size_t i = 0; i < a_strs.size(); ++i)
-                result[i] = -1;
-        }
-        else if (offset_b >= b_str_len) [[unlikely]]
-        {
-            for (size_t i = 0; i < a_strs.size(); ++i)
-                result[i] = 1;
-        }
-        else
-        {
-            const auto & a_strs_data = a_strs.getChars();
-            const auto & b_strs_data = b_strs.getChars();
-            auto a_n = std::min(n, a_str_len - offset_a);
-            auto b_n = std::min(n, b_str_len - offset_b);
-            for (size_t i = 0, size = a_strs.size(); i < size; ++i)
-            {
-                const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
-                const auto * b_str = b_strs_data.data() + i * b_str_len + offset_b;
-                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                    reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
-            }
+            const auto * first_str = reinterpret_cast<const char *>(first_strs_data.data() + i * first_str_len + first_offset);
+            const auto * second_str = reinterpret_cast<const char *>(second_strs_data.data() + i * second_str_len + second_offset);
+            result[i] = normalComparison<true>(first_str, first_str_bytes, second_str, second_str_bytes);
         }
     }
 
-    void executeConstConst(
-        const String & a_str, size_t offset_a, const String & b_str, size_t offset_b, size_t n, size_t rows, PaddedPODArray<Int32> & result)
-        const
+    void executeConstWithConst(
+        const String & first_str,
+        size_t first_offset,
+        const String & second_str,
+        size_t second_offset,
+        size_t bytes,
+        size_t rows,
+        PaddedPODArray<Int8> & result) const
     {
-        size_t a_str_len = a_str.size();
-        size_t b_str_len = b_str.size();
+        size_t first_str_len = first_str.size();
+        size_t second_str_len = second_str.size();
         Int32 res = 0;
-        if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
+        if (first_offset >= first_str_len && second_offset >= second_str_len) [[unlikely]]
         {
             res = 0;
         }
-        else if (offset_a >= a_str_len) [[unlikely]]
+        else if (first_offset >= first_str_len) [[unlikely]]
         {
             res = -1;
         }
-        else if (offset_b >= b_str_len) [[unlikely]]
+        else if (second_offset >= second_str_len) [[unlikely]]
         {
             res = 1;
         }
         else
         {
-            auto a_n = std::min(n, a_str_len - offset_a);
-            auto b_n = std::min(n, b_str_len - offset_b);
-            res = memcmpSmallLikeZeroPaddedAllowOverflow15(a_str.data() + offset_a, a_n, b_str.data() + offset_b, b_n);
+            auto first_str_bytes = std::min(bytes, first_str_len - first_offset);
+            auto second_str_bytes = std::min(bytes, second_str_len - second_offset);
+            res = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                first_str.data() + first_offset, first_str_bytes, second_str.data() + second_offset, second_str_bytes);
         }
         for (size_t i = 0; i < rows; ++i)
             result[i] = res;
@@ -472,9 +421,25 @@ REGISTER_FUNCTION(Strncmp)
 {
     factory.registerFunction<FunctionStrncmp>(FunctionDocumentation{
         .description = R"(
-            This function could compare parts of two strings directly, without the need to copy the parts of the string into new columns.
-            )",
-        .examples{{"strncmp", "select strncmp(s, 0, 'abc', 0, 3)", ""}},
-        .categories{"String"}});
+                This function could compare parts of two strings directly, without the need to copy the parts of the string into new columns.
+                )",
+        .syntax = R"(strncmp(a_str, a_offset, b_str, b_offset, n))",
+        .arguments
+        = {{"a_str", "The first string to compare."},
+           {"a_offset", "The starting position (zero-based index) in `a_str` from which the comparison begins."},
+           {"b_str", "The second string to compare."},
+           {"b_offset", "The starting position (zero-based index) in `b_str` from which the comparison begins."},
+           {"n", "The number of bytes to compare in both strings, starting from their respective offsets."}},
+        .returned_value
+        = R"(-1 if the substring from a_str is lexicographically smaller than the substring from b_str, 0 if the substrings are equal, 1 if the substring from a_str is lexicographically greater than the substring from b_str.)",
+        .examples{
+            {"typical",
+             "SELECT strncmp('123', 0, '123', 0, 3)",
+             R"(
+                   ┌─strncmp('123⋯123', 0, 3)─┐
+                1. │                        0 │
+                   └──────────────────────────┘
+                )"}},
+        .category{"String"}});
 }
 }
