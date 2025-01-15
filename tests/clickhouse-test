@@ -78,7 +78,10 @@ TEST_MAX_RUN_TIME_IN_SECONDS = 180
 
 
 class SharedEngineReplacer:
-    ENGINES_NON_REPLICATED_REGEXP = r"[ =]((Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|)MergeTree\(?\)?)"
+    SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating"
+    ENGINES_NON_REPLICATED_REGEXP = (
+        rf"(?i)ENGINE[ =]{{0,5}}(({SPECIALIZED_ENGINES}|)MergeTree\(?\)?)"
+    )
     ENGINES_MAPPING_REPLICATED = [
         ("ReplicatedMergeTree", "SharedMergeTree"),
         ("ReplicatedCollapsingMergeTree", "SharedCollapsingMergeTree"),
@@ -93,28 +96,82 @@ class SharedEngineReplacer:
     NEW_SYNTAX_REPLICATED_MERGE_TREE_RE = (
         r"Replicated[a-zA-Z]*MergeTree\((\\?'.*\\?')?,?(\\?'.*\\?')?[a-zA-Z, _}{]*\)"
     )
+    SHARED_MERGE_TREE_RE = (
+        r"Shared[a-zA-Z]*MergeTree\((\\?'.*\\?')?,?(\\?'.*\\?')?[a-zA-Z, _}{]*\)"
+    )
+
     OLD_SYNTAX_OR_ARGUMENTS_RE = r"Tree\(.*[0-9]+.*\)"
 
-    def _check_replicad_new_syntax(self, line):
+    CLUSTER_KEYWORDS = [
+        "test_shard_localhost",
+        "test_shard_localhost_secure",
+        "test_cluster_two_shards_localhost",
+        "test_cluster_two_shards",
+        "test_cluster_1_shard_3_replicas_1_unavailable",
+        "test_cluster_database_replicated",
+        "test_cluster_one_shard_two_replicas",
+        "test_cluster_one_shard_three_replicas_localhost",
+        "test_cluster_two_shards_different_databases",
+        "test_cluster_two_replicas_different_databases_internal_replication",
+        "test_cluster_two_shards_different_databases_with_local",
+        "test_cluster_two_shard_three_replicas_localhost",
+    ]
+
+    DISKS_MAP = {
+        "s3_disk": "s3disk",
+        "s3_plain_disk": "s3diskForSampleData",
+        "s3_cache": "s3diskWithCache",
+        "local_disk": "default",
+        "s3_no_cache": "s3_with_keeper",
+    }
+
+    REGEX_REPLACE = {
+        r"cluster_for_parallel_replicas\s?=\s?'parallel_replicas'": "cluster_for_parallel_replicas='default'",
+        r"--cluster_for_parallel_replicas \"parallel_replicas\"": '--cluster_for_parallel_replicas "default"',
+        r"(SET|set) log_queries = \d;": "",
+        r"cluster\(parallel_replicas": r"cluster(default",
+    }
+
+    def _check_replicated_new_syntax(self, line):
         return re.search(self.NEW_SYNTAX_REPLICATED_MERGE_TREE_RE, line) is not None
 
     def _check_old_syntax_or_arguments(self, line):
         return re.search(self.OLD_SYNTAX_OR_ARGUMENTS_RE, line) is not None
 
+    @classmethod
+    def has_non_replicated(cls, filename):
+        with open(filename, "r", newline="", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if not ("cloud_mode" in line) and re.search(
+                    cls.ENGINES_NON_REPLICATED_REGEXP, line
+                ):
+                    return True
+        return False
+
+    @classmethod
+    def has_replicated_or_shared_or_cloud(cls, filename):
+        with open(filename, "r", newline="", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if (
+                    "cloud_mode" in line
+                    or re.search(cls.NEW_SYNTAX_REPLICATED_MERGE_TREE_RE, line)
+                    is not None
+                    or re.search(cls.SHARED_MERGE_TREE_RE, line) is not None
+                ):
+                    return True
+        return False
+
     @staticmethod
-    def _is_comment_line(line):
-        return line.startswith("SELECT") or line.startswith("select")
+    def _is_select_line(line):
+        return re.match(r"^(SELECT).*", line, flags=re.IGNORECASE)
 
     @staticmethod
     def _is_create_query(line):
-        return (
-            line.startswith("CREATE")
-            or line.startswith("create")
-            or line.startswith("ENGINE")
-            or line.startswith("engine")
-        )
+        return re.match(r"^(CREATE|ENGINE).*", line, flags=re.IGNORECASE)
 
-    def _replace_non_replicated(self, line, escape_quotes, use_random_path):
+    def _replace_non_replicated(
+        self, line, escape_quotes, use_random_path, add_path=True, replace_with="Shared"
+    ):
         groups = re.search(self.ENGINES_NON_REPLICATED_REGEXP, line)
         if groups is not None and not self._check_old_syntax_or_arguments(line):
             non_replicated_engine = groups.groups()[0]
@@ -130,39 +187,103 @@ class SharedEngineReplacer:
                     basename_no_ext.replace("_", "/"), str(os.getpid())
                 )
 
+            shared_engine = replace_with + non_replicated_engine.replace("()", "")
+
             if escape_quotes:
-                shared_engine = (
-                    "Shared"
-                    + non_replicated_engine.replace("()", "")
-                    + f"(\\'{shared_path}\\', \\'1\\')"
-                )
+                # in cloud run we remove SMT parameters to use default ZK path and replica
+                engine_path = f"(\\'{shared_path}\\', \\'1\\')"
             else:
-                shared_engine = (
-                    "Shared"
-                    + non_replicated_engine.replace("()", "")
-                    + f"('{shared_path}', '1')"
-                )
+                engine_path = f"('{shared_path}', '1')"
+
+            if add_path and not self.cloud:
+                shared_engine += engine_path
+
             return line.replace(non_replicated_engine, shared_engine)
 
         return line
 
     def _need_to_replace_something(self):
         return (
-            self.replace_replicated or self.replace_non_replicated
-        ) and "shared_merge_tree" not in self.file_name
+            (self.replace_replicated or self.replace_non_replicated)
+            and "shared_merge_tree" not in self.file_name
+        ) or self.cloud
 
     def _has_show_create_table(self):
         with open(self.file_name, "r", encoding="utf-8") as f:
             return re.search("show create table", f.read(), re.IGNORECASE)
 
+    def _remove_rmt_parameters(self, line):
+        # Regexp for removing zookeeper path and replica name:
+        # SharedMergeTree('/clickhouse/tables/{database}/t_lightweight_mut_6', '1')
+        smt_with_parameters = rf"((Shared|Replicated)(?:{self.SPECIALIZED_ENGINES})?MergeTree)\('.*?',\s*'.*?'(?:,\s*(.*?))?\)"
+        if re.search(smt_with_parameters, line):
+            modified_statement = re.sub(
+                smt_with_parameters,
+                lambda m: f"{m.group(1)}({m.group(3) or ''})",
+                line,
+            )
+            return modified_statement
+        return line
+
+    def _replace_data_engines(self, line, replace_engine="SharedMergeTree"):
+        # These table engines are not supported
+        data_engines = r"(Engine\s*=?\s*)(Log|TinyLog|StripeLog|Memory)\(?\)?"
+        # Replace them with SMT
+        replace_with = f"{replace_engine}() ORDER BY tuple()"
+        if (
+            re.search(data_engines, line, flags=re.IGNORECASE)
+            and "CREATE DATABASE" not in line
+        ):
+            modified_statement = re.sub(
+                data_engines,
+                lambda m: f"{m.group(1)}{replace_with}",
+                line,
+                flags=re.IGNORECASE,
+            )
+            return modified_statement
+        return line
+
+    def _replace_temporary_tables(self, line):
+        # These table engines are not supported
+        create_stmt = r"CREATE\s*TEMPORARY\s*TABLE"
+        if re.search(create_stmt, line, flags=re.IGNORECASE):
+            modified_statement = re.sub(
+                create_stmt,
+                "CREATE TABLE",
+                line,
+                flags=re.IGNORECASE,
+            )
+            return modified_statement
+        return line
+
+    def _replace_database_engines(self, line):
+        pattern = r"(CREATE DATABASE\s+(?:IF NOT EXISTS\s+)?(?:`[^`]*`|\S+))(\s*ENGINE\s*=\s*(Shared|Replicated|Atomic|Ordinary|Memory)(\(.*\))?)"
+        if re.search(pattern, line, flags=re.IGNORECASE):
+            modified_statement = re.sub(
+                pattern,
+                lambda m: m.group(1),
+                line,
+                flags=re.IGNORECASE,
+            )
+            return modified_statement
+        return line
+
     def __init__(
-        self, file_name, replace_replicated, replace_non_replicated, reference_file
+        self,
+        args,
+        file_name,
+        replace_replicated,
+        replace_non_replicated,
+        reference_file,
+        cloud,
     ):
+        self.args = args
         self.file_name = file_name
         self.temp_file_path = get_temp_file_path()
         self.replace_replicated = replace_replicated
         self.replace_non_replicated = replace_non_replicated
-
+        self.reference_file = reference_file
+        self.cloud = cloud
         use_random_path = not reference_file and not self._has_show_create_table()
 
         if not self._need_to_replace_something():
@@ -171,34 +292,60 @@ class SharedEngineReplacer:
         shutil.copyfile(self.file_name, self.temp_file_path)
         shutil.copymode(self.file_name, self.temp_file_path)
 
-        with open(self.file_name, "w", newline="", encoding="utf-8") as modified:
-            with open(self.temp_file_path, "r", newline="", encoding="utf-8") as source:
-                for line in source:
-                    if self._is_comment_line(line) or (
-                        reference_file and not self._is_create_query(line)
-                    ):
-                        modified.write(line)
-                        continue
+        with (
+            open(self.file_name, "w", newline="", encoding="utf-8") as modified,
+            open(self.temp_file_path, "r", newline="", encoding="utf-8") as source,
+        ):
+            for line in source:
+                # Replace table engines if echo enabled to match changed reference
+                if self.cloud and line.startswith("-- { echo"):
+                    self.replace_replicated = True
+                    self.replace_non_replicated = True
 
-                    if self.replace_replicated:
-                        for (
-                            engine_from,
-                            engine_to,
-                        ) in SharedEngineReplacer.ENGINES_MAPPING_REPLICATED:
-                            if engine_from in line and (
-                                self._check_replicad_new_syntax(line)
-                                or engine_from + " " in line
-                                or engine_from + ";" in line
-                            ):
-                                line = line.replace(engine_from, engine_to)
-                                break
-
-                    if self.replace_non_replicated:
-                        line = self._replace_non_replicated(
-                            line, reference_file, use_random_path
-                        )
-
+                if (
+                    self._is_select_line(line)
+                    or (reference_file and not self._is_create_query(line))
+                ) and not self.cloud:
                     modified.write(line)
+                    continue
+
+                if self.replace_replicated:
+                    for (
+                        engine_from,
+                        engine_to,
+                    ) in self.ENGINES_MAPPING_REPLICATED:
+                        if engine_from in line and (
+                            self._check_replicated_new_syntax(line)
+                            or engine_from + " " in line
+                            or engine_from + ";" in line
+                        ):
+                            line = line.replace(engine_from, engine_to)
+                            break
+
+                if self.replace_non_replicated:
+                    line = self._replace_non_replicated(
+                        line, reference_file, use_random_path
+                    )
+
+                # Remove parameters (zk path and replica name) from SMT tables
+                # because they are not supported in cloud
+                if self.cloud:
+                    line = self._remove_rmt_parameters(line)
+                    line = self._replace_data_engines(line)
+                    line = self._replace_database_engines(line)
+                    # line = self._replace_temporary_tables(line)
+
+                    # In cloud, we have only default cluster and cluster for each database. Test only default now
+                    for keyword in self.CLUSTER_KEYWORDS:
+                        line = line.replace(keyword, "default")
+
+                    for prev, new in self.DISKS_MAP.items():
+                        line = line.replace(prev, new)
+
+                    for pattern, replacement in self.REGEX_REPLACE.items():
+                        line = re.sub(pattern, replacement, line)
+
+                modified.write(line)
 
     def __enter__(self):
         return self
@@ -747,6 +894,7 @@ class FailureReason(enum.Enum):
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
+    NOT_SUPPORTED = "not supported"
     NOT_SUPPORTED_IN_CLOUD = "not supported in cloud environment"
     NOT_SUPPORTED_IN_PRIVATE = "not supported in private build"
     DISABLED = "disabled"
@@ -1267,6 +1415,9 @@ class TestCase:
         args = self.args
         if tags and ("disabled" in tags) and not args.disabled:
             return FailureReason.DISABLED
+
+        if self.name in suite.skip_list:
+            return FailureReason.NOT_SUPPORTED
 
         if args.private and self.name in suite.private_skip_list:
             return FailureReason.NOT_SUPPORTED_IN_PRIVATE
@@ -1841,16 +1992,20 @@ class TestCase:
                 result.description = result.description.replace("\0", "")
             else:
                 with SharedEngineReplacer(
+                    args,
                     self.case_file,
                     args.replace_replicated_with_shared,
                     args.replace_non_replicated_with_shared,
                     False,
+                    args.cloud,
                 ):
                     with SharedEngineReplacer(
+                        args,
                         self.reference_file,
                         args.replace_replicated_with_shared,
                         args.replace_non_replicated_with_shared,
                         True,
+                        args.cloud,
                     ):
                         (
                             proc,
@@ -2144,6 +2299,7 @@ class TestSuite:
         self.suite_path: str = suite_path
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
+        self.skip_list: List[str] = []
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
 
@@ -2704,6 +2860,7 @@ def do_run_tests(
             process.start()
 
         while processes:
+            sleep(0.1)
             sys.stdout.flush()
             # Periodically check the server for hangs
             # and stop all processes in this case
@@ -2968,7 +3125,7 @@ def reportLogStats(args):
     print("\n")
 
 
-def try_get_skip_list(base_dir, name):
+def try_get_skip_list(base_dir, name, remove_comment=True):
     test_names_to_skip = []
     skip_list_path = os.path.join(base_dir, name)
     if not os.path.exists(skip_list_path):
@@ -2978,9 +3135,11 @@ def try_get_skip_list(base_dir, name):
         for line in fd.read().split("\n"):
             if line == "" or line[0] == " ":
                 continue
-            test_name = line.split()[0].strip()
-            if test_name != "":
-                test_names_to_skip.append(test_name)
+            if remove_comment:
+                line = line.split()[0].strip()
+                if line == "":
+                    continue
+            test_names_to_skip.append(line.strip())
 
     return test_names_to_skip
 
@@ -3092,6 +3251,13 @@ def main(args):
     total_tests_run = 0
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
+    skip_list = []
+
+    if args.parallel_replicas is True:
+        skip_list_parallel_replicas = try_get_skip_list(
+            base_dir, "../parallel_replicas_blacklist.txt"
+        )
+        skip_list.extend(skip_list_parallel_replicas)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
@@ -3101,6 +3267,7 @@ def main(args):
         if test_suite is None:
             continue
 
+        test_suite.skip_list = skip_list
         test_suite.cloud_skip_list = cloud_skip_list
         test_suite.private_skip_list = private_skip_list
         total_tests_run += do_run_tests(
@@ -3582,6 +3749,13 @@ def parse_args():
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
+    parser.add_argument(
+        "--parallel-replicas",
+        action="store_true",
+        default=False,
+        help="Skip certain tests specific to the parallel replicas configuration",
+    )
+
     parser.add_argument(
         "--client-log",
         default="./client.fatal.log",

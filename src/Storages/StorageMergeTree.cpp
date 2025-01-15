@@ -31,6 +31,11 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <fmt/core.h>
@@ -991,133 +996,89 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
-MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
+std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
     const StorageMetadataPtr & metadata_snapshot,
     bool aggressive,
     const String & partition_id,
     bool final,
-    PreformattedMessage & out_disable_reason,
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions,
-    SelectPartsDecision * select_decision_out)
+    bool optimize_skip_merged_partitions)
 {
-    auto data_settings = getSettings();
+    auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
+    auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
-    auto future_part = std::make_shared<FutureMergedMutatedPart>();
-
-    if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
-        future_part->uuid = UUIDHelpers::generateV4();
-
-    /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
-    CurrentlyMergingPartsTaggerPtr merging_tagger;
-    MergeList::EntryPtr merge_entry;
-
-    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, PreformattedMessage & disable_reason) -> bool
-    {
-        if (tx)
-        {
-            /// Cannot merge parts if some of them are not visible in current snapshot
-            /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
-            if ((left && !left->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
-                    || (right && !right->version.isVisible(tx->getSnapshot(), Tx::EmptyTID)))
-            {
-                disable_reason = PreformattedMessage::create("Some part is not visible in transaction");
-                return false;
-            }
-
-            /// Do not try to merge parts that are locked for removal (merge will probably fail)
-            if ((left && left->version.isRemovalTIDLocked())
-                    || (right && right->version.isRemovalTIDLocked()))
-            {
-                disable_reason = PreformattedMessage::create("Some part is locked for removal in another cuncurrent transaction");
-                return false;
-            }
-        }
-
-        /// This predicate is checked for the first part of each range.
-        /// (left = nullptr, right = "first part of partition")
-        if (!left)
-        {
-            if (currently_merging_mutating_parts.contains(right))
-            {
-                disable_reason = PreformattedMessage::create("Some part currently in a merging or mutating process");
-                return false;
-            }
-            return true;
-        }
-
-        if (currently_merging_mutating_parts.contains(left) || currently_merging_mutating_parts.contains(right))
-        {
-            disable_reason = PreformattedMessage::create("Some part currently in a merging or mutating process");
-            return false;
-        }
-
-        if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
-        {
-            disable_reason = PreformattedMessage::create("Some parts have different mutation version");
-            return false;
-        }
-
-        if (!partsContainSameProjections(left, right, disable_reason))
-            return false;
-
-        auto max_possible_level = getMaxLevelInBetween(left, right);
-        if (max_possible_level > std::max(left->info.level, right->info.level))
-        {
-            disable_reason = PreformattedMessage::create("There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have", left->name, right->name, max_possible_level);
-            return false;
-        }
-
-        return true;
-    };
-
-    SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
-
-    auto is_background_memory_usage_ok = [](PreformattedMessage & disable_reason) -> bool
+    const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
         if (canEnqueueBackgroundTask())
-            return true;
-        disable_reason = PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
-            formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
-            formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()));
-        return false;
+            return {};
+
+        return std::unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
-    if (partition_id.empty())
+    const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        if (is_background_memory_usage_ok(out_disable_reason))
+        auto future_part = [&]()
         {
-            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-            bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
+            if (txn != nullptr)
+                return constructFuturePart(*this, choice, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
-            /// TTL requirements is much more strict than for regular merge, so
-            /// if regular not possible, than merge with ttl is not also not
-            /// possible.
-            if (max_source_parts_size > 0)
-            {
-                select_decision = merger_mutator.selectPartsToMerge(
-                    future_part,
-                    aggressive,
-                    max_source_parts_size,
-                    can_merge,
-                    merge_with_ttl_allowed,
-                    txn,
-                    out_disable_reason);
-            }
-            else
-                out_disable_reason = PreformattedMessage::create("Current value of max_source_parts_size is zero");
+            return constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+        }();
+
+        if (!future_part)
+        {
+            return std::unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+            });
         }
-    }
-    else
+
+        if ((*getSettings())[MergeTreeSetting::assign_part_uuids])
+            future_part->uuid = UUIDHelpers::generateV4();
+
+        return future_part;
+    };
+
+    const auto select_without_hint = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    {
+        if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
+            return std::unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                .explanation = std::move(check_memory_result.error()),
+            });
+
+        UInt64 max_source_parts_size = CompactionStatistics::getMaxSourcePartsSizeForMerge(*this);
+        bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < (*getSettings())[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
+
+        /// TTL requirements is much more strict than for regular merge, so
+        /// if regular not possible, than merge with ttl is also not possible.
+        if (max_source_parts_size == 0)
+            return std::unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                .explanation = PreformattedMessage::create("Current value of max_source_parts_size is zero"),
+            });
+
+        auto select_result = merger_mutator.selectPartsToMerge(
+            parts_collector,
+            merge_predicate,
+            MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
+            /*partitions_hint=*/std::nullopt);
+
+        return select_result.and_then(construct_future_part);
+    };
+
+    const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
         while (true)
         {
             auto timeout_ms = (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
 
-            if (!is_background_memory_usage_ok(out_disable_reason))
+            if (auto memory_check = is_background_memory_usage_ok(); !memory_check.has_value())
             {
                 constexpr auto poll_interval = std::chrono::seconds(1);
                 Int64 attempts = timeout / poll_interval;
@@ -1125,58 +1086,67 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
                 for (Int64 i = 0; i < attempts; ++i)
                 {
                     std::this_thread::sleep_for(poll_interval);
-                    if (is_background_memory_usage_ok(out_disable_reason))
+                    if (memory_check = is_background_memory_usage_ok(); memory_check.has_value())
                     {
                         ok = true;
                         break;
                     }
                 }
                 if (!ok)
-                    break;
+                    return std::unexpected(SelectMergeFailure{
+                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                        .explanation = std::move(memory_check.error()),
+                    });
             }
 
-            select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_part, can_merge, partition_id, final, metadata_snapshot, txn, out_disable_reason, optimize_skip_merged_partitions);
+            auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
+                metadata_snapshot,
+                parts_collector,
+                merge_predicate,
+                partition_id,
+                final,
+                optimize_skip_merged_partitions);
 
-            /// If final - we will wait for currently processing merges to finish and continue.
-            if (final
-                && select_decision != SelectPartsDecision::SELECTED
-                && !currently_merging_mutating_parts.empty())
+            if (!select_result.has_value())
             {
-                LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
-                    currently_merging_mutating_parts.size());
-
-                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
+                /// If final - we will wait for currently processing merges to finish and continue.
+                if (final && !currently_merging_mutating_parts.empty())
                 {
-                    out_disable_reason = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL", timeout_ms);
-                    break;
+                    LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
+                        currently_merging_mutating_parts.size());
+
+                    if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
+                        return std::unexpected(SelectMergeFailure{
+                            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                            .explanation = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL.", timeout_ms),
+                        });
+
+                    continue;
                 }
+                else
+                    return std::unexpected(select_result.error());
             }
-            else
-                break;
+
+            return select_result.and_then(construct_future_part);
         }
-    }
+    };
 
-    /// In case of final we need to know the decision of select in StorageMergeTree::merge
-    /// to treat NOTHING_TO_MERGE as successful merge (otherwise optimize final will be uncompleted)
-    if (select_decision_out)
-        *select_decision_out = select_decision;
-
-    if (select_decision != SelectPartsDecision::SELECTED)
+    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
     {
-        if (!out_disable_reason.text.empty())
-            out_disable_reason.text += ". ";
-        out_disable_reason.text += "Cannot select parts for optimization";
+        /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
+        if (isTTLMergeType(future_part->merge_type))
+            getContext()->getMergeList().bookMergeWithTTL();
 
-        return {};
-    }
+        uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+        auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
-    /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part->merge_type))
-        getContext()->getMergeList().bookMergeWithTTL();
+        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+    };
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts, true), *this, metadata_snapshot, false);
-    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), std::make_shared<MutationCommands>());
+    if (partition_id.empty())
+        return select_without_hint().and_then(construct_merge_select_entry);
+    else
+        return select_in_partition().and_then(construct_merge_select_entry);
 }
 
 bool StorageMergeTree::merge(
@@ -1193,44 +1163,44 @@ bool StorageMergeTree::merge(
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    SelectPartsDecision select_decision;
-
-    MergeMutateSelectedEntryPtr merge_mutate_entry;
-
+    auto merge_select_result = [&]()
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelledForPartition(partition_id))
             throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
-        merge_mutate_entry = selectPartsToMerge(
+        return selectPartsToMerge(
             metadata_snapshot,
             aggressive,
             partition_id,
             final,
-            out_disable_reason,
             table_lock_holder,
             lock,
             txn,
-            optimize_skip_merged_partitions,
-            &select_decision);
+            optimize_skip_merged_partitions);
+    }();
+
+    if (merge_select_result.has_value())
+    {
+        /// Copying a vector of columns `deduplicate by columns.
+        IExecutableTask::TaskResultCallback f = [](bool) {};
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_select_result.value(), table_lock_holder, f);
+
+        task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+
+        executeHere(task);
+        return true;
     }
 
+    auto error = std::move(merge_select_result.error());
+    out_disable_reason = std::move(error.explanation);
+
     /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
-    if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+    if (error.reason == SelectMergeFailure::Reason::NOTHING_TO_MERGE)
         return true;
 
-    if (!merge_mutate_entry)
-        return false;
-
-    /// Copying a vector of columns `deduplicate by columns.
-    IExecutableTask::TaskResultCallback f = [](bool) {};
-    auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_mutate_entry, table_lock_holder, f);
-
-    task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
-
-    executeHere(task);
-    return true;
+    return false;
 }
 
 
@@ -1247,7 +1217,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     if (current_mutations_by_version.empty())
         return {};
 
-    size_t max_source_part_size = merger_mutator.getMaxSourcePartSizeForMutation();
+    size_t max_source_part_size = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
     if (max_source_part_size == 0)
     {
         LOG_DEBUG(
@@ -1396,7 +1366,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->name = part->getNewName(new_part_info);
             future_part->part_format = part->getFormat();
 
-            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
+            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
         }
     }
@@ -1404,24 +1374,24 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     return {};
 }
 
-UInt32 StorageMergeTree::getMaxLevelInBetween(const DataPartPtr & left, const DataPartPtr & right) const
+UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const
 {
     auto parts_lock = lockParts();
 
-    auto begin = data_parts_by_info.find(left->info);
+    auto begin = data_parts_by_info.find(left.info);
     if (begin == data_parts_by_info.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find left part, left part {}. It's a bug", left->name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find left part, left part {}. It's a bug", left.name);
 
-    auto end = data_parts_by_info.find(right->info);
+    auto end = data_parts_by_info.find(right.info);
     if (end == data_parts_by_info.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right->name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right.name);
 
     UInt32 level = 0;
 
     for (auto it = begin++; it != end; ++it)
     {
         if (it == data_parts_by_info.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left->name, right->name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left.name, right.name);
 
         level = std::max(level, (*it)->info.level);
     }
@@ -1457,16 +1427,26 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
-        PreformattedMessage out_reason;
-        merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, out_reason, shared_lock, lock, txn);
+        {
+            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
+                merge_entry = std::move(merge_select_result.value());
+            else
+                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to start merge: {}", merge_select_result.error().explanation.text);
+        }
 
         if (!merge_entry && !current_mutations_by_version.empty())
+        {
+            PreformattedMessage out_reason;
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
+
+            if (!mutate_entry)
+                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to start mutation: {}", out_reason.text);
+        }
 
         has_mutations = !current_mutations_by_version.empty();
     }
 
-    auto isCancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
+    auto is_cancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
     {
         if (entry->future_part)
             return merges_blocker.isCancelledForPartition(entry->future_part->part_info.partition_id);
@@ -1476,7 +1456,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        if (isCancelled(merge_entry))
+        if (is_cancelled(merge_entry))
             return false;
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
@@ -1490,7 +1470,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        if (isCancelled(mutate_entry))
+        if (is_cancelled(mutate_entry))
             return false;
 
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
@@ -1542,10 +1522,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 }
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(
-    const DataPartPtr & part,
+    const MergeTreePartInfo & part_info,
     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
 {
-    auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+    auto it = current_mutations_by_version.upper_bound(part_info.getDataVersion());
     if (it == current_mutations_by_version.begin())
         return 0;
     --it;
@@ -1672,12 +1652,11 @@ bool StorageMergeTree::optimize(
                     local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
-                if (disable_reason.text.empty())
-                    disable_reason = PreformattedMessage::create("unknown reason");
                 LOG_INFO(log, message, disable_reason.text);
 
                 if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
+
                 return false;
             }
         }
@@ -1700,12 +1679,11 @@ bool StorageMergeTree::optimize(
                 local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
         {
             constexpr auto message = "Cannot OPTIMIZE table: {}";
-            if (disable_reason.text.empty())
-                disable_reason = PreformattedMessage::create("unknown reason");
             LOG_INFO(log, message, disable_reason.text);
 
             if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
                 throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
+
             return false;
         }
     }
