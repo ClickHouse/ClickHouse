@@ -223,6 +223,20 @@
     <interserver_http_host>example.clickhouse.com</interserver_http_host>
     -->
 
+    <!-- Port for the SSH server which allows to connect and execute
+         queries in an interactive fashion using the embedded client over the PTY.
+    -->
+    <!-- <tcp_ssh_port>9022</tcp_ssh_port> -->
+
+    <ssh_server>
+        <!-- The public part of the host key will be written to the known_hosts file
+             on the SSH client side on the first connect.
+        -->
+        <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
+        <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
+        <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
+    </ssh_server>
+
     <!-- You can specify credentials for authenthication between replicas.
          This is required when interserver_https_port is accessible from untrusted networks,
          and also recommended to avoid SSRF attacks from possibly compromised services in your network.
@@ -1125,6 +1139,7 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.

@@ -4940,11 +4940,11 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
 
         data = []
         for message in messages:
-            splitted = message.split("\n")
-            assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
-            assert splitted[1] == ""
-            assert splitted[-1] == ""
-            data += [line.split() for line in splitted[2:-1]]
+            split = message.split("\n")
+            assert split[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+            assert split[1] == ""
+            assert split[-1] == ""
+            data += [line.split() for line in split[2:-1]]
 
         assert data == [
             ["0", "0"],
@@ -5276,7 +5276,7 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     while True:
         result_rdkafka_stat = instance.query(
             """
-            SELECT table, JSONExtractString(rdkafka_stat, 'type')
+            SELECT table, JSONExtractString(rdkafka_stat, 'type') AS value
             FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
             """
         )
@@ -5289,8 +5289,8 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
         result_rdkafka_stat
         == """Row 1:
 ──────
-table:                                   kafka
-JSONExtractString(rdkafka_stat, 'type'): consumer
+table: kafka
+value: consumer
 """
     )
 
