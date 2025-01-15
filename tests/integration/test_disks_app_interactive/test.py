@@ -205,6 +205,7 @@ class DisksClient(object):
         else:
             return DisksClient.local_client
 
+
 def test_disks_app_interactive_list_disks():
     client = DisksClient.getLocalDisksClient(True)
     expected_disks_with_path = [
@@ -222,7 +223,6 @@ def test_disks_app_interactive_list_disks():
         ("local", client.working_path),
     ]
     assert expected_disks_with_path == client.list_disks()[0]
-
 
 
 def test_disks_app_interactive_list_files_local():
