@@ -13,7 +13,7 @@ String quoteString(std::string_view x)
     return res;
 }
 
-String quoteStringPostgreSQL(std::string_view x)
+String quoteStringSingleQuoteWithSingleQuote(std::string_view x)
 {
     String res(x.size(), '\0');
     WriteBufferFromString wb(res);

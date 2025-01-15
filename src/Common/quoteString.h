@@ -14,12 +14,16 @@ namespace DB
     return quoteString(std::string_view{x.data, x.size});
 }
 
-[[nodiscard]] String quoteStringPostgreSQL(std::string_view x);
+[[nodiscard]] String quoteStringSingleQuoteWithSingleQuote(std::string_view x);
 
-// Prefer string_view over StringRef for implicit conversions
-[[nodiscard]] inline String quoteStringPostgreSQL(std::same_as<StringRef> auto x)
+[[nodiscard]] inline String quoteStringPostgreSQL(std::string_view x)
 {
-    return quoteStringPostgreSQL(std::string_view{x.data, x.size});
+    return quoteStringSingleQuoteWithSingleQuote(x);
+}
+
+[[nodiscard]] inline String quoteStringSQLite(std::string_view x)
+{
+    return quoteStringSingleQuoteWithSingleQuote(x);
 }
 
 /// Double quote the string.
