@@ -188,7 +188,7 @@ class Result(MetaClasses.Serializable):
         if self.duration:
             return self
         if self.start_time:
-            self.duration = datetime.datetime.utcnow().timestamp() - self.start_time
+            self.duration = datetime.datetime.now().timestamp() - self.start_time
         else:
             print(
                 f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
