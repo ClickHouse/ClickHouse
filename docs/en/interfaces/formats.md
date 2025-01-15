@@ -106,10 +106,7 @@ See [TabSeparated](../interfaces/formats/TabSeparated/TabSeparated.md)
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
-Differs from `TabSeparated` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
-
-This format is also available under the names `TSVRaw`, `Raw`.
+See [TabSeparatedRaw](/en/interfaces/formats/TabSeparatedRaw).
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
