@@ -8,7 +8,7 @@ namespace DB
 
 /// Represents a file prepared to be included in a backup, assuming that until this backup entry is destroyed
 /// the file can be appended with new data, but the bytes which are already in the file won't be changed.
-class BackupEntryFromAppendOnlyFile : public BackupEntryWithChecksumCalculation<IBackupEntry>
+class BackupEntryFromAppendOnlyFile : public BackupEntryWithChecksumCalculation
 {
 public:
     /// The constructor is allowed to not set `file_size_`, in that case it will be calculated from the data.
