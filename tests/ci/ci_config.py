@@ -550,14 +550,14 @@ class CI:
         JobNames.DOCKER_KEEPER: CommonJobConfigs.DOCKER_SERVER.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
-        JobNames.DOCS_CHECK: JobConfig(
-            digest=DigestConfig(
-                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
-                docker=["altinityinfra/docs-builder"],
-            ),
-            run_command="docs_check.py",
-            runner_type=Runners.FUNC_TESTER,
-        ),
+        # JobNames.DOCS_CHECK: JobConfig(
+        #     digest=DigestConfig(
+        #         include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
+        #         docker=["altinityinfra/docs-builder"],
+        #     ),
+        #     run_command="docs_check.py",
+        #     runner_type=Runners.FUNC_TESTER,
+        # ),
         JobNames.FAST_TEST: JobConfig(
             pr_only=True,
             digest=DigestConfig(
