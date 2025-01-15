@@ -108,8 +108,9 @@ SELECT sum(number) FROM test_table;
 │        5050 │
 └─────────────┘
 ```
-> [!TIP]
-> Recursive CTEs rely on the [new query analyzer](https://clickhouse.com/docs/en/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`Code: 60. DB::Exception … (UNKNOWN_TABLE)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the **`enable_analyzer** setting.
+:::note
+Recursive CTEs rely on the [new query analyzer](https://clickhouse.com/docs/en/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`Code: 60. DB::Exception … (UNKNOWN_TABLE)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the **`enable_analyzer`** setting.
+:::
 
 The general form of a recursive `WITH` query is always a non-recursive term, then `UNION ALL`, then a recursive term, where only the recursive term can contain a reference to the query's own output. Recursive CTE query is executed as follows:
 
