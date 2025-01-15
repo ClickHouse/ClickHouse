@@ -2,6 +2,7 @@
 
 -- Tests that no vector similarity indexes can be created on Array(BFloat16) columns.
 -- (This is because of a limitation in usearch which does not allow ingest of bf16)
+-- --> https://github.com/unum-cloud/usearch/issues/553
 
 SET allow_experimental_vector_similarity_index = 1;
 
