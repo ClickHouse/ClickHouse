@@ -2,20 +2,20 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Common/FieldVisitors.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
-#include "DataTypes/DataTypesNumber.h"
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+extern const int LOGICAL_ERROR;
 }
 
 struct HyperLogLogPlusPlusData
@@ -2991,10 +2991,7 @@ public:
 
     String getName() const override { return "uniqHLLPP"; }
 
-    static DataTypePtr createResultType()
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeUInt64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -3004,15 +3001,9 @@ public:
         data(place).add(value);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        data(place).merge(data(rhs));
-    }
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { data(place).merge(data(rhs)); }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t>) const override
-    {
-        data(place).serialize(buf);
-    }
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t>) const override { data(place).serialize(buf); }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
