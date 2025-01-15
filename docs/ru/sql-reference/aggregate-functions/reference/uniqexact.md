@@ -11,7 +11,7 @@ sidebar_position: 191
 uniqExact(x[, ...])
 ```
 
-Функцию `uniqExact` следует использовать, если вам обязательно нужен точный результат. В противном случае используйте функцию [uniq](#agg_function-uniq).
+Функцию `uniqExact` следует использовать, если вам обязательно нужен точный результат. В противном случае используйте функцию [uniq](/docs/ru/sql-reference/aggregate-functions/reference/uniq).
 
 Функция `uniqExact` расходует больше оперативной памяти, чем функция `uniq`, так как размер состояния неограниченно растёт по мере роста количества различных значений.
 
@@ -21,6 +21,6 @@ uniqExact(x[, ...])
 
 **Смотрите также**
 
--   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
--   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
--   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
+-   [uniq](/docs/ru/sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniqCombined](/docs/ru/sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
+-   [uniqHLL12](/docs/ru/sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)

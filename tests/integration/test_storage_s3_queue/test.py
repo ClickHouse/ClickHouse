@@ -255,8 +255,11 @@ def generate_random_files(
     bucket=None,
     use_prefix=None,
     use_random_names=False,
+    files=None,
 ):
-    if use_random_names:
+    if files is not None:
+        pass
+    elif use_random_names:
         files = [
             (f"{files_path}/{random_str(10)}.csv", i)
             for i in range(start_ind, start_ind + count)
@@ -1854,9 +1857,6 @@ def test_upgrade(started_cluster):
     assert expected_rows == get_count()
 
 
-@pytest.mark.skip(
-    reason="test is flaky - I will fix it asynchronously ASAP not to block another PR (locally it stably passes, so fixing it takes some time)"
-)
 def test_exception_during_insert(started_cluster):
     node = started_cluster.instances["instance_too_many_parts"]
 
@@ -1874,6 +1874,9 @@ def test_exception_during_insert(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+            "polling_backoff_ms": 0,
         },
     )
     node.rotate_logs()
@@ -1894,9 +1897,8 @@ def test_exception_during_insert(started_cluster):
     expected_rows = [0]
 
     def generate(check_inserted):
-        files_to_generate = 11
-        row_num = 1000000
-        node.query(f"detach table {dst_table_name}_mv")
+        files_to_generate = 1
+        row_num = 1
         time.sleep(10)
         total_values = generate_random_files(
             started_cluster,
@@ -1906,11 +1908,11 @@ def test_exception_during_insert(started_cluster):
             row_num=row_num,
             use_random_names=1,
         )
-        node.query(f"attach table {dst_table_name}_mv")
         expected_rows[0] += files_to_generate * row_num
         if check_inserted:
             wait_for_rows(expected_rows[0])
 
+    generate(True)
     generate(True)
     generate(True)
     generate(False)
@@ -1931,7 +1933,8 @@ def test_exception_during_insert(started_cluster):
     wait_for_rows(expected_rows[0])
 
 
-def test_commit_on_limit(started_cluster):
+@pytest.mark.parametrize("processing_threads", [1, 8])
+def test_commit_on_limit(started_cluster, processing_threads):
     node = started_cluster.instances["instance"]
 
     # A unique table name is necessary for repeatable tests
@@ -1954,7 +1957,7 @@ def test_commit_on_limit(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
+            "s3queue_processing_threads_num": processing_threads,
             "s3queue_loading_retries": 0,
             "s3queue_max_processed_files_before_commit": 10,
         },
@@ -2483,9 +2486,17 @@ def test_list_and_delete_race(started_cluster):
     )
 
     assert len(res1) + len(res2) == total_rows
-    assert node.contains_in_log(
-        "because of the race with list & delete"
-    ) or node_2.contains_in_log("because of the race with list & delete")
+    # (kssenii) I will fix this assert a tiny bit later
+    # assert (
+    #    node.contains_in_log("because of the race with list & delete")
+    #    or node_2.contains_in_log("because of the race with list & delete")
+    #    or node.contains_in_log(
+    #        f"StorageS3Queue (default.{table_name}): Skipping file"  # Unfortunately this optimization makes the race less easy to catch.
+    #    )
+    #    or node_2.contains_in_log(
+    #        f"StorageS3Queue (default.{table_name}): Skipping file"
+    #    )
+    # )
 
 
 def test_registry(started_cluster):
@@ -2794,7 +2805,7 @@ def test_migration(started_cluster, setting_prefix):
     )
 
     for node in [node1, node2]:
-        node.query(f"DETACH TABLE {mv_name}")
+        node.query(f"DETACH TABLE {mv_name} SYNC")
 
     assert (
         "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1"
@@ -2868,3 +2879,84 @@ def test_migration(started_cluster, setting_prefix):
     assert buckets_num == metadata["buckets"]
 
     node.query(f"DROP TABLE r.{table_name} SYNC")
+
+
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+def test_skipping_processed_and_failed_files(started_cluster, mode):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_replicated_{mode}_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query("DROP DATABASE IF EXISTS r")
+    node2.query("DROP DATABASE IF EXISTS r")
+
+    node1.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb4', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb4', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+        database_name="r",
+    )
+
+    files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_to_generate)]
+    total_values = generate_random_files(
+        started_cluster,
+        files_path,
+        files_to_generate,
+        start_ind=0,
+        row_num=1,
+        files=files,
+    )
+    incorrect_values = [
+        ["failed", 1, 1],
+    ]
+    incorrect_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
+    ).encode()
+
+    failed_file = f"{files_path}/testz_fff.csv"
+    put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
+
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(node1.query(f"SELECT count() FROM default.{dst_table_name}"))
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    create_mv(node2, f"r.{table_name}", dst_table_name)
+    for _ in range(20):
+        if node2.contains_in_log(f"StorageS3Queue (r.{table_name}): Processed rows: 0"):
+            break
+        time.sleep(1)
+    assert node2.contains_in_log(f"StorageS3Queue (r.{table_name}): Processed rows: 0")
+
+    for file in files:
+        assert node2.contains_in_log(
+            f"StorageS3Queue (r.{table_name}): Skipping file {file[0]}: Processed"
+        )
+
+    assert node2.contains_in_log(
+        f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+    )

@@ -195,7 +195,7 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/docs/en/operations/settings/settings.md/#allow-nullable-key) setting. The [NULLS_LAST](/docs/en/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/docs/en/operations/settings/merge-tree-settings/#allow_nullable_key) setting. The [NULLS_LAST](/docs/en/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting a Primary Key {#selecting-a-primary-key}
 
@@ -445,10 +445,10 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔         |
 | [in](/docs/en/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
 | [notIn](/docs/en/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [less (`<`)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greater (`>`)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [lessOrEquals (`<=`)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greaterOrEquals (`>=`)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [empty](/docs/en/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [has](/docs/en/sql-reference/functions/array-functions/#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
@@ -694,10 +694,10 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
 - [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
-- [`hdfs` for HDFS](#hdfs-storage)
-- [`web` for read-only from web](#web-storage)
-- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
+- [`blob_storage_disk` for Azure Blob Storage](/docs/en/engines/table-engines/integrations/azureBlobStorage#table_engine-mergetree-azure-blob-storage)
+- [`hdfs` for HDFS](/docs/en/engines/table-engines/integrations/hdfs)
+- [`web` for read-only from web](/docs/en/operations/storing-data#web-storage)
+- [`cache` for local caching](/docs/en/operations/storing-data#using-local-cache)
 - [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
 - [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/docs/en/operations/storing-data.md#s3-plain-rewritable-storage)
 
@@ -725,7 +725,7 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
 for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
-See [dynamic storage](#dynamic-storage) for more details.
+See [dynamic storage](/docs/en/operations/storing-data#dynamic-configuration) for more details.
 :::
 
 Configuration structure:
@@ -1033,7 +1033,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 ### Supported Operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (>, >=, <, <=) |
+|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
 |-----------|-----------------------|------------------------------|
 | CountMin  | ✔                     | ✗                            |
 | MinMax    | ✗                     | ✔                            |

@@ -35,6 +35,9 @@ public:
     struct BucketHolder;
     using BucketHolderPtr = std::shared_ptr<BucketHolder>;
 
+    bool useBucketsForProcessing() const override;
+    size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
+
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
@@ -47,7 +50,14 @@ public:
 
     static void migrateToBuckets(const std::string & zk_path, size_t value);
 
-    void setProcessedAtStartRequests(
+    /// Return vector of indexes of filtered paths.
+    static std::vector<size_t> filterOutProcessedAndFailed(
+        const std::vector<std::string> & paths,
+        const std::filesystem::path & zk_path_,
+        size_t buckets_num,
+        LoggerPtr log);
+
+    void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;
 
@@ -57,7 +67,8 @@ private:
     const BucketInfoPtr bucket_info;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void setProcessedImpl() override;
+
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
 
     bool getMaxProcessedFile(
         NodeMetadata & result,
@@ -70,7 +81,7 @@ private:
         const std::string & processed_node_path_,
         const zkutil::ZooKeeperPtr & zk_client);
 
-    void setProcessedRequests(
+    void prepareProcessedRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client,
         const std::string & processed_node_path_,
