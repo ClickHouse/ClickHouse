@@ -218,15 +218,6 @@ public:
         M(keys256)                          \
         M(hashed)
 
-    /// Used for reading from StorageJoin and applying joinGet function
-    #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
-        M(key8)                                \
-        M(key16)                               \
-        M(key32)                               \
-        M(key64)                               \
-        M(key_string)                          \
-        M(key_fixed_string)
-
     enum class Type : uint8_t
     {
         EMPTY,
