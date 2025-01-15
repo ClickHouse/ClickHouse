@@ -212,6 +212,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 && typeid_cast<const FunctionCapture *>(node->function_base.get())))
         {
             node_to_ast[node] = nullptr;
+            stack.pop();
             continue;
         }
 
@@ -225,6 +226,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
             if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
                 node_to_ast[node] = col_set->getData()->getSourceAST();
 
+            stack.pop();
             continue;
         }
 
@@ -485,7 +487,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             connections.emplace_back(std::move(try_result.entry));
 
         /// For the lazy case we are ignoring external tables.
-        /// This is because the set could be build before the lambda call.
+        /// This is because the set could be build before the lambda call,
+        /// and the temporary table which we are about to send would be empty.
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);

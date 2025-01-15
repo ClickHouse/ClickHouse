@@ -30,6 +30,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Storages/getStructureOfRemoteTable.h>
+
 namespace DB
 {
 namespace Setting

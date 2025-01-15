@@ -42,7 +42,7 @@ public:
     }
 
     Block getSampleBlock();
-    std::tuple<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
+    std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
 
     static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
@@ -52,7 +52,7 @@ public:
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 
-    static std::tuple<Block, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
+    static std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 

@@ -14,7 +14,8 @@ public:
     using Base = ISourceStep;
     using Base::Base;
 
-    explicit SourceStepWithFilterBase(Header output_header_) : ISourceStep(std::move(output_header_))
+    explicit SourceStepWithFilterBase(Header output_header_)
+        : ISourceStep(std::move(output_header_))
     {
     }
 
