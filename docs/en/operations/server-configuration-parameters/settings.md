@@ -32,6 +32,41 @@ Type: UInt32
 
 Default: `120`
 
+## asynchronous_metric_log
+
+Enabled by default on ClickHouse Cloud deployments.
+
+If the setting is not enabled by default on your environment, depending on how ClickHouse was installed, you can follow the instruction below to enable or disable it.
+
+**Enabling**
+
+To manually turn on asynchronous metric logs history collection [`system.asynchronous_metric_log`](../../operations/system-tables/asynchronous_metric_log.md), create `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+     <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </asynchronous_metric_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `asynchronous_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_asynchronous_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<asynchronous_metric_log remove="1" />
+</clickhouse>
+```
+
 ## asynchronous_metrics_update_period_s
 
 Period in seconds for updating asynchronous metrics.
