@@ -1,6 +1,6 @@
 import logging
-from multiprocessing.dummy import Pool
 import uuid
+from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -863,12 +863,12 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
 
     # Check that we can actually work with table names containing single quote
     table = f"test_parameters_validation_for_postgresql_function_{uuid.uuid4().hex[:8]}"
-    _create_and_fill_table(f"\"{table}'\"")
+    _create_and_fill_table(f'"{table}\'"')
     result = node1.query(
         f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', 'mysecretpassword')"
     )
     assert int(result) == 1
-    cursor.execute(f"DROP TABLE \"{table}'\"")
+    cursor.execute(f'DROP TABLE "{table}\'"')
 
 
 if __name__ == "__main__":
