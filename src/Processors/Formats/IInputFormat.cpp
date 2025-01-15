@@ -16,7 +16,10 @@ Chunk IInputFormat::generate()
 {
     try
     {
-        return read();
+        size_t total_rows_before = total_rows;
+        auto chunk = read();
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
+        return chunk;
     }
     catch (Exception & e)
     {

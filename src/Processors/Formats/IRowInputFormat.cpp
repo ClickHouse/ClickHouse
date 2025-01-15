@@ -3,7 +3,6 @@
 #include <IO/WriteHelpers.h>    // toString
 #include <IO/WithFileName.h>
 #include <Common/logger_useful.h>
-#include "Processors/Formats/IInputFormat.h"
 
 
 namespace DB
@@ -91,8 +90,6 @@ void IRowInputFormat::logError()
 
 Chunk IRowInputFormat::read()
 {
-    size_t total_rows_before = total_rows;
-
     if (total_rows == 0)
     {
         try
@@ -252,7 +249,6 @@ Chunk IRowInputFormat::read()
 
     Chunk chunk(std::move(columns), num_rows);
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
-    chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
     return chunk;
 }
 

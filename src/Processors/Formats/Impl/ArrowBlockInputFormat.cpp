@@ -34,7 +34,6 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 Chunk ArrowBlockInputFormat::read()
 {
     Chunk res;
-    res.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
 
     block_missing_values.clear();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;

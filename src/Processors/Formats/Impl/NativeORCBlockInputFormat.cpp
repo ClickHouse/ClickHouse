@@ -1030,7 +1030,6 @@ Chunk NativeORCBlockInputFormat::read()
     orc_column_to_ch_column->orcTableToCHChunk(res, &schema, batch.get(), num_rows, &block_missing_values);
 
     approx_bytes_read_for_chunk = num_rows * current_stripe_info->getLength() / current_stripe_info->getNumberOfRows();
-    res.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows));
     total_rows += res.getNumRows();
     return res;
 }
