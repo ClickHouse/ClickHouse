@@ -20,6 +20,12 @@ public:
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }
 
+    /// Return vector of indexes of filtered paths.
+    static std::vector<size_t> filterOutProcessedAndFailed(
+        const std::vector<std::string> & paths,
+        const std::filesystem::path & zk_path_,
+        LoggerPtr log_);
+
     void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;

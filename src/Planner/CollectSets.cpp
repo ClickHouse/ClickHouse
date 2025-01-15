@@ -22,7 +22,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_opearators;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -78,7 +78,7 @@ public:
                 in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
-                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_opearators],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
                 });
 
             DataTypes set_element_types = {in_first_argument->getResultType()};
