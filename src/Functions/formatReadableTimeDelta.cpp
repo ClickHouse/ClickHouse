@@ -63,7 +63,7 @@ public:
 
         const IDataType & type = *arguments[0];
 
-        if (!isNativeNumber(type))
+        if (!isNumber(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() >= 2)

@@ -6,7 +6,8 @@
 
 namespace DB
 {
-    class PageCache;
+class PageCache;
+class TraceCollector;
 }
 
 /// To be able to temporarily stop memory tracking from current thread.
@@ -40,4 +41,5 @@ public:
     friend class MemoryTracker;
     friend struct AllocationTrace;
     friend class DB::PageCache;
+    friend class DB::TraceCollector;
 };
