@@ -32,6 +32,13 @@ struct HyperLogLogPlusPlusData
         , alpha_mm(computeAlphaMM())
         , registers(num_words, 0) // Initialize registers with zeros
     {
+        // std::cout << "relative_sd: " << relative_sd << std::endl;
+        // std::cout << "p: " << p << std::endl;
+        // std::cout << "idx_shift: " << idx_shift << std::endl;
+        // std::cout << "w_padding: " << w_padding << std::endl;
+        // std::cout << "m: " << m << std::endl;
+        // std::cout << "num_words: " << num_words << std::endl;
+        // std::cout << "alpha_mm: " << alpha_mm << std::endl;
     }
 
     void serialize(WriteBuffer & buf) const
@@ -63,6 +70,7 @@ struct HyperLogLogPlusPlusData
 
     void add(UInt64 value)
     {
+        // std::cout << "add:" << value << std::endl;
         UInt64 x = value;
         UInt64 idx = x >> idx_shift;
         UInt64 w = (x << p) | w_padding;
@@ -74,10 +82,13 @@ struct HyperLogLogPlusPlusData
         UInt64 shift = (idx - word_offset * REGISTERS_PER_WORD) * REGISTER_SIZE;
         UInt64 mask = REGISTER_WORD_MASK << shift;
         UInt64 midx = (word & mask) >> shift;
+        // std::cout << "bucket[" << std::setw(3) << std::setfill('0') << idx << "]=" << midx << " input:" << value << " pw:" << pw;
         if (pw > midx)
         {
+            // std::cout << " updated";
             registers[word_offset] = (word & ~mask) | (pw << shift);
         }
+        // std::cout << std::endl;
     }
 
     void merge(const HyperLogLogPlusPlusData & other)
@@ -107,27 +118,35 @@ struct HyperLogLogPlusPlusData
         for (size_t word_i = 0; word_i < num_words; ++word_i)
         {
             UInt64 word = registers[word_i];
-            for (size_t register_i = 0; i < m && register_i < REGISTER_SIZE; ++register_i, ++i)
+            for (size_t register_i = 0; i < m && register_i < REGISTERS_PER_WORD; ++register_i, ++i)
             {
                 UInt64 midx = (word >> (register_i * REGISTER_SIZE)) & REGISTER_WORD_MASK;
+                // std::cout << "bucket[" << std::setw(3) << std::setfill('0') << i << "]=" << midx << std::endl;
                 z_inverse += 1.0 / (1ULL << midx);
 
                 if (midx == 0)
                     ++v;
             }
         }
+        // std::cout << "num_zero:" << v << std::endl;
 
         double e = alpha_mm / z_inverse;
+        // std::cout << "e:" << e << std::endl;
 
         double e_bias_corrected = e;
         if (p < 19 && e < 5.0 * m)
             e_bias_corrected = e - estimateBias(e);
 
+        // std::cout << "e_bias_corrected:" << e_bias_corrected << std::endl;
+
         if (v > 0)
         {
             double h = m * std::log(static_cast<double>(m) / v);
             if ((p < 19 && h <= THRESHOLDS[p - 4]) || e <= 2.5 * m)
+            {
+                // std::cout << "h:" << h << std::endl;
                 return static_cast<UInt64>(std::round(h));
+            }
             else
                 return static_cast<UInt64>(std::round(e_bias_corrected));
         }
@@ -213,7 +232,7 @@ private:
 
     /// The pre-calculated combination of: alpha * m * m
     /// 'alpha' corrects the raw cardinality estimate 'Z'. See the FlFuGaMe07 paper for its derivation.
-    double alpha_mm;
+    const double alpha_mm;
 
     /// The number of bits that is required per register.
     ///
