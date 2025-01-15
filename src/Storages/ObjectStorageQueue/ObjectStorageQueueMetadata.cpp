@@ -18,6 +18,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
+#include <shared_mutex>
 
 
 namespace ProfileEvents
@@ -754,8 +755,7 @@ public:
     static UInt128 hash(Args... args)
     {
         auto hash = SipHash();
-        for (const auto & arg : {args...})
-            hash.update(arg);
+        (hash.update(args), ...);
         return hash.get128();
     }
 
