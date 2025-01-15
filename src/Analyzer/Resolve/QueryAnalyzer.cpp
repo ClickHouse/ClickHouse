@@ -1229,17 +1229,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     }
     else if (node_type == QueryTreeNodeType::FUNCTION)
     {
-        // Scalar subquery can be resolved into __getScalar(const) expression.
-        // Do not resolve this expression again to avoid constant folding.
-        if (alias_node->as<FunctionNode>()->isResolved())
-        {
-            alias_node = *it;
-            scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.pop_back();
-        }
-        else
-        {
-            resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        }
+        resolveExpressionNode(alias_node, *scope_to_resolve_alias_expression, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
     else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
