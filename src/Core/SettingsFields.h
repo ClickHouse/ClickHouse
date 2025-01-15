@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <string_view>
-#include <optional>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
@@ -31,6 +30,11 @@ struct SettingFieldBase
 
     virtual void writeBinary(WriteBuffer & out) const = 0;
     virtual void readBinary(ReadBuffer & in) = 0;
+
+    virtual SettingFieldBase & operator=(const Field & f) = 0;
+    virtual explicit operator Field() const = 0;
+
+    virtual std::unique_ptr<SettingFieldBase> clone() const = 0;
 };
 
 
@@ -52,7 +56,7 @@ struct SettingFieldNumber : public SettingFieldBase
     explicit SettingFieldNumber(const Field & f);
 
     SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
-    SettingFieldNumber & operator=(const Field & f);
+    SettingFieldNumber & operator=(const Field & f) override;
     SettingFieldNumber & operator=(const SettingFieldNumber & o)
     {
         value = o.value;
@@ -60,8 +64,10 @@ struct SettingFieldNumber : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldNumber>(*this); }
+
     operator Type() const { return value; } /// NOLINT
-    explicit operator Field() const { return value; }
+    explicit operator Field() const override { return value; }
 
     String toString() const override;
     void parseFromString(const String & str) override;
@@ -108,7 +114,7 @@ struct SettingAutoWrapper final : public SettingFieldBase
             base = Base(f);
     }
 
-    SettingAutoWrapper & operator=(const Field & f)
+    SettingAutoWrapper & operator=(const Field & f) override
     {
         changed = true;
         if (is_auto = isAuto(f); !is_auto)
@@ -124,7 +130,9 @@ struct SettingAutoWrapper final : public SettingFieldBase
         return *this;
     }
 
-    explicit operator Field() const { return is_auto ? Field(keyword) : Field(base); }
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingAutoWrapper>(*this); }
+
+    explicit operator Field() const override { return is_auto ? Field(keyword) : Field(base); }
 
     String toString() const override { return is_auto ? keyword : base.toString(); }
 
@@ -157,7 +165,6 @@ struct SettingAutoWrapper final : public SettingFieldBase
     }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
-    std::optional<Type> get() const { return is_auto ? std::nullopt : std::make_optional(base.value); }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
@@ -182,7 +189,7 @@ struct SettingFieldMaxThreads final : public SettingFieldBase
     SettingFieldMaxThreads(const SettingFieldMaxThreads & o) : SettingFieldBase(o.changed), is_auto(o.is_auto), value(o.value) { }
 
     SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
-    SettingFieldMaxThreads & operator=(const Field & f);
+    SettingFieldMaxThreads & operator=(const Field & f) override;
     SettingFieldMaxThreads & operator=(const SettingFieldMaxThreads & o)
     {
         is_auto = o.is_auto;
@@ -191,8 +198,10 @@ struct SettingFieldMaxThreads final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldMaxThreads>(*this); }
+
     operator UInt64() const { return value; } /// NOLINT
-    explicit operator Field() const { return value; }
+    explicit operator Field() const override { return value; }
 
     /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
     String toString() const override;
@@ -237,7 +246,7 @@ struct SettingFieldTimespan final : public SettingFieldBase
     SettingFieldTimespan & operator =(const std::chrono::duration<Rep, Period> & x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(std::chrono::duration_cast<std::chrono::microseconds>(x).count())}; return *this; }
 
     SettingFieldTimespan & operator =(UInt64 x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}; return *this; }
-    SettingFieldTimespan & operator =(const Field & f);
+    SettingFieldTimespan & operator=(const Field & f) override;
     SettingFieldTimespan & operator=(const SettingFieldTimespan & o)
     {
         changed = o.changed;
@@ -245,13 +254,15 @@ struct SettingFieldTimespan final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldTimespan>(*this); }
+
     operator Poco::Timespan() const { return value; } /// NOLINT
 
     template <class Rep, class Period = std::ratio<1>>
     operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); } /// NOLINT
 
     explicit operator UInt64() const { return value.totalMicroseconds() / microseconds_per_unit; }
-    explicit operator Field() const;
+    explicit operator Field() const override;
 
     Poco::Timespan::TimeDiff totalMicroseconds() const { return value.totalMicroseconds(); }
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
@@ -283,7 +294,11 @@ struct SettingFieldString final : public SettingFieldBase
     SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(String && str) { value = std::move(str); changed = true; return *this; }
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
-    SettingFieldString & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
+    SettingFieldString & operator=(const Field & f) override
+    {
+        *this = f.safeGet<const String &>();
+        return *this;
+    }
     SettingFieldString & operator=(const SettingFieldString & o)
     {
         value = o.value;
@@ -291,8 +306,10 @@ struct SettingFieldString final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldString>(*this); }
+
     operator const String &() const { return value; } /// NOLINT
-    explicit operator Field() const { return value; }
+    explicit operator Field() const override { return value; }
 
     String toString() const override { return value; }
     void parseFromString(const String & str) override { *this = str; }
@@ -311,7 +328,7 @@ struct SettingFieldMap final : public SettingFieldBase
     SettingFieldMap(const SettingFieldMap & o) : SettingFieldBase(o.changed), value(o.value) { }
 
     SettingFieldMap & operator =(const Map & map) { value = map; changed = true; return *this; }
-    SettingFieldMap & operator =(const Field & f);
+    SettingFieldMap & operator=(const Field & f) override;
     SettingFieldMap & operator=(const SettingFieldMap & o)
     {
         changed = o.changed;
@@ -319,8 +336,10 @@ struct SettingFieldMap final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldMap>(*this); }
+
     operator const Map &() const { return value; } /// NOLINT
-    explicit operator Field() const { return value; }
+    explicit operator Field() const override { return value; }
 
     String toString() const override;
     void parseFromString(const String & str) override;
@@ -338,7 +357,7 @@ struct SettingFieldChar : public SettingFieldBase
     SettingFieldChar(const SettingFieldChar & o) : SettingFieldBase(o.changed), value(o.value) { }
 
     SettingFieldChar & operator =(char c) { value = c; changed = true; return *this; }
-    SettingFieldChar & operator =(const Field & f);
+    SettingFieldChar & operator=(const Field & f) override;
     SettingFieldChar & operator=(const SettingFieldChar & o)
     {
         value = o.value;
@@ -346,8 +365,10 @@ struct SettingFieldChar : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldChar>(*this); }
+
     operator char() const { return value; } /// NOLINT
-    explicit operator Field() const { return toString(); }
+    explicit operator Field() const override { return toString(); }
 
     String toString() const override { return String(&value, 1); }
     void parseFromString(const String & str) override;
@@ -370,7 +391,11 @@ struct SettingFieldURI final : public SettingFieldBase
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
     SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
     SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
-    SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
+    SettingFieldURI & operator=(const Field & f) override
+    {
+        *this = f.safeGet<const String &>();
+        return *this;
+    }
     SettingFieldURI & operator=(const SettingFieldURI & o)
     {
         value = o.value;
@@ -378,9 +403,11 @@ struct SettingFieldURI final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldURI>(*this); }
+
     operator const Poco::URI &() const { return value; } /// NOLINT
     explicit operator String() const { return toString(); }
-    explicit operator Field() const { return toString(); }
+    explicit operator Field() const override { return toString(); }
 
     String toString() const override { return value.toString(); }
     void parseFromString(const String & str) override { *this = str; }
@@ -413,7 +440,11 @@ struct SettingFieldEnum final : public SettingFieldBase
     SettingFieldEnum(const SettingFieldEnum & o) : SettingFieldBase(o.changed), value(o.value) { }
 
     SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
-    SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<const String &>()); return *this; }
+    SettingFieldEnum & operator=(const Field & f) override
+    {
+        *this = Traits::fromString(f.safeGet<const String &>());
+        return *this;
+    }
     SettingFieldEnum & operator=(const SettingFieldEnum & o)
     {
         value = o.value;
@@ -421,8 +452,10 @@ struct SettingFieldEnum final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldEnum>(*this); }
+
     operator EnumType() const { return value; } /// NOLINT
-    explicit operator Field() const { return toString(); }
+    explicit operator Field() const override { return toString(); }
 
     String toString() const override { return Traits::toString(value); }
     void parseFromString(const String & str) override { *this = Traits::fromString(str); }
@@ -464,7 +497,7 @@ struct SettingFieldMultiEnum final : public SettingFieldBase
     SettingFieldMultiEnum(const SettingFieldMultiEnum & o) : SettingFieldBase(o.changed), value(o.value) { }
 
     operator ValueType() const { return value; } /// NOLINT
-    explicit operator Field() const { return toString(); }
+    explicit operator Field() const override { return toString(); }
     operator MultiEnum<EnumType>() const /// NOLINT
     {
         MultiEnum<EnumType> res;
@@ -474,13 +507,19 @@ struct SettingFieldMultiEnum final : public SettingFieldBase
     }
 
     SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
-    SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
+    SettingFieldMultiEnum & operator=(const Field & x) override
+    {
+        parseFromString(x.safeGet<const String &>());
+        return *this;
+    }
     SettingFieldMultiEnum & operator=(const SettingFieldMultiEnum & o)
     {
         changed = o.changed;
         value = o.value;
         return *this;
     }
+
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldMultiEnum>(*this); }
 
     String toString() const override
     {
@@ -561,7 +600,11 @@ struct SettingFieldTimezone final : public SettingFieldBase
     SettingFieldTimezone & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldTimezone & operator =(String && str) { validateTimezone(str); value = std::move(str); changed = true; return *this; }
     SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
-    SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
+    SettingFieldTimezone & operator=(const Field & f) override
+    {
+        *this = f.safeGet<const String &>();
+        return *this;
+    }
     SettingFieldTimezone & operator=(const SettingFieldTimezone & o)
     {
         changed = o.changed;
@@ -569,8 +612,10 @@ struct SettingFieldTimezone final : public SettingFieldBase
         return *this;
     }
 
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldTimezone>(*this); }
+
     operator const String &() const { return value; } /// NOLINT
-    explicit operator Field() const { return value; }
+    explicit operator Field() const override { return value; }
 
     String toString() const override { return value; }
     void parseFromString(const String & str) override { *this = str; }
@@ -590,14 +635,22 @@ struct SettingFieldCustom final : public SettingFieldBase
     explicit SettingFieldCustom(const Field & f = {}) : value(f) {}
     SettingFieldCustom(const SettingFieldCustom & o) : SettingFieldBase(o.changed), value(o.value) { }
     SettingFieldCustom(SettingFieldCustom && o) : SettingFieldBase(o.changed), value(std::move(o.value)) { }
-    SettingFieldCustom & operator =(const Field & f) { value = f; changed = true; return *this; }
+    SettingFieldCustom & operator=(const Field & f) override
+    {
+        value = f;
+        changed = true;
+        return *this;
+    }
     SettingFieldCustom & operator=(const SettingFieldCustom & o)
     {
         value = o.value;
         changed = o.changed;
         return *this;
     }
-    explicit operator Field() const { return value; }
+
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldCustom>(*this); }
+
+    explicit operator Field() const override { return value; }
 
     String toString() const override;
     void parseFromString(const String & str) override;
@@ -613,7 +666,9 @@ public:
     explicit SettingFieldNonZeroUInt64(const Field & f);
 
     SettingFieldNonZeroUInt64 & operator=(UInt64 x);
-    SettingFieldNonZeroUInt64 & operator=(const Field & f);
+    SettingFieldNonZeroUInt64 & operator=(const Field & f) override;
+
+    std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldNonZeroUInt64>(*this); }
 
     void parseFromString(const String & str) override;
 
