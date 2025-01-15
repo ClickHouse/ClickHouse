@@ -77,7 +77,7 @@ between columns `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters
 For example:
 
 - If `INSERT`ing, the line below matches the expected template and would read values `bathroom interior design`, `2166`, `$3` into columns `Search phrase`, `count`, `ad price`.
-- If `SELECT`ingm the kline below is the output, assuming that values `bathroom interior design`, `2166`, `$3` are already stored in a table under columns `Search phrase`, `count`, `ad price`.  
+- If `SELECT`ing the line below is the output, assuming that values `bathroom interior design`, `2166`, `$3` are already stored in a table under columns `Search phrase`, `count`, `ad price`.  
 
 ```
 Search phrase: 'bathroom interior design', count: 2166, ad price: $3;
