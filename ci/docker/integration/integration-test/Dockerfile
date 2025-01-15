@@ -8,18 +8,18 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
-#    && apt-get install \
-#        sudo \
-#        apt-transport-https \
-#        apt-utils \
-#        ca-certificates \
-#        curl \
-#        dnsutils \
-#        gnupg \
-#        iputils-ping \
-#        lsb-release \
+    && apt-get install \
+        sudo \
+        apt-transport-https \
+        apt-utils \
+        ca-certificates \
+        curl \
+        dnsutils \
+        gnupg \
+        iputils-ping \
+        lsb-release \
 #        wget \
-#        --yes --no-install-recommends --verbose-versions \
+        --yes --no-install-recommends --verbose-versions \
 #    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
 #    && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
 #    && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
@@ -37,7 +37,6 @@ SHELL ["/bin/bash", "-c"]
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
         bsdutils \
-        curl \
         default-jre \
         g++ \
         iproute2 \
