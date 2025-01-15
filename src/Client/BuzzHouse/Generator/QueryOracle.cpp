@@ -365,6 +365,10 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
+        if (std::filesystem::exists(qfile))
+        {
+            (void)std::remove(qfile.generic_string().c_str()); //remove the file
+        }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
         insel = ins->mutable_insert_select();
@@ -539,6 +543,11 @@ void QueryOracle::replaceQueryWithTablePeers(
         {
             //use a different file for the peer database
             FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
+
+            if (std::filesystem::exists(qfile_peer))
+            {
+                (void)std::remove(qfile_peer.generic_string().c_str()); //remove the file
+            }
             ff.set_path(qfile_peer.generic_string());
         }
     }
