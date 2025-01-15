@@ -55,10 +55,12 @@ public:
     using Processor = std::string;
 
     ObjectStorageQueueMetadata(
+        ObjectStorageType storage_type_,
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
-        size_t cleanup_interval_max_ms_);
+        size_t cleanup_interval_max_ms_,
+        size_t keeper_multiread_batch_size_);
 
     ~ObjectStorageQueueMetadata();
 
@@ -71,6 +73,12 @@ public:
         bool is_attach,
         LoggerPtr log);
 
+    ObjectStorageType getType() const { return storage_type; }
+    std::string getPath() const { return zookeeper_path; }
+
+    void registerIfNot(const StorageID & storage_id);
+    size_t unregister(const StorageID & storage_id);
+
     void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
@@ -80,6 +88,7 @@ public:
 
     /// Method of Ordered mode parallel processing.
     bool useBucketsForProcessing() const;
+    size_t getBucketsNum() const { return buckets_num; }
     Bucket getBucketForPath(const std::string & path) const;
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
@@ -90,17 +99,20 @@ public:
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
 
-    void alterSettings(const SettingsChanges & changes);
+    void alterSettings(const SettingsChanges & changes, const ContextPtr & context);
 
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+    void migrateToBucketsInKeeper(size_t value);
 
     ObjectStorageQueueTableMetadata table_metadata;
+    const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
-    const size_t buckets_num;
     const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
+    const size_t keeper_multiread_batch_size;
+    size_t buckets_num;
 
     LoggerPtr log;
 

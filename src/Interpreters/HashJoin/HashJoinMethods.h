@@ -9,9 +9,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 /// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
@@ -69,7 +66,7 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
 public:
-    static size_t insertFromBlockImpl(
+    static void insertFromBlockImpl(
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
@@ -103,7 +100,7 @@ private:
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
 
     template <typename KeyGetter, typename HashMap, typename Selector>
-    static size_t insertFromBlockImplTypeCase(
+    static void insertFromBlockImplTypeCase(
         HashJoin & join,
         HashMap & map,
         const ColumnRawPtrs & key_columns,
@@ -149,20 +146,22 @@ private:
     template <bool need_filter>
     static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);
 
-    template <typename AddedColumns>
+    template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
+        const Selector & selector,
         const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, typename AddedColumns>
+    template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
     static size_t joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
+        const Selector & selector,
         bool need_filter [[maybe_unused]],
         bool flag_per_row [[maybe_unused]]);
 

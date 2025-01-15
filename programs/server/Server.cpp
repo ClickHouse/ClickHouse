@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <base/getMemoryAmount.h>
 #include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
@@ -29,7 +30,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -59,6 +60,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -89,6 +91,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Common/ReplicasReconnector.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -128,6 +131,9 @@
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
+#    include <Server/SSH/SSHPtyHandlerFactory.h>
+#    include <Common/LibSSHInitializer.h>
+#    include <Common/LibSSHLogger.h>
 #endif
 
 #if USE_GRPC
@@ -166,7 +172,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt32 allowed_feature_tier;
+    extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
@@ -214,6 +220,10 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString skipping_index_cache_policy;
+    extern const ServerSettingsUInt64 skipping_index_cache_size;
+    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
+    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -280,7 +290,12 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsString primary_index_cache_policy;
+    extern const ServerSettingsUInt64 primary_index_cache_size;
+    extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
 }
 
 }
@@ -293,6 +308,7 @@ namespace CurrentMetrics
     extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
+    extern const Metric StartupScriptsExecutionState;
 }
 
 namespace ProfileEvents
@@ -361,6 +377,14 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
 }
+
+
+enum StartupScriptsExecutionState : CurrentMetrics::Value
+{
+    NotFinished = 0,
+    Success = 1,
+    Failure = 2,
+};
 
 
 static std::string getCanonicalPath(std::string && path)
@@ -779,9 +803,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
+
+        CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Success);
     }
     catch (...)
     {
+        CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
     }
 }
@@ -854,6 +881,11 @@ try
     setJemallocBackgroundThreads(true);
 #endif
 
+#if USE_SSL
+    ::ssh::LibSSHInitializer::instance();
+    ::ssh::libsshLogger::initialize();
+#endif
+
     Stopwatch startup_watch;
 
     Poco::Logger * log = &logger();
@@ -921,6 +953,8 @@ try
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
+
+    QueryPlanStepRegistry::registerPlanSteps();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -1375,6 +1409,23 @@ try
         setOOMScore(oom_score, log);
 #endif
 
+    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
+
+    SCOPE_EXIT({
+        if (cancellation_task)
+            CancellationChecker::getInstance().terminateThread();
+    });
+
+    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
+    {
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
+            "CancellationChecker",
+            [] { CancellationChecker::getInstance().workerFunction(); }
+        );
+        cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+        (*cancellation_task)->activateAndSchedule();
+    }
+
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
 
@@ -1563,6 +1614,16 @@ try
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
+    size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
+    double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
+    if (primary_index_cache_size > max_cache_size)
+    {
+        primary_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
+    }
+    global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
+
     size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
     if (page_cache_size != 0)
         global_context->setPageCache(
@@ -1589,6 +1650,17 @@ try
         LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
+
+    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
+    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
+    size_t skipping_index_cache_max_entries = server_settings[ServerSetting::skipping_index_cache_max_entries];
+    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
+    if (skipping_index_cache_size > max_cache_size)
+    {
+        skipping_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
+    }
+    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_entries, skipping_index_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
@@ -1666,17 +1738,8 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr config, bool initial_loading)
         {
-            if (!initial_loading)
-            {
-                /// Add back "config-file" key which is absent in the reloaded config.
-                config->setString("config-file", config_file);
-
-                /// Apply config updates in global context.
-                global_context->setConfig(config);
-            }
-
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             ServerSettings new_server_settings;
@@ -1772,21 +1835,15 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
-            global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allowed_feature_tier]);
+            global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] > 0 && new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = new_server_settings[ServerSetting::concurrent_threads_soft_limit_num];
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] > 0)
-            {
-                auto value = new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] * getNumberOfCPUCoresToUse();
-                if (value > 0 && value < concurrent_threads_soft_limit)
-                    concurrent_threads_soft_limit = value;
-            }
-            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
+            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
@@ -1897,8 +1954,10 @@ try
 
             global_context->updateUncompressedCacheConfiguration(*config);
             global_context->updateMarkCacheConfiguration(*config);
+            global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
+            global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
 
@@ -2196,6 +2255,8 @@ try
     if (dns_cache_updater)
         dns_cache_updater->start();
 
+    auto replicas_reconnector = ReplicasReconnector::init(global_context);
+
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     std::string default_database = server_settings[ServerSetting::default_database].toString();
@@ -2245,7 +2306,7 @@ try
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
+        /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
@@ -2363,7 +2424,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+            if (!server_settings[ServerSetting::dictionaries_lazy_load] && server_settings[ServerSetting::wait_dictionaries_load_at_startup])
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -2375,7 +2436,7 @@ try
         /// try to load embedded dictionaries immediately, throw on error and die
         try
         {
-            global_context->tryCreateEmbeddedDictionaries(config());
+            global_context->tryCreateEmbeddedDictionaries();
         }
         catch (...)
         {
@@ -2569,7 +2630,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "mysql")
             return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
+#if USE_SSL
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+#else
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+#endif
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
@@ -2813,6 +2878,37 @@ void Server::createServers(
             });
         }
 
+        if (server_type.shouldStart(ServerType::Type::TCP_SSH))
+        {
+            port_name = "tcp_ssh_port";
+            createServer(
+                config,
+                listen_host,
+                port_name,
+                listen_try,
+                start_servers,
+                servers,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if 0 && USE_SSH && defined(OS_LINUX) /// SSH server is insecure until and it is disabled until all special cases are fixed.
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "SSH PTY: " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new SSHPtyHandlerFactory(*this, config),
+                            server_pool,
+                            socket,
+                            new Poco::Net::TCPServerParams));
+#else
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
+#endif
+                });
+        }
+
         if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
@@ -2843,7 +2939,11 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
+#if USE_SSL
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+#else
                     std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+#endif
             });
         }
 

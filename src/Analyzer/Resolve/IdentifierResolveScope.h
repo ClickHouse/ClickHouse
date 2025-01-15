@@ -165,6 +165,9 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
+    /// Table expression nodes that appear in the join tree of the corresponding query
+    std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
+
     QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
     /// Here we count the number of nullable GROUP BY keys we met resolving expression.
     /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`

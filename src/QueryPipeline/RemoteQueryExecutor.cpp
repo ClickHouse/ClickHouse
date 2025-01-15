@@ -87,10 +87,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Scalars & scalars_,
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
+    std::optional<Extension> extension_,
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
-    create_connections = [this, pool, throttler, extension_](AsyncCallback)
+    create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -122,7 +123,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         {
             chassert(!fail_message.empty());
             if (result.entry.isNull())
+            {
                 LOG_DEBUG(log, "Failed to connect to replica {}. {}", pool->getAddress(), fail_message);
+                if (connection_pool_with_failover_)
+                    connection_pool_with_failover_->incrementErrorCount(pool);
+            }
             else
                 LOG_DEBUG(log, "Replica is not usable for remote query execution: {}. {}", pool->getAddress(), fail_message);
         }
@@ -407,7 +412,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     std::vector<String> local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
     {
-        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
+        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
         boost::container::flat_set<String> granted_roles;
         if (user)
         {
@@ -883,9 +888,7 @@ void RemoteQueryExecutor::sendExternalTables()
                         storage_snapshot, query_info, my_context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
-                    auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(my_context),
-                        BuildQueryPipelineSettings::fromContext(my_context));
+                    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
@@ -957,6 +960,11 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX)
+
+    if (!context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)

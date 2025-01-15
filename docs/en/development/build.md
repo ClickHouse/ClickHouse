@@ -44,7 +44,7 @@ sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 
 For other Linux distributions - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of March 2024, clang-17 or higher will work.
+As of November 2024, clang-18 or higher will work.
 GCC as a compiler is not supported.
 To build with a specific Clang version:
 
@@ -70,8 +70,8 @@ enable sanitizers you must use a version that matches the exact same `std` as th
 the crates):
 
 ```bash
-rustup toolchain install nightly-2024-04-01
-rustup default nightly-2024-04-01
+rustup toolchain install nightly-2024-12-01
+rustup default nightly-2024-12-01
 rustup component add rust-src
 ```
 
