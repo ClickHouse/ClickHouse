@@ -352,7 +352,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     Select * sel = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
     peer_query = pq;
-    measure_performance = peer_query == PeerQuery::ClickHouseOnly && rg.nextBool();
+    measure_performance = peer_query == PeerQuery::ClickHouseOnly /* && rg.nextBool()*/;
     const bool global_aggregate = !measure_performance && rg.nextSmallNumber() < 4;
 
     if (measure_performance)
@@ -396,7 +396,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
-void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen)
+void QueryOracle::findTablesWithPeersAndReplace(
+    RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, const bool replace)
 {
     checkStackSize();
 
@@ -406,18 +407,18 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
 
         if (sel.has_select_core())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen, replace);
         }
         else if (sel.has_set_query())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen, replace);
         }
         if (sel.has_ctes())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().query()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().query()), gen, replace);
             for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
             {
-                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().other_ctes(i).query()), gen);
+                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().other_ctes(i).query()), gen, replace);
             }
         }
     }
@@ -425,8 +426,8 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
     {
         auto & setq = static_cast<SetQuery &>(mes);
 
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1()), gen);
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1()), gen, replace);
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2()), gen, replace);
     }
     else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
     {
@@ -434,7 +435,7 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
 
         if (ssc.has_from())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen, replace);
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
@@ -443,9 +444,9 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
 
         for (int i = 0; i < jquery.tos_list_size(); i++)
         {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen, replace);
         }
-        findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen, replace);
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
     {
@@ -455,10 +456,10 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
         {
             if (jclause.clauses(i).has_core())
             {
-                findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen);
+                findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen, replace);
             }
         }
-        findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen, replace);
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
     {
@@ -478,12 +479,15 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
 
                     if (t.hasDatabasePeer())
                     {
-                        buf.resize(0);
-                        buf += tos.joined_table().table_alias().table();
-                        tos.clear_joined_table();
-                        JoinedTableFunction * jtf = tos.mutable_joined_table_function();
-                        gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
-                        jtf->mutable_table_alias()->set_table(buf);
+                        if (replace)
+                        {
+                            buf.resize(0);
+                            buf += tos.joined_table().table_alias().table();
+                            tos.clear_joined_table();
+                            JoinedTableFunction * jtf = tos.mutable_joined_table_function();
+                            gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
+                            jtf->mutable_table_alias()->set_table(buf);
+                        }
                         found_tables.insert(tname);
                         can_test_query_success &= t.hasClickHousePeer();
                     }
@@ -492,11 +496,11 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
         }
         else if (tos.has_joined_derived_query())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(tos.joined_derived_query().select()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<Select &>(tos.joined_derived_query().select()), gen, replace);
         }
         else if (tos.has_joined_query())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
         }
     }
 }
@@ -532,24 +536,19 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    if (!measure_performance)
+    //replace references
+    findTablesWithPeersAndReplace(
+        rg, const_cast<Select &>(sq2.inner_query().insert().insert_select().select()), gen, peer_query != PeerQuery::ClickHouseOnly);
+    if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
-        if (peer_query == PeerQuery::AllPeers)
-        {
-            //replace references
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().insert().insert_select().select()), gen);
-        }
-        else if (peer_query == PeerQuery::ClickHouseOnly)
-        {
-            //use a different file for the peer database
-            FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
+        //use a different file for the peer database
+        FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
 
-            if (std::filesystem::exists(qfile_peer))
-            {
-                (void)std::remove(qfile_peer.generic_string().c_str()); //remove the file
-            }
-            ff.set_path(qfile_peer.generic_string());
+        if (std::filesystem::exists(qfile_peer))
+        {
+            (void)std::remove(qfile_peer.generic_string().c_str()); //remove the file
         }
+        ff.set_path(qfile_peer.generic_string());
     }
     for (const auto & entry : found_tables)
     {
@@ -621,23 +620,23 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
             if (measure_performance)
             {
                 ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2);
-                if (this->query_duration_ms1
-                    > static_cast<uint64_t>(this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
+                if (this->fc.query_time_minimum<this->query_duration_ms1 && this->query_duration_ms1> static_cast<uint64_t>(
+                        this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
                 {
                     throw std::runtime_error(fmt::format(
-                        "{}: ClickHouse peer table query was faster than the server: {} ms vs {} ms",
+                        "{}: ClickHouse peer table query was faster than the server: {} vs {}",
                         oracle_name,
-                        std::to_string(this->query_duration_ms1),
-                        std::to_string(this->query_duration_ms2)));
+                        formatReadableTime(static_cast<double>(this->query_duration_ms1 * 1000000)),
+                        formatReadableTime(static_cast<double>(this->query_duration_ms2 * 1000000))));
                 }
-                if (this->memory_usage1
-                    > static_cast<uint64_t>(this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
+                if (this->fc.query_memory_minimum<this->memory_usage1 && this->memory_usage1> static_cast<uint64_t>(
+                        this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
                 {
                     throw std::runtime_error(fmt::format(
                         "{}: ClickHouse peer table query used less memory than the server: {} vs {}",
                         oracle_name,
-                        std::to_string(this->memory_usage1),
-                        std::to_string(this->memory_usage2)));
+                        formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage1)),
+                        formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage2))));
                 }
             }
             else

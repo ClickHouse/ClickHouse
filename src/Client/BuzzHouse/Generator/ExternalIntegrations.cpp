@@ -1375,11 +1375,10 @@ void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     buf.resize(0);
     if (std::getline(infile, buf))
     {
-        auto tabchar = buf.find('\t');
+        const auto tabchar = buf.find('\t');
 
-        tabchar++;
         query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
-        memory_usage = static_cast<uint64_t>(std::stoull(buf, &tabchar));
+        memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
     }
 }
 

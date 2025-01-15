@@ -24,7 +24,7 @@ private:
     std::unordered_set<uint32_t> found_tables;
     std::vector<String> nsettings;
 
-    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);
+    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc)

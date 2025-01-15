@@ -82,6 +82,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
+        {"query_time_minimum", [&](const JSONObjectType & value) { query_time_minimum = static_cast<uint32_t>(value.getUInt64()); }},
+        {"query_memory_minimum", [&](const JSONObjectType & value) { query_memory_minimum = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time_threshold", [&](const JSONObjectType & value) { query_time_threshold = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_memory_threshold",
          [&](const JSONObjectType & value) { query_memory_threshold = static_cast<uint32_t>(value.getUInt64()); }},
