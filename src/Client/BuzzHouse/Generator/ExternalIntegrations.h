@@ -373,7 +373,7 @@ public:
 
     void setDefaultSettings(PeerTableDatabase pt, const std::vector<String> & settings);
 
-    void replicateSettings(const PeerTableDatabase pt);
+    void replicateSettings(PeerTableDatabase pt);
 
     ~ExternalIntegrations()
     {

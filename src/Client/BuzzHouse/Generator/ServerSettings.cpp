@@ -431,12 +431,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"low_cardinality_max_dictionary_size",
      CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
-};
+    {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)}};
 
 /// We need to split the serverSettings because in order to initialize the values for the map it
 /// needs to be able to fit into the stack. Note we may have to split it even more in the future.
 static std::unordered_map<String, CHSetting> serverSettings2 = {
-    {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
     {"materialized_views_ignore_errors", CHSetting(trueOrFalse, {}, false)},
