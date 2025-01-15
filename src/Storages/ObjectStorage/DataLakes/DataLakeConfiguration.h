@@ -187,10 +187,9 @@ using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configura
 #if USE_AZURE_BLOB_STORAGE
 using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
 #endif
+#endif
 
 #if USE_AWS_S3
 using StorageS3HudiConfiguration = DataLakeConfiguration<StorageS3Configuration, HudiMetadata>;
-#endif
-
 #endif
 }
