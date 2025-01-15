@@ -3,7 +3,6 @@
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 
-#include <array>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnNullable.h>

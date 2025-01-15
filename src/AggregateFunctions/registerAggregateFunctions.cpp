@@ -91,6 +91,7 @@ void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & f
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
+void registerAggregateFunctionUniqHyperLogLogPlusPlus(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -195,6 +196,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionLargestTriangleThreeBuckets(factory);
         registerAggregateFunctionDistinctDynamicTypes(factory);
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
+        registerAggregateFunctionUniqHyperLogLogPlusPlus(factory);
 
         registerWindowFunctions(factory);
     }
