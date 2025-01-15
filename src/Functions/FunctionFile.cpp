@@ -64,6 +64,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -133,9 +138,8 @@ public:
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
-                WriteBufferFromVector out(res_chars, AppendModeTag{});
+                auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
                 copyData(in, out);
-                out.finalize();
             }
             catch (...)
             {

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/like.h>
 #include <Functions/array/arrayConcat.h>
 #include <Functions/array/arrayFilter.h>

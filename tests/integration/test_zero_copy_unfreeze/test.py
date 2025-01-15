@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance

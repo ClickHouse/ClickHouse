@@ -2,9 +2,10 @@
 import os
 import sys
 from statistics import variance
-from scipy import stats
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+from scipy import stats
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))

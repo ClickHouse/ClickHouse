@@ -1,5 +1,6 @@
 #include <filesystem>
 
+#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
@@ -9,13 +10,16 @@
 #include <Parsers/queryToString.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -28,16 +32,21 @@ namespace ErrorCodes
 
 void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
+    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+
+    if (!db_disk->isSymlinkSupported())
+        return;
+
     const String & engine_name = create.storage->engine->name;
     const String & database_name = create.getDatabase();
 
     if (engine_name != "Ordinary")
         return;
 
-    if (!FS::isSymlink(metadata_path))
+    if (!db_disk->isSymlink(metadata_path))
         return;
 
-    String target_path = FS::readSymlink(metadata_path).string();
+    String target_path = db_disk->readSymlink(metadata_path);
     fs::path path_to_remove = metadata_path;
     if (path_to_remove.filename().empty())
         path_to_remove = path_to_remove.parent_path();
@@ -92,8 +101,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         auto hints = getHints(engine_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}. Maybe you meant: {}", engine_name, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
     }
 
     /// if the engine is found (i.e. registered with the factory instance), then validate if the
@@ -103,7 +111,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
-    if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+    if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
     /// Attach database metadata

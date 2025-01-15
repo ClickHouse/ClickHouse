@@ -1,0 +1,347 @@
+1000
+bloom filter is off, all row groups should be read
+expect rows_read = select count()
+{
+  "data": [
+    {
+      "string": "AZSR",
+      "flba": "WNMM"
+    },
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+bloom filter is on, some row groups should be skipped
+expect rows_read much less than select count()
+{
+  "data": [
+    {
+      "string": "AZSR",
+      "flba": "WNMM"
+    },
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21703
+  }
+}
+bloom filter is on, but where predicate contains data from 2 row groups out of 3.
+Rows read should be less than select count, but greater than previous selects
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    },
+    {
+      "string": "ZHZK",
+      "flba": "HRWD"
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 536,
+    "bytes_read": 25708
+  }
+}
+bloom filter is on, but where predicate contains data from all row groups
+expect rows_read = select count()
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    },
+    {
+      "string": "OKAI",
+      "flba": "UXGT"
+    },
+    {
+      "string": "ZHZK",
+      "flba": "HRWD"
+    }
+  ],
+  "rows": 3,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+IN check
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    },
+    {
+      "string": "ZHZK",
+      "flba": "HRWD"
+    }
+  ],
+  "rows": 2,
+  "statistics": {
+    "rows_read": 536,
+    "bytes_read": 25708
+  }
+}
+tuple in case, bf is off.
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+tuple in case, bf is on.
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21703
+  }
+}
+complex tuple in case, bf is off
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+complex tuple in case, bf is on
+{
+  "data": [
+    {
+      "string": "PFJH",
+      "flba": "GKJC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21703
+  }
+}
+complex tuple in case, bf is on. Non existent
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 0,
+    "bytes_read": 0
+  }
+}
+Bloom filter for json column. BF is off
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+Bloom filter for json column. BF is on
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 72,
+    "bytes_read": 4005
+  }
+}
+Bloom filter for ipv4 column. BF is off
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+Bloom filter for ipv4 column. BF is on
+{
+  "data": [
+    {
+      "json": "{\"key\":38, \"value\":\"NXONM\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 72,
+    "bytes_read": 4005
+  }
+}
+Bloom filter for ipv4 column. BF is on. Specified in the schema
+{
+  "data": [
+    {
+      "ipv4": "0.0.1.143"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 72,
+    "bytes_read": 4005
+  }
+}
+Bloom filter on 64 bit column read as ipv4. We explicitly deny it, should read all rg
+{
+  "data": [
+    {
+      "uint64_logical": "22.230.220.164"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+BF off for parquet uint64 logical type. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":683, \"value\":\"YKCPD\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+BF on for parquet uint64 logical type. Uint64 is stored as a signed int 64, but with logical annotation. Make sure a value greater than int64 can be queried
+{
+  "data": [
+    {
+      "json": "{\"key\":683, \"value\":\"YKCPD\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21711
+  }
+}
+Uint16 is stored as physical type int32 with bidwidth = 16  and sign = false. Make sure a value greater than int16 can be queried. BF is on.
+{
+  "data": [
+    {
+      "json": "{\"key\":874, \"value\":\"JENHW\"}"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 464,
+    "bytes_read": 21703
+  }
+}
+BF off for parquet int8 logical type. Should read everything
+{
+  "data": [
+    {
+      "json": "{\"key\":89, \"value\":\"MFIYP\"}"
+    },
+    {
+      "json": "{\"key\":321, \"value\":\"JNOIA\"}"
+    },
+    {
+      "json": "{\"key\":938, \"value\":\"UBMLO\"}"
+    },
+    {
+      "json": "{\"key\":252, \"value\":\"ZVLKF\"}"
+    }
+  ],
+  "rows": 4,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+BF on for parquet int8 logical type. Should skip row groups
+{
+  "data": [
+    {
+      "json": "{\"key\":89, \"value\":\"MFIYP\"}"
+    },
+    {
+      "json": "{\"key\":321, \"value\":\"JNOIA\"}"
+    },
+    {
+      "json": "{\"key\":938, \"value\":\"UBMLO\"}"
+    },
+    {
+      "json": "{\"key\":252, \"value\":\"ZVLKF\"}"
+    }
+  ],
+  "rows": 4,
+  "statistics": {
+    "rows_read": 536,
+    "bytes_read": 25716
+  }
+}
+Invalid column conversion with in operation. String type can not be hashed against parquet int64 physical type. Should read everything
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+Transformations on key column shall not be allowed. Should read everything
+{
+  "data": [
+    {
+      "uint64_logical": "7711695863945021976"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}

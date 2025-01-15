@@ -18,7 +18,7 @@ FROM
           reinterpretAsUInt8(
             substring(
               fuzzBits(
-                arrayStringConcat(arrayMap(x -> toString('\0'), range(10000))),
+                materialize(arrayStringConcat(arrayMap(x -> toString('\0'), range(10000)))),
                 0.3
               ),
               id + 1,

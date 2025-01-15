@@ -17,17 +17,15 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool system_events_show_zero_values;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-}
-
-namespace DB
-{
-
 
 ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
 {
@@ -106,7 +104,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         col_table_to_filter = filtered_block.getByName("table").column;
     }
 
-    bool show_zeros = context->getSettingsRef().system_events_show_zero_values;
+    bool show_zeros = context->getSettingsRef()[Setting::system_events_show_zero_values];
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
         String database = (*col_database_to_filter)[i].safeGet<const String &>();

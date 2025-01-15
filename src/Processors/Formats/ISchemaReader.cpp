@@ -40,15 +40,14 @@ void checkFinalInferredType(
                     "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
                     name,
                     rows_read);
-            else
-                throw Exception(
-                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                    "Cannot determine type for column '{}' by first {} rows "
-                    "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
-                    "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                    name,
-                    rows_read,
-                    hints_parsing_error);
+            throw Exception(
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                "Cannot determine type for column '{}' by first {} rows "
+                "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
+                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+                name,
+                rows_read,
+                hints_parsing_error);
         }
 
         type = default_type;

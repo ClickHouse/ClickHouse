@@ -376,9 +376,8 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
         if (use_slowdown_count)
             return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
                 < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
-        else
-            return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
-                < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
+        return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
+            < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:

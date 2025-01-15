@@ -165,7 +165,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
                 }
                 catch (const Poco::Exception & e)
                 {
-                    if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos) /// NOTE: String comparison is trashy code.
+                    if (e.displayText().contains("mysqlxx::Pool is full")) /// NOTE: String comparison is trashy code.
                     {
                         full_pool = &pool;
                     }
@@ -213,7 +213,5 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
     if (replicas_by_priority.size() > 1)
         throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to all mysql replicas failed: {}", message.str());
-    else
-        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
-
+    throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
 }

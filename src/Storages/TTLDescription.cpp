@@ -24,6 +24,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_zstd_qat_codec;
+}
 
 namespace ErrorCodes
 {
@@ -268,7 +275,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
 
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
@@ -341,11 +348,11 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef().allow_suspicious_ttl_expressions);
+    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
     return result;
 }
 
@@ -437,7 +444,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 }
 
 }

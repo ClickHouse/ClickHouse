@@ -1,12 +1,13 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
-#include <Core/Settings.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -14,6 +15,10 @@ static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 namespace DB
 {
 struct Settings;
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -133,13 +138,12 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
 {
     if (action == NullsAction::RESPECT_NULLS)
     {
-        if (auto it = respect_nulls.find(name); it == respect_nulls.end())
+        auto it = respect_nulls.find(name);
+        if (it == respect_nulls.end())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
-        else if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
+        if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
             return {associated_it->second};
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
     }
 
     if (action == NullsAction::IGNORE_NULLS)
@@ -148,9 +152,8 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         {
             if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
                 return {associated_it->second};
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
         }
         /// We don't throw for IGNORE NULLS of other functions because that's the default in CH
     }
@@ -199,7 +202,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             found = *opt;
 
         out_properties = found.properties;
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
 
@@ -224,7 +227,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 "Aggregate function combinator '{}' is only for internal usage",
                 combinator_name);
 
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
         String nested_name = name.substr(0, name.size() - combinator_name.size());
@@ -259,8 +262,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (!hints.empty())
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                         "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-    else
-        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
+    throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const
@@ -348,4 +350,9 @@ AggregateFunctionFactory & AggregateFunctionFactory::instance()
     return ret;
 }
 
+
+bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
+{
+    return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+}
 }

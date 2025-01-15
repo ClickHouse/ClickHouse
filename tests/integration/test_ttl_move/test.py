@@ -3,13 +3,13 @@ import random
 import threading
 import time
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_logs_contain_with_retry
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 # FIXME: each sleep(1) is a time bomb, and not only this cause false positive
 # it also makes the test not reliable (i.e. assertions may be wrong, due timing issues)

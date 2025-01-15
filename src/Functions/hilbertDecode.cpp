@@ -1,8 +1,7 @@
-#include <Common/BitHelpers.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/PerformanceAdaptors.h>
-#include "hilbertDecode2DLUT.h"
 #include <limits>
+#include <Functions/FunctionFactory.h>
+#include <Common/BitHelpers.h>
+#include "hilbertDecode2DLUT.h"
 
 
 namespace DB

@@ -109,7 +109,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Hierarchical attribute type for dictionary with simple key must be UInt64. Actual {}",
                     attribute.underlying_type);
-            else if (key)
+            if (key)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary with complex key does not support hierarchy");
 
             hierarchical_attribute_index = i;
@@ -203,8 +203,7 @@ size_t DictionaryStructure::getKeysSize() const
 {
     if (id)
         return 1;
-    else
-        return key->size();
+    return key->size();
 }
 
 std::string DictionaryStructure::getKeyDescription() const

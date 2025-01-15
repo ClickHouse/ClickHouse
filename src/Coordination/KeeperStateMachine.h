@@ -11,6 +11,8 @@
 
 namespace DB
 {
+struct CoordinationSettings;
+using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorageBase::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
@@ -35,6 +37,7 @@ public:
         INITIAL = 0,
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
+        WITH_XID_64 = 3,
     };
 
     /// lifetime of a parsed request is:
@@ -45,7 +48,13 @@ public:
     ///
     /// final - whether it's the final time we will fetch the request so we can safely remove it from cache
     /// serialization_version - information about which fields were parsed from the buffer so we can modify the buffer accordingly
-    std::shared_ptr<KeeperStorageBase::RequestForSession> parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version = nullptr);
+    std::shared_ptr<KeeperStorageBase::RequestForSession> parseRequest(
+        nuraft::buffer & data,
+        bool final,
+        ZooKeeperLogSerializationVersion * serialization_version = nullptr,
+        size_t * request_end_position = nullptr);
+
+    static nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorageBase::RequestForSession & request_for_session);
 
     virtual bool preprocess(const KeeperStorageBase::RequestForSession & request_for_session) = 0;
 

@@ -1,14 +1,16 @@
+import logging
 import os
 import time
+
 import pymysql.cursors
 import pytest
+
 from helpers.cluster import (
     ClickHouseCluster,
     ClickHouseInstance,
     get_docker_compose_path,
     is_arm,
 )
-import logging
 
 from . import materialized_with_ddl
 

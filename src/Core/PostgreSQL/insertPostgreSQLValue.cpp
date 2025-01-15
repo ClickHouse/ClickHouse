@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -82,6 +83,8 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtEnum8:
         case ExternalResultDescription::ValueType::vtEnum16:
         case ExternalResultDescription::ValueType::vtFixedString:
+            assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
+            break;
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
@@ -125,7 +128,9 @@ void insertPostgreSQLValue(
             pqxx::array_parser parser{value};
             std::pair<pqxx::array_parser::juncture, std::string> parsed = parser.get_next();
 
-            size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info.at(idx).num_dimensions;
+            size_t dimension = 0;
+            size_t max_dimension = 0;
+            size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
             std::vector<Row> dimensions(expected_dimensions + 1);
 
@@ -134,7 +139,7 @@ void insertPostgreSQLValue(
                 if ((parsed.first == pqxx::array_parser::juncture::row_start) && (++dimension > expected_dimensions))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
 
-                else if (parsed.first == pqxx::array_parser::juncture::string_value)
+                if (parsed.first == pqxx::array_parser::juncture::string_value)
                     dimensions[dimension].emplace_back(parse_value(parsed.second));
 
                 else if (parsed.first == pqxx::array_parser::juncture::null_value)

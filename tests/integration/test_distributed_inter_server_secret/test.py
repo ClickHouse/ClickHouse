@@ -2,9 +2,10 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
-import pytest
-import uuid
 import time
+import uuid
+
+import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster

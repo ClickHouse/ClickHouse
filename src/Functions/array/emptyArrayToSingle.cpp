@@ -36,11 +36,9 @@ namespace
                         input_rows_count,
                         Array{nested_type->getDefault()});
                 }
-                else
-                    return arguments[0].column;
+                return arguments[0].column;
             }
-            else
-                return nullptr;
+            return nullptr;
         }
 
         template <typename T, bool nullable>
@@ -97,8 +95,7 @@ namespace
 
                 return true;
             }
-            else
-                return false;
+            return false;
         }
 
 
@@ -164,8 +161,7 @@ namespace
 
                 return true;
             }
-            else
-                return false;
+            return false;
         }
 
 
@@ -260,8 +256,7 @@ namespace
 
                 return true;
             }
-            else
-                return false;
+            return false;
         }
 
 

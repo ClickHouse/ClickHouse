@@ -41,7 +41,7 @@ ORDER BY ts, event_type;
 │ 2020-01-02 00:00:00 │ imp        │               2 │
 └─────────────────────┴────────────┴─────────────────┘
 
--- Let's add the new measurment `cost`
+-- Let's add the new measurement `cost`
 -- and the new dimension `browser`.
 
 ALTER TABLE events

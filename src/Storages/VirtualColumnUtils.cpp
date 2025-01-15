@@ -57,6 +57,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
+}
 
 namespace ErrorCodes
 {
@@ -126,7 +130,7 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
     }
 }
 
-NamesAndTypesList getCommonVirtualsForFileLikeStorage()
+static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
     return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -140,13 +144,14 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
 {
     std::string pattern = "([^/]+)=([^/]+)/";
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
-    std::string key, value;
+    std::string key;
+    std::string value;
     std::unordered_map<std::string, std::string> used_keys;
     while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
     {
@@ -165,17 +170,17 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const NameAndTypePair & pair)
+    auto add_virtual = [&](const NameAndTypePair & pair, bool prefer_virtual_column) /// By using prefer_virtual_column we define whether we will overwrite the storage column with the virtual one
     {
         const auto & name = pair.getNameInStorage();
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (!context->getSettingsRef().use_hive_partitioning)
+            if (!prefer_virtual_column)
                 return;
 
             if (storage_columns.size() == 1)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read this file", path);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read/write this file", path);
             auto local_type = storage_columns.get(name).type;
             storage_columns.remove(name);
             desc.addEphemeral(name, local_type, "");
@@ -186,9 +191,9 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
-        add_virtual(item);
+        add_virtual(item, false);
 
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
         auto map = parseHivePartitioningKeysAndValues(path);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
@@ -198,9 +203,9 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
             if (type == nullptr)
                 type = std::make_shared<DataTypeString>();
             if (type->canBeInsideLowCardinality())
-                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)});
+                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)}, true);
             else
-                add_virtual({item.first, type});
+                add_virtual({item.first, type}, true);
         }
     }
 
@@ -240,15 +245,13 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
 
     Block block;
-    NameSet common_virtuals;
-    if (context->getSettingsRef().use_hive_partitioning)
-        common_virtuals = getVirtualNamesForFileLikeStorage();
+    NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
         if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
@@ -271,7 +274,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef().use_hive_partitioning);
+        addPathAndFileToVirtualColumns(block, paths[i], i, getFormatSettings(context), context->getSettingsRef()[Setting::use_hive_partitioning]);
 
     filterBlockWithExpression(actions, block);
 
@@ -283,7 +286,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
     std::unordered_map<std::string, std::string> hive_map;
-    if (context->getSettingsRef().use_hive_partitioning)
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)
@@ -412,7 +415,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
-        else if (node->function_base->getName() == "or")
+        if (node->function_base->getName() == "or")
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
@@ -421,7 +424,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
-        else if (node->function_base->getName() == "indexHint")
+        if (node->function_base->getName() == "indexHint")
         {
             if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
             {
@@ -440,7 +443,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
                         if (atoms.size() > 1)
                         {
-                            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                            FunctionOverloadResolverPtr func_builder_and
+                                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
                             res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 

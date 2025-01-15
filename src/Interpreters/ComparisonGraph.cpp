@@ -12,6 +12,8 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -226,13 +228,11 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
 
                 return it->second;
             }
-            else
-            {
-                nodes_graph.node_hash_to_component[Graph::getHash(node)] = nodes_graph.vertices.size();
-                nodes_graph.vertices.push_back(EqualComponent{{node}, std::nullopt});
-                nodes_graph.edges.emplace_back();
-                return nodes_graph.vertices.size() - 1;
-            }
+
+            nodes_graph.node_hash_to_component[Graph::getHash(node)] = nodes_graph.vertices.size();
+            nodes_graph.vertices.push_back(EqualComponent{{node}, std::nullopt});
+            nodes_graph.edges.emplace_back();
+            return nodes_graph.vertices.size() - 1;
         };
 
         const auto * function_node = tryGetFunctionNode(atom);
@@ -365,11 +365,10 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 
         return result;
     }
-    else
-    {
-        start = it_left->second;
-        finish = it_right->second;
-    }
+
+    start = it_left->second;
+    finish = it_right->second;
+
 
     if (start == finish)
         return ComparisonGraphCompareResult::EQUAL;
@@ -455,8 +454,7 @@ typename ComparisonGraph<Node>::NodeContainer ComparisonGraph<Node>::getEqual(co
     const auto res = getComponentId(node);
     if (!res)
         return {};
-    else
-        return getComponent(res.value());
+    return getComponent(res.value());
 }
 
 template <ComparisonGraphNodeType Node>
@@ -481,10 +479,8 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
     {
         return index;
     }
-    else
-    {
-        return {};
-    }
+
+    return {};
 }
 
 template <ComparisonGraphNodeType Node>
@@ -748,7 +744,7 @@ std::map<std::pair<size_t, size_t>, typename ComparisonGraph<Node>::Path> Compar
         for (size_t v = 0; v < n; ++v)
             for (size_t u = 0; u < n; ++u)
                 if (results[v][k] != inf && results[k][u] != inf)
-                    results[v][u] = std::min(results[v][u], std::min(results[v][k], results[k][u]));
+                    results[v][u] = std::min({results[v][u], results[v][k], results[k][u]});
 
     std::map<std::pair<size_t, size_t>, Path> path;
     for (size_t v = 0; v < n; ++v)

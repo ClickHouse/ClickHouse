@@ -44,6 +44,37 @@ ${CLICKHOUSE_CLIENT} -q "
     ;"
 }
 
+function check_query_settings()
+{
+result=$(${CLICKHOUSE_CLIENT} -q "
+    SYSTEM FLUSH LOGS;
+    SELECT attribute['clickhouse.setting.min_compress_block_size'],
+           attribute['clickhouse.setting.max_block_size'],
+           attribute['clickhouse.setting.max_execution_time']
+    FROM system.opentelemetry_span_log
+    WHERE finish_date                      >= yesterday()
+    AND   operation_name                   = 'query'
+    AND   attribute['clickhouse.query_id'] = '${1}'
+    FORMAT JSONEachRow;
+  ")
+
+    local min_present="not found"
+    local max_present="not found"
+    local execution_time_present="not found"
+
+    if [[ $result == *"min_compress_block_size"* ]]; then
+       min_present="present"
+    fi
+    if [[ $result == *"max_block_size"* ]]; then
+       max_present="present"
+    fi
+    if [[ $result == *"max_execution_time"* ]]; then
+       execution_time_present="present"
+    fi
+
+    echo "{\"min_compress_block_size\":\"$min_present\",\"max_block_size\":\"$max_present\",\"max_execution_time\":\"$execution_time_present\"}"
+}
+
 #
 # Set up
 #
@@ -73,6 +104,11 @@ query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_query_span $query_id
 
+# Test 5: A normal select query with a setting
+query_id=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4() SETTINGS max_execution_time=3600")
+execute_query "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
+check_query_span "$query_id"
+check_query_settings "$query_id" "max_execution_time"
 
 #
 # Tear down

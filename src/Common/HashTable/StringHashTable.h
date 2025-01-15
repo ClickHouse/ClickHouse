@@ -141,7 +141,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -417,8 +417,7 @@ public:
             auto it = map.find(key, hash);
             if (!it)
                 return decltype(&it->getMapped()){};
-            else
-                return &it->getMapped();
+            return &it->getMapped();
         }
     };
 

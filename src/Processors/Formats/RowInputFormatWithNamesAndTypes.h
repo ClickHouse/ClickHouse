@@ -3,7 +3,6 @@
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 
 namespace DB
 {
@@ -49,6 +48,7 @@ protected:
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
+    bool supportsCustomSerializations() const override { return true; }
 
     const FormatSettings format_settings;
     DataTypes data_types;

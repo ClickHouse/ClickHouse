@@ -2,7 +2,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-
 cluster = ClickHouseCluster(__file__)
 cluster_name = "parallel_replicas"
 nodes = [
