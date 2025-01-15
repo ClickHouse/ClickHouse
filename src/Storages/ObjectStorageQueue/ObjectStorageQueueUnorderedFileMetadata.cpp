@@ -81,8 +81,6 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
     const auto zk_client = getZooKeeper();
-    processing_id = node_metadata.processing_id = getRandomASCIIString(10);
-
     while (true)
     {
         Coordination::Requests requests;
