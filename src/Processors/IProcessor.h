@@ -380,7 +380,7 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
-    /// Returns true iff processor can spill memory to disk.
+    /// Returns true if processor can spill memory to disk.
     /// Aggregate, join and sort processors can be spillable.
     /// For unspillable processors, the memory usage is not tracked.
     inline bool isSpillable() const { return spillable; }
