@@ -336,7 +336,7 @@ Transformations on key column shall not be allowed. Should read everything
 {
   "data": [
     {
-      "uint64_logical": "7711695863945021976"
+      "uint64_logical": 7711695863945022000
     }
   ],
   "rows": 1,

@@ -671,7 +671,7 @@ Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JS
 Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 )", 0) \
     \
-    DECLARE(Bool, output_format_json_quote_64bit_integers, true, R"(
+    DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md/#json) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
