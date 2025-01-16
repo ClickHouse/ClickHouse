@@ -30,7 +30,7 @@ It uses the following settings:
 
 ## Settings And Escaping Rules
 
-### format_template_row {#format_template_row}
+### format_template_row
 
 The setting `format_template_row` specifies the path to the file which contains format strings for rows with the following syntax:
 
@@ -82,11 +82,11 @@ For example:
 Search phrase: 'bathroom interior design', count: 2166, ad price: $3;
 ```
 
-### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
+### format_template_rows_between_delimiter
 
 The setting `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
-### format_template_resultset {#format_template_resultset}
+### format_template_resultset
 
 The setting `format_template_resultset` specifies the path to the file, which contains a format string for the result set. 
 
@@ -111,7 +111,7 @@ If the `format_template_resultset` setting is an empty string, `${data}` is used
 
 For insert queries format allows skipping some columns or fields if prefix or suffix (see example).
 
-### Inline specification {#inline_specification}
+### In-line specification
 
 Often times it is challenging or not possible to deploy the format configurations
 (set by `format_template_row`, `format_template_resultset`) for the template format to a directory on all nodes in a cluster. 
@@ -119,6 +119,12 @@ Furthermore, the format may be so trivial that it does not require being placed 
 
 For these cases, `format_template_row_format` (for `format_template_row`) and `format_template_resultset_format` (for `format_template_resultset`) can be used to set the template string directly in the query, 
 rather than as a path to the file which contains it.
+
+:::note
+The rules for format strings and escape sequences are the same as those for:
+- [`format_template_row`](#format_template_row) when using `format_template_row_format`.
+- [`format_template_resultset`](#format_template_resultset) when using `format_template_resultset_format`.
+:::
 
 ## Example Usage
 
