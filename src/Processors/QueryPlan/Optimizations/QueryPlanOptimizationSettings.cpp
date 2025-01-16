@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
+    extern const SettingsBool query_plan_join_swap_table_use_statistics;
 }
 
 namespace ServerSetting
@@ -75,6 +76,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
+    join_swap_table_use_statistics = from[Setting::query_plan_join_swap_table_use_statistics];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];

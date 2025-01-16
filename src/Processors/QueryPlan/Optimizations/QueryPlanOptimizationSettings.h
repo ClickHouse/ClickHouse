@@ -53,6 +53,9 @@ struct QueryPlanOptimizationSettings
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial
     std::optional<bool> join_swap_table;
+    /// Should we use statistics for row estimations in join.
+    /// Only works if join_swap_table is nullopt
+    bool join_swap_table_use_statistics;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;

@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
+            {"query_plan_join_swap_table_use_statistics", "false", "true", "New setting. Statistics haven't been used before."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {

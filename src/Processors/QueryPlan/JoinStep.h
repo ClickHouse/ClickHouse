@@ -40,6 +40,7 @@ public:
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
+    bool swap_join_tables_use_statistics = false;
 
     struct PrimaryKeyNamesPair
     {
