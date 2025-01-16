@@ -188,5 +188,8 @@ endif()
 if (TARGET ch_contrib::numactl)
     set(USE_NUMACTL 1)
 endif()
+if (TARGET ch_contrib::libpng)
+    set(USE_LIBPNG 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})
