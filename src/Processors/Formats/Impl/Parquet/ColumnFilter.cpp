@@ -1327,9 +1327,9 @@ ColumnFilterPtr IsNotNullFilter::merge(const ColumnFilter * other) const
             return other->merge(this);
     }
 }
-OptionalFilter IsNotNullFilter::create(const ActionsDAG::Node & node)
+OptionalFilter IsNotNullFilter::create(const ActionsDAG::Node &)
 {
-    return DB::OptionalFilter();
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "IsNotNullFilter creator unimplemented");
 }
 
 ColumnFilterPtr BoolValueFilter::merge(const ColumnFilter * other) const

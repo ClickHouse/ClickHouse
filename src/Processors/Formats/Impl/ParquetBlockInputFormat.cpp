@@ -918,12 +918,12 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     }
     else if (format_settings.parquet.use_native_reader_with_filter_push_down)
     {
-            auto chunk = row_group_batch.row_group_chunk_reader->read(row_group_batch.adaptive_chunk_size);
-            if (!chunk)
-            {
-                end_of_row_group();
-                return;
-            }
+        auto chunk = row_group_batch.row_group_chunk_reader->read(row_group_batch.adaptive_chunk_size);
+        if (!chunk)
+        {
+            end_of_row_group();
+            return;
+        }
 
         res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
         res.chunk = std::move(chunk);
