@@ -44,6 +44,7 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
+    void setIsRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -59,6 +60,7 @@ private:
     UInt32 shard_count;
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    bool is_remote_function = false;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
