@@ -141,4 +141,70 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
+/// Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
+/// All of them have the same structure.
+/// When the amount of free memory is too low (free_memory < 4 * block_size), we push data to lower amount of inputs, trying to slow down the process.
+class MemoryDependentResizeProcessor final : public IProcessor
+{
+public:
+    MemoryDependentResizeProcessor(const Block & header_, size_t num_inputs, size_t num_outputs)
+        : IProcessor(InputPorts(num_inputs, header_), OutputPorts(num_outputs, header_))
+        , header(header_)
+        , current_input(inputs.begin())
+        , current_output(outputs.begin())
+    {
+    }
+
+    String getName() const override { return "MemoryDependentResize"; }
+
+    Status prepare(const PortNumbers &, const PortNumbers &) override;
+
+    size_t countActiveOutputs() const;
+
+private:
+    Block header;
+    InputPorts::iterator current_input;
+    OutputPorts::iterator current_output;
+
+    size_t num_finished_inputs = 0;
+    size_t num_finished_outputs = 0;
+    std::queue<UInt64> waiting_outputs;
+    std::queue<UInt64> inputs_with_data;
+    bool initialized = false;
+    [[maybe_unused]] bool is_reading_started = false;
+
+    enum class OutputStatus : uint8_t
+    {
+        NotActive,
+        NeedData,
+        Disabled,
+        Finished,
+    };
+
+    enum class InputStatus : uint8_t
+    {
+        NotActive,
+        HasData,
+        Finished,
+    };
+
+    struct InputPortWithStatus
+    {
+        InputPort * port;
+        InputStatus status;
+    };
+
+    struct OutputPortWithStatus
+    {
+        OutputPort * port;
+        OutputStatus status;
+    };
+
+    std::vector<InputPortWithStatus> input_ports;
+    std::vector<OutputPortWithStatus> output_ports;
+
+    std::vector<bool> is_output_enabled;
+    UInt64 chunk_size = 0;
+};
+
 }
