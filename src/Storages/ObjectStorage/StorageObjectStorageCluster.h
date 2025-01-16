@@ -29,6 +29,8 @@ public:
 
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
+    void setClusterNameInSettings(bool cluster_name_in_settings_) { cluster_name_in_settings = cluster_name_in_settings_; }
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
@@ -39,6 +41,7 @@ private:
     const StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
+    bool cluster_name_in_settings;
 };
 
 }
