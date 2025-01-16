@@ -3429,12 +3429,6 @@ def parse_args():
         type=find_binary,
         help="Path to clickhouse binary or name of binary in PATH",
     )
-    parser.add_argument(
-        "-c",
-        "--client",
-        help="Path to clickhouse-client, this option is useless"
-        "name of binary in PATH",
-    )
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
     parser.add_argument(
@@ -3838,12 +3832,6 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
-
-    if args.client:
-        print(
-            "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
-            file=sys.stderr,
-        )
 
     args.client = find_clickhouse_command(args.binary, "client")
 
