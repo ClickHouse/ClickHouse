@@ -86,10 +86,10 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
+            configuration->getPath().filename);
     }
 
-    const auto globbed_key = configuration_->getPath();
+    const auto globbed_key = configuration_->getPath().filename;
     object_storage_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), list_objects_batch_size_);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));

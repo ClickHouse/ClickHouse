@@ -1,5 +1,6 @@
 #include "ParquetBlockInputFormat.h"
 #include <boost/algorithm/string/case_conv.hpp>
+#include "Processors/Formats/IInputFormat.h"
 
 #if USE_PARQUET
 
@@ -497,6 +498,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , max_decoding_threads(max_decoding_threads_)
     , max_io_threads(max_io_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , header(header_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
     , previous_block_missing_values(getPort().getHeader().columns())
 {
@@ -597,14 +599,17 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
+        {
+            skipped_total_row_group_sizes.back() += metadata->RowGroup(row_group)->num_rows();
             continue;
-
+        }
         if (parquet_bloom_filter_condition)
         {
             const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
 
             if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
             {
+                skipped_total_row_group_sizes.back() += metadata->RowGroup(row_group)->num_rows();
                 continue;
             }
         }
@@ -615,11 +620,16 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                         getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
                         getPort().getHeader().getDataTypes())
                     .can_be_true)
+        {
+            skipped_total_row_group_sizes.back() += metadata->RowGroup(row_group)->num_rows();
             continue;
-
+        }
         // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
         if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
+        {
             row_group_batches.emplace_back();
+            skipped_total_row_group_sizes.push_back(0);
+        }
 
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
@@ -913,6 +923,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     lock.lock();
 
+    row_group_batch.chunk_sizes.push_back(res.chunk.getNumRows());
     ++row_group_batch.next_chunk_idx;
     ++row_group_batch.num_pending_chunks;
     pending_chunks.push(std::move(res));
@@ -953,8 +964,16 @@ Chunk ParquetBlockInputFormat::read()
         return {};
 
     if (need_only_count)
-        return getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
+    {
+        auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed].total_rows);
+        int total_rows_before = skipped_total_row_group_sizes[row_group_batches_completed];
+        for (size_t i = 0; i < row_group_batches_completed; ++i)
+            total_rows_before += row_group_batches[i].total_rows + skipped_total_row_group_sizes[i];
 
+        row_group_batches_completed++;
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
+        return chunk;
+    }
     std::unique_lock lock(mutex);
 
     while (true)
@@ -985,6 +1004,14 @@ Chunk ParquetBlockInputFormat::read()
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
+            int total_rows_before = 0;
+            for (size_t i = 0; i < row_group_batches_completed; ++i)
+                total_rows_before += row_group_batches[i].total_rows + skipped_total_row_group_sizes[i];
+            total_rows_before += skipped_total_row_group_sizes[row_group_batches_completed];
+            for (size_t i = 0; i < chunk.chunk_idx; ++i)
+                total_rows_before += row_group.chunk_sizes[i];
+
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoReadRowsBefore>(total_rows_before));
             return std::move(chunk.chunk);
         }
 

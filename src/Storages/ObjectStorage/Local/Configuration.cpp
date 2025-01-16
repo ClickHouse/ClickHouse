@@ -23,7 +23,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr)
 {
-    path = collection.get<String>("path");
+    path.filename = collection.get<String>("path");
     format = collection.getOrDefault<String>("format", "auto");
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
@@ -42,7 +42,7 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    path = checkAndGetLiteralArgument<String>(args[0], "path");
+    path.filename = checkAndGetLiteralArgument<String>(args[0], "path");
 
     if (args.size() > 1)
     {

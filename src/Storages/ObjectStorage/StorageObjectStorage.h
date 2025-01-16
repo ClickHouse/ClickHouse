@@ -12,6 +12,7 @@
 #include "Storages/ColumnsDescription.h"
 
 #include <memory>
+
 namespace DB
 {
 
@@ -160,11 +161,23 @@ protected:
 class StorageObjectStorage::Configuration
 {
 public:
+    struct PathMetadata
+    {
+    };
+
+    using PathMetadataPtr = std::shared_ptr<PathMetadata>;
+
     Configuration() = default;
     Configuration(const Configuration & other);
     virtual ~Configuration() = default;
 
-    using Path = std::string;
+    struct Path
+    {
+        std::string filename;
+        PathMetadataPtr meta;
+
+        bool operator==(const Path& other) const = default;
+    };
     using Paths = std::vector<Path>;
 
     static void initialize(

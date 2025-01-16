@@ -19,7 +19,7 @@ public:
 
     HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    Strings getDataFiles() const override;
+    DataFileInfos getDataFiles() const override;
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
@@ -43,11 +43,11 @@ public:
 private:
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
-    mutable Strings data_files;
+    mutable DataFileInfos data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
 
-    Strings getDataFilesImpl() const;
+    DataFileInfos getDataFilesImpl() const;
 };
 
 }

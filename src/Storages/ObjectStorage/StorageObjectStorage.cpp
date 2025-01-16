@@ -1,17 +1,19 @@
+#include <memory>
+#include <mutex>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 
 #include <Storages/Cache/SchemaCache.h>
@@ -22,26 +24,40 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Columns/ColumnLowCardinality.h"
 #include "Databases/LoadingStrictnessLevel.h"
+#include "Processors/Executors/StreamingFormatExecutor.h"
+#include "Processors/ISimpleTransform.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
+#include "Storages/prepareReadingFromFormat.h"
+
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/PositionalDeleteTransform.h>
+
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 
 #include <Poco/Logger.h>
+#include "Common/Exception.h"
+
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsBool optimize_count_from_files;
-    extern const SettingsBool use_hive_partitioning;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsBool optimize_count_from_files;
+extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int DATABASE_ACCESS_DENIED;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace StorageObjectStorageSetting
@@ -73,7 +89,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     );
 
     if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
-        return configuration->getPath();
+        return configuration->getPath().filename;
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -181,6 +197,7 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 
 namespace
 {
+
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:
@@ -285,6 +302,7 @@ private:
         if (iterator_wrapper)
             return;
         auto context = getContext();
+
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
             context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
@@ -320,9 +338,7 @@ void StorageObjectStorage::read(
     configuration->update(object_storage, local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Reading from a partitioned {} storage is not implemented yet",
-                        getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned {} storage is not implemented yet", getName());
     }
 
     const auto read_from_format_info = configuration->prepareReadingFromFormat(
@@ -350,10 +366,7 @@ void StorageObjectStorage::read(
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
-    const ASTPtr & query,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool /* async_insert */)
+    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /* async_insert */)
 {
     configuration->update(object_storage, local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
@@ -361,16 +374,18 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Write into archive is not supported",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Path '{}' contains archive. Write into archive is not supported",
+            configuration->getPath().filename);
     }
 
     if (configuration->withGlobsIgnorePartitionWildcard())
     {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Path '{}' contains globs, so the table is in readonly mode",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path '{}' contains globs, so the table is in readonly mode",
+            configuration->getPath().filename);
     }
 
     if (configuration->withPartitionWildcard())
@@ -392,9 +407,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().filename, paths.size()))
     {
-        paths.push_back(*new_key);
+        paths.push_back(Configuration::Path{.filename = *new_key, .meta = nullptr});
     }
     configuration->setPaths(paths);
 
@@ -414,9 +429,8 @@ void StorageObjectStorage::truncate(
 {
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Table cannot be truncated",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Path '{}' contains archive. Table cannot be truncated", configuration->getPath().filename);
     }
 
     if (configuration->withGlobs())
@@ -424,12 +438,13 @@ void StorageObjectStorage::truncate(
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
             "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), configuration->getPath());
+            getName(),
+            configuration->getPath().filename);
     }
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
+        objects.emplace_back(key.filename);
 
     object_storage->removeObjectsIfExist(objects);
 }
@@ -445,15 +460,20 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        false/* distributed_processing */,
+        false /* distributed_processing */,
         context,
-        {}/* predicate */,
-        {}/* virtual_columns */,
+        {} /* predicate */,
+        {} /* virtual_columns */,
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
-        object_storage, configuration, file_iterator,
-        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
+        object_storage,
+        configuration,
+        file_iterator,
+        format_settings,
+        getSchemaCache(context, configuration->getTypeName()),
+        read_keys,
+        context);
 }
 
 ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
@@ -522,9 +542,7 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     if (storage_type_name == "s3")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_s3",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_s3", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     if (storage_type_name == "hdfs")
@@ -568,10 +586,10 @@ void StorageObjectStorage::Configuration::initialize(
         }
         else
         {
-            configuration.format
-                = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
-                      .value_or("auto");
+            configuration.format = FormatFactory::instance()
+                                       .tryGetFormatFromFileName(
+                                           configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath().filename)
+                                       .value_or("auto");
         }
     }
     else
@@ -599,20 +617,19 @@ StorageObjectStorage::Configuration::Configuration(const Configuration & other)
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return getPath().find(PARTITION_ID_WILDCARD) != String::npos
-        || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
+    return getPath().filename.find(PARTITION_ID_WILDCARD) != String::npos || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
 bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() const
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    return PartitionedSink::replaceWildcards(getPath().filename, "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const
 {
-    return getPath().find_first_of("*?{") != std::string::npos;
+    return getPath().filename.find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
@@ -622,7 +639,7 @@ bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
 
 std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
 {
-    return getPath().substr(0, getPath().find_first_of("*?{"));
+    return getPath().filename.substr(0, getPath().filename.find_first_of("*?{"));
 }
 
 bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
@@ -632,7 +649,7 @@ bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
 
 std::string StorageObjectStorage::Configuration::getPathInArchive() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath().filename);
 }
 
 void StorageObjectStorage::Configuration::assertInitialized() const
