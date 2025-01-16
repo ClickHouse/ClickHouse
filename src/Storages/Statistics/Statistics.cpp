@@ -1,3 +1,4 @@
+#include <optional>
 #include <Storages/Statistics/Statistics.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -25,6 +26,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
+
+#define MY_LOG(...) LOG_DEBUG(getLogger("Alex Statistics"), __VA_ARGS__)
 
 enum StatisticsFileVersion : UInt16
 {
@@ -81,7 +84,12 @@ Float64 IStatistics::estimateEqual(const Field & /*val*/) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateLess(const Field & /*val*/) const
+Float64 IStatistics::estimateLess(const Field & /*val*/, Float64 * /*calculated_val*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
+}
+
+Float64 IStatistics::estimateLessWithCustomBoundaries(const Field & /*val*/, Float64 * /*calculated_val*/, std::optional<Float64> /*custom_min*/, std::optional<Float64> /*custom_max*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
@@ -98,18 +106,22 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
 /// Sometimes, it is possible to combine multiple statistics in a clever way. For that reason, all estimation are performed in a central
 /// place (here), and we don't simply pass the predicate to the first statistics object that supports it natively.
 
-Float64 ColumnPartStatistics::estimateLess(const Field & val) const
+Float64 ColumnPartStatistics::estimateLess(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
+    MY_LOG("estimateLess started");
     if (stats.contains(StatisticsType::TDigest))
-        return stats.at(StatisticsType::TDigest)->estimateLess(val);
+        return stats.at(StatisticsType::TDigest)->estimateLessWithCustomBoundaries(val, calculated_val, custom_min, custom_max);
     if (stats.contains(StatisticsType::MinMax))
-        return stats.at(StatisticsType::MinMax)->estimateLess(val);
+    {
+        MY_LOG("estimateLess MinMax stat found");
+        return stats.at(StatisticsType::MinMax)->estimateLessWithCustomBoundaries(val, calculated_val, custom_min, custom_max);
+    }
     return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
-Float64 ColumnPartStatistics::estimateGreater(const Field & val) const
+Float64 ColumnPartStatistics::estimateGreater(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
-    return rows - estimateLess(val);
+    return rows - estimateLess(val, calculated_val, custom_min, custom_max);
 }
 
 Float64 ColumnPartStatistics::estimateEqual(const Field & val) const

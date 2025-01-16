@@ -100,6 +100,7 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+        UInt64 selected_rows_after_size_hint = 0;
         bool has_exact_ranges = false;
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }

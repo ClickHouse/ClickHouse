@@ -79,10 +79,10 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
+        if (has_filter && !is_filtered_by_index && analyzed_result->selected_rows_after_size_hint == 0)
             return {};
 
-        return analyzed_result->selected_rows;
+        return analyzed_result->selected_rows_after_size_hint;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))

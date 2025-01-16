@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Storages/Statistics/Statistics.h>
 #include <Core/Field.h>
 
@@ -15,6 +16,7 @@ public:
     /// TODO: Support the condition consists of CNF/DNF like (cond1 and cond2) or (cond3) ...
     /// Right now we only support simple condition like col = val / col < val
     Float64 estimateRowCount(const RPNBuilderTreeNode & node) const;
+    Float64 estimateRowCount(const RPNBuilderTreeNode & node, const std::unordered_map<std::string, ColumnWithTypeAndName> & unqualifiedColumnsNames) const;
 
     void addStatistics(String part_name, ColumnStatisticsPartPtr column_stat);
     void incrementRowCount(UInt64 rows);
@@ -30,12 +32,13 @@ private:
 
         void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
 
-        Float64 estimateLess(const Field & val, Float64 rows) const;
-        Float64 estimateGreater(const Field & val, Float64 rows) const;
+        Float64 estimateLess(const Field & val, Float64 rows, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
+        Float64 estimateGreater(const Field & val, Float64 rows, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
         Float64 estimateEqual(const Field & val, Float64 rows) const;
     };
 
-    std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const;
+    std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & qualified_column_name) const;
+    void doSmth(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
     static constexpr auto default_cond_range_factor = 0.5;
