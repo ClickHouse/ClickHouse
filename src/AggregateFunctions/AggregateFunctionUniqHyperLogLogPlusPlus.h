@@ -16,13 +16,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int PARAMETER_OUT_OF_BOUND;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int INCORRECT_DATA;
 }
 
 struct HyperLogLogPlusPlusData
 {
-    // HyperLogLogPlusPlusData(Float64 relative_sd_ = 0.05)
     explicit HyperLogLogPlusPlusData(double relative_sd_ = 0.05)
         : relative_sd(relative_sd_)
         , p(static_cast<UInt64>(std::ceil(2.0 + std::log(1.106 / relative_sd / std::log(2.0)))))
@@ -31,15 +32,22 @@ struct HyperLogLogPlusPlusData
         , m(1ULL << p)
         , num_words(m / REGISTERS_PER_WORD + 1)
         , alpha_mm(computeAlphaMM())
-        , registers(num_words, 0) // Initialize registers with zeros
     {
-        // std::cout << "relative_sd: " << relative_sd << std::endl;
-        // std::cout << "p: " << p << std::endl;
-        // std::cout << "idx_shift: " << idx_shift << std::endl;
-        // std::cout << "w_padding: " << w_padding << std::endl;
-        // std::cout << "m: " << m << std::endl;
-        // std::cout << "num_words: " << num_words << std::endl;
-        // std::cout << "alpha_mm: " << alpha_mm << std::endl;
+        if (p < 4)
+            throw Exception(
+                ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                "HLL++ requires at least 4 bits for addressing instead of {}. Use a lower error, at most 39%",
+                p);
+
+        if (p > 25)
+            throw Exception(
+                ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                "HLL++ requires at most 25 bits for addressing instead of {} to avoid allocating too much memory",
+                p);
+
+        std::cout << "relative_sd:" << relative_sd << " p:" << p << " m:" << m << " num_words:" << num_words << " alpha_mm:" << alpha_mm
+                  << std::endl;
+        registers = PaddedPODArray<UInt64>(num_words, 0); // Initialize registers with zeros
     }
 
     void serialize(WriteBuffer & buf) const
@@ -2976,8 +2984,6 @@ private:
           1238126.379, 1244673.795, 1251260.649, 1257697.86,  1264320.983, 1270736.319, 1277274.694, 1283804.95,  1290211.514,
           1296858.568, 1303455.691}}};
 
-    /// TODO
-
     PaddedPODArray<UInt64> registers; // Declaration of registers
 };
 
@@ -2988,13 +2994,28 @@ public:
     explicit AggregateFunctionUniqHyperLogLogPlusPlus(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper(argument_types_, {}, createResultType())
     {
+        if (argument_types.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function '{}' requires exactly one argument: got {}",
+                getName(),
+                argument_types.size());
+
+        WhichDataType which(argument_types[0]);
+        if (!which.isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Aggregate function '{}' requires an argument of type UInt64, got {}",
+                getName(),
+                argument_types[0]->getName());
+
         if (params.empty())
             relative_sd = 0.05;
         else if (params.size() == 1)
         {
             relative_sd = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
-            if (isNaN(relative_sd) || relative_sd < 0 || relative_sd > 1)
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Relative standard deviation must be in the range [0, 1]");
+            if (isNaN(relative_sd) || relative_sd <= 0 || relative_sd > 1)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Relative standard deviation must be in the range (0, 1]");
         }
         else
             throw Exception(

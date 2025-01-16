@@ -20,23 +20,8 @@ namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionUniqHyperLogLogPlusPlus(
-    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+    const std::string & , const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    if (argument_types.size() != 1)
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function '{}' requires exactly one argument: got {}",
-            name,
-            argument_types.size());
-
-    WhichDataType which(argument_types[0]);
-    if (!which.isUInt64())
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Aggregate function '{}' requires an argument of type UInt64, got {}",
-            name,
-            argument_types[0]->getName());
-
     return std::make_shared<AggregateFunctionUniqHyperLogLogPlusPlus>(argument_types, params);
 }
 
