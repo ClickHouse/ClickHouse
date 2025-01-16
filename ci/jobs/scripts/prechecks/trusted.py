@@ -18,7 +18,6 @@ CAN_BE_TESTED = "can be tested"
 
 def can_be_trusted():
     if Info().repo_name == Info().fork_name:
-        print("It's not a fork")
         return ""
     if Info().user_name.lower() in TRUSTED_CONTRIBUTORS:
         print("It's trusted contributor")
@@ -27,4 +26,4 @@ def can_be_trusted():
         print("It's approved by label")
         return ""
 
-    return "'can be tested' label is required"
+    return f"'can be tested' label is required, fork [{Info().fork_name}]"
