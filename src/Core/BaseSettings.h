@@ -1088,5 +1088,3 @@ struct DefineAliases
         reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->NAME), \
     });
 }
-
-// static_cast<char *>(&(static_cast<Data *>(nullptr)->*NAME)) - static_cast<char *>(nullptr),
