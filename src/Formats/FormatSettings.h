@@ -479,6 +479,21 @@ struct FormatSettings
         bool map_column_names = true;
     } mysql_dump{};
 
+    enum class PixelMode : uint8_t
+    {
+        BINARY,     
+        GRAYSCALE,  
+        RGB,        
+        RGBA
+    };
+
+    struct
+    {
+        UInt64 height = 800;
+        UInt64 width = 600;
+        PixelMode pixel_mode = PixelMode::RGBA;
+    } png_image{};
+
     struct
     {
         UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
