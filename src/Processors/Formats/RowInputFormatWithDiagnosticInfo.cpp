@@ -44,7 +44,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
             "Buffer has gone, cannot extract information about what has been parsed.");
 
     const auto & header = getPort().getHeader();
-    MutableColumns columns = header.cloneEmptyColumns(serializations);
+    MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
     size_t bytes_read_at_start_of_buffer = in->count() - in->offset();
@@ -57,11 +57,13 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
 
     max_length_of_column_name = 0;
     for (size_t i = 0; i < header.columns(); ++i)
-        max_length_of_column_name = std::max(header.safeGetByPosition(i).name.size(), max_length_of_column_name);
+        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
+            max_length_of_column_name = header.safeGetByPosition(i).name.size();
 
     max_length_of_data_type_name = 0;
     for (size_t i = 0; i < header.columns(); ++i)
-        max_length_of_data_type_name = std::max(header.safeGetByPosition(i).type->getName().size(), max_length_of_data_type_name);
+        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
+            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 

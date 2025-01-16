@@ -1,8 +1,6 @@
-import random
 import time
-
 import pytest
-
+import random
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV

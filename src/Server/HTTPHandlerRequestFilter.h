@@ -2,14 +2,12 @@
 
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
 #include <Common/re2.h>
 
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
-
-#include <absl/container/inlined_vector.h>
 
 #include <unordered_map>
 
@@ -27,9 +25,8 @@ static inline bool checkRegexExpression(std::string_view match_str, const Compil
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-    absl::InlinedVector<std::string_view, 5> matches(num_captures);
-    return compiled_regex->Match(
-        {match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures);
+    std::string_view matches[num_captures];
+    return compiled_regex->Match({match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
 }
 
 static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
@@ -81,7 +78,7 @@ static inline auto emptyQueryStringFilter()
     return [](const HTTPServerRequest & request)
     {
         const auto & uri = request.getURI();
-        return !uri.contains('?');
+        return std::string::npos == uri.find('?');
     };
 }
 

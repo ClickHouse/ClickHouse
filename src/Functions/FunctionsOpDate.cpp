@@ -73,7 +73,7 @@ public:
         auto op_build = op->build(arguments);
 
         auto res_type = op_build->getResultType();
-        return op_build->execute(arguments, res_type, input_rows_count, /* dry_run = */ false);
+        return op_build->execute(arguments, res_type, input_rows_count);
     }
 
 private:
@@ -99,8 +99,8 @@ using FunctionSubDate = FunctionOpDate<SubDate>;
 
 REGISTER_FUNCTION(AddInterval)
 {
-    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

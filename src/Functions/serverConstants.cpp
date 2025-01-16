@@ -5,11 +5,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
 
 #include <Poco/Environment.h>
@@ -180,7 +178,7 @@ Can be changed with SET timezone = 'New/Tz'
 [example:timezone]
     )",
     .examples{{"timezone", "SELECT timezone();", ""}},
-    .category{"Other"}
+    .categories{"Constant", "Miscellaneous"}
 });
 factory.registerAlias("timeZone", "timezone");
 }
@@ -195,7 +193,7 @@ Returns the timezone name in which server operates.
 [example:serverTimezone]
     )",
      .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
-     .category{"Other"}
+     .categories{"Constant", "Miscellaneous"}
 });
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
@@ -207,12 +205,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -237,8 +235,9 @@ Returns the value of `display_name` from config or server FQDN if not set.
 [example:displayName]
 )",
             .examples{{"displayName", "SELECT displayName();", ""}},
-            .category{"Other"}
-        });
+            .categories{"Constant", "Miscellaneous"}
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 

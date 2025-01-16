@@ -20,9 +20,6 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
-/// The initial size of adaptive I/O buffer by default.
-static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
-
 static constexpr auto PADDING_FOR_SIMD = 64;
 
 /** Which blocks by default read the data (by number of rows).
@@ -70,9 +67,6 @@ static constexpr auto DBMS_DEFAULT_MAX_PARSER_DEPTH = 1000;
 /// Default limit on the amount of backtracking of recursive descend parser.
 static constexpr auto DBMS_DEFAULT_MAX_PARSER_BACKTRACKS = 1000000;
 
-/// Default limit on recursive CTE evaluation depth.
-static constexpr auto DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH = 1000;
-
 /// Default limit on query size.
 static constexpr auto DBMS_DEFAULT_MAX_QUERY_SIZE = 262144;
 
@@ -93,21 +87,14 @@ static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE = 0_MiB;
 static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5_GiB;
+static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5368_MiB;
 static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 5_GiB;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 5368_MiB;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.3;
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO = 0.5;
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES = 10'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
@@ -130,7 +117,5 @@ static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 1000000000;
 #else
 static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 0;
 #endif
-
-static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
 }

@@ -1,7 +1,6 @@
 #include <Server/NotFoundHandler.h>
 
 #include <IO/HTTPCommon.h>
-#include <IO/Operators.h>
 #include <Common/Exception.h>
 
 namespace DB

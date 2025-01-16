@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
@@ -173,11 +172,6 @@ DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type)
 
     return type;
 
-}
-
-bool canContainNull(const IDataType & type)
-{
-    return type.isNullable() || type.isLowCardinalityNullable() || isDynamic(type) || isVariant(type);
 }
 
 }

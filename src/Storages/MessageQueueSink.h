@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/WriteBufferFromString.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/IMessageProducer.h>
 #include <Interpreters/Context.h>
@@ -33,15 +32,15 @@ public:
         std::unique_ptr<IMessageProducer> producer_,
         const String & storage_name_,
         const ContextPtr & context_);
-    ~MessageQueueSink() override;
 
     String getName() const override { return storage_name + "Sink"; }
 
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
 
     void onStart() override;
     void onFinish() override;
-    void onException(std::exception_ptr /* exception */) override;
+    void onCancel() override { onFinish(); }
+    void onException(std::exception_ptr /* exception */) override { onFinish(); }
 
 protected:
     /// Do some specific initialization before consuming data.

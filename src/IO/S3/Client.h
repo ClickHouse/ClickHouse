@@ -159,7 +159,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -169,16 +169,6 @@ public:
 
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
-
-        /// Sometimes [1] GCS may suggest to use Rewrite over CopyObject, i.e.:
-        ///
-        ///     AWSError 'InternalError': Copy spanning locations and/or storage classes could not complete within 30 seconds. Please use the Rewrite method in the JSON API (https://cloud.google.com/storage/docs/json_api/v1/objects/rewrite) instead.
-        ///
-        /// Note, that GCS may return other errors (like EntityTooLarge), but
-        /// those are not retriable by default S3 RetryStrategy.
-        ///
-        ///   [1]: https://github.com/ClickHouse/ClickHouse/issues/59660
-        static bool useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error);
 
     private:
         uint32_t maxRetries;
@@ -220,14 +210,6 @@ public:
     bool supportsMultiPartCopy() const;
 
     bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
-
-    bool isClientForDisk() const
-    {
-        return client_configuration.for_disk_s3;
-    }
-
-    ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
-    ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
 private:
     friend struct ::MockS3::Client;
@@ -279,9 +261,6 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
-
-    template <typename RequestResult>
-    RequestResult processRequestResult(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

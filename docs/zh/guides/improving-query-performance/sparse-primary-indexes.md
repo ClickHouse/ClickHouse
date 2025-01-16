@@ -149,42 +149,30 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 
 [//]: # (<details open>)
 <details>
-  <summary style={{ color: "white" }}>DDL详情</summary>
-  <p style={{ color: "white" }}>
-    为了简化本文后面的讨论，并使图和结果可重现，使用DDL语句有如下说明：
-    <ul>
-      <li>通过 <code>ORDER BY</code> 子句指定表的复合排序键</li>
-      <br />
-      <li>
-        通过设置配置控制主索引有多少索引项：
-        <ul>
-          <li>
-            <code>index_granularity</code>: 显式设置为其默认值 8192。这意味着对于每一组 8192
-            行，主索引将有一个索引条目，例如，如果表包含 16384 行，那么索引将有两个索引条目。
-          </li>
-          <br />
-          <li>
-            <code>index_granularity_bytes</code>: 设置为 0 表示禁止
-            <a
-              href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1"
-              target="_blank"
-              style={{ color: "white" }}
-            >
-              自适应索引粒度
-            </a>
-            。自适应索引粒度意味着 ClickHouse 自动为一组 n 行创建一个索引条目：
-            <ul>
-              <li>
-                如果 n 小于 8192，但 n 行的合并行数据大小大于或等于 10MB (
-                <code>index_granularity_bytes</code> 的默认值)
-              </li>
-              <li>n 达到 8192</li>
-            </ul>
-          </li>
-        </ul>
-      </li>
-    </ul>
-  </p>
+    <summary><font color="white">
+    DDL详情
+    </font></summary>
+    <p><font color="white">
+
+为了简化本文后面的讨论，并使图和结果可重现，使用DDL语句有如下说明：
+<ul>
+<li>通过ORDER BY子句指定表的复合排序键</li>
+<br/>
+<li>通过设置配置控制主索引有多少索引项：</li>
+<br/>
+<ul>
+<li><font face = "monospace">index_granularity</font>: 显式设置为其默认值8192。这意味着对于每一组8192行，主索引将有一个索引条目，例如，如果表包含16384行，那么索引将有两个索引条目。
+</li>
+<br/>
+<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="white">自适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
+<ul>
+<li>如果n小于8192，但n行的合并行数据大小大于或等于10MB (index_granularity_bytes的默认值)或</li>
+<li>n达到8192</li>
+</ul>
+</li>
+</ul>
+</ul>
+</font></p>
 </details>
 
 
@@ -383,7 +371,7 @@ UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>
 :::note
 - 最后一个索引条目(上图中的“mark 1082”)存储了上图中颗粒1082的主键列的最大值。
 
-- 索引条目(索引标记)不是基于表中的特定行，而是基于颗粒。例如，对于上图中的索引条目‘mark 0’，在我们的表中没有<font face = "monospace">UserID</font>为240.923且<font face = "monospace">URL</font>为“goal://metry=10000467796a411...”的行，相反，对于该表，有一个颗粒0，在该颗粒中，最小<font face = "monospace">UserID</font>值是240.923，最小<font face = "monospace">URL</font>值是“goal://metry=10000467796a411...”，这两个值来自不同的行。
+- 索引条目(索引标记)不是基于表中的特定行，而是基于颗粒。例如，对于上图中的索引条目‘mark 0’，在我们的表中没有<font face = "monospace">UserID</font>为240.923且<font face = "monospace">URL</font>为“goal://metry=10000467796a411…”的行，相反，对于该表，有一个颗粒0，在该颗粒中，最小<font face = "monospace">UserID</font>值是240.923，最小<font face = "monospace">URL</font>值是“goal://metry=10000467796a411…”，这两个值来自不同的行。
 
 - 主索引文件完全加载到主内存中。如果文件大于可用的空闲内存空间，则ClickHouse将发生错误。
 :::

@@ -4,8 +4,9 @@
 
 #if USE_LIBPQXX
 #include "PostgreSQLReplicationHandler.h"
+#include "MaterializedPostgreSQLSettings.h"
 
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -16,7 +17,6 @@
 
 namespace DB
 {
-struct MaterializedPostgreSQLSettings;
 
 /** TODO list:
  * - Actually I think we can support ddl even though logical replication does not fully support it.

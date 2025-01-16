@@ -38,12 +38,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"encoded", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-        validateFunctionArguments(*this, arguments, args);
+        validateArgumentType(*this, arguments, 0, isStringOrFixedString, "string or fixed string");
 
         return std::make_shared<DataTypeTuple>(
                 DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
@@ -51,19 +48,21 @@ public:
     }
 
     template <typename ColumnTypeEncoded>
-    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column, size_t input_rows_count) const
+    bool tryExecute(const IColumn * encoded_column, ColumnPtr & result_column) const
     {
         const auto * encoded = checkAndGetColumn<ColumnTypeEncoded>(encoded_column);
         if (!encoded)
             return false;
 
-        auto latitude = ColumnFloat64::create(input_rows_count);
-        auto longitude = ColumnFloat64::create(input_rows_count);
+        const size_t count = encoded->size();
+
+        auto latitude = ColumnFloat64::create(count);
+        auto longitude = ColumnFloat64::create(count);
 
         ColumnFloat64::Container & lon_data = longitude->getData();
         ColumnFloat64::Container & lat_data = latitude->getData();
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < count; ++i)
         {
             std::string_view encoded_string = encoded->getDataAt(i).toView();
             geohashDecode(encoded_string.data(), encoded_string.size(), &lon_data[i], &lat_data[i]);
@@ -77,13 +76,13 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * encoded = arguments[0].column.get();
         ColumnPtr res_column;
 
-        if (tryExecute<ColumnString>(encoded, res_column, input_rows_count) ||
-            tryExecute<ColumnFixedString>(encoded, res_column, input_rows_count))
+        if (tryExecute<ColumnString>(encoded, res_column) ||
+            tryExecute<ColumnFixedString>(encoded, res_column))
             return res_column;
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported argument type:{} of argument of function {}",

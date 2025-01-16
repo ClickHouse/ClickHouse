@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-shared-merge-tree
+# Tags: long, zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "drop table if exists rmt sync;"
-$CLICKHOUSE_CLIENT -q "create table rmt (n int) engine=ReplicatedMergeTree('/test/02444/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', '1') order by n settings old_parts_lifetime=600"
+$CLICKHOUSE_CLIENT -q "create table rmt (n int) engine=ReplicatedMergeTree('/test/02444/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', '1') order by n"
 
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt values (1);"
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt values (2);"

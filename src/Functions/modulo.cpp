@@ -105,7 +105,7 @@ struct ModuloByConstantImpl
 
 private:
     template <OpCase op_case>
-    static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
+    static inline void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
         if constexpr (op_case == OpCase::Vector)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
@@ -155,7 +155,7 @@ using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, 
 REGISTER_FUNCTION(Modulo)
 {
     factory.registerFunction<FunctionModulo>();
-    factory.registerAlias("mod", "modulo", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
 }
 
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
@@ -182,12 +182,12 @@ Returns the difference between `a` and the nearest integer not greater than `a` 
 In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
         )",
             .examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);", ""}},
-            .category{"Arithmetic"}},
-        FunctionFactory::Case::Insensitive);
+            .categories{"Arithmetic"}},
+        FunctionFactory::CaseInsensitive);
 
-    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);
     /// Compatibility with Spark:
-    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::CaseInsensitive);
 }
 
 }

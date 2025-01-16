@@ -1,21 +1,15 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/formatAST.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+
+#include <Parsers/formatAST.h>
 
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_replica_name;
-    extern const ServerSettingsString default_replica_path;
-}
 
 namespace
 {
@@ -32,6 +26,9 @@ namespace
     void visitStorageReplicatedTableEngine(ASTStorage & storage, const DDLAdjustingForBackupVisitor::Data & data)
     {
         /// Precondition: engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree")
+
+        if (data.replicated_table_shared_id)
+            *data.replicated_table_shared_id = StorageReplicatedMergeTree::tryGetTableSharedIDFromCreateQuery(*data.create_query, data.global_context);
 
         /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
         /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
@@ -52,8 +49,8 @@ namespace
         if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
             replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
         {
-            String & zookeeper_path_arg = zookeeper_path_ast->value.safeGet<String>();
-            String & replica_name_arg = replica_name_ast->value.safeGet<String>();
+            String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
+            String & replica_name_arg = replica_name_ast->value.get<String>();
             if (create.uuid != UUIDHelpers::Nil)
             {
                 String table_uuid_str = toString(create.uuid);
@@ -61,8 +58,8 @@ namespace
                     zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
             }
             const auto & server_settings = data.global_context->getServerSettings();
-            if ((zookeeper_path_arg == server_settings[ServerSetting::default_replica_path].value)
-                && (replica_name_arg == server_settings[ServerSetting::default_replica_name].value)
+            if ((zookeeper_path_arg == server_settings.default_replica_path.value)
+                && (replica_name_arg == server_settings.default_replica_name.value)
                 && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
             {
                 engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
@@ -101,9 +98,12 @@ void DDLAdjustingForBackupVisitor::visit(ASTPtr ast, const Data & data)
         visitCreateQuery(*create, data);
 }
 
-void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context)
+void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context, std::optional<String> * replicated_table_shared_id)
 {
-    DDLAdjustingForBackupVisitor::Data data{ast, global_context};
+    if (replicated_table_shared_id)
+        *replicated_table_shared_id = {};
+
+    DDLAdjustingForBackupVisitor::Data data{ast, global_context, replicated_table_shared_id};
     DDLAdjustingForBackupVisitor::Visitor{data}.visit(ast);
 }
 

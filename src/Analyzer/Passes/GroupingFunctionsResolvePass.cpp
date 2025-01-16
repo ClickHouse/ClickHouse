@@ -1,10 +1,8 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
 
 #include <Functions/grouping.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/Context.h>
 
@@ -13,18 +11,9 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ValidationUtils.h>
-
-#include <ranges>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool force_grouping_standard_compatibility;
-    extern const SettingsBool group_by_use_nulls;
-}
 
 namespace ErrorCodes
 {
@@ -32,30 +21,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct GroupByKeyComparator
-{
-    GroupByKeyComparator(QueryTreeNodePtr node_) /// NOLINT
-        : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = false, .compare_types = true}))
-    {}
-
-    bool operator==(const GroupByKeyComparator & other) const { return hash == other.hash && compareGroupByKeys(node, other.node); }
-
-    bool operator!=(const GroupByKeyComparator & other) const { return !(*this == other); }
-
-    struct Hasher { size_t operator()(const GroupByKeyComparator & key) const { return key.hash.low64; } };
-
-    QueryTreeNodePtr node = nullptr;
-    CityHash_v1_0_2::uint128 hash;
-};
-
-template <typename Value>
-using AggredationKeyNodeMap = std::unordered_map<GroupByKeyComparator, Value, GroupByKeyComparator::Hasher>;
-
 namespace
 {
 
-enum class GroupByKind : uint8_t
+enum class GroupByKind
 {
     ORDINARY,
     ROLLUP,
@@ -67,7 +36,7 @@ class GroupingFunctionResolveVisitor : public InDepthQueryTreeVisitorWithContext
 {
 public:
     GroupingFunctionResolveVisitor(GroupByKind group_by_kind_,
-        AggredationKeyNodeMap<size_t> aggregation_key_to_index_,
+        QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index_,
         ColumnNumbersList grouping_sets_keys_indices_,
         ContextPtr context_)
         : InDepthQueryTreeVisitorWithContext(std::move(context_))
@@ -92,12 +61,9 @@ public:
         {
             auto it = aggregation_key_to_index.find(argument);
             if (it == aggregation_key_to_index.end())
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Argument {} of GROUPING function is not a part of GROUP BY clause [{}]",
-                    argument->formatASTForErrorMessage(),
-                    fmt::join(aggregation_key_to_index | std::views::transform([](const auto & e) { return e.first.node->formatASTForErrorMessage(); }), ", "));
-            }
+                    "Argument {} of GROUPING function is not a part of GROUP BY clause",
+                    argument->formatASTForErrorMessage());
 
             arguments_indexes.push_back(it->second);
         }
@@ -105,38 +71,41 @@ public:
         FunctionOverloadResolverPtr grouping_function_resolver;
         bool add_grouping_set_column = false;
 
-        bool force_grouping_standard_compatibility = getSettings()[Setting::force_grouping_standard_compatibility];
+        bool force_grouping_standard_compatibility = getSettings().force_grouping_standard_compatibility;
         size_t aggregation_keys_size = aggregation_key_to_index.size();
 
         switch (group_by_kind)
         {
             case GroupByKind::ORDINARY:
             {
-                auto grouping_ordinary_function
-                    = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
+                auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes,
+                    force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
                 break;
             }
             case GroupByKind::ROLLUP:
             {
-                auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(
-                    arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
+                auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes,
+                    aggregation_keys_size,
+                    force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_rollup_function));
                 add_grouping_set_column = true;
                 break;
             }
             case GroupByKind::CUBE:
             {
-                auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(
-                    arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
+                auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes,
+                    aggregation_keys_size,
+                    force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_cube_function));
                 add_grouping_set_column = true;
                 break;
             }
             case GroupByKind::GROUPING_SETS:
             {
-                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(
-                    arguments_indexes, grouping_sets_keys_indexes, force_grouping_standard_compatibility);
+                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes,
+                    grouping_sets_keys_indexes,
+                    force_grouping_standard_compatibility);
                 grouping_function_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
                 add_grouping_set_column = true;
                 break;
@@ -161,7 +130,7 @@ public:
 
 private:
     GroupByKind group_by_kind;
-    AggredationKeyNodeMap<size_t> aggregation_key_to_index;
+    QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index;
     ColumnNumbersList grouping_sets_keys_indexes;
 };
 
@@ -170,15 +139,14 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     auto & query_node_typed = query_node->as<QueryNode &>();
 
     size_t aggregation_node_index = 0;
-    AggredationKeyNodeMap<size_t> aggregation_key_to_index;
+    QueryTreeNodePtrWithHashMap<size_t> aggregation_key_to_index;
 
     std::vector<QueryTreeNodes> grouping_sets_used_aggregation_keys_list;
 
     if (query_node_typed.hasGroupBy())
     {
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
-        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1
-            && !context->getSettingsRef()[Setting::group_by_use_nulls])
+        if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1 && !context->getSettingsRef().group_by_use_nulls)
         {
             auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
             auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
@@ -288,3 +256,4 @@ void GroupingFunctionsResolvePass::run(QueryTreeNodePtr & query_tree_node, Conte
 }
 
 }
+

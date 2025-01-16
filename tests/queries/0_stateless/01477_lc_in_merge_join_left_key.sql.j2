@@ -4,17 +4,17 @@ SET max_bytes_in_join = 100;
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS nr;
 
-CREATE TABLE t (`x` UInt32, `s` LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE nr (`x` Nullable(UInt32), `s` Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t (`x` UInt32, `s` LowCardinality(String)) ENGINE = Memory;
+CREATE TABLE nr (`x` Nullable(UInt32), `s` Nullable(String)) ENGINE = Memory;
 
 INSERT INTO t VALUES (1, 'l');
 INSERT INTO nr VALUES (2, NULL);
 
-{% for enable_analyzer in [0, 1] -%}
+{% for allow_experimental_analyzer in [0, 1] -%}
 
-SET enable_analyzer = {{ enable_analyzer }};
+SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
 
-{% if enable_analyzer -%}
+{% if allow_experimental_analyzer -%}
 SELECT '- analyzer -';
 {% endif -%}
 

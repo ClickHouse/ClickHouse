@@ -5,13 +5,13 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
-#include <DataTypes/DataTypeDateTime64.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -114,12 +114,7 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     buffer << ", constant_value: ";
     if (mask_id)
-    {
-        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            buffer << "[HIDDEN]";
-        else
-            buffer << "[HIDDEN id: " << mask_id << "]";
-    }
+        buffer << "[HIDDEN id: " << mask_id << "]";
     else
         buffer << constant_value->getValue().dump();
 

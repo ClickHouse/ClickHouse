@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 SELECT arrayJoin([1, 2, 3]);
 
@@ -22,9 +22,9 @@ SELECT '--';
 
 SELECT arrayMap(x -> arrayJoin([1, 2, 3]), [1, 2, 3]);
 
-SELECT arrayMap(x -> arrayJoin(x), [[1, 2, 3]]); -- { serverError BAD_ARGUMENTS }
+SELECT arrayMap(x -> arrayJoin(x), [[1, 2, 3]]); -- { serverError 36 }
 
-SELECT arrayMap(x -> arrayJoin(cast(x, 'Array(UInt8)')), [[1, 2, 3]]); -- { serverError BAD_ARGUMENTS }
+SELECT arrayMap(x -> arrayJoin(cast(x, 'Array(UInt8)')), [[1, 2, 3]]); -- { serverError 36 }
 
 SELECT '--';
 
@@ -38,7 +38,7 @@ CREATE TABLE test_table
     id UInt64,
     value_1 Array(UInt8),
     value_2 Array(UInt8),
-) ENGINE=MergeTree ORDER BY tuple();
+) ENGINE=TinyLog;
 
 INSERT INTO test_table VALUES (0, [1, 2, 3], [1, 2, 3, 4]);
 

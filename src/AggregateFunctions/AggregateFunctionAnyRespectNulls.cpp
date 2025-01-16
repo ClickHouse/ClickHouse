@@ -157,13 +157,13 @@ public:
         d.status = static_cast<Data::Status>(k);
         if (d.status == Data::Status::NotSet)
             return;
-        if (d.status == Data::Status::SetNull)
+        else if (d.status == Data::Status::SetNull)
         {
             if (!returns_nullable_type)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type (NULL) in non-nullable {}State", getName());
             return;
         }
-        if (d.status == Data::Status::SetOther)
+        else if (d.status == Data::Status::SetOther)
         {
             serialization->deserializeBinary(d.value, buf, {});
             return;
@@ -177,7 +177,7 @@ public:
         if (d.status == Data::Status::SetOther)
             to.insert(d.value);
         else
-            this->result_type->insertDefaultInto(to);
+            to.insertDefault();
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
@@ -221,16 +221,11 @@ void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factor
         = {.returns_default_when_only_null = false, .is_order_dependent = true, .is_window_function = true};
 
     factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, default_properties_for_respect_nulls});
-    factory.registerAlias("anyRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
-    factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerAlias("firstValueRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
-    factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerAlias("anyValueRespectNulls", "any_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
+    factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, default_properties_for_respect_nulls});
-    factory.registerAlias("anyLastRespectNulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
-    factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerAlias("lastValueRespectNulls", "anyLast_respect_nulls", AggregateFunctionFactory::Case::Sensitive);
+    factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
 
     /// Must happen after registering any and anyLast
     factory.registerNullsActionTransformation("any", "any_respect_nulls");

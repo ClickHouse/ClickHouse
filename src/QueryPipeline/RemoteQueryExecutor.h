@@ -8,6 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
+#include <Common/TimerDescriptor.h>
 #include <sys/types.h>
 
 
@@ -61,8 +62,7 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -218,12 +218,9 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const;
+    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
-
-    /// return true if parallel replica packet was processed
-    bool processParallelReplicaPacketIfAny();
 
 private:
     RemoteQueryExecutor(
@@ -260,6 +257,11 @@ private:
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
+
+    /// This is needed only for parallel reading from replicas, because
+    /// we create a RemoteQueryExecutor per replica and have to store additional info
+    /// about the number of the current replica or the count of replicas at all.
+    IConnections::ReplicaInfo replica_info;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -300,8 +302,6 @@ private:
     /** Got duplicated uuids from replica
       */
     bool got_duplicated_part_uuids = false;
-
-    bool has_postponed_packet = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;
@@ -344,6 +344,9 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    /// Reads packet by packet
+    Block readPackets();
 };
 
 }

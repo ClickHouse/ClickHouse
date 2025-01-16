@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class UserDefinedSQLObjectType : uint8_t
+enum class UserDefinedSQLObjectType
 {
     Function
 };

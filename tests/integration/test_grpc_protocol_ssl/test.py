@@ -1,17 +1,15 @@
 import os
-import sys
-
-import grpc
 import pytest
-
+import sys
+import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
 if pb2_dir not in sys.path:
     sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
-import clickhouse_grpc_pb2_grpc
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
+
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client have to verify server certificate against that name. Client uses SNI

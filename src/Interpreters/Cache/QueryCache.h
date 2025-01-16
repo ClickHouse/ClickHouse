@@ -14,13 +14,8 @@
 namespace DB
 {
 
-struct Settings;
-
 /// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -32,7 +27,7 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage : uint8_t
+    enum class Usage
     {
         Unknown,  /// we don't know what what happened
         None,     /// query result neither written nor read into/from query cache
@@ -88,15 +83,9 @@ public:
         /// SYSTEM.QUERY_CACHE.
         const String query_string;
 
-        /// A tag (namespace) for distinguish multiple entries of the same query.
-        /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
-        /// compute the tag from the query AST.
-        const String tag;
-
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             const String & current_database,
-            const Settings & settings,
             Block header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
@@ -104,10 +93,7 @@ public:
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_,
-            const String & current_database,
-            const Settings & settings,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_, const String & current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
@@ -156,7 +142,7 @@ public:
 
         Writer(const Writer & other);
 
-        enum class ChunkType : uint8_t {Result, Totals, Extremes};
+        enum class ChunkType {Result, Totals, Extremes};
         void buffer(Chunk && chunk, ChunkType chunk_type);
 
         void finalizeWrite();
@@ -211,7 +197,7 @@ public:
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void clear(const std::optional<String> & tag);
+    void clear();
 
     size_t sizeInBytes() const;
     size_t count() const;

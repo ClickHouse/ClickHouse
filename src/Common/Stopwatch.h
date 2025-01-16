@@ -7,9 +7,6 @@
 #include <cassert>
 #include <atomic>
 #include <memory>
-#include <system_error>
-#include <cerrno>
-
 
 /// From clock_getres(2):
 ///
@@ -25,8 +22,7 @@ static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;
 inline UInt64 clock_gettime_ns(clockid_t clock_type = STOPWATCH_DEFAULT_CLOCK)
 {
     struct timespec ts;
-    if (0 != clock_gettime(clock_type, &ts))
-        throw std::system_error(std::error_code(errno, std::system_category()));
+    clock_gettime(clock_type, &ts);
     return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
 }
 

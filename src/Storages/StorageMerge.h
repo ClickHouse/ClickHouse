@@ -49,11 +49,8 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsPrewhere() const override;
+    bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
-
-    bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -79,17 +76,13 @@ public:
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
+    bool supportsTrivialCountOptimization() const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
-
-    /// Returns a unified column structure among multiple tables.
-    /// Takes a function that invokes a callback for every table. NOTE: This is quite inconvenient.
-    static ColumnsDescription unifyColumnsDescription(std::function<void(std::function<void(const StoragePtr &)>)> for_each_table);
 
 private:
     /// (Database, Table, Lock, TableName)
@@ -127,7 +120,7 @@ private:
 
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables(size_t max_tables_to_look) const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -166,7 +159,6 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
-    const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -232,7 +224,7 @@ private:
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
-        ActionsDAG actions_dag;
+        ActionsDAGPtr actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
     };
@@ -262,7 +254,7 @@ private:
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        const Names & real_column_names_read_from_the_source_table,
+        Names && real_column_names,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;

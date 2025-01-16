@@ -87,7 +87,7 @@ public:
 
     virtual void onEntryCreate(const Entry & /* entry */) {}
     virtual void onEntryDestroy(const Entry & /* entry */) {}
-    virtual ~BackgroundProcessList() = default;
+    virtual inline ~BackgroundProcessList() = default;
 };
 
 }

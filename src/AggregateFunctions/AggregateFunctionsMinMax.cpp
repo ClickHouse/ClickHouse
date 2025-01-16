@@ -35,14 +35,6 @@ public:
                 "Illegal type {} of argument of aggregate function {} because the values of that data type are not comparable",
                 this->result_type->getName(),
                 getName());
-
-        if (isDynamic(this->result_type) || isVariant(this->result_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->result_type->getName(),
-                getName());
     }
 
     String getName() const override
@@ -139,7 +131,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to, this->result_type);
+        this->data(place).insertResultInto(to);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -203,8 +195,8 @@ AggregateFunctionPtr createAggregateFunctionMinMax(
 
 void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("min", createAggregateFunctionMinMax<true>, AggregateFunctionFactory::Case::Insensitive);
-    factory.registerFunction("max", createAggregateFunctionMinMax<false>, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("min", createAggregateFunctionMinMax<true>, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("max", createAggregateFunctionMinMax<false>, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

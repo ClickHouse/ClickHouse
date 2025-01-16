@@ -6,7 +6,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/WriteHelpers.h>
 
-#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
@@ -112,7 +111,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        const IColumn * nested[num_arguments];
 
         for (size_t i = 0; i < num_arguments; ++i)
             nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
@@ -134,7 +133,7 @@ public:
         }
 
         for (size_t i = begin; i < end; ++i)
-            nested_func->add(place, nested.data(), i, arena);
+            nested_func->add(place, nested, i, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -145,14 +144,9 @@ public:
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
     {
-        nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
+        nested_func->merge(place, rhs, thread_pool, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
