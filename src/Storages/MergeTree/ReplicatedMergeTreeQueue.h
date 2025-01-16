@@ -313,7 +313,7 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
-    ~ReplicatedMergeTreeQueue() = default;
+    ~ReplicatedMergeTreeQueue();
 
     /// Clears queue state
     void clear();

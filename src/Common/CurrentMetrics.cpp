@@ -271,6 +271,8 @@
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
+    M(ActiveDataMutations, "Number of data mutations in all tables that are not finished and can be applied on the fly.") \
+    M(ActiveMetadataMutations, "Number of metadata mutations in all tables that are not finished and can be applied on the fly.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
