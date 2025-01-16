@@ -964,6 +964,8 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "max_rows={} ranges_size={}\n{}", max_rows, ranges.size(), StackTrace().toString());
+
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
 
