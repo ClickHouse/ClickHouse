@@ -166,12 +166,6 @@ struct IdentifierResolveScope
     std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
 
     QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
-    /// Here we count the number of nullable GROUP BY keys we met resolving expression.
-    /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
-    /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
-    /// But when we resolve `tuple(tuple(number))` we should figure out that `tuple(number)` is already a key,
-    /// and we should not convert `number` to nullable.
-    size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)
