@@ -72,7 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
-            {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
+            {"query_plan_use_new_logical_join_step", false, true, "New join step, internal change"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
