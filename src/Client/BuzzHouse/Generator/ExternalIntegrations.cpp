@@ -1410,6 +1410,7 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         const auto nname = buf.substr(0, tabchar);
         const auto nvalue = buf.substr(tabchar + 1);
 
+        buf.resize(0);
         buf2.resize(0);
         buf2 += "SET ";
         buf2 += nname;
