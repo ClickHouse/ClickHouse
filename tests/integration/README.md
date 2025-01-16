@@ -42,7 +42,6 @@ sudo -H pip install \
     requests-kerberos \
     dict2xml \
     hypothesis \
-    pyhdfs \
     pika \
     nats-py \
     pandas \

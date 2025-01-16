@@ -47,29 +47,14 @@ At a minimum, the following information should be added (but add more as needed)
 
 All builds in Builds_1 and Builds_2 stages are always mandatory
 and will run independently of the checks below:
-
-- [ ] <!---ci_set_required--> Allow: All Required Checks
-- [ ] <!---ci_include_stateless--> Allow: Stateless tests
-- [ ] <!---ci_include_stateful--> Allow: Stateful tests
-- [ ] <!---ci_include_integration--> Allow: Integration Tests
-- [ ] <!---ci_include_performance--> Allow: Performance tests
-- [ ] <!---ci_set_builds--> Allow: All Builds
-- [ ] <!---batch_0_1--> Allow: batch 1, 2 for multi-batch jobs
-- [ ] <!---batch_2_3--> Allow: batch 3, 4, 5, 6 for multi-batch jobs
+- [ ] <!---ci_include_stateless--> Only: Stateless tests
+- [ ] <!---ci_include_stateful--> Only: Stateful tests
+- [ ] <!---ci_include_integration--> Only: Integration tests
+- [ ] <!---ci_include_performance--> Only: Performance tests
 ---
-- [ ] <!---ci_exclude_style--> Exclude: Style check
-- [ ] <!---ci_exclude_fast--> Exclude: Fast test
-- [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
-- [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
-- [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64
-- [ ] <!---ci_exclude_release--> Exclude: All with release
-- [ ] <!---ci_exclude_debug--> Exclude: All with debug
+- [ ] <!---ci_exclude_style--> Skip: Style check
+- [ ] <!---ci_exclude_fast--> Skip: Fast test
 ---
-- [ ] <!---ci_include_uzz--> Run only fuzzers related jobs (libFuzzer fuzzers, AST fuzzers, BuzzHouse, etc.)
-- [ ] <!---ci_exclude_ast--> Exclude: AST fuzzers
----
-- [ ] <!---do_not_test--> Do not test
-- [ ] <!---woolen_wolfdog--> Woolen Wolfdog
-- [ ] <!---upload_all--> Upload binaries for special builds
-- [ ] <!---no_merge_commit--> Disable merge-commit
+- [ ] <!---woolen_wolfdog--> Non-blocking CI mode (Resource-intensive. All test jobs execute in parallel).
+- [ ] <!---no_merge_commit--> Disable merge-commit (Run CI on branch HEAD instead of merge commit with target branch)
 - [ ] <!---no_ci_cache--> Disable CI cache
