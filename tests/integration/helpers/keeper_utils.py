@@ -318,7 +318,6 @@ def wait_until_connected(
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
                     )
-                print("HELLO")
                 zk_cli = KazooClient(
                     hosts=f"{host}:9181", timeout=timeout - time_passed, client_id=(0, password)
                 )
