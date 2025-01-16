@@ -70,6 +70,16 @@ def test_password_works(started_cluster):
     auth_connection = get_zk(node2.name)
     auth_connection.get_children("/")
 
+    data = node3.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "clickhouse keeper-client -h node2 -p 9181 --password foobar -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+    )
+    assert data.strip() == "api_version feature_flags"
+
     with pytest.raises(Exception):
         auth_connection = get_wrong_password_zk(node1.name, timeout=1)
         auth_connection.get_children("/")
