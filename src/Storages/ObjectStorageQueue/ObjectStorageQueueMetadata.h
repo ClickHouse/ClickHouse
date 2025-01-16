@@ -64,6 +64,17 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
+    /// Shutdown background threads.
+    void shutdown();
+
+    /// Check if metadata in keeper by `zookeeper_path` exists.
+    /// If it does not exist - create it.
+    /// If it already exists:
+    /// - check that passed queue settings, columns, format are consistent
+    /// with existing metadata in keeper;
+    /// - adjust, if needed and allowed, passed queue settings according to
+    /// what is in keeper (for example, processing_threads_num is adjustable,
+    /// because its default depends on the CPU cores on the server);
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const fs::path & zookeeper_path,
         const ObjectStorageQueueSettings & settings,
@@ -72,39 +83,81 @@ public:
         const ContextPtr & context,
         bool is_attach,
         LoggerPtr log);
+    /// Alter settings in keeper metadata
+    /// (rewrites what we write in syncWithKeeper()).
+    void alterSettings(const SettingsChanges & changes, const ContextPtr & context);
 
+    /// Get object storage type: s3, azure, local, etc.
     ObjectStorageType getType() const { return storage_type; }
+    /// Get base path to keeper metadata.
     std::string getPath() const { return zookeeper_path; }
-
-    void registerIfNot(const StorageID & storage_id);
-    size_t unregister(const StorageID & storage_id);
-
-    void shutdown();
-
-    FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
-
-    FileStatusPtr getFileStatus(const std::string & path);
+    /// Get statuses (state, processed rows, processing time)
+    /// of all files stored in LocalFileStatuses cache.
     FileStatuses getFileStatuses() const;
 
-    /// Method of Ordered mode parallel processing.
-    bool useBucketsForProcessing() const;
-    size_t getBucketsNum() const { return buckets_num; }
-    Bucket getBucketForPath(const std::string & path) const;
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket, const Processor & processor);
-
-    static size_t getBucketsNum(const ObjectStorageQueueTableMetadata & metadata);
-
-    void checkTableMetadataEquals(const ObjectStorageQueueMetadata & other);
-
+    /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
 
-    void alterSettings(const SettingsChanges & changes, const ContextPtr & context);
+    /// Create ObjectStorageQueueIFileMetadata object
+    /// for the requested file.
+    /// ObjectStorageQueueIFileMetadata (either Ordered or Unordered implementation)
+    /// allows to manage metadata of a concrete file.
+    FileMetadataPtr getFileMetadata(
+        const std::string & path,
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+
+    /// Register table in keeper metadata.
+    /// active = false:
+    ///     On each CREATE TABLE query we register it persistently in keeper
+    ///     under a persistent node "zookeeper_path / registry".
+    ///     This is needed to be able to know when we would have to delete all metadata in keeper.
+    ///     Metadata can be deleted only by the last registered table.
+    ///     FIXME: actually a race condition is possible here
+    ///     (when we checked that we are the last table and started deleting the metadata
+    ///     while someone else registered after we checked :/ )
+    ///
+    /// active = true:
+    ///     We also want to register nodes only for a period when they are active.
+    ///     For this we create ephemeral nodes in "zookeeper_path / registry / <node_info>"
+    void registerIfNot(const StorageID & storage_id, bool active);
+    /// Unregister table.
+    /// Return the number of remaining (after unregistering) registered tables.
+    size_t unregister(const StorageID & storage_id, bool active);
+    Strings getRegistered(bool active);
+
+    /// According to current *active* registered tables,
+    /// check using a hash ring which table would process these paths.
+    /// Leave only those paths which need to be processed by current table.
+    void filterOutForProcessor(Strings & paths, const StorageID & storage_id) const;
+
+    /// Method of Ordered mode parallel processing.
+    bool useBucketsForProcessing() const;
+    /// Get number of buckets in case of bucket-based processing.
+    size_t getBucketsNum() const { return buckets_num; }
+    /// Get bucket by file path in case of bucket-based processing.
+    Bucket getBucketForPath(const std::string & path) const;
+    /// Acquire (take unique ownership of) bucket for processing.
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
+    tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+
     void migrateToBucketsInKeeper(size_t value);
+
+    void registerNonActive(const StorageID & storage_id);
+    void registerActive(const StorageID & storage_id);
+
+    size_t unregisterNonActive(const StorageID & storage_id);
+    size_t unregisterActive(const StorageID & storage_id);
+
+    void updateRegistryFunc();
+    void updateRegistry(const DB::Strings & registered_);
+
+    /// Get ID for the specified table which is used for active tables.
+    static std::string getProcessorID(const StorageID & storage_id);
 
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
@@ -113,6 +166,7 @@ private:
     const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
     const size_t keeper_multiread_batch_size;
     size_t buckets_num;
+    std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
     LoggerPtr log;
 
@@ -121,6 +175,17 @@ private:
 
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
+
+    /// A set of currently known "active" servers.
+    /// The set is updated by updateRegistryFunc().
+    NameSet active_servers;
+    /// Hash ring implementation.
+    class ServersHashRing;
+    /// Hash ring object.
+    /// Can be updated by updateRegistryFunc(), when `active_servers` set changes.
+    std::shared_ptr<ServersHashRing> active_servers_hash_ring;
+    /// Guards `active_servers` and `active_servers_hash_ring`.
+    mutable SharedMutex active_servers_mutex;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;
