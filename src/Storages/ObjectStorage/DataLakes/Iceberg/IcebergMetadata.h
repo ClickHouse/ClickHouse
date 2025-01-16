@@ -61,7 +61,6 @@ public:
     static DataLakeMetadataPtr
     create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
 
-    size_t getVersion() const { return current_metadata_version; }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
@@ -98,12 +97,16 @@ private:
     mutable Iceberg::ManifestListsByName manifest_lists_by_name;
     mutable ManifestEntryByDataFile manifest_entry_by_data_file;
 
+    std::pair<Int32, Int32> getVersion() const { return std::tie(format_version, current_schema_id); }
+
     Int32 current_metadata_version;
     Int32 format_version;
     Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
     mutable std::optional<Strings> cached_files_for_current_snapshot;
+
+    void updateState(const ContextPtr & local_context);
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 
