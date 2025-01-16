@@ -1086,9 +1086,9 @@ ClickHouse生成异常
 - [notEmpty](../../sql-reference/functions/array-functions.md/#notempty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
 - [isNull](../../sql-reference/operators/index.md#operator-is-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
 - [isNotNull](../../sql-reference/operators/index.md#is-not-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
-- [count](../../sql-reference/aggregate-functions/reference/count.md) 读取 [null](../../sql-reference/data-types/nullable.md/#finding-null) 子列。
-- [mapKeys](../../sql-reference/functions/tuple-map-functions.mdx/#mapkeys) 读取 [keys](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
-- [mapValues](../../sql-reference/functions/tuple-map-functions.mdx/#mapvalues) 读取 [values](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
+- [count](../../sql-reference/aggregate-functions/reference/count.md) 读取 [null](../../sql-reference/data-types/nullable.md#finding-null) 子列。
+- [mapKeys](../../sql-reference/functions/tuple-map-functions.mdx#mapkeys) 读取 [keys](../../sql-reference/data-types/map.md#map-subcolumns) 子列。
+- [mapValues](../../sql-reference/functions/tuple-map-functions.mdx#mapvalues) 读取 [values](../../sql-reference/data-types/map.md#map-subcolumns) 子列。
 
 可能的值：
 
