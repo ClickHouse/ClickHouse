@@ -58,7 +58,9 @@ All builds in Builds_1 and Builds_2 stages are always mandatory and will run ind
 - [ ] <!---no_ci_cache--> Disable CI cache
 
 <!--
-GitHub Actions automatically create merge commit with the master on each push and runs CI on it.
-This settings runs CI on branch's head. Remove it to use a merge-commit against the target branch.
+GitHub Actions automatically creates a merge commit with master on each push and runs the CI on it.
+This trashes the build cache since artifacts won't be reused if any new C++ code got into master.
+The following setting runs CI on branch's head to reuse the build cache as much as possible.
+Remove it to use a merge-commit against the target branch.
 #no_merge_commit
 -->
