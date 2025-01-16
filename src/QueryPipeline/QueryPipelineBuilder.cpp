@@ -2,6 +2,7 @@
 
 #include <Core/SortDescription.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -438,6 +439,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             num_streams = max_streams;
         }
 
+        const bool has_low_cardinality = std::ranges::any_of(
+            right->getHeader(),
+            [](const auto & column) { return column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type); });
         auto filling_finish_counter = std::make_shared<FinishCounter>(max_streams);
 
         right->resize(max_streams);
@@ -446,11 +450,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             Processors processors;
             for (auto & outport : outports)
             {
-                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
-                connect(*outport, squashing->getInputs().front());
-                processors.emplace_back(squashing);
+                OutputPort * out = outport;
+                if (min_block_size_bytes && !has_low_cardinality)
+                {
+                    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
+                    connect(*out, squashing->getInputs().front());
+                    processors.emplace_back(squashing);
+                    out = &squashing->getOutputPort();
+                }
                 auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, filling_finish_counter);
-                connect(squashing->getOutputPort(), adding_joined->getInputs().front());
+                connect(*out, adding_joined->getInputs().front());
                 processors.emplace_back(std::move(adding_joined));
             }
             return processors;
@@ -503,15 +512,22 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
 
     Block left_header = left->getHeader();
+    const bool has_low_cardinality = std::ranges::any_of(
+        left_header, [](const auto & column) { return column.type && DB::isLowCardinalityOrContainsLowCardinality(column.type); });
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
-        connect(**lit, squashing->getInputs().front());
+        if (min_block_size_bytes && !has_low_cardinality)
+        {
+            auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
+            connect(**lit, squashing->getInputs().front());
+            *lit = &squashing->getOutputPort();
+            left->pipe.processors->emplace_back(std::move(squashing));
+        }
 
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
 
-        connect(squashing->getOutputPort(), joining->getInputs().front());
+        connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
@@ -537,13 +553,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             *lit = &joining->getOutputs().front();
         }
 
-
         ++lit;
         ++rit;
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 

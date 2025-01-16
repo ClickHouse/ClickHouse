@@ -23,6 +23,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool isLowCardinalityOrContainsLowCardinality(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return isLowCardinalityOrContainsLowCardinality(array_type->getNestedType());
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & elements = tuple_type->getElements();
+        for (const auto & element : elements)
+            if (isLowCardinalityOrContainsLowCardinality(element))
+                return true;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        return isLowCardinalityOrContainsLowCardinality(map_type->getKeyType())
+            || isLowCardinalityOrContainsLowCardinality(map_type->getValueType());
+    }
+
+    return type->lowCardinality();
+}
+
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 {
     if (!type)
