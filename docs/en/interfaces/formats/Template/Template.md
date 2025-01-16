@@ -43,7 +43,7 @@ Where:
 | Part of syntax | Description                                                                                                       |
 |----------------|-------------------------------------------------------------------------------------------------------------------|
 | `delimiter_i`  | A delimiter between values (`$` symbol can be escaped as `$$`)                                                    |
-| `column_i`     | The name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped) |
+| `column_i`     | The name or index of a column whose values are to be selected or inserted (if empty, then the column will be skipped) |
 |`serializeAs_i` | An escaping rule for the column values.                                                                           |
 
 The following escaping rules are supported:
