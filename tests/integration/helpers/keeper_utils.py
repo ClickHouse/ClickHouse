@@ -295,7 +295,6 @@ def wait_until_connected(
     )
     while send_4lw_cmd(cluster, node, "mntr", port) == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
-        print("Sending 4LW")
 
         if time.time() - start > timeout:
             raise Exception(
