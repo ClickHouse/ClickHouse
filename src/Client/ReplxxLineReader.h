@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Client/Autocomplete.h>
 #include <Client/LineReader.h>
 #include <base/strong_typedef.h>
 #include <replxx.hxx>
@@ -36,6 +37,7 @@ public:
     /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
     /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
     static void setLastIsDelimiter(bool flag);
+    void setCompletionCallbackWithAutoComplete(Suggest & suggest, Autocomplete & autocomplete);
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;

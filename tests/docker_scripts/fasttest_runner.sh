@@ -130,6 +130,8 @@ function clone_submodules
             contrib/fmtlib
             contrib/aklomp-base64
             contrib/cctz
+            # TODO: Possibly remove this lib from the fasttest.
+            contrib/ggml
             contrib/libcpuid
             contrib/libdivide
             contrib/double-conversion
@@ -152,7 +154,6 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
-            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
