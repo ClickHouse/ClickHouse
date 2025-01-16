@@ -283,7 +283,6 @@ target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
-target_compile_options(dbms PRIVATE -mavx2)
 set (all_modules dbms)
 
 macro (dbms_target_include_directories)

@@ -1300,6 +1300,19 @@ ColumnFilterPtr IsNullFilter::merge(const ColumnFilter * other) const
     }
     return std::make_shared<IsNullFilter>();
 }
+
+OptionalFilter IsNullFilter::create(const ActionsDAG::Node & node)
+{
+    auto func_name = node.function_base->getName();
+    if (func_name == "isnull")
+    {
+        const auto * input_node = getInputNode(node);
+        auto name = input_node->result_name;
+        return std::make_pair(name, std::make_shared<IsNullFilter>());
+    }
+    return std::nullopt;
+}
+
 ColumnFilterPtr IsNotNullFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
@@ -1313,6 +1326,10 @@ ColumnFilterPtr IsNotNullFilter::merge(const ColumnFilter * other) const
         default:
             return other->merge(this);
     }
+}
+OptionalFilter IsNotNullFilter::create(const ActionsDAG::Node & node)
+{
+    return DB::OptionalFilter();
 }
 
 ColumnFilterPtr BoolValueFilter::merge(const ColumnFilter * other) const

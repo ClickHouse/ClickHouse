@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -11,7 +12,6 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Functions/FunctionFactory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -24,7 +24,7 @@
 
 using namespace DB;
 
-template<class T, class S>
+template <class T, class S>
 static void testFilterPlainFixedData(int size, double positive_rate)
 {
     PaddedPODArray<T> data;
@@ -86,7 +86,7 @@ TEST(TestNativeParquetReader, TestFilterPlainFixedData)
     testFilterPlainFixedData<DateTime64, DateTime64>(100000, 0.9);
 }
 
-template<class T>
+template <class T>
 static void testGatherDictInt()
 {
     int size = 10000;
@@ -140,16 +140,16 @@ static void testDecodePlainData(size_t numbers, size_t exist_nums)
     }
     dst.reserve(exist_nums + src.size());
     size_t size = src.size();
-    const auto * buffer = reinterpret_cast<const uint8_t*>(src.data());
+    const auto * buffer = reinterpret_cast<const uint8_t *>(src.data());
     ParquetData data{.buffer = buffer, .buffer_size = size * sizeof(S)};
-    PageOffsets offsets{.remain_rows = size, .levels_offset=0};
+    PageOffsets offsets{.remain_rows = size, .levels_offset = 0};
     PlainDecoder decoder(data, offsets);
     OptionalRowSet row_set = std::nullopt;
     decoder.decodeFixedValue<T, S>(dst, row_set, size);
     ASSERT_EQ(dst.size(), exist_nums + src.size());
     for (size_t i = 0; i < src.size(); ++i)
     {
-        ASSERT_EQ(src[i], dst[exist_nums+i]);
+        ASSERT_EQ(src[i], dst[exist_nums + i]);
     }
     ASSERT_EQ(offsets.levels_offset, size);
     ASSERT_EQ(offsets.remain_rows, 0);
@@ -182,6 +182,7 @@ TEST(TestNativeParquetReader, TestRowSet)
 TEST(TestNativeParquetReader, TestColumnIntFilter)
 {
     BigIntRangeFilter filter(100, 200, false);
+    BigIntRangeFilter filter_allow_null(100, 200, true);
     BigIntRangeFilter filter2(200, 200, false);
 
     ASSERT_TRUE(!filter.testInt16(99));
@@ -207,6 +208,15 @@ TEST(TestNativeParquetReader, TestColumnIntFilter)
     ASSERT_TRUE(filter2.testInt64(200));
     ASSERT_TRUE(!filter.testInt64(210));
     ASSERT_TRUE(!filter2.testInt64(210));
+
+    ASSERT_TRUE(filter.testInt64Range(90, 100, true));
+    ASSERT_TRUE(filter.testInt64Range(110, 200, true));
+    ASSERT_TRUE(filter.testInt64Range(200, 210, true));
+    ASSERT_TRUE(filter_allow_null.testInt64Range(90, 100, true));
+    ASSERT_FALSE(filter.testInt64Range(90, 99, true));
+    ASSERT_FALSE(filter.testInt64Range(201, 210, true));
+    ASSERT_TRUE(filter_allow_null.testInt64Range(201, 210, true));
+    ASSERT_FALSE(filter_allow_null.testInt64Range(201, 210, false));
 
     PaddedPODArray<Int16> int16_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
                                           99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
@@ -249,4 +259,18 @@ TEST(TestNativeParquetReader, TestColumnIntFilter)
     RowSet row_set6 = RowSet(int64_values.size());
     negated_filter.testInt64Values(row_set6, int64_values.size(), int64_values.data());
     ASSERT_EQ(38, row_set6.count());
+}
+
+TEST(TestNativeParquetReader, TestIsNullFilter)
+{
+    IsNullFilter filter;
+    ASSERT_TRUE(filter.testNull());
+    ASSERT_FALSE(filter.testNotNull());
+    ASSERT_FALSE(filter.testInt64(100));
+    ASSERT_FALSE(filter.testInt32(100));
+    ASSERT_FALSE(filter.testInt16(100));
+    ASSERT_FALSE(filter.testInt64Range(100, 101, false));
+    ASSERT_FALSE(filter.testString("test"));
+    ASSERT_FALSE(filter.testFloat32(0.3f));
+    ASSERT_FALSE(filter.testFloat64(0.3));
 }

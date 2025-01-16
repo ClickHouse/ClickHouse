@@ -84,6 +84,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
+            {"input_format_parquet_use_native_reader_with_filter_push_down", false, false, "A new parquet reader support full filter push down"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

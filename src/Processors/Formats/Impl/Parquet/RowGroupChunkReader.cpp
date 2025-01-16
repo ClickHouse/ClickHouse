@@ -81,9 +81,11 @@ RowGroupChunkReader::RowGroupChunkReader(
 
     for (auto & [name, filter] : parquet_reader->filters)
     {
-        filter_columns.push_back(name);
+        if (reader_columns_mapping.contains(name))
+            filter_columns.push_back(name);
     }
     // try merge read condition columns and result columns;
+    // TODO use a configuration
     if (prefetch_conditions && prefetch_conditions.get() != prefetch.get()
         && prefetch_conditions->totalSize() + prefetch->totalSize() < 4_MiB)
     {

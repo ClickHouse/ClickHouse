@@ -631,7 +631,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         auto rows = adaptive_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
-    if (format_settings.parquet.use_native_reader)
+    if (format_settings.parquet.use_native_reader_with_filter_push_down)
     {
         SeekableReadBuffer * seekable_in = nullptr;
         if (auto * buffer_reader = dynamic_cast<arrow::io::BufferReader*>(arrow_file.get()))
@@ -726,14 +726,24 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
                 ErrorCodes::BAD_ARGUMENTS,
                 "parquet native reader only supports little endian system currently");
 #pragma clang diagnostic pop
+        row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
+            getPort().getHeader(),
+            arrow_properties,
+            reader_properties,
+            arrow_file,
+            format_settings,
+            row_group_batch.row_groups_idxs);
+    }
+    else if (format_settings.parquet.use_native_reader_with_filter_push_down)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+        if constexpr (std::endian::native != std::endian::little)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "parquet native reader only supports little endian system currently");
+#pragma clang diagnostic pop
         row_group_batch.row_group_chunk_reader = new_native_reader->getSubRowGroupRangeReader(row_group_batch.row_groups_idxs);
-//        row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
-//            getPort().getHeader(),
-//            arrow_properties,
-//            reader_properties,
-//            arrow_file,
-//            format_settings,
-//            row_group_batch.row_groups_idxs);
     }
     else
     {
@@ -886,7 +896,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         return static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * num_rows));
     };
 
-    if (!row_group_batch.record_batch_reader && !row_group_batch.row_group_chunk_reader)
+    if (!row_group_batch.record_batch_reader && !row_group_batch.row_group_chunk_reader && !row_group_batch.native_record_reader)
         initializeRowGroupBatchReader(row_group_batch_idx);
 
     PendingChunk res(getPort().getHeader().columns());
@@ -895,7 +905,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     if (format_settings.parquet.use_native_reader)
     {
-        auto chunk = row_group_batch.row_group_chunk_reader->read(row_group_batch.adaptive_chunk_size);
+        auto chunk = row_group_batch.native_record_reader->readChunk();
         if (!chunk)
         {
             end_of_row_group();
@@ -903,6 +913,18 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         }
 
         /// TODO: support defaults_for_omitted_fields feature when supporting nested columns
+        res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
+        res.chunk = std::move(chunk);
+    }
+    else if (format_settings.parquet.use_native_reader_with_filter_push_down)
+    {
+            auto chunk = row_group_batch.row_group_chunk_reader->read(row_group_batch.adaptive_chunk_size);
+            if (!chunk)
+            {
+                end_of_row_group();
+                return;
+            }
+
         res.approx_original_chunk_size = get_approx_original_chunk_size(chunk.getNumRows());
         res.chunk = std::move(chunk);
     }

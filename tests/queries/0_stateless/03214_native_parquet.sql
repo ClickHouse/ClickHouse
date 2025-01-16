@@ -1,7 +1,8 @@
+-- Tags: long, no-fasttest
 -- { echoOn }
 -- support data types: Int16, Int32, Int64, Float32, Float64, String, Date32, DateTime64, Date, DateTime
 drop table if exists test_native_parquet;
-create table test_native_parquet (i16 Int16, i32 Int32, i64 Int64, float Float32, double Float64, string String, date32 Date32, time64 DateTime64, date Date, time DateTime) engine=File(Parquet) settings input_format_parquet_use_native_reader=true;
+create table test_native_parquet (i16 Int16, i32 Int32, i64 Int64, float Float32, double Float64, string String, date32 Date32, time64 DateTime64, date Date, time DateTime) engine=File(Parquet) settings input_format_parquet_use_native_reader_with_filter_push_down=true;
 insert into test_native_parquet select number, number, number+1, 0.1*number, 0.2*number, toString(number), number, toDateTime('2024-10-11 00:00:00') + number, number, toDateTime('2024-10-11 00:00:00') + number from numbers(10000);
 -- test int16
 select sum(i16) from test_native_parquet;

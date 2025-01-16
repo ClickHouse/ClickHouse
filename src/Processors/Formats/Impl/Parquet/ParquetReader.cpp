@@ -124,19 +124,7 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
         RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
         RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
-        //        for (const auto & name : header.getNames())
-        //        {
-        //            if (!parquet_columns.contains(name))
-        //                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
-        //            auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
-        //            auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
-        //            if (condition_columns.contains(name))
-        //                condition_prefetch->prefetchRange(range);
-        //            else
-        //                prefetch->prefetchRange(range);
-        //        }
         row_group_prefetches.push_back(std::move(prefetch));
-        //        if (!condition_prefetch->isEmpty())
         row_group_condition_prefetches.push_back(std::move(condition_prefetch));
     }
     return std::make_unique<SubRowGroupRangeReader>(
