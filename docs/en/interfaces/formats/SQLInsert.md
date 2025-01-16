@@ -35,11 +35,11 @@ To read data output by this format you can use [MySQLDump](../formats/MySQLDump.
 
 ## Format Settings
 
-| Setting                                                                                                                                            | Description                                         | Default   |
-|----------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------|
-| [`output_format_sql_insert_max_batch_size`](../../../operations/settings/settings-formats.md/#output_format_sql_insert_max_batch_size)             | The maximum number of rows in one INSERT statement. | `65505`   |
-| [`output_format_sql_insert_table_name`](../../../operations/settings/settings-formats.md/#output_format_sql_insert_table_name)                     | The name of the table in the output INSERT query.   | `'table'` |
-| [`output_format_sql_insert_include_column_names`](../../../operations/settings/settings-formats.md/#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
-| [`output_format_sql_insert_use_replace`](../../../operations/settings/settings-formats.md/#output_format_sql_insert_use_replace)                   | Use REPLACE statement instead of INSERT.            | `false`   |
-| [`output_format_sql_insert_quote_names`](../../../operations/settings/settings-formats.md/#output_format_sql_insert_quote_names)                   | Quote column names with "\`" characters.            | `true`    |
+| Setting                                                                                                                                | Description                                         | Default   |
+|----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------|
+| [`output_format_sql_insert_max_batch_size`](../../operations/settings/settings-formats.md/#output_format_sql_insert_max_batch_size)    | The maximum number of rows in one INSERT statement. | `65505`   |
+| [`output_format_sql_insert_table_name`](../../operations/settings/settings-formats.md/#output_format_sql_insert_table_name)            | The name of the table in the output INSERT query.   | `'table'` |
+| [`output_format_sql_insert_include_column_names`](../../operations/settings/settings-formats.md/#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
+| [`output_format_sql_insert_use_replace`](../../operations/settings/settings-formats.md/#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
+| [`output_format_sql_insert_quote_names`](../../operations/settings/settings-formats.md/#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
 
