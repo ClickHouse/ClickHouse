@@ -42,8 +42,10 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
                     else:
                         continue
                 else:
-                    res += foo.WORKFLOWS
-                    print(f"Read workflow configs from [{module_name}]")
+                    res += [workflow]
+                    print(
+                        f"Read workflow configs from [{module_name}], workflow name [{workflow.name}]"
+                    )
         except Exception as e:
             print(
                 f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
@@ -51,11 +53,11 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
     if not res:
         Utils.raise_with_error(f"Failed to find workflow [{name or file}]")
 
-    for workflow in res:
+    for wf in res:
         # add native jobs
-        _update_workflow_with_native_jobs(workflow)
+        _update_workflow_with_native_jobs(wf)
         # fill in artifact properties, e.g. _provided_by
-        _update_workflow_artifacts(workflow)
+        _update_workflow_artifacts(wf)
     return res
 
 
