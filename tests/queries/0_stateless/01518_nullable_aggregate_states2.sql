@@ -1,3 +1,8 @@
+-- When compilation is enabled, the query result is more accurate compared to when compilation is disabled.
+-- To make current test more stable, we disable compilation.
+set compile_expressions = 0;
+set compile_aggregate_expressions = 0;
+
 DROP TABLE IF EXISTS testNullableStates;
 DROP TABLE IF EXISTS testNullableStatesAgg;
 

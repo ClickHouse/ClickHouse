@@ -3,6 +3,8 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
+#include <cmath>
+#include <iostream>
 
 #include <boost/noncopyable.hpp>
 
@@ -31,6 +33,8 @@
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Core/Types.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -42,6 +46,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MPROTECT;
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wbit-int-extension"
+using BitInt128 = signed _BitInt(128);
+using BitUInt128 = unsigned _BitInt(128);
+#pragma clang diagnostic pop
+
+static BitInt128 divideInt128(BitInt128 left, BitInt128 right)
+{
+    return left / right;
+}
+
+static BitInt128 moduloInt128(BitInt128 left, BitInt128 right)
+{
+    return left % right;
+}
+
+static BitInt128 castDoubleToInt128(double from)
+{
+    return static_cast<BitInt128>(from);
+}
+
+static double castInt128ToDouble(BitInt128 from)
+{
+    return static_cast<double>(from);
+}
+
+static BitInt128 castFloatToInt128(float from)
+{
+    return static_cast<BitInt128>(from);
+}
+
+static float castInt128ToFloat(BitInt128 from)
+{
+    return static_cast<float>(from);
 }
 
 /** Simple module to object file compiler.
@@ -363,7 +403,7 @@ private:
 
 CHJIT::CHJIT()
     : machine(getTargetMachine())
-    , layout(machine->createDataLayout())
+, layout(machine->createDataLayout())
     , compiler(std::make_unique<JITCompiler>(*machine))
     , symbol_resolver(std::make_unique<JITSymbolResolver>())
 {
@@ -372,6 +412,15 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+
+    double (*fmod_ptr)(double, double) = &fmod;
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
+    symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&divideInt128));
+    symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&moduloInt128));
+    symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
+    symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&castInt128ToDouble));
+    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
+    symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&castInt128ToFloat));
 }
 
 CHJIT::~CHJIT() = default;
