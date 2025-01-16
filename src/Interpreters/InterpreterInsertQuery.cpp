@@ -5,35 +5,36 @@
 #include <Access/EnabledQuota.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
-#include <Processors/Transforms/buildPushingToViewsChain.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -41,10 +42,10 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include "base/defines.h"
 
 
@@ -449,7 +450,8 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
         context_ptr,
         null_as_default);
 
-    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(query_sample_block, adding_missing_defaults_dag.getRequiredColumnsNames(), context_ptr);
+    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
