@@ -283,7 +283,7 @@ NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving request
 
 
 def wait_until_connected(
-    cluster, node, port=9181, timeout=30.0, wait_complete_readiness=True
+        cluster, node, port=9181, timeout=30.0, wait_complete_readiness=True, password=b""
 ):
     start = time.time()
 
@@ -295,6 +295,7 @@ def wait_until_connected(
     )
     while send_4lw_cmd(cluster, node, "mntr", port) == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
+        print("Sending 4LW")
 
         if time.time() - start > timeout:
             raise Exception(
@@ -317,8 +318,9 @@ def wait_until_connected(
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
                     )
+                print("HELLO")
                 zk_cli = KazooClient(
-                    hosts=f"{host}:9181", timeout=timeout - time_passed
+                    hosts=f"{host}:9181", timeout=timeout - time_passed, client_id=(0, password)
                 )
                 zk_cli.start()
                 zk_cli.get("/keeper/api_version")
@@ -365,12 +367,13 @@ def get_any_follower(cluster, nodes):
     raise Exception("No followers in Keeper cluster.")
 
 
-def get_fake_zk(cluster, nodename, timeout: float = 30.0) -> KazooClient:
+def get_fake_zk(cluster, nodename, timeout: float = 30.0, password = b"", retries=10) -> KazooClient:
     kazoo_retry = {
-        "max_tries": 10,
+        "max_tries": retries,
     }
     _fake = KazooClient(
         hosts=cluster.get_instance_ip(nodename) + ":9181",
+        client_id=(0, password),
         timeout=timeout,
         connection_retry=kazoo_retry,
         command_retry=kazoo_retry,
