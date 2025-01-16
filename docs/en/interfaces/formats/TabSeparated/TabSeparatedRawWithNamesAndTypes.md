@@ -1,15 +1,24 @@
 ---
 title : TabSeparatedRawWithNamesAndTypes
 slug : /en/interfaces/formats/TabSeparatedRawWithNamesAndTypes
-keywords : [TabSeparatedRawWithNamesAndTypes]
+keywords : [TabSeparatedRawWithNamesAndTypes, TSVRawWithNamesAndTypes, RawWithNamesAndTypes]
+input_format: true
+output_format: true
+alias: ['TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
 ---
+
+| Input | Output | Alias                                             |
+|-------|--------|---------------------------------------------------|
+| ✔     | ✔      | `TSVRawWithNamesAndNames`, `RawWithNamesAndNames` |
 
 ## Description
 
-Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
+Differs from the [`TabSeparatedWithNamesAndTypes`](./TabSeparatedWithNamesAndTypes.md) format,
+in that the rows are written without escaping.
 
-This format is also available under the names `TSVRawWithNamesAndNames`, `RawWithNamesAndNames`.
+:::note
+When parsing with this format, tabs or line-feeds are not allowed in each field.
+:::
 
 ## Example Usage
 

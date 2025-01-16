@@ -1186,3 +1186,9 @@ Default value: false.
 When enabled, min-max (skipping) indices are added for all string columns of the table.
 
 Default value: false.
+
+## materialize_skip_indexes_on_merge
+
+When enabled, merges build and store skip indices for new parts.
+
+Default: true
