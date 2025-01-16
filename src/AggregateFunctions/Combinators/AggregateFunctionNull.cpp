@@ -111,8 +111,8 @@ public:
               * To address this, we handle `nothing` in a special way in `FunctionNode::toASTImpl`.
               */
             if (properties.returns_default_when_only_null)
-                return std::make_shared<AggregateFunctionNothingUInt64>(arguments, Array());
-            return std::make_shared<AggregateFunctionNothingNull>(arguments, Array());
+                return std::make_shared<AggregateFunctionNothingUInt64>(arguments, params);
+            return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
         assert(nested_function);
