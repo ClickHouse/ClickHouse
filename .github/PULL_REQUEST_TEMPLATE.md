@@ -45,8 +45,7 @@ At a minimum, the following information should be added (but add more as needed)
 
 #### CI Settings (Only check the boxes if you know what you are doing)
 
-All builds in Builds_1 and Builds_2 stages are always mandatory
-and will run independently of the checks below:
+All builds in Builds_1 and Builds_2 stages are always mandatory and will run independently of the checks below:
 - [ ] <!---ci_include_stateless--> Only: Stateless tests
 - [ ] <!---ci_include_stateful--> Only: Stateful tests
 - [ ] <!---ci_include_integration--> Only: Integration tests
@@ -56,5 +55,12 @@ and will run independently of the checks below:
 - [ ] <!---ci_exclude_fast--> Skip: Fast test
 ---
 - [ ] <!---woolen_wolfdog--> Non-blocking CI mode (Resource-intensive. All test jobs execute in parallel).
-- [ ] <!---no_merge_commit--> Disable merge-commit (Run CI on branch HEAD instead of merge commit with target branch)
 - [ ] <!---no_ci_cache--> Disable CI cache
+
+<!--
+GitHub Actions automatically creates a merge commit with master on each push and runs the CI on it.
+This trashes the build cache since artifacts won't be reused if any new C++ code got into master.
+The following setting runs CI on branch's head to reuse the build cache as much as possible.
+Remove it to use a merge-commit against the target branch.
+#no_merge_commit
+-->
