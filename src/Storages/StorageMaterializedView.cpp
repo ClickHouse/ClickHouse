@@ -29,6 +29,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/randomSeed.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
@@ -51,6 +52,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
+    extern const ServerSettingsUInt64 startup_mv_delay_ms;
 }
 
 namespace RefreshSetting
@@ -71,13 +73,6 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType ViewRefresh;
-}
-
-static inline String generateInnerTableName(const StorageID & view_id)
-{
-    if (view_id.hasUUID())
-        return ".inner_id." + toString(view_id.uuid);
-    return ".inner." + view_id.getTableName();
 }
 
 /// Remove columns from target_header that does not exist in src_header
@@ -627,10 +622,6 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
-    const auto & old_select = old_metadata.getSelectQuery();
-
-    DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
-
     new_metadata.setSelectQuery(new_select);
 
     /// Check the materialized view's inner table structure.
@@ -737,9 +728,6 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         assert(inner_table_id.database_name == old_table_id.database_name);
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
-    const auto & select_query = metadata_snapshot->getSelectQuery();
-    /// TODO: Actually, we don't need to update dependency if MV has UUID, but then db and table name will be outdated
-    DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 
     if (refresher)
         refresher->rename(new_table_id, getTargetTableId());
@@ -747,10 +735,13 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 void StorageMaterializedView::startup()
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const auto & select_query = metadata_snapshot->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
+    if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
+    {
+        pcg64_fast gen{randomSeed()};
+        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0UL;
+        if (delay_ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    }
 
     if (refresher)
         refresher->startup();
@@ -885,6 +876,13 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
         target_table_id.database_name = *std::move(database_name);
     if (table_name)
         target_table_id.table_name = *std::move(table_name);
+}
+
+String StorageMaterializedView::generateInnerTableName(const StorageID & view_id)
+{
+    if (view_id.hasUUID())
+        return ".inner_id." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

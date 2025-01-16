@@ -136,7 +136,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
     if (storage.ttl_table)
     {
         auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
-        data.dependencies.merge(ttl_dependensies);
+        data.dependencies.merge(ttl_dependensies.dependencies);
     }
 
     if (!storage.engine)
