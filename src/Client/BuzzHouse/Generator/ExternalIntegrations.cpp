@@ -1365,7 +1365,6 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
 void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
-    clickhouse->performQueryOnServerOrRemote(pt, "SET query_cache_system_table_handling = 'ignore';");
     buf.resize(0);
     buf += "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '";
     buf += fc.fuzz_out.generic_string();
