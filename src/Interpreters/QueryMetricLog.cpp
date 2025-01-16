@@ -155,6 +155,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
     LockGuard global_lock(queries_mutex);
     query_status.scheduleNext(query_id);
     queries.emplace(query_id, std::move(query_status));
+    LOG_TEST(logger, "Dummy change to trigger a build");
 }
 
 void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info)

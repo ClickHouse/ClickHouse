@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Dummy comment to force a change
+# Another comment to trigger a new CI without source code changes
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
