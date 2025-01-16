@@ -175,12 +175,17 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 
 UInt64 RemoteQueryExecutorReadContext::getPacketType()
 {
+    chassert(has_read_packet_type);
     return packet_type.value();
 }
 
 Packet RemoteQueryExecutorReadContext::getPacket()
 {
+    chassert(has_read_packet);
+
     Packet p{std::move(packet.value())};
+    has_read_packet = false;
+    has_read_packet_type = false;
     packet.reset();
     packet_type.reset();
     return p;

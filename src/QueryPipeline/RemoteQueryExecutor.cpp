@@ -527,11 +527,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
         if (packet_in_progress)
         {
+            chassert(read_context->readPacketTypeSeparately());
+
             /// packet type is handled already, read and parse packet itself
-            read_context->resume();
-            /// Check if packet is not ready yet.
-            if (read_context->isInProgress())
-                return ReadResult(read_context->getFileDescriptor());
+            if (!read_context->hasReadPacket())
+            {
+                read_context->resume();
+                if (read_context->isInProgress())
+                    return ReadResult(read_context->getFileDescriptor());
+            }
 
             packet_in_progress = false;
             auto read_result = processPacket(read_context->getPacket());
@@ -561,9 +565,16 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
-        read_context->resume();
-        if (read_context->isInProgress())
-            return ReadResult(read_context->getFileDescriptor());
+
+        if (read_context->readPacketTypeSeparately())
+        {
+            if (!read_context->hasReadPacket())
+            {
+                read_context->resume();
+                if (read_context->isInProgress())
+                    return ReadResult(read_context->getFileDescriptor());
+            }
+        }
 
         auto read_result = processPacket(read_context->getPacket());
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
