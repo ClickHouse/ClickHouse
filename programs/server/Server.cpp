@@ -1287,6 +1287,7 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
+    global_context->configureServerWideThrottling();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
