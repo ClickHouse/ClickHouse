@@ -1,6 +1,6 @@
 #include <Common/AsyncTaskExecutor.h>
 #include <base/scope_guard.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -41,6 +41,8 @@ void AsyncTaskExecutor::resume()
 
 void AsyncTaskExecutor::resumeUnlocked()
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
+
     fiber.resume();
 }
 

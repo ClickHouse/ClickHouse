@@ -1,3 +1,5 @@
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #if defined(OS_LINUX)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -18,8 +20,12 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
+    RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    , executor(executor_)
+    , suspend_when_query_sent(suspend_when_query_sent_)
+    , read_packet_type_separately(read_packet_type_separately_)
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
@@ -47,13 +53,28 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
 
     while (true)
     {
+        read_context.packet_type.reset();
+        read_context.has_read_packet_type = false;
+        read_context.packet.reset();
+        read_context.has_read_packet = false;
+
+        if (read_context.read_packet_type_separately)
+        {
+            read_context.packet_type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+            read_context.has_read_packet_type = true;
+            suspend_callback();
+        }
         read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
+        read_context.has_read_packet = true;
         suspend_callback();
     }
 }
 
-void RemoteQueryExecutorReadContext::processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
+void RemoteQueryExecutorReadContext::processAsyncEvent(
+    int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
+
     connection_fd = fd;
     epoll.add(connection_fd, events);
     timeout = socket_timeout;
@@ -149,6 +170,20 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
         [[maybe_unused]] int err = close(pipe_fd[1]);
         chassert(!err || errno == EINTR);
     }
+}
+
+
+UInt64 RemoteQueryExecutorReadContext::getPacketType()
+{
+    return packet_type.value();
+}
+
+Packet RemoteQueryExecutorReadContext::getPacket()
+{
+    Packet p{std::move(packet.value())};
+    packet.reset();
+    packet_type.reset();
+    return p;
 }
 
 }

@@ -551,6 +551,11 @@ bool LocalConnection::pollImpl()
     return false;
 }
 
+UInt64 LocalConnection::receivePacketType()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "");
+}
+
 Packet LocalConnection::receivePacket()
 {
     Packet packet;
