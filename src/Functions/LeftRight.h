@@ -111,8 +111,10 @@ public:
         if (column_length_const)
             length_value = column_length_const->getInt(0);
 
-        // If length_value < 0, we need to convert column_length to full column
-        // to handle right/left Func offset < 0 cases
+        // If length_value is a const negative value, _unbounded logic will not work 
+        // cause the const length_value will be converted to UInt, it's not what we want.
+        // So we convert column_length_const to full column here, the code will go through the DynamicLength logic,
+        // which is compatible with negative length_values
         if (length_value < 0)
         {
             column_length = column_length_const->convertToFullColumn();
