@@ -6,6 +6,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <numeric>
 
 namespace DB
 {
@@ -32,9 +33,14 @@ namespace
         return zk_path / "processed";
     }
 
+    bool useBucketsForProcessing(size_t buckets_num)
+    {
+        return buckets_num > 1;
+    }
+
     std::string getProcessedPath(const std::filesystem::path & zk_path, const std::string & path, size_t buckets_num)
     {
-        if (buckets_num > 1)
+        if (useBucketsForProcessing(buckets_num))
             return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num));
         return getProcessedPathWithoutBucket(zk_path);
     }
@@ -131,9 +137,14 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
 {
 }
 
+bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
+{
+    return DB::useBucketsForProcessing(buckets_num);
+}
+
 std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(size_t buckets_num)
 {
-    if (buckets_num > 1)
+    if (DB::useBucketsForProcessing(buckets_num))
     {
         std::vector<std::string> paths{"buckets", "failed", "processing"};
         for (size_t i = 0; i < buckets_num; ++i)
@@ -379,25 +390,25 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     }
 }
 
-void ObjectStorageQueueOrderedFileMetadata::setProcessedAtStartRequests(
+void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr & zk_client)
 {
-    if (buckets_num > 1)
+    if (useBucketsForProcessing())
     {
         for (size_t i = 0; i < buckets_num; ++i)
         {
             auto path = getProcessedPathWithBucket(zk_path, i);
-            setProcessedRequests(requests, zk_client, path, /* ignore_if_exists */true);
+            prepareProcessedRequests(requests, zk_client, path, /* ignore_if_exists */true);
         }
     }
     else
     {
-        setProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */true);
+        prepareProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */true);
     }
 }
 
-void ObjectStorageQueueOrderedFileMetadata::setProcessedRequests(
+void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr & zk_client,
     const std::string & processed_node_path_,
@@ -437,67 +448,10 @@ void ObjectStorageQueueOrderedFileMetadata::setProcessedRequests(
     }
 }
 
-void ObjectStorageQueueOrderedFileMetadata::setProcessedImpl()
+void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
 {
-    /// In one zookeeper transaction do the following:
-    enum RequestType
-    {
-        CHECK_PROCESSING_ID_PATH = 0,
-        REMOVE_PROCESSING_ID_PATH = 1,
-        REMOVE_PROCESSING_PATH = 2,
-        SET_MAX_PROCESSED_PATH = 3,
-    };
-
     const auto zk_client = getZooKeeper();
-    std::string failure_reason;
-
-    while (true)
-    {
-        Coordination::Requests requests;
-        setProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */false);
-
-        Coordination::Responses responses;
-        auto is_request_failed = [&](RequestType type) { return responses[type]->error != Coordination::Error::ZOK; };
-
-        auto code = zk_client->tryMulti(requests, responses);
-        if (code == Coordination::Error::ZOK)
-        {
-            if (max_loading_retries
-                && zk_client->tryRemove(failed_node_path + ".retriable", -1) == Coordination::Error::ZOK)
-            {
-                LOG_TEST(log, "Removed node {}.retriable", failed_node_path);
-            }
-            return;
-        }
-
-        bool unexpected_error = false;
-        if (Coordination::isHardwareError(code))
-            failure_reason = "Lost connection to keeper";
-        else if (is_request_failed(CHECK_PROCESSING_ID_PATH))
-            failure_reason = "Version of processing id node changed";
-        else if (is_request_failed(REMOVE_PROCESSING_PATH))
-        {
-            /// Remove processing_id node should not actually fail
-            /// because we just checked in a previous keeper request that it exists and has a certain version.
-            unexpected_error = true;
-            failure_reason = "Failed to remove processing id path";
-        }
-        else if (is_request_failed(SET_MAX_PROCESSED_PATH))
-        {
-            LOG_TRACE(log, "Cannot set file {} as processed. "
-                      "Failed to update processed node: {}. "
-                      "Will retry.", path, code);
-            continue;
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
-
-        if (unexpected_error)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
-
-        LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
-        return;
-    }
+    prepareProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */false);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value)
@@ -507,6 +461,8 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
     const size_t retries = 1000;
     Coordination::Error code = Coordination::Error::ZOK;
 
+    Coordination::Requests requests;
+    Coordination::Responses responses;
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
         const auto old_processed_path = getProcessedPathWithoutBucket(zk_path);
@@ -524,7 +480,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
             return;
         }
 
-        Coordination::Requests requests;
+        requests.clear();
         requests.push_back(zkutil::makeRemoveRequest(old_processed_path, processed_node_stat.version));
 
         for (size_t i = 0; i < value; ++i)
@@ -538,7 +494,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
                                 zkutil::CreateMode::Persistent));
         }
 
-        Coordination::Responses responses;
+        responses.clear();
         code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
@@ -557,7 +513,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
                 continue;
             }
             else
-                throw zkutil::KeeperException(code);
+                throw zkutil::KeeperMultiException(code, requests, responses);
         }
 
         if (responses[0]->error != Coordination::Error::ZOK)
@@ -586,7 +542,74 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
                         code, std::distance(responses.begin(), responses.end()));
     }
 
-    throw zkutil::KeeperException(code);
+    throw zkutil::KeeperMultiException(code, requests, responses);
+}
+
+std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
+    const std::vector<std::string> & paths,
+    const std::filesystem::path & zk_path_,
+    size_t buckets_num,
+    LoggerPtr log_)
+{
+    const auto zk_client = getZooKeeper();
+    const bool use_buckets_for_processing = buckets_num > 1;
+
+    buckets_num = std::max<size_t>(buckets_num, 1);
+    std::map<size_t, std::string> max_processed_file_per_bucket;
+
+    for (size_t i = 0; i < buckets_num; ++i)
+    {
+        auto processed_node_path = use_buckets_for_processing
+            ? getProcessedPathWithBucket(zk_path_, i)
+            : getProcessedPathWithoutBucket(zk_path_);
+
+        NodeMetadata max_processed_file;
+        if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, zk_client))
+            max_processed_file_per_bucket[i] = std::move(max_processed_file.file_path);
+    }
+
+    std::vector<std::string> failed_paths;
+    std::vector<size_t> check_paths_indexes;
+    for (size_t i = 0; i < paths.size(); ++i)
+    {
+        const auto & path = paths[i];
+        const auto bucket = use_buckets_for_processing ? getBucketForPathImpl(path, buckets_num) : 0;
+        if (!max_processed_file_per_bucket.empty()
+            && path <= max_processed_file_per_bucket[bucket])
+        {
+            LOG_TEST(log_, "Skipping file {}: Processed", path);
+            continue;
+        }
+        failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
+        check_paths_indexes.push_back(i);
+    }
+
+    std::vector<size_t> result;
+    if (failed_paths.empty())
+        return result; /// All files are already processed.
+
+    auto check_code = [&](auto code, const std::string & path)
+    {
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    auto responses = zk_client->tryGet(failed_paths);
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        const auto & filename = paths[check_paths_indexes[i]];
+        check_code(responses[i].error, filename);
+        if (responses[i].error == Coordination::Error::ZNONODE)
+        {
+            result.push_back(check_paths_indexes[i]);
+        }
+        else
+        {
+            LOG_TEST(log_, "Skipping file {}: Failed", filename);
+        }
+
+    }
+    return result;
 }
 
 }

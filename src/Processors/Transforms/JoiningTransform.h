@@ -17,6 +17,21 @@ class NotJoinedBlocks;
 class IBlocksStream;
 using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
+/// Count streams and check which is last.
+class FinishCounter
+{
+public:
+    explicit FinishCounter(size_t total_) : total(total_) { }
+
+    bool isLast() { return finished.fetch_add(1) + 1 >= total; }
+
+private:
+    const size_t total;
+    std::atomic_size_t finished{0};
+};
+
+using FinishCounterPtr = std::shared_ptr<FinishCounter>;
+
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
 /// First input is for data from left table.
@@ -25,26 +40,6 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class JoiningTransform : public IProcessor
 {
 public:
-
-    /// Count streams and check which is last.
-    /// The last one should process non-joined rows.
-    class FinishCounter
-    {
-    public:
-        explicit FinishCounter(size_t total_) : total(total_) {}
-
-        bool isLast()
-        {
-            return finished.fetch_add(1) + 1 >= total;
-        }
-
-    private:
-        const size_t total;
-        std::atomic<size_t> finished{0};
-    };
-
-    using FinishCounterPtr = std::shared_ptr<FinishCounter>;
-
     JoiningTransform(
         const Block & input_header,
         const Block & output_header,
@@ -102,7 +97,7 @@ private:
 class FillingRightJoinSideTransform : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(Block input_header, JoinPtr join_);
+    FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -112,6 +107,7 @@ public:
 
 private:
     JoinPtr join;
+    FinishCounterPtr finish_counter;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;
@@ -124,15 +120,13 @@ public:
 
     DelayedBlocksTask() = default;
     DelayedBlocksTask(const DelayedBlocksTask & other) = default;
-    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter_)
-        : delayed_blocks(std::move(delayed_blocks_))
-        , left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
+    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, FinishCounterPtr left_delayed_stream_finish_counter_)
+        : delayed_blocks(std::move(delayed_blocks_)), left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
     {
     }
 
-    IBlocksStreamPtr delayed_blocks = nullptr;
-    JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter = nullptr;
-
+    IBlocksStreamPtr delayed_blocks;
+    FinishCounterPtr left_delayed_stream_finish_counter;
 };
 
 using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
