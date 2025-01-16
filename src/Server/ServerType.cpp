@@ -51,6 +51,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::TCP_WITH_PROXY:
             case Type::TCP_SECURE:
             case Type::HTTP:
+            case Type::HTTP2:
             case Type::HTTPS:
             case Type::MYSQL:
             case Type::GRPC:
@@ -105,6 +106,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
     if (port_name == "http_port")
         port_type = Type::HTTP;
 
+    else if (port_name == "http2_port")
+        port_type = Type::HTTP2;
+        
     else if (port_name == "https_port")
         port_type = Type::HTTPS;
 
