@@ -78,6 +78,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 20, "New setting"},
             {"min_os_cpu_wait_time_ratio_to_throw", 0, 2, "New setting"},
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 6, "New setting"},
+            {"query_plan_join_swap_table_use_statistics", "false", "true", "New setting. Statistics haven't been used before."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
