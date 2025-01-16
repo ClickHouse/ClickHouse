@@ -25,7 +25,8 @@ class RemoteQueryExecutor;
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
-    explicit RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false);
+    explicit RemoteQueryExecutorReadContext(
+        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false, bool read_packet_type_separately_ = true);
 
     ~RemoteQueryExecutorReadContext() override;
 
@@ -40,6 +41,12 @@ public:
     Packet getPacket();
 
     UInt64 getPacketType();
+
+    bool hasReadPacketType() const { return has_read_packet_type; }
+
+    bool hasReadPacket() const { return has_read_packet; }
+
+    bool readPacketTypeSeparately() const { return read_packet_type_separately; }
 
 private:
     bool checkTimeout(bool blocking = false);
@@ -62,6 +69,8 @@ private:
     };
 
     std::atomic_bool is_in_progress = false;
+    std::atomic_bool has_read_packet_type = false;
+    std::atomic_bool has_read_packet = false;
     std::optional<Packet> packet;
     std::optional<UInt64> packet_type;
 
@@ -85,6 +94,7 @@ private:
     std::string connection_fd_description;
     bool suspend_when_query_sent = false;
     bool is_query_sent = false;
+    const bool read_packet_type_separately = false;
 };
 
 }

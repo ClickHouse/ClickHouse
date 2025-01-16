@@ -20,8 +20,12 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
+    RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this))
+    , executor(executor_)
+    , suspend_when_query_sent(suspend_when_query_sent_)
+    , read_packet_type_separately(read_packet_type_separately_)
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
@@ -50,11 +54,18 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
     while (true)
     {
         read_context.packet_type.reset();
+        read_context.has_read_packet_type = false;
         read_context.packet.reset();
+        read_context.has_read_packet = false;
 
-        read_context.packet_type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
-        suspend_callback();
+        if (read_context.read_packet_type_separately)
+        {
+            read_context.packet_type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+            read_context.has_read_packet_type = true;
+            suspend_callback();
+        }
         read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
+        read_context.has_read_packet = true;
         suspend_callback();
     }
 }
@@ -164,19 +175,11 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 
 UInt64 RemoteQueryExecutorReadContext::getPacketType()
 {
-    // if (!packet_type)
-    //     resume();
-    // chassert(!isInProgress());
-
     return packet_type.value();
 }
 
 Packet RemoteQueryExecutorReadContext::getPacket()
 {
-    // if (!packet)
-    //     resume();
-    // chassert(!isInProgress());
-
     Packet p{std::move(packet.value())};
     packet.reset();
     packet_type.reset();

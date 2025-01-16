@@ -445,7 +445,7 @@ int RemoteQueryExecutor::sendQueryAsync()
         return -1;
 
     if (!read_context)
-        read_context = std::make_unique<ReadContext>(*this, /*suspend_when_query_sent*/ true);
+        read_context = std::make_unique<ReadContext>(*this, /*suspend_when_query_sent*/ true, context->canUseParallelReplicasOnInitiator());
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -515,7 +515,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        read_context = std::make_unique<ReadContext>(*this);
+        read_context = std::make_unique<ReadContext>(*this, false, context->canUseParallelReplicasOnInitiator());
         recreate_read_context = false;
     }
 
@@ -977,7 +977,7 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX)
 
-    if (!context->canUseParallelReplicasOnInitiator())
+    if (!read_context->readPacketTypeSeparately())
         return false;
 
     OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
@@ -986,17 +986,14 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
     if (was_cancelled)
         return false;
 
-    if (!read_context || (resent_query && recreate_read_context))
+    if (!read_context->hasReadPacketType())
     {
-        read_context = std::make_unique<ReadContext>(*this);
-        recreate_read_context = false;
-    }
-
-    read_context->resume();
-    if (read_context->isInProgress()) // <- nothing to process
-    {
-        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No packet type received yet");
-        return false;
+        read_context->resume();
+        if (read_context->isInProgress()) // <- nothing to process
+        {
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No packet type received yet");
+            return false;
+        }
     }
 
     packet_in_progress = true;
@@ -1006,12 +1003,15 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 
     if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
     {
-        // resume reading packet
-        read_context->resume();
-        if (read_context->isInProgress()) // data is not arrived yet
+        if (!read_context->hasReadPacket())
         {
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No data yet. Packet type = {}", Protocol::Server::toString(packet_type));
-            return false;
+            // resume reading packet
+            read_context->resume();
+            if (read_context->isInProgress()) // data is not arrived yet
+            {
+                LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No data yet. Packet type = {}", Protocol::Server::toString(packet_type));
+                return false;
+            }
         }
 
         packet_in_progress = false;
