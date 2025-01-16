@@ -66,13 +66,12 @@ Let's look at an example. Given the following format string:
 Search phrase: ${s:Quoted}, count: ${c:Escaped}, ad price: $$${p:JSON};
 ```
 
-The following values will be printed (if using `SELECT`) or expected (if using `INPUT`):
+The following values will be printed (if using `SELECT`) or expected (if using `INPUT`), 
+between columns `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters respectively:
 
 - `s` (with escape rule `Quoted`)
 - `c` (with escape rule `Escaped`)
 - `p` (with escape rule `JSON`)
-
-between columns `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters respectively. 
 
 For example:
 
@@ -91,20 +90,18 @@ The setting `format_template_rows_between_delimiter` setting specifies the delim
 
 The setting `format_template_resultset` specifies the path to the file, which contains a format string for the result set. 
 
-The format string for the result set has the same syntax as a format string for rows.
-
-It allows for specifying a prefix, a suffix and a way to print some additional information. 
-It contains the following placeholders instead of column names:
+The format string for the result set has the same syntax as a format string for rows. 
+It allows for specifying a prefix, a suffix and a way to print some additional information and contains the following placeholders instead of column names:
 
 - `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
-- `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
-- `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
-- `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
-- `rows` is the total number of output rows
+- `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS).
+- `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1).
+- `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1).
+- `rows` is the total number of output rows.
 - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
-- `time` is the request execution time in seconds
-- `rows_read` is the number of rows has been read
-- `bytes_read` is the number of bytes (uncompressed) has been read
+- `time` is the request execution time in seconds.
+- `rows_read` is the number of rows has been read.
+- `bytes_read` is the number of bytes (uncompressed) has been read.
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 
@@ -125,8 +122,7 @@ rather than as a path to the file which contains it.
 
 ## Example Usage
 
-Let's look at two examples of how we can use the `Template` format, 
-first for selecting data and then for inserting data.
+Let's look at two examples of how we can use the `Template` format, first for selecting data and then for inserting data.
 
 ### Selecting Data
 
