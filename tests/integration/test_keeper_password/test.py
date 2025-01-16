@@ -27,12 +27,13 @@ node3 = cluster.add_instance(
     stay_alive=True,
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
         password = "foobar"
-        p = (password + ''.join([chr(0)] * (16 - len(password)))).encode('ascii')
+        p = (password + "".join([chr(0)] * (16 - len(password)))).encode("ascii")
         keeper_utils.wait_until_connected(cluster, node1, password=p)
         keeper_utils.wait_until_connected(cluster, node2, password=p)
 
@@ -41,17 +42,22 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def get_zk(nodename, timeout=30.0):
     password = "foobar"
-    p = (password + ''.join([chr(0)] * (16 - len(password)))).encode('ascii')
+    p = (password + "".join([chr(0)] * (16 - len(password)))).encode("ascii")
 
     return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout, password=p)
 
+
 def get_wrong_password_zk(nodename, timeout=30.0):
     password = "foobarqwe"
-    p = (password + ''.join([chr(0)] * (16 - len(password)))).encode('ascii')
+    p = (password + "".join([chr(0)] * (16 - len(password)))).encode("ascii")
 
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout, password=p, retries=1)
+    return keeper_utils.get_fake_zk(
+        cluster, nodename, timeout=timeout, password=p, retries=1
+    )
+
 
 def get_zk_no_password(nodename, timeout=30.0):
     return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout, retries=1)
@@ -79,7 +85,6 @@ def test_password_works(started_cluster):
     with pytest.raises(Exception):
         auth_connection = get_zk_no_password(node2.name, timeout=1)
         auth_connection.get_children("/")
-
 
     print(node3.query("select * from system.zookeeper where path = '/'", timeout=3))
 
