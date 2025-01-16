@@ -4,8 +4,6 @@ DROP TABLE IF EXISTS t2_nullable;
 DROP TABLE IF EXISTS t2_lc;
 DROP TABLE IF EXISTS t22;
 
-SET enable_analyzer = 0;
-
 CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = TinyLog;
 CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = TinyLog;
 CREATE TABLE t2_nullable (`id` Int32, key String, key2 Nullable(String)) ENGINE = TinyLog;
