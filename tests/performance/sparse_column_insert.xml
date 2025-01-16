@@ -1,0 +1,46 @@
+<test>
+    <create_query>CREATE TABLE source_sparse_16 (u UInt64, s String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE source_sparse_128 (u UInt64, s String) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE source_sparse_all (u UInt64, s String) ENGINE = Memory</create_query>
+
+    <create_query>
+        CREATE TABLE dest_sparse_str (s String)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.85
+    </create_query>
+
+    <create_query>
+        CREATE TABLE dest_sparse_uint (u UInt64)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES dest_sparse_str</fill_query>
+    <fill_query>SYSTEM STOP MERGES dest_sparse_uint</fill_query>
+
+    <fill_query>
+        INSERT INTO source_sparse_16 SELECT if((number + 11) % 16 = 0, number, 0), if((number + 11) % 16 = 0, toString(number), '') FROM numbers(10000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO source_sparse_128 SELECT if((number + 11) % 128 = 0, number, 0), if((number + 11) % 128 = 0, toString(number), '') FROM numbers(10000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO source_sparse_all SELECT 0, '' FROM numbers(10000000)
+    </fill_query>
+
+    <query>INSERT INTO dest_sparse_str SELECT s FROM source_sparse_16</query>
+    <query>INSERT INTO dest_sparse_str SELECT s FROM source_sparse_128</query>
+    <query>INSERT INTO dest_sparse_str SELECT s FROM source_sparse_all</query>
+
+    <query>INSERT INTO dest_sparse_uint SELECT u FROM source_sparse_16</query>
+    <query>INSERT INTO dest_sparse_uint SELECT u FROM source_sparse_128</query>
+    <query>INSERT INTO dest_sparse_uint SELECT u FROM source_sparse_all</query>
+
+    <drop_query>DROP TABLE IF EXISTS source_sparse_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS source_sparse_128</drop_query>
+    <drop_query>DROP TABLE IF EXISTS source_sparse_all</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dest_sparse_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dest_sparse_uint</drop_query>
+</test>

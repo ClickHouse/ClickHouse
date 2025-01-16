@@ -113,7 +113,7 @@ public:
 
     double getRatioOfDefaultRows(double) const override;
     UInt64 getNumberOfDefaultRows() const override;
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t, ssize_t) const override;
     void gather(ColumnGathererStream &) override;
 
     void getExtremes(Field &, Field &) const override

@@ -271,17 +271,14 @@ SerializationPtr IDataType::getSparseSerialization() const
     return std::make_shared<SerializationSparse>(getDefaultSerialization());
 }
 
-SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
-{
-    if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-        return getSparseSerialization();
-
-    return getDefaultSerialization();
-}
-
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info.getKind());
+    if (supportsSparseSerialization() && info.getKind() == ISerialization::Kind::SPARSE)
+    {
+        return std::make_shared<SerializationSparse>(getDefaultSerialization(), info.getData().getRatioOfDefaultRows());
+    }
+
+    return getDefaultSerialization();
 }
 
 // static

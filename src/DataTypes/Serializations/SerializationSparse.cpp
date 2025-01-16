@@ -136,6 +136,11 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
+SerializationSparse::SerializationSparse(const SerializationPtr & nested_, double defaults_ratio_hint_)
+    : nested(nested_), defaults_ratio_hint(defaults_ratio_hint_)
+{
+}
+
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
     return std::make_shared<SerializationSparse>(prev);
@@ -201,7 +206,12 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
 
     auto offsets_column = DataTypeNumber<IColumn::Offset>().createColumn();
     auto & offsets_data = assert_cast<ColumnVector<IColumn::Offset> &>(*offsets_column).getData();
-    column.getIndicesOfNonDefaultRows(offsets_data, offset, limit);
+
+    ssize_t indices_size_hint = -1;
+    if (defaults_ratio_hint.has_value())
+        indices_size_hint = static_cast<ssize_t>(limit * (1.0 - *defaults_ratio_hint));
+
+    column.getIndicesOfNonDefaultRows(offsets_data, offset, limit, indices_size_hint);
 
     settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))
