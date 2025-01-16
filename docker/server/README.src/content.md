@@ -19,9 +19,9 @@ For more information and documentation see https://clickhouse.com/.
 <!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
 -	The tag `head` is built from the latest commit to the default branch.
 -	Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
-
 <!-- REMOVE UNTIL HERE -->
 <!-- docker-official-library:on -->
+
 ### Compatibility
 
 -	The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.
