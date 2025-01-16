@@ -1283,14 +1283,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
   * If initial scope is expression. Then try to resolve identifier in parent scopes until query scope is hit.
   * For query scope resolve strategy is same as if initial scope if query.
   */
-IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, const IdentifierResolveContext identifier_resolve_settings)
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveContext identifier_resolve_context)
 {
     if (!scope.parent_scope)
         return {};
 
     bool initial_scope_is_query = scope.scope_node->getNodeType() == QueryTreeNodeType::QUERY;
 
-    auto new_resolve_context = identifier_resolve_settings.resolveAliasesAt(&scope);
+    identifier_resolve_context.resolveAliasesAt(&scope);
 
     /** 1. Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
       * that can prevent resolution of table expression from CTE.
@@ -1305,7 +1305,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         if (identifier_lookup.isTableExpressionLookup())
         {
-            new_resolve_context.allow_to_check_join_tree = false;
+            identifier_resolve_context.allow_to_check_join_tree = false;
 
             /** From parent scopes we can resolve table identifiers only as CTE.
                 * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
@@ -1313,19 +1313,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
                 * During child scope table identifier resolve a, table node test_table with alias a from parent scope
                 * is invalid.
                 */
-            new_resolve_context.allow_to_check_aliases = false;
+            identifier_resolve_context.allow_to_check_aliases = false;
         }
 
         if (!scope.context->getSettingsRef()[Setting::enable_global_with_statement])
         {
-            new_resolve_context.allow_to_check_aliases = false;
-            new_resolve_context.allow_to_check_cte = false;
+            identifier_resolve_context.allow_to_check_aliases = false;
+            identifier_resolve_context.allow_to_check_cte = false;
         }
     }
 
-    new_resolve_context.allow_to_check_database_catalog = false;
+    identifier_resolve_context.allow_to_check_database_catalog = false;
 
-    auto resolve_result = tryResolveIdentifier(identifier_lookup, *scope.parent_scope, new_resolve_context);
+    auto resolve_result = tryResolveIdentifier(identifier_lookup, *scope.parent_scope, identifier_resolve_context);
     auto & resolved_identifier = resolve_result.resolved_identifier;
 
     if (!resolved_identifier)

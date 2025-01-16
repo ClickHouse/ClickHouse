@@ -207,12 +207,11 @@ struct IdentifierResolveContext
 
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
 
-    IdentifierResolveContext resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_) const
+    IdentifierResolveContext & resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_)
     {
-        IdentifierResolveContext temp = *this;
         if (!scope_to_resolve_alias_expression)
-            temp.scope_to_resolve_alias_expression = scope_to_resolve_alias_expression_;
-        return temp;
+            scope_to_resolve_alias_expression = scope_to_resolve_alias_expression_;
+        return *this;
     }
 };
 
