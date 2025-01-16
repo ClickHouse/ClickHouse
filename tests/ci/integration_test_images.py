@@ -5,7 +5,6 @@ IMAGES_ENV = {
     "clickhouse/integration-helper": "DOCKER_HELPER_TAG",
     "clickhouse/integration-test": "DOCKER_BASE_TAG",
     "clickhouse/integration-tests-runner": "",
-    "clickhouse/kerberized-hadoop": "DOCKER_KERBERIZED_HADOOP_TAG",
     "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",

@@ -6,15 +6,15 @@ sidebar_label: IP Addresses
 
 # Functions for Working with IPv4 and IPv6 Addresses
 
-## IPv4NumToString(num)
+## IPv4NumToString {#IPv4NumToString}
 
 Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
 
 Alias: `INET_NTOA`.
 
-## IPv4StringToNum(s)
+## IPv4StringToNum {#IPv4StringToNum}
 
-The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it throws exception.
+The reverse function of [IPv4NumToString](#IPv4NumToString). If the IPv4 address has an invalid format, it throws exception.
 
 Alias: `INET_ATON`.
 
@@ -246,7 +246,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toIPv4
 
-Like [`IPv4StringToNum`](##IPv4NumToString(num)) but takes a string form of IPv4 address and returns value of [IPv4](../data-types/ipv4.md) type.
+Like [`IPv4StringToNum`](#IPv4StringToNum) but takes a string form of IPv4 address and returns value of [IPv4](../data-types/ipv4.md) type.
 
 **Syntax**
 
