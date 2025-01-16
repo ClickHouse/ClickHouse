@@ -2686,6 +2686,8 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         }
     }
 
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name, *this);
