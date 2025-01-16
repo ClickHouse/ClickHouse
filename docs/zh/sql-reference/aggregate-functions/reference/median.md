@@ -7,14 +7,14 @@ slug: /zh/sql-reference/aggregate-functions/reference/median
 
 函数:
 
--   `median` — [quantile](#quantile)别名。
--   `medianDeterministic` — [quantileDeterministic](#quantiledeterministic)别名。
--   `medianExact` — [quantileExact](#quantileexact)别名。
--   `medianExactWeighted` — [quantileExactWeighted](#quantileexactweighted)别名。
--   `medianTiming` — [quantileTiming](#quantiletiming)别名。
--   `medianTimingWeighted` — [quantileTimingWeighted](#quantiletimingweighted)别名。
--   `medianTDigest` — [quantileTDigest](#quantiletdigest)别名。
--   `medianTDigestWeighted` — [quantileTDigestWeighted](#quantiletdigestweighted)别名。
+-   `median` — [quantile](/docs/zh/sql-reference/aggregate-functions/reference/quantile)别名。
+-   `medianDeterministic` — [quantileDeterministic](/docs/zh/sql-reference/aggregate-functions/reference/quantiledeterministic)别名。
+-   `medianExact` — [quantileExact](/docs/zh/sql-reference/aggregate-functions/reference/quantileexact)别名。
+-   `medianExactWeighted` — [quantileExactWeighted](/docs/zh/sql-reference/aggregate-functions/reference/quantileexactweighted)别名。
+-   `medianTiming` — [quantileTiming](/docs/zh/sql-reference/aggregate-functions/reference/quantiletiming)别名。
+-   `medianTimingWeighted` — [quantileTimingWeighted](/docs/zh/sql-reference/aggregate-functions/reference/quantiletimingweighted)别名。
+-   `medianTDigest` — [quantileTDigest](/docs/zh/sql-reference/aggregate-functions/reference/quantiletdigest)别名。
+-   `medianTDigestWeighted` — [quantileTDigestWeighted](/docs/zh/sql-reference/aggregate-functions/reference/quantiletdigestweighted)别名。
 
 **示例**
 

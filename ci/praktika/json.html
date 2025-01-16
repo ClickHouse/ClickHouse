@@ -275,9 +275,10 @@
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
-    <div class="settings">
-        <span id="theme-toggle">☀️</span>
-    </div>
+<!--    TODO: fix night theme and enable-->
+<!--    <div class="settings">-->
+<!--        <span id="theme-toggle">☀️</span>-->
+<!--    </div>-->
 </footer>
 
 <script>
@@ -298,7 +299,8 @@
     }
 
     // Attach the toggle function to the click event of the icon
-    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    // TODO: fix night theme and enable
+    // document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -532,11 +534,11 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '🗂️',
-        status: '✅',
-        start_time: '🕒',
-        duration: '⏳',
-        info: '📝',
+        // name: '🗂️',
+        // status: '✅',
+        start_time: 'ts',
+        duration: 'dur',
+        // info: '📝',
         files: '📎'
     };
 
@@ -688,7 +690,6 @@
                     if (nameParams.length > 1) {
                         addFileButtonToStatus('files', targetData.links)
                     }
-
 
                     // Handle duration update if duration is null and start_time exists
                     if (targetData.duration === null && targetData.start_time) {
