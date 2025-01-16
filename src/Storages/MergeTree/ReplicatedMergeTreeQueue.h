@@ -68,7 +68,7 @@ private:
         size_t merges_with_ttl = 0;
     };
 
-    bool checkPostponePolicy(const LogEntry & entry, const MergeTreeData & data) const;
+    UInt64 getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const;
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 

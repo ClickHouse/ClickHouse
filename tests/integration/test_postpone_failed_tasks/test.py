@@ -115,6 +115,7 @@ def count_postponed_tasks_in_replicated_queue(node):
 def test_fetch_exponential_backoff_with_replicated_tree(
     started_cluster, src_node, dst_node, backoff_expected
 ):
+
     prepare_cluster(True)
     src_node.query("SYSTEM STOP MERGES test_table")
     dst_node.query("SYSTEM STOP MERGES test_table")
@@ -124,6 +125,9 @@ def test_fetch_exponential_backoff_with_replicated_tree(
     src_node.query("DETACH TABLE test_table")
     dst_node.query("SYSTEM START FETCHES test_table")
 
+    ## The fetch from the src replica will be impossible, until table is detached.
+    ## Actually this is an imitation of scenario when one replica inserted the data and immediately becomes unavaliable,
+    ## so fethes are impossible.
     retry_count = 200
     task_posponed = False
     for _ in range(0, retry_count):

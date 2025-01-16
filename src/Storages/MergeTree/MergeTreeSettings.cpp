@@ -1577,7 +1577,6 @@ namespace ErrorCodes
     the table.
     )", 0) \
     \
-    
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
     Experimental/Incomplete feature to move parts between shards. Does not take

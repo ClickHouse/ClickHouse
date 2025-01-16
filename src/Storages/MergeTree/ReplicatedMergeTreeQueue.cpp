@@ -1391,7 +1391,7 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 }
 
 
-bool ReplicatedMergeTreeQueue::checkPostponePolicy(const LogEntry & entry, const MergeTreeData & data) const
+UInt64 ReplicatedMergeTreeQueue::getPostponeTimeMsForEntry(const LogEntry & entry, const MergeTreeData & data) const
 {
     UInt64 postpone_time_upper_bound_ms = 0;
     const auto data_settings = data.getSettings();
@@ -1411,12 +1411,14 @@ bool ReplicatedMergeTreeQueue::checkPostponePolicy(const LogEntry & entry, const
         break;
     }
     if (!postpone_time_upper_bound_ms)
-        return true;
+        return postpone_time_upper_bound_ms;
 
     auto current_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
-    auto postpone_time_power = std::min(entry.num_tries, static_cast<UInt64>(std::log2(postpone_time_upper_bound_ms)));
-    UInt64 pospone_time_ms = 1ull << postpone_time_power;
-    return current_time_ms >= entry.last_exception_time_ms + pospone_time_ms;
+    UInt64 postpone_time_ms = 1ull << std::min(entry.num_tries, static_cast<size_t>(std::numeric_limits<UInt64>::digits - 1));
+    postpone_time_ms = std::min(postpone_time_ms, postpone_time_upper_bound_ms);
+
+    auto next_min_allowed_time_ms = entry.last_exception_time_ms + postpone_time_ms;
+    return ((current_time_ms >= next_min_allowed_time_ms) ? 0ull : next_min_allowed_time_ms - current_time_ms);
 }
 
 bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
@@ -1427,12 +1429,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     std::unique_lock<std::mutex> & state_lock) const
 {
 
-    if (!checkPostponePolicy(entry, data))
+    if (auto postpone_time = getPostponeTimeMsForEntry(entry, data))
     {
         constexpr auto fmt_string = "Not executing log entry {} of type {} "
-                           "because recently it has failed. According to exponential backoff policy, put aside this log entry.";
+                           "because recently it has failed. According to exponential backoff policy, put aside this log entry for {} ms.";
 
-        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString());
+        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), postpone_time);
         return false;
     }
 
