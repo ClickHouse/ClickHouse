@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
