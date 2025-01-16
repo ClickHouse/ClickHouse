@@ -145,7 +145,9 @@ namespace
         {
             S3::CreateMultipartUploadRequest request;
             if(request.ChecksumAlgorithmHasBeenSet()) {
-
+                LOG_INFO(log, "Checksum algorithm is set for multipart upload and name is {} ", request.GetChecksumAlgorithmName());
+            }else{
+                LOG_INFO(log, "Checksum algorithm is not set for multipart upload as {}", request.GetChecksumAlgorithmName());
             }
             fillCreateMultipartRequest(request);
 
@@ -430,6 +432,7 @@ namespace
                 return; /// Already aborted.
 
             auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
+
             auto tag = processUploadPartRequest(*request);
 
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
@@ -522,8 +525,13 @@ namespace
             request.SetContentLength(size);
             auto read_buffer_internal = create_read_buffer();
             read_buffer_internal->getFileOffsetOfBufferEnd();
-            auto* buffer_from_file_desc = dynamic_cast<ReadBufferFromFileDescriptor*>(read_buffer_internal.get()
-            if (request.ChecksumAlgorithmHasBeenSet() && buffer_from_file_desc) {
+            auto* buffer_from_file_desc = dynamic_cast<ReadBufferFromFileDescriptor*>(read_buffer_internal.get());
+            if (request.ChecksumAlgorithmHasBeenSet()) {
+                LOG_INFO("Checksum algorithem has been set for single-part upload as {}", request.GetChecksumAlgorithmName());
+            }else{
+                LOG_INFO("Checksum algorithm has not been set for single part upload as {}", request.GetChecksumAlgorithmName());
+            }
+            if (client_ptr-> && buffer_from_file_desc) {
                 LOG_INFO("Checksum has been set. Will automatically double the "
                          "bandwith from {} to {}", throttler->getMaxSpeed(), 2 * throttler->getMaxSpeed() )
                 ThrottlerPtr throttler = buffer_from_file_desc->throttler;
@@ -630,8 +638,10 @@ namespace
             request->SetPartNumber(static_cast<int>(part_number));
             request->SetUploadId(multipart_upload_id);
             request->SetContentLength(part_size);
-            auto* buffer_from_file_desc = dynamic_cast<ReadBufferFromFileDescriptor*>(read_buffer_internal.get() )
-            if (request->ChecksumAlgorithmHasBeenSet() && buffer_from_file_desc) {
+            auto* buffer_from_file_desc = dynamic_cast<ReadBufferFromFileDescriptor*>(read_buffer_internal.get())
+
+
+            if (client_->ChecksumAlgorithmHasBeenSet() && buffer_from_file_desc) {
                 LOG_INFO("Checksum has been set. Will automatically double the "
                          "bandwith from {} to {}", throttler->getMaxSpeed(), 2 * throttler->getMaxSpeed() )
                 ThrottlerPtr throttler = buffer_from_file_desc->throttler;
