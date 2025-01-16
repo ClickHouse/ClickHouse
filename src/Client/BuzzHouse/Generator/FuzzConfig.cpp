@@ -1,0 +1,223 @@
+#include <Client/BuzzHouse/Generator/FuzzConfig.h>
+
+namespace BuzzHouse
+{
+
+static std::optional<ServerCredentials> loadServerCredentials(
+    const JSONParserImpl::Element & jobj, const String & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
+{
+    uint32_t port = default_port;
+    uint32_t mysql_port = default_mysql_port;
+    String hostname = "localhost";
+    String unix_socket;
+    String user = "test";
+    String password;
+    String database = "test";
+    std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
+
+    std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries
+        = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+           {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
+           {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
+           {"unix_socket", [&](const JSONObjectType & value) { unix_socket = String(value.getString()); }},
+           {"user", [&](const JSONObjectType & value) { user = String(value.getString()); }},
+           {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
+           {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
+           {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }}};
+
+    for (const auto [key, value] : jobj.getObject())
+    {
+        const String & nkey = String(key);
+
+        if (config_entries.find(nkey) == config_entries.end())
+        {
+            throw std::runtime_error("Unknown Server option: " + nkey);
+        }
+        config_entries.at(nkey)(value);
+    }
+
+    return std::optional<ServerCredentials>(
+        ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, query_log_file));
+}
+
+FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(getLogger("BuzzHouse"))
+{
+    JSONParserImpl parser;
+    JSONObjectType object;
+    std::ifstream inputFile(path);
+    String fileContent;
+
+    buf.reserve(512);
+    while (std::getline(inputFile, buf))
+    {
+        fileContent += buf;
+    }
+    inputFile.close();
+    if (!parser.parse(fileContent, object))
+    {
+        throw std::runtime_error("Could not parse BuzzHouse JSON configuration file");
+    }
+    else if (!object.isObject())
+    {
+        throw std::runtime_error("Parsed JSON value is not an object");
+    }
+
+    static const std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries = {
+        {"db_file_path",
+         [&](const JSONObjectType & value)
+         {
+             db_file_path = std::filesystem::path(String(value.getString()));
+             fuzz_out = db_file_path / "fuzz.data";
+         }},
+        {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
+        {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
+        {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
+        {"min_insert_rows", [&](const JSONObjectType & value) { min_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
+        {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
+        {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
+        {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
+        {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
+        {"query_time_minimum", [&](const JSONObjectType & value) { query_time_minimum = static_cast<uint32_t>(value.getUInt64()); }},
+        {"query_memory_minimum", [&](const JSONObjectType & value) { query_memory_minimum = static_cast<uint32_t>(value.getUInt64()); }},
+        {"query_time_threshold", [&](const JSONObjectType & value) { query_time_threshold = static_cast<uint32_t>(value.getUInt64()); }},
+        {"query_memory_threshold",
+         [&](const JSONObjectType & value) { query_memory_threshold = static_cast<uint32_t>(value.getUInt64()); }},
+        {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
+        {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
+        {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
+        {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
+        {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
+        {"measure_performance", [&](const JSONObjectType & value) { measure_performance = value.getBool(); }},
+        {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
+        {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
+        {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
+        {"sqlite", [&](const JSONObjectType & value) { sqlite_server = loadServerCredentials(value, "sqlite", 0); }},
+        {"mongodb", [&](const JSONObjectType & value) { mongodb_server = loadServerCredentials(value, "mongodb", 27017); }},
+        {"redis", [&](const JSONObjectType & value) { redis_server = loadServerCredentials(value, "redis", 6379); }},
+        {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
+        {"disabled_types",
+         [&](const JSONObjectType & value)
+         {
+             using std::operator""sv;
+             constexpr auto delim{","sv};
+             String input = String(value.getString());
+             std::transform(input.begin(), input.end(), input.begin(), ::tolower);
+
+             static const std::unordered_map<std::string_view, uint32_t> type_entries
+                 = {{"bool", allow_bool},
+                    {"uint", allow_unsigned_int},
+                    {"int8", allow_int8},
+                    {"int64", allow_int64},
+                    {"int128", allow_int128},
+                    {"float", allow_floating_points},
+                    {"date", allow_dates},
+                    {"date32", allow_date32},
+                    {"datetime", allow_datetimes},
+                    {"datetime64", allow_datetime64},
+                    {"string", allow_strings},
+                    {"decimal", allow_decimals},
+                    {"uuid", allow_uuid},
+                    {"enum", allow_enum},
+                    {"uuid", allow_uuid},
+                    {"dynamic", allow_dynamic},
+                    {"json", allow_JSON},
+                    {"nullable", allow_nullable},
+                    {"lcard", allow_low_cardinality},
+                    {"array", allow_array},
+                    {"map", allow_map},
+                    {"tuple", allow_tuple},
+                    {"variant", allow_variant},
+                    {"nested", allow_nested},
+                    {"ipv4", allow_ipv4},
+                    {"ipv6", allow_ipv6},
+                    {"geo", allow_geo}};
+
+             for (const auto word : std::views::split(input, delim))
+             {
+                 const auto & entry = std::string_view(word);
+
+                 if (type_entries.find(entry) == type_entries.end())
+                 {
+                     throw std::runtime_error("Unknown type option: " + String(entry));
+                 }
+                 type_mask &= (~type_entries.at(entry));
+             }
+         }}};
+
+    for (const auto [key, value] : object.getObject())
+    {
+        const String & nkey = String(key);
+
+        if (config_entries.find(nkey) == config_entries.end())
+        {
+            throw std::runtime_error("Unknown BuzzHouse option: " + nkey);
+        }
+        config_entries.at(nkey)(value);
+    }
+    if (min_insert_rows > max_insert_rows)
+    {
+        throw std::runtime_error(
+            "min_insert_rows value (" + std::to_string(min_insert_rows) + ") is higher than max_insert_rows value ("
+            + std::to_string(max_insert_rows) + ")");
+    }
+    if (min_nested_rows > max_nested_rows)
+    {
+        throw std::runtime_error(
+            "min_nested_rows value (" + std::to_string(min_nested_rows) + ") is higher than max_nested_rows value ("
+            + std::to_string(max_nested_rows) + ")");
+    }
+}
+
+bool FuzzConfig::processServerQuery(const String & input) const
+{
+    try
+    {
+        this->cb->processTextAsSingleQuery(input);
+    }
+    catch (...)
+    {
+        return false;
+    }
+    return true;
+}
+
+void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col)
+{
+    uint64_t found = 0;
+
+    buf.resize(0);
+    buf += "SELECT \"";
+    buf += col;
+    buf += R"(" FROM "system".")";
+    buf += table;
+    buf += "\" INTO OUTFILE '";
+    buf += fuzz_out.generic_string();
+    buf += "' TRUNCATE FORMAT TabSeparated;";
+    this->processServerQuery(buf);
+
+    std::ifstream infile(fuzz_out);
+    buf.resize(0);
+    out.clear();
+    while (std::getline(infile, buf))
+    {
+        out.push_back(buf);
+        buf.resize(0);
+        found++;
+    }
+    LOG_INFO(log, "Found {} entries from {} table", found, table);
+}
+
+void FuzzConfig::loadServerConfigurations()
+{
+    loadServerSettings(this->collations, "collations", "name");
+    loadServerSettings(this->storage_policies, "storage_policies", "policy_name");
+    loadServerSettings(this->disks, "disks", "name");
+    loadServerSettings(this->timezones, "time_zones", "time_zone");
+}
+
+}

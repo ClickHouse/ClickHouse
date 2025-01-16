@@ -6,7 +6,7 @@
 namespace BuzzHouse
 {
 
-int StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob)
+void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const uint32_t nested_prob)
 {
     if (rg.nextMediumNumber() < nested_prob)
     {
@@ -34,13 +34,12 @@ int StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const 
         }
         this->depth--;
     }
-    return 0;
 }
 
-int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob)
+void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob)
 {
     const uint32_t nsuboption = rg.nextLargeNumber();
-    const std::string & last_col
+    const String & last_col
         = expr->path().sub_cols_size() ? expr->path().sub_cols(expr->path().sub_cols_size() - 1).column() : expr->path().col().column();
     const bool has_nested = last_col == "keys" || last_col == "values" || last_col == "null" || startsWith(last_col, "size");
 
@@ -86,14 +85,18 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
             if (tpn)
             {
                 uint32_t col_counter = 0;
-                SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, tpn->mutable_type());
+
+                this->next_type_mask = fc.type_mask & ~(allow_nested);
+                SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
                 delete tp;
             }
         }
         if (rg.nextMediumNumber() < nested_prob)
         {
             uint32_t col_counter = 0;
-            SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
+
+            this->next_type_mask = fc.type_mask & ~(allow_nested);
+            SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             delete tp;
         }
         if (nsuboption < 6)
@@ -114,10 +117,9 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
         }
         this->depth--;
     }
-    return 0;
 }
 
-int StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr)
+void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr)
 {
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol = estc->mutable_col();
@@ -145,10 +147,9 @@ int StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, E
             ecol->mutable_subcols()->CopyFrom(gecol.subcols());
         }
     }
-    return 0;
 }
 
-int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
+void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
     LiteralValue * lv = expr->mutable_lit_val();
@@ -329,10 +330,9 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         lv->set_special_val(SpecialVal::VAL_NULL);
     }
     addFieldAccess(rg, expr, nested_prob);
-    return 0;
 }
 
-int StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
+void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 {
     std::vector<GroupCol> available_cols;
 
@@ -357,12 +357,15 @@ int StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 
     if (available_cols.empty())
     {
-        return this->generateLiteralValue(rg, expr);
+        this->generateLiteralValue(rg, expr);
     }
-    return refColumn(rg, rg.pickRandomlyFromVector(available_cols), expr);
+    else
+    {
+        refColumn(rg, rg.pickRandomlyFromVector(available_cols), expr);
+    }
 }
 
-int StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
+void StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
 {
     const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
     const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
@@ -377,10 +380,9 @@ int StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
     this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
     this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
     this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
-    return 0;
 }
 
-int StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
+void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth < this->fc.max_depth)
     {
@@ -531,15 +533,14 @@ int StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        return this->generateLiteralValue(rg, expr);
+        this->generateLiteralValue(rg, expr);
     }
-    return 0;
 }
 
-int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr)
+void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t nparams, LambdaExpr * lexpr)
 {
     SQLRelation rel("");
-    std::map<uint32_t, QueryLevel> levels_backup;
+    std::unordered_map<uint32_t, QueryLevel> levels_backup;
     const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
     const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
     const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
@@ -555,7 +556,7 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
     for (uint32_t i = 0; i < nparams; i++)
     {
         buf.resize(0);
-        buf += std::string(1, 'x' + i);
+        buf += String(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
         rel.cols.push_back(SQLRelationCol("", {buf}));
     }
@@ -570,10 +571,9 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
     this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
     this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
     this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
-    return 0;
 }
 
-int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
+void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
     const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 61);
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
@@ -586,7 +586,9 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     if (!nallow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
         //aggregate
-        const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0)];
+        const uint32_t next_off
+            = rg.nextSmallNumber() < 2 ? (rg.nextLargeNumber() % 5) : (nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0));
+        const CHAggregate & agg = CHAggrs[next_off];
         const uint32_t agg_max_params = std::min(agg.max_params, UINT32_C(5));
         const uint32_t max_params = std::min(this->fc.max_width - this->width, agg_max_params);
         const uint32_t agg_max_args = std::min(agg.max_args, UINT32_C(5));
@@ -688,7 +690,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         uint32_t max_args = 0;
         SQLFuncName * sfn = func_call->mutable_func();
 
-        if (!this->functions.empty()
+        if (!this->functions.empty() && this->peer_query != PeerQuery::ClickHouseOnly
             && (this->allow_not_deterministic || collectionHas<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }))
             && rg.nextSmallNumber() < 3)
         {
@@ -703,7 +705,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         else
         {
             //use a default catalog function
-            const CHFunction & func = rg.nextLargeNumber() < 5 ? materialize : CHFuncs[nopt];
+            const CHFunction & func = rg.nextMediumNumber() < 5 ? materialize : CHFuncs[nopt];
             const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
 
             n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
@@ -740,10 +742,53 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
         }
     }
     this->width -= generated_params;
-    return 0;
 }
 
-int StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
+/*
+Don't forget to clear levels!
+*/
+void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
+{
+    const size_t funcs_size = CHTableFuncs.size();
+    std::uniform_int_distribution<uint32_t> next_dist(0, funcs_size - 1);
+    const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
+    const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
+    uint32_t generated_params = 0;
+    uint32_t n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
+    uint32_t min_args = func.min_args;
+    uint32_t max_args = std::min(this->fc.max_width - this->width, func_max_args);
+
+    tfunc_call->set_func(static_cast<SQLTableFunc>(func.fnum));
+    if (n_lambda > 0)
+    {
+        assert(n_lambda == 1);
+        generateLambdaCall(rg, (rg.nextSmallNumber() % 3) + 1, tfunc_call->add_args()->mutable_lambda());
+        this->width++;
+        generated_params++;
+    }
+    if (max_args > 0 && max_args >= min_args)
+    {
+        std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);
+        const uint32_t nfunc_args = nparams(rg.generator);
+
+        for (uint32_t i = 0; i < nfunc_args; i++)
+        {
+            this->generateExpression(rg, tfunc_call->add_args()->mutable_expr());
+            this->width++;
+            generated_params++;
+        }
+    }
+    else if (min_args > 0)
+    {
+        for (uint32_t i = 0; i < min_args; i++)
+        {
+            generateLiteralValue(rg, tfunc_call->add_args()->mutable_expr());
+        }
+    }
+    this->width -= generated_params;
+}
+
+void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
 {
     if (rg.nextBool())
     {
@@ -751,7 +796,7 @@ int StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        std::map<uint32_t, QueryLevel> levels_backup;
+        std::unordered_map<uint32_t, QueryLevel> levels_backup;
 
         for (const auto & entry : this->levels)
         {
@@ -764,10 +809,9 @@ int StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
             this->levels[entry.first] = entry.second;
         }
     }
-    return 0;
 }
 
-int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
+void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 {
     const uint32_t noption = rg.nextLargeNumber();
     ExprColAlias * eca = nullptr;
@@ -798,7 +842,8 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
         this->depth++;
-        SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, casexpr->mutable_type_name()->mutable_type());
+        this->next_type_mask = fc.type_mask & ~(allow_nested);
+        SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
         delete tp;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;
@@ -1067,14 +1112,13 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     {
         SQLRelation rel("");
         const uint32_t cname = this->levels[this->current_level].aliases_counter++;
-        const std::string cname_str = "c" + std::to_string(cname);
+        const String cname_str = "c" + std::to_string(cname);
 
         rel.cols.push_back(SQLRelationCol("", {cname_str}));
         this->levels[this->current_level].rels.push_back(std::move(rel));
         eca->mutable_col_alias()->set_column(cname_str);
         this->levels[this->current_level].projections.push_back(cname);
     }
-    return 0;
 }
 
 }

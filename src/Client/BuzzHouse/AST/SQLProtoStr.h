@@ -1,7 +1,6 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#include <base/types.h>
 
 /* Protobuf generated files give lots of warnings, disable them */
 #if defined(__clang__)
@@ -18,7 +17,8 @@
 namespace BuzzHouse
 {
 
-void CreateTableToString(std::string & ret, const CreateTable &);
-void SQLQueryToString(std::string & ret, const SQLQuery &);
+void CreateDatabaseToString(String & ret, const CreateDatabase &);
+void CreateTableToString(String & ret, const CreateTable &);
+void SQLQueryToString(String & ret, const SQLQuery &);
 
 }
