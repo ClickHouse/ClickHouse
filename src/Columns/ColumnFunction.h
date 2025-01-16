@@ -149,6 +149,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
     }
 
+    bool equalsAt(size_t, size_t, const IColumn &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "equalsAt is not implemented for {}", getName());
+    }
+
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareColumn is not implemented for {}", getName());

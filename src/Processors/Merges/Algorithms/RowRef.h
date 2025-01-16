@@ -152,7 +152,7 @@ struct RowRef
             auto & cur_column = lhs[col_number];
             auto & other_column = rhs[col_number];
 
-            if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
+            if (!cur_column->equalsAt(lhs_row, rhs_row, *other_column))
                 return false;
         }
 

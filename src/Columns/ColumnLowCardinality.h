@@ -143,6 +143,8 @@ public:
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
+    bool equalsAt(size_t n, size_t m, const IColumn & rhs_) const override;
+
     bool hasEqualValues() const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
