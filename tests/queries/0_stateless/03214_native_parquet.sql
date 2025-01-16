@@ -1,4 +1,3 @@
--- Tags: long, no-fasttest
 -- { echoOn }
 -- support data types: Int16, Int32, Int64, Float32, Float64, String, Date32, DateTime64, Date, DateTime
 drop table if exists test_native_parquet;

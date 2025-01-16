@@ -1,4 +1,3 @@
--- Tags: long, no-fasttest
 -- {echoOn}
 set output_format_parquet_use_custom_encoder = 0;
 set output_format_parquet_row_group_size = 1000;
