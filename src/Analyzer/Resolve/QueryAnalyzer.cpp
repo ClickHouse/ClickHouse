@@ -116,7 +116,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
-    extern const int CYCLIC_ALIASES;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
