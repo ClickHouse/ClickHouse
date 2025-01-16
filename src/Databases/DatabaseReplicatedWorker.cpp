@@ -177,7 +177,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         if (!is_new_replica)
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
+
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
     }
@@ -318,6 +320,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
+
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
