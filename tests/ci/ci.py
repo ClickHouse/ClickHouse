@@ -1905,6 +1905,16 @@ def main() -> int:
             else {}
         )
 
+        # Early post the version to have it before await
+        ch_helper = ClickHouseHelper()
+        _add_build_to_version_history(
+            pr_info,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            version,
+            build_digest,
+            ch_helper,
+        )
+
         if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(jobs_data)
 
@@ -1958,14 +1968,6 @@ def main() -> int:
             result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
-        ch_helper = ClickHouseHelper()
-        _add_build_to_version_history(
-            pr_info,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            result["version"],
-            result["build"],
-            ch_helper,
-        )
     ### CONFIGURE action: end
 
     ### PRE action: start
