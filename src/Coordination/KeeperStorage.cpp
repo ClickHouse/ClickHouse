@@ -1824,7 +1824,7 @@ private:
         std::vector<std::pair<std::string, typename Storage::Node>> children;
         {
             std::lock_guard lock(storage.storage_mutex);
-            children = storage.container.getChildren(current_path.toString(), /*read_data=*/true);
+            children = storage.container.getChildren(current_path.toString(), /*read_meta*/ true, /*read_data=*/true);
         }
 
         for (auto && [child_name, child_node] : children)
@@ -2267,10 +2267,17 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         if (path_prefix.empty())
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
+        auto list_request_type = Coordination::ListRequestType::ALL;
+        if (const auto * filtered_list = dynamic_cast<const Coordination::ZooKeeperFilteredListRequest *>(&zk_request))
+        {
+            list_request_type = filtered_list->list_request_type;
+        }
+
         const auto get_children = [&]()
         {
+            /// if list_request_type will read all the children, we don't have to read any meta, just list all the paths.
             if constexpr (Storage::use_rocksdb)
-                return std::optional{container.getChildren(zk_request.path)};
+                return std::optional{container.getChildren(zk_request.path, list_request_type != Coordination::ListRequestType::ALL)};
             else
                 return &node_it->value.getChildren();
         };
@@ -2294,15 +2301,6 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         {
             using enum Coordination::ListRequestType;
 
-            auto list_request_type = ALL;
-            if (const auto * filtered_list = dynamic_cast<const Coordination::ZooKeeperFilteredListRequest *>(&zk_request))
-            {
-                list_request_type = filtered_list->list_request_type;
-            }
-
-            if (list_request_type == ALL)
-                return true;
-
             bool is_ephemeral;
             if constexpr (!Storage::use_rocksdb)
             {
@@ -2322,7 +2320,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
 
         for (const auto & child : *children)
         {
-            if (add_child(child))
+            if (Coordination::ListRequestType::ALL == list_request_type || add_child(child))
             {
                 if constexpr (Storage::use_rocksdb)
                     response->names.push_back(child.first);
