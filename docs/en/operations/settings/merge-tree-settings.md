@@ -1195,6 +1195,6 @@ Default: true
 
 ## assign_part_uuids
 
-Generate UUIDs for parts. Before enabling check that all replicas support new format.
+When enabled, unique part identifier ([UUID](../../sql-reference/data-types/uuid.md)) will be assigned for every new part. Before enabling, check that all replicas support new format uuid version 4.
 
-Default: 0
+Default: 0.
