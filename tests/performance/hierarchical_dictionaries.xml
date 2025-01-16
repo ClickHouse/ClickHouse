@@ -1,4 +1,6 @@
 <test>
+    <!-- Run all queries from this test file pls -->
+
     <substitutions>
         <substitution>
             <name>dictionary_layout</name>

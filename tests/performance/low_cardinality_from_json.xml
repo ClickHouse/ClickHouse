@@ -1,4 +1,5 @@
 <test>
+    <!-- Run all queries from this test file pls -->
 
     <substitutions>
         <substitution>
