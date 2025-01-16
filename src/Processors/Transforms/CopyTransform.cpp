@@ -3,16 +3,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 CopyTransform::CopyTransform(const Block & header, size_t num_outputs)
     : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
 {
-    if (num_outputs <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyTransform expects more than 1 outputs, got {}", num_outputs);
 }
 
 IProcessor::Status CopyTransform::prepare()
@@ -63,7 +56,7 @@ IProcessor::Status CopyTransform::prepareConsume()
     if (!input.hasData())
         return Status::NeedData;
 
-    chunk = input.pull();
+    data = input.pullData();
     has_data = true;
     was_output_processed.assign(outputs.size(), false);
 
@@ -92,7 +85,10 @@ IProcessor::Status CopyTransform::prepareGenerate()
             continue;
         }
 
-        output.push(chunk.clone());
+        if (data.exception)
+            output.pushException(data.exception);
+        else
+            output.push(data.chunk.clone());
         was_processed = true;
     }
 
