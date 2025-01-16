@@ -20,7 +20,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/NullableUtils.h>
+#include <DataTypes/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>

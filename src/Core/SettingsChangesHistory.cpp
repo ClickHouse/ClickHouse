@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
             {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
