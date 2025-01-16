@@ -165,6 +165,19 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         return file_offset;
     }
 
+    bool supportsRightBoundedReads() const override { return true; }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        read_until_position = position;
+    }
+
+    void setReadUntilEnd() override
+    {
+        read_until_position = 0;
+    }
+
+
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
@@ -282,6 +295,21 @@ size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, 
 bool ReadBufferFromHDFS::supportsReadAt()
 {
     return true;
+}
+
+bool ReadBufferFromHDFS::supportsRightBoundedReads() const
+{
+    return impl->supportsRightBoundedReads();
+}
+
+void ReadBufferFromHDFS::setReadUntilPosition(size_t position)
+{
+    impl->setReadUntilPosition(position);
+}
+
+void ReadBufferFromHDFS::setReadUntilEnd()
+{
+    impl->setReadUntilEnd();
 }
 
 }
