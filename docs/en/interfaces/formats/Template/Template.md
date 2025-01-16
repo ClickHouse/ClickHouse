@@ -111,7 +111,7 @@ If the `format_template_resultset` setting is an empty string, `${data}` is used
 
 For insert queries format allows skipping some columns or fields if prefix or suffix (see example).
 
-### In-line specification
+### In-line specification {#inline_specification}
 
 Often times it is challenging or not possible to deploy the format configurations
 (set by `format_template_row`, `format_template_resultset`) for the template format to a directory on all nodes in a cluster. 
