@@ -301,6 +301,13 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
+            /// FIXME: This doesn't work with joins (at least if DAG is used inside a node)
+            /// The problem is that it uses unqualified column names, and it can lead to estimations being made
+            /// on conditions on columns from another table. Here's an example:
+            ///   SELECT sum(t1.x)
+            ///   FROM t1, t2
+            ///   WHERE (t1.id = t2.id) AND (t2.x > 100) AND (t2.x < 1000)
+            /// If there is a statistic on t2.x only, we'll use this statistic to estimate the t1 table row count as well.
             cond.estimated_row_count = estimator.estimateRowCount(node);
 
             if (node.getASTNode() != nullptr)

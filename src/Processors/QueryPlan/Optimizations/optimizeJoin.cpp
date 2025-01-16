@@ -44,7 +44,7 @@ namespace Setting
 namespace QueryPlanOptimizations
 {
 
-static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
+static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool use_statistics, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -80,10 +80,10 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
+        if (has_filter && !is_filtered_by_index && !use_statistics)
             return {};
 
-        return analyzed_result->selected_rows;
+        return analyzed_result->selected_rows_after_size_hint;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -93,9 +93,9 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
         return {};
 
     if (typeid_cast<ExpressionStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), has_filter);
+        return estimateReadRowsCount(*node.children.front(), use_statistics, has_filter);
     if (typeid_cast<FilterStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), true);
+        return estimateReadRowsCount(*node.children.front(), use_statistics, true);
 
     return {};
 }
@@ -126,8 +126,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]);
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]);
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0], join_step->swap_join_tables_use_statistics);
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1], join_step->swap_join_tables_use_statistics);
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation.transform(toString<UInt64>).value_or("unknown"),
             rhs_extimation.transform(toString<UInt64>).value_or("unknown"));
@@ -337,8 +337,8 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     bool need_swap = false;
     if (!optimization_settings.join_swap_table.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]);
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]);
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0], optimization_settings.join_swap_table_use_statistics);
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1], optimization_settings.join_swap_table_use_statistics);
         LOG_TRACE(getLogger("optimizeJoin"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation.transform(toString<UInt64>).value_or("unknown"),
             rhs_extimation.transform(toString<UInt64>).value_or("unknown"));
