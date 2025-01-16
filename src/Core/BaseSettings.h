@@ -414,10 +414,10 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    BaseSettings<TTraits> helper; /// TODO: Fix to make static properly
-    if (auto * setting_field = accessor.findSettingFieldPtr(name, helper))
+
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
-        auto copy = setting_field->clone();
+        auto copy = accessor.getDefault(index)->clone();
         *copy = value;
         return static_cast<Field>(*copy);
     }
@@ -432,10 +432,9 @@ String BaseSettings<TTraits>::valueToStringUtil(std::string_view name, const Fie
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    BaseSettings<TTraits> helper; /// TODO: Fix to make static properly
-    if (auto * setting_field = accessor.findSettingFieldPtr(name, helper))
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
-        auto copy = setting_field->clone();
+        auto copy = accessor.getDefault(index)->clone();
         *copy = value;
         return copy->toString();
     }
@@ -452,10 +451,9 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
     try
     {
         const auto & accessor = Traits::Accessor::instance();
-        BaseSettings<TTraits> helper; /// TODO: Fix to make static properly
-        if (auto * setting_field = accessor.findSettingFieldPtr(name, helper))
+        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         {
-            auto copy = setting_field->clone();
+            auto copy = accessor.getDefault(index)->clone();
             copy->parseFromString(str);
             return static_cast<Field>(*copy);
         }
