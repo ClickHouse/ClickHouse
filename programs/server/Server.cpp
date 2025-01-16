@@ -309,6 +309,7 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace ProfileEvents
@@ -2525,6 +2526,8 @@ try
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
+
+            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
 
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
