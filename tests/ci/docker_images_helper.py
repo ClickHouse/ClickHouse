@@ -56,10 +56,10 @@ def get_docker_image(image_name: str) -> DockerImage:
         tags_map = json.loads(DOCKER_TAG)
         assert (
             image_name in tags_map
-        ), "Image name does not exist in provided DOCKER_TAG json string"
-        return DockerImage(image_name, tags_map[image_name])
+        ), f"Image name [{image_name}] does not exist in provided DOCKER_TAG json string"
+        return DockerImage(image_name, "latest")
     # DOCKER_TAG is a tag itself
-    return DockerImage(image_name, DOCKER_TAG)
+    return DockerImage(image_name, "latest")
 
 
 class DockerImageData:
