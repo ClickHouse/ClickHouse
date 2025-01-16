@@ -45,8 +45,8 @@ struct HyperLogLogPlusPlusData
                 "HLL++ requires at most 25 bits for addressing instead of {} to avoid allocating too much memory",
                 p);
 
-        std::cout << "relative_sd:" << relative_sd << " p:" << p << " m:" << m << " num_words:" << num_words << " alpha_mm:" << alpha_mm
-                  << std::endl;
+        // std::cout << "relative_sd:" << relative_sd << " p:" << p << " m:" << m << " num_words:" << num_words << " alpha_mm:" << alpha_mm
+        //   << std::endl;
         registers = PaddedPODArray<UInt64>(num_words, 0); // Initialize registers with zeros
     }
 
