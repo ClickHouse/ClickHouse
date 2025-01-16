@@ -1192,3 +1192,9 @@ Default value: false.
 When enabled, merges build and store skip indices for new parts.
 
 Default: true
+
+## assign_part_uuids
+
+Generate UUIDs for parts. Before enabling check that all replicas support new format.
+
+Default: 0
