@@ -388,7 +388,6 @@ void KeeperTCPHandler::runImpl()
     /// Hand shake package length must be lower than 2^24 and larger than 0.
     /// So collision never happens.
     int32_t four_letter_cmd = header;
-    LOG_DEBUG(log, "LENGTH {} EXPECTED LENGTH {}", four_letter_cmd, Coordination::SERVER_HANDSHAKE_LENGTH_WITH_READONLY);
     if (!isHandShake(four_letter_cmd))
     {
         connected.store(true, std::memory_order_relaxed);
