@@ -7,6 +7,10 @@ output_format: true
 alias: []
 ---
 
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
 ## Description
 
 The `JSON` format reads and outputs data in the JSON format. 
