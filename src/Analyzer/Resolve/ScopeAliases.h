@@ -17,9 +17,6 @@ struct ScopeAliases
     /// Alias name to table expression node
     std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_table_expression_node;
 
-    /// Expressions like `x as y` where we can't say whether it's a function, expression or table.
-    std::unordered_map<std::string, Identifier> transitive_aliases;
-
     /// Nodes with duplicated aliases
     QueryTreeNodes nodes_with_duplicated_aliases;
 
@@ -60,26 +57,8 @@ struct ScopeAliases
 
         auto it = alias_map.find(*key);
 
-        if (it != alias_map.end())
-            return &it->second;
-
-        if (lookup.lookup_context == IdentifierLookupContext::TABLE_EXPRESSION)
+        if (it == alias_map.end())
             return {};
-
-        while (it == alias_map.end())
-        {
-            auto jt = transitive_aliases.find(*key);
-            if (jt == transitive_aliases.end())
-                return {};
-
-            const auto & new_key = getKey(jt->second, find_option);
-            /// Ignore potential cyclic aliases.
-            if (new_key == *key)
-                return {};
-
-            key = &new_key;
-            it = alias_map.find(*key);
-        }
 
         return &it->second;
     }

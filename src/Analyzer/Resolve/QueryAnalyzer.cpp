@@ -1194,16 +1194,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
      * 1. SELECT dummy + 1 AS dummy
      * 2. SELECT avg(a) OVER () AS a, id FROM test
      */
-    if (auto root_expression_with_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part))
+    if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part) != nullptr)
     {
-        const auto top_expression = scope.expressions_in_resolve_process_stack.getTop();
-
-        if (!isNodePartOfTree(top_expression.get(), root_expression_with_alias.get()))
-            throw Exception(ErrorCodes::CYCLIC_ALIASES,
-                "Cyclic aliases for identifier '{}'. In scope {}",
-                identifier_lookup.identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage());
-
+        /* This is an important fallback in the identifier resolution. In the case of transitive aliases,
+         * we may end up in the situation when we try to resolve the same expression, but it's not a cycle.
+         * Example: WITH path('clickhouse.com/a/b/c') AS x SELECT x AS path;
+         * Here, identifier `x` would be resolved one time as a projection column and one time during `path`
+         * function lookup. The second lookup must fail here to break the alias cycle.
+         */
         return {};
     }
 
@@ -5542,20 +5540,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    /** Disable identifier cache during JOIN TREE resolve.
-      * Depending on JOIN expression section, identifier with same name
-      * can be resolved in different columns.
-      *
-      * Example: SELECT id FROM test_table AS t1 INNER JOIN test_table AS t2 ON t1.id = t2.id INNER JOIN test_table AS t3 ON t1.id = t3.id
-      * In first join expression ON t1.id = t2.id t1.id is resolved into test_table.id column.
-      * In second join expression ON t1.id = t3.id t1.id must be resolved into test_table.id column after first JOIN.
-      */
+    auto transitive_aliases = std::move(scope.aliases.alias_name_to_table_expression_node);
 
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
-    scope.aliases.alias_name_to_table_expression_node.clear();
+    scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 
