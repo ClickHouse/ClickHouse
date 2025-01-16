@@ -1,5 +1,7 @@
+#include <optional>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -9,16 +11,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::pair<String, Field> ConditionSelectivityEstimator::extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const
+void ConditionSelectivityEstimator::extractOperators(const RPNBuilderTreeNode & node, const String & qualified_column_name, std::vector<std::pair<String, Field>> & result) const
 {
     if (!node.isFunction())
-        return {};
+        return;
 
     auto function_node = node.toFunctionNode();
-    if (function_node.getArgumentsSize() != 2)
-        return {};
-
     String function_name = function_node.getFunctionName();
+
+    if (function_name == "and")
+    {
+        for (size_t i = 0; i < function_node.getArgumentsSize(); ++i)
+            extractOperators(function_node.getArgumentAt(i), qualified_column_name, result);
+
+        return;
+    }
+
+    if (function_node.getArgumentsSize() != 2)
+        return;
 
     auto lhs_argument = function_node.getArgumentAt(0);
     auto rhs_argument = function_node.getArgumentAt(1);
@@ -26,26 +36,42 @@ std::pair<String, Field> ConditionSelectivityEstimator::extractBinaryOp(const RP
     auto lhs_argument_column_name = lhs_argument.getColumnName();
     auto rhs_argument_column_name = rhs_argument.getColumnName();
 
-    bool lhs_argument_is_column = column_name == (lhs_argument_column_name);
-    bool rhs_argument_is_column = column_name == (rhs_argument_column_name);
+    bool lhs_argument_is_column = qualified_column_name == (lhs_argument_column_name);
+    bool rhs_argument_is_column = qualified_column_name == (rhs_argument_column_name);
 
-    bool lhs_argument_is_constant = lhs_argument.isConstant();
-    bool rhs_argument_is_constant = rhs_argument.isConstant();
-
-    RPNBuilderTreeNode * constant_node = nullptr;
-
-    if (lhs_argument_is_column && rhs_argument_is_constant)
-        constant_node = &rhs_argument;
-    else if (lhs_argument_is_constant && rhs_argument_is_column)
-        constant_node = &lhs_argument;
-    else
-        return {};
+    RPNBuilderTreeNode * maybe_constant_node = nullptr;
+    bool non_column_argument_is_constant = lhs_argument_is_column ? rhs_argument.isConstant() : lhs_argument.isConstant();
 
     Field output_value;
     DataTypePtr output_type;
-    if (!constant_node->tryGetConstant(output_value, output_type))
-        return {};
-    return std::make_pair(function_name, output_value);
+
+    auto try_get_constant_from_arg = [&](RPNBuilderTreeNode * arg, bool is_arg_constant) -> bool
+    {
+        if (is_arg_constant)
+            return arg->tryGetConstant(output_value, output_type);
+
+        if (arg->isFunction())
+        {
+            auto arg_function = arg->toFunctionNode();
+
+            if (arg_function.getFunctionName() == "_CAST" && arg_function.getArgumentAt(0).tryGetConstant(output_value, output_type))
+                return true;
+        }
+
+        return false;
+    };
+
+    if (lhs_argument_is_column)
+        maybe_constant_node = &rhs_argument;
+    else if (rhs_argument_is_column)
+        maybe_constant_node = &lhs_argument;
+    else
+        return;
+
+    if (!try_get_constant_from_arg(maybe_constant_node, non_column_argument_is_constant))
+        return;
+
+    result.emplace_back(std::make_pair(function_name, output_value));
 }
 
 /// second return value represents how many columns in the node.
@@ -79,13 +105,21 @@ static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNod
     return result;
 }
 
-Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node) const
+
+Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode & node, const std::unordered_map<std::string, ColumnWithTypeAndName> & unqualifiedColumnsNames) const
 {
     auto result = tryToExtractSingleColumn(node);
     if (result.second != 1)
         return default_unknown_cond_factor * total_rows;
 
     String column = result.first;
+    auto it_col = unqualifiedColumnsNames.find(column);
+
+    if (it_col != unqualifiedColumnsNames.end())
+        column = it_col->second.name;
+    else if (!unqualifiedColumnsNames.empty() && it_col == unqualifiedColumnsNames.end()) /// column is from another table in join step
+        return total_rows;
+
     auto it = column_estimators.find(column);
 
     /// If there the estimator of the column is not found or there are no data at all,
@@ -97,24 +131,41 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     else
         dummy = true;
 
-    auto [op, val] = extractBinaryOp(node, column);
+    std::vector<std::pair<String, Field>> operators;
+    extractOperators(node, result.first, operators);
 
-    if (dummy)
+    Float64 curr_rows = total_rows;
+    std::optional<Float64> curr_min = {};
+    std::optional<Float64> curr_max = {};
+    for (const auto & [op, val] : operators)
     {
+        std::optional<Float64> calculated_val = {};
         if (op == "equals")
-            return default_cond_equal_factor * total_rows;
-        if (op == "less" || op == "lessOrEquals" || op == "greater" || op == "greaterOrEquals")
-            return default_cond_range_factor * total_rows;
-        return default_unknown_cond_factor * total_rows;
+        {
+            curr_rows = dummy ? default_cond_equal_factor * curr_rows : estimator.estimateEqual(val, curr_rows, calculated_val, curr_min, curr_max);
+            if (calculated_val.has_value())
+            {
+                curr_min = calculated_val;
+                curr_max = calculated_val;
+            }
+        }
+        else if (op == "less" || op == "lessOrEquals")
+        {
+            curr_rows = dummy ? default_cond_range_factor * curr_rows : estimator.estimateLess(val, curr_rows, calculated_val, curr_min, curr_max);
+            if (calculated_val.has_value())
+                curr_max = calculated_val;
+        }
+        else if (op == "greater" || op == "greaterOrEquals")
+        {
+            curr_rows = dummy ? default_cond_range_factor * curr_rows : estimator.estimateGreater(val, curr_rows, calculated_val, curr_min, curr_max);
+            if (calculated_val.has_value())
+                curr_min = calculated_val;
+        }
+        else
+            curr_rows *= default_unknown_cond_factor;
     }
 
-    if (op == "equals")
-        return estimator.estimateEqual(val, total_rows);
-    if (op == "less" || op == "lessOrEquals")
-        return estimator.estimateLess(val, total_rows);
-    if (op == "greater" || op == "greaterOrEquals")
-        return estimator.estimateGreater(val, total_rows);
-    return default_unknown_cond_factor * total_rows;
+    return curr_rows;
 }
 
 void ConditionSelectivityEstimator::incrementRowCount(UInt64 rows)
@@ -135,7 +186,7 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::addStatistics(St
     part_statistics[part_name] = stats;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     if (part_statistics.empty())
         return default_cond_range_factor * rows;
@@ -143,18 +194,18 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(
     Float64 part_rows = 0;
     for (const auto & [key, estimator] : part_statistics)
     {
-        result += estimator->estimateLess(val);
+        result += estimator->estimateLess(val, calculated_val, custom_min, custom_max);
         part_rows += estimator->rowCount();
     }
     return result * rows / part_rows;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
-    return rows - estimateLess(val, rows);
+    return rows - estimateLess(val, rows, calculated_val, custom_min, custom_max);
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows, std::optional<Float64> & calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     if (part_statistics.empty())
     {
@@ -164,8 +215,15 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual
     Float64 partial_cnt = 0;
     for (const auto & [key, estimator] : part_statistics)
     {
-        result += estimator->estimateEqual(val);
+        result += estimator->estimateEqual(val, calculated_val);
         partial_cnt += estimator->rowCount();
+    }
+
+    if (calculated_val.has_value() &&
+            ((custom_min.has_value() && custom_min.value() > calculated_val.value()) ||
+             (custom_max.has_value() && custom_max.value() < calculated_val.value())))
+    {
+        return 0;
     }
     return result * rows / partial_cnt;
 }
