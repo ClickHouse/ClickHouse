@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Backups/BackupFactory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
@@ -34,28 +35,17 @@ public:
         size_t max_volume_size = 0;
     };
 
+    /// RESTORE
     BackupImpl(
-        const BackupInfo & backup_info_,
+        BackupFactory::CreateParams params_,
         const ArchiveParams & archive_params_,
-        const std::optional<BackupInfo> & base_backup_info_,
-        std::shared_ptr<IBackupReader> reader_,
-        const ContextPtr & context_,
-        bool is_internal_backup_,
-        bool use_same_s3_credentials_for_base_backup_,
-        bool use_same_password_for_base_backup_);
+        std::shared_ptr<IBackupReader> reader_);
 
+    /// BACKUP
     BackupImpl(
-        const BackupInfo & backup_info_,
+        BackupFactory::CreateParams params_,
         const ArchiveParams & archive_params_,
-        const std::optional<BackupInfo> & base_backup_info_,
-        std::shared_ptr<IBackupWriter> writer_,
-        const ContextPtr & context_,
-        bool is_internal_backup_,
-        const std::shared_ptr<IBackupCoordination> & coordination_,
-        const std::optional<UUID> & backup_uuid_,
-        bool deduplicate_files_,
-        bool use_same_s3_credentials_for_base_backup_,
-        bool use_same_password_for_base_backup_);
+        std::shared_ptr<IBackupWriter> writer_);
 
     ~BackupImpl() override;
 
@@ -117,6 +107,7 @@ private:
 
     std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
+    const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
     const bool use_archive;
@@ -124,8 +115,6 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
-    const ContextPtr context;
-    const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -155,9 +144,6 @@ private:
 
     bool writing_finalized = false;
     bool corrupted = false;
-    bool deduplicate_files = true;
-    bool use_same_s3_credentials_for_base_backup = false;
-    bool use_same_password_for_base_backup = false;
     const LoggerPtr log;
 };
 
