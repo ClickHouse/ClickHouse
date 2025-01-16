@@ -62,7 +62,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
         throw std::runtime_error("Parsed JSON value is not an object");
     }
 
-    static std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries = {
+    static const std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {
@@ -91,6 +91,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
         {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
         {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
+        {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
+        {"measure_performance", [&](const JSONObjectType & value) { measure_performance = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -106,7 +108,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
              String input = String(value.getString());
              std::transform(input.begin(), input.end(), input.begin(), ::tolower);
 
-             static std::unordered_map<std::string_view, uint32_t> type_entries
+             static const std::unordered_map<std::string_view, uint32_t> type_entries
                  = {{"bool", allow_bool},
                     {"uint", allow_unsigned_int},
                     {"int8", allow_int8},

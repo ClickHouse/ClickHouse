@@ -18,7 +18,7 @@ private:
     uint64_t query_duration_ms1 = 0, memory_usage1 = 0, query_duration_ms2 = 0, memory_usage2 = 0;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, other_steps_sucess = true, can_test_query_success = true, measure_performance = false;
+    bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
 
     String buf;
     std::unordered_set<uint32_t> found_tables;
@@ -28,7 +28,11 @@ private:
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc)
-        : fc(ffc), qfile(ffc.db_file_path / "query.data"), qfile_peer(ffc.db_file_path / "peer.data")
+        : fc(ffc)
+        , qfile(ffc.db_file_path / "query.data")
+        , qfile_peer(ffc.db_file_path / "peer.data")
+        , can_test_query_success(fc.compare_success_results)
+        , measure_performance(fc.measure_performance)
     {
         buf.reserve(4096);
     }

@@ -86,6 +86,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"load_existing_rows_count_for_old_parts", CHSetting(trueOrFalse, {}, false)},
     {"marks_compress_block_size",
      CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+    {"materialize_skip_indexes_on_merge", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_recalculate_only", CHSetting(trueOrFalse, {}, false)},
     {"max_bytes_to_merge_at_max_space_in_pool",
      CHSetting(

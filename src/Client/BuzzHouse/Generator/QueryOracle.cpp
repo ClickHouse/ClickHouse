@@ -20,7 +20,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
     const uint32_t combination = 0; //TODO fix this rg.nextLargeNumber() % 3; /* 0 WHERE, 1 HAVING, 2 WHERE + HAVING */
 
-    can_test_query_success = rg.nextBool();
+    can_test_query_success = fc.compare_success_results && rg.nextBool();
     gen.setAllowEngineUDF(!can_test_query_success);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
@@ -352,7 +352,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     Select * sel = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
     peer_query = pq;
-    measure_performance = peer_query == PeerQuery::ClickHouseOnly /* && rg.nextBool()*/;
+    measure_performance = fc.measure_performance && peer_query == PeerQuery::ClickHouseOnly /* && rg.nextBool()*/;
     const bool global_aggregate = !measure_performance && rg.nextSmallNumber() < 4;
 
     if (measure_performance)
@@ -583,7 +583,8 @@ void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     measure_performance = false;
-    first_success = other_steps_sucess = can_test_query_success = true;
+    first_success = other_steps_sucess = true;
+    can_test_query_success = fc.compare_success_results;
     query_duration_ms1 = memory_usage1 = query_duration_ms2 = memory_usage2 = 0;
 }
 
