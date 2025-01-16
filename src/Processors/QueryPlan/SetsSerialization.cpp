@@ -175,7 +175,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
                 auto type = decodeDataType(in);
                 auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
                 auto column = type->createColumn();
-                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
+                serialization->deserializeBinaryBulk(*column, in, 0, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }

@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -98,7 +100,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         }
 
         if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
+            continue;
 
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
@@ -115,9 +117,9 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     try
     {
         NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
+
         DB::fillMissingColumns(
-            res_columns, num_rows,
-            Nested::convertToSubcolumns(requested_columns),
+            res_columns, num_rows, Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
             partially_read_columns, storage_snapshot->metadata);
 
@@ -379,17 +381,18 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
 {
     const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
     return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {}, offset = {})",
         data_part_storage->getFullPath(),
         data_part_info_for_read->getTableName(),
         data_part_storage->getDiskName(),
         data_part_storage->getDiskType(),
         from_mark,
-        max_rows_to_read);
+        max_rows_to_read,
+        offset);
 }
 
 }

@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include "Common/Exception.h"
 
 namespace DB
 {
@@ -147,6 +148,7 @@ void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type,
     ColumnPtr & column,
     size_t rows_to_read,
+    size_t rows_offset,
     const InputStreamGetter & getter,
     ISerialization::SubstreamsCache & cache,
     std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns,
@@ -188,7 +190,8 @@ void MergeTreeReaderCompact::readData(
                 auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
                 ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], nullptr);
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_offset, rows_to_read, deserialize_settings,
+                                                                        deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], nullptr);
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
                 /// TODO: Avoid extra copying.
@@ -204,7 +207,8 @@ void MergeTreeReaderCompact::readData(
         else
         {
             auto serialization = getSerializationInPart(name_and_type);
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings,
+                                                                    deserialize_binary_bulk_state_map[name], nullptr);
         }
 
         cache[name] = column;
