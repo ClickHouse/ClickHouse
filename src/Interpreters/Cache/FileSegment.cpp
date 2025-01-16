@@ -321,8 +321,10 @@ void FileSegment::resetRemoteFileReader()
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
     auto lk = lock();
-    if (remote_file_reader && (download_state == State::DOWNLOADED
-        || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
+    if (remote_file_reader
+        && remote_file_reader.unique()
+        && (download_state == State::DOWNLOADED
+            || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION))
     {
         return std::move(remote_file_reader);
     }
