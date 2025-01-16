@@ -5,6 +5,7 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+#include "defines.h"
 
 #include <bit>
 #include <cmath>
@@ -12,6 +13,7 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+
 
 // NOLINTBEGIN(*)
 
@@ -31,6 +33,59 @@ namespace CityHash_v1_0_2 { struct uint128; }
 
 namespace wide
 {
+
+constexpr bool supportsBitInt256()
+{
+#if defined(__x86_64__)
+    return true;
+#else
+    return false;
+#endif
+}
+
+#if defined(__x86_64__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbit-int-extension"
+using BitInt256 = signed _BitInt(256);
+using BitUInt256 = unsigned _BitInt(256);
+#    pragma clang diagnostic pop
+
+struct Error {};
+
+template <typename Signed>
+struct ConstructBitInt256
+{
+    using Type = Error;
+};
+
+template <>
+struct ConstructBitInt256<signed>
+{
+    using Type = BitInt256;
+};
+
+template <>
+struct ConstructBitInt256<unsigned>
+{
+    using Type = BitUInt256;
+};
+
+template <size_t Bits, typename Signed>
+requires(Bits == 256)
+auto toBitInt256(const wide::integer<Bits, Signed> & n)
+{
+    using T = ConstructBitInt256<Signed>::Type;
+    return *reinterpret_cast<const T *>(&n);
+}
+
+template <typename T>
+requires(std::is_same_v<T, BitInt256> || std::is_same_v<T, BitUInt256>)
+auto fromBitInt256(const T & n)
+{
+    using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
+    return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
+}
+#endif
 
 template <typename T>
 struct IsWideInteger
@@ -184,6 +239,7 @@ struct integer<Bits, Signed>::_impl
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
+    static constexpr const bool could_use_bitint256 = supportsBitInt256() && Bits == 256;
 
     static_assert(Bits % base_bits == 0);
 
@@ -238,7 +294,7 @@ struct integer<Bits, Signed>::_impl
     }
 
     template <typename T>
-    __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
+    constexpr static auto NO_SANITIZE_UNDEFINED to_Integral(T f) noexcept
     {
         /// NOTE: this can be called with DB::Decimal, and in this case, result
         /// will be wrong
@@ -506,6 +562,18 @@ private:
     constexpr static integer<Bits, Signed>
     minus(const integer<Bits, Signed> & lhs, T rhs)
     {
+        if constexpr (could_use_bitint256)
+        {
+            auto new_lhs = toBitInt256(lhs);
+            if constexpr (!std::same_as<T, integer<Bits, signed>>)
+            {
+                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
+                return fromBitInt256(new_lhs - new_rhs);
+            }
+            else
+                return fromBitInt256(new_lhs - toBitInt256(rhs));
+        }
+
         constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
         constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
@@ -539,6 +607,18 @@ private:
     constexpr static integer<Bits, Signed>
     plus(const integer<Bits, Signed> & lhs, T rhs)
     {
+        if constexpr (could_use_bitint256)
+        {
+            auto new_lhs = toBitInt256(lhs);
+            if constexpr (!std::same_as<T, integer<Bits, signed>>)
+            {
+                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
+                return fromBitInt256(new_lhs + new_rhs);
+            }
+            else
+                return fromBitInt256(new_lhs + toBitInt256(rhs));
+        }
+
         constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
         constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
@@ -569,9 +649,20 @@ private:
     }
 
     template <typename T>
-    constexpr static integer<Bits, Signed>
-    multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    constexpr static integer<Bits, Signed> NO_SANITIZE_UNDEFINED multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
+        if constexpr (could_use_bitint256)
+        {
+            auto new_lhs = toBitInt256(lhs);
+            if constexpr (!std::same_as<T, integer<Bits, signed>>)
+            {
+                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
+                return fromBitInt256(new_lhs * new_rhs);
+            }
+            else
+                return fromBitInt256(new_lhs * toBitInt256(rhs));
+        }
+
         if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
             /// @sa https://github.com/abseil/abseil-cpp/blob/master/absl/numeric/int128.h
@@ -883,6 +974,19 @@ public:
     {
         static_assert(std::is_unsigned_v<Signed>);
 
+        if (is_zero(denominator))
+            throwError("Division by zero");
+
+        if constexpr (could_use_bitint256)
+        {
+            auto new_numerator = toBitInt256(numerator);
+            auto new_denominator = toBitInt256(denominator);
+            auto new_quotient = new_numerator / new_denominator;
+            auto new_remainder = new_numerator % new_denominator;
+            numerator = fromBitInt256(new_remainder);
+            return fromBitInt256(new_quotient);
+        }
+
         if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
@@ -901,9 +1005,6 @@ public:
 
             return res;
         }
-
-        if (is_zero(denominator))
-            throwError("Division by zero");
 
         integer<Bits2, unsigned> x = 1;
         integer<Bits2, unsigned> quotient = 0;
@@ -1288,7 +1389,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-constexpr integer<Bits, Signed>::operator double() const noexcept
+constexpr NO_SANITIZE_UNDEFINED integer<Bits, Signed>::operator double() const noexcept
 {
     return static_cast<double>(static_cast<long double>(*this));
 }
