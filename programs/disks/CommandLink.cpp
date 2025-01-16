@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include "ICommand.h"
 
 namespace DB
@@ -25,6 +26,12 @@ public:
         const String & path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
         const String & path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
 
+        LOG_INFO(
+            &Poco::Logger::get("CommandLink"),
+            "Creating hard link from '{}' to '{}' at disk '{}'",
+            path_from,
+            path_to,
+            disk.getDisk()->getName());
         disk.getDisk()->createHardLink(path_from, path_to);
     }
 };
