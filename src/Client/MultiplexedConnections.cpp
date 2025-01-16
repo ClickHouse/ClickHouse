@@ -100,6 +100,21 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     }
 }
 
+void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendQueryPlan(query_plan);
+    }
+}
+
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -194,6 +209,7 @@ void MultiplexedConnections::sendQuery(
 
     sent_query = true;
 }
+
 
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {

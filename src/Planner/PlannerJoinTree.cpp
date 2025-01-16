@@ -50,6 +50,8 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/StorageDummy.h>
@@ -807,7 +809,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         /// Apply trivial_count optimization if possible
-        bool is_trivial_count_applied = !select_query_options.only_analyze && is_single_table_expression
+        bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates && settings[Setting::additional_table_filters].value.empty()
             && applyTrivialCountIfPossible(
                 query_plan,
@@ -829,7 +831,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
                 const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
 
-                if (prewhere_actions)
+                std::vector<std::pair<FilterDAGInfo, std::string>> where_filters;
+
+                if (prewhere_actions && select_query_options.build_logical_plan)
+                {
+                    where_filters.emplace_back(
+                        FilterDAGInfo{
+                            prewhere_actions->clone(),
+                            prewhere_actions->getOutputs().at(0)->result_name,
+                            true},
+                        "Prewhere");
+                }
+                else if (prewhere_actions)
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();
@@ -842,7 +855,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 const auto & columns_names = table_expression_data.getColumnNames();
 
-                std::vector<std::pair<FilterDAGInfo, std::string>> where_filters;
                 const auto add_filter = [&](FilterDAGInfo & filter_info, std::string description)
                 {
                     bool is_final = table_expression_query_info.table_expression_modifiers
@@ -851,7 +863,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
 
                     auto supported_prewhere_columns = storage->supportedPrewhereColumns();
-                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
+                    if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
                         && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
@@ -911,40 +923,77 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
                     add_filter(*additional_filters_info, "additional filter");
 
-                from_stage = storage->getQueryProcessingStage(
-                    query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+                if (!select_query_options.build_logical_plan)
+                    from_stage = storage->getQueryProcessingStage(
+                        query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
-                /// It is just a safety check needed until we have a proper sending plan to replicas.
-                /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
-                /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
-                    = query_context->canUseParallelReplicasOnFollower()
-                    && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
-                if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
+                if (select_query_options.build_logical_plan)
                 {
-                    auto mutable_context = Context::createCopy(query_context);
-                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                    storage->read(
-                        query_plan,
-                        columns_names,
-                        storage_snapshot,
-                        table_expression_query_info,
-                        std::move(mutable_context),
-                        from_stage,
-                        max_block_size,
-                        max_streams);
+                    auto sample_block = storage_snapshot->getSampleBlockForColumns(columns_names);
+
+                    if (table_node)
+                    {
+                        String table_name;
+                        if (!table_node->getTemporaryTableName().empty())
+                            table_name = table_node->getTemporaryTableName();
+                        else
+                            table_name = table_node->getStorageID().getFullTableName();
+
+                        auto reading_from_table = std::make_unique<ReadFromTableStep>(
+                            sample_block,
+                            table_name,
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+
+                        query_plan.addStep(std::move(reading_from_table));
+                    }
+                    else if (table_function_node)
+                    {
+                        auto table_function_ast = table_function_node->toAST();
+                        table_function_ast->setAlias({});
+                        auto table_function_serialized_ast = queryToString(table_function_ast);
+
+                        auto reading_from_table_function = std::make_unique<ReadFromTableFunctionStep>(
+                            sample_block,
+                            table_function_serialized_ast,
+                            table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+
+                        query_plan.addStep(std::move(reading_from_table_function));
+                    }
                 }
                 else
                 {
-                    storage->read(
-                        query_plan,
-                        columns_names,
-                        storage_snapshot,
-                        table_expression_query_info,
-                        query_context,
-                        from_stage,
-                        max_block_size,
-                        max_streams);
+                    /// It is just a safety check needed until we have a proper sending plan to replicas.
+                    /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
+                    /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                    const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
+                        = query_context->canUseParallelReplicasOnFollower()
+                        && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+                    if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
+                    {
+                        auto mutable_context = Context::createCopy(query_context);
+                        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        storage->read(
+                            query_plan,
+                            columns_names,
+                            storage_snapshot,
+                            table_expression_query_info,
+                            std::move(mutable_context),
+                            from_stage,
+                            max_block_size,
+                            max_streams);
+                    }
+                    else
+                    {
+                        storage->read(
+                            query_plan,
+                            columns_names,
+                            storage_snapshot,
+                            table_expression_query_info,
+                            query_context,
+                            from_stage,
+                            max_block_size,
+                            max_streams);
+                    }
                 }
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
@@ -959,7 +1008,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 };
 
                 /// query_plan can be empty if there is nothing to read
-                if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
+                if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
                 {
                     auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
                     {
@@ -1210,17 +1259,31 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         for (auto & output_node : rename_actions_dag.getOutputs())
         {
-            const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
-            if (!column_identifier)
-                continue;
-
-            updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
+            if (select_query_options.ignore_rename_columns)
+            {
+                const auto * column_name = table_expression_data.getColumnNameOrNull(output_node->result_name);
+                if (!column_name)
+                    updated_actions_dag_outputs.push_back(output_node);
+                else
+                    updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_name));
+            }
+            else
+            {
+                const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
+                if (!column_identifier)
+                    updated_actions_dag_outputs.push_back(output_node);
+                else
+                    updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
+            }
         }
 
         rename_actions_dag.getOutputs() = std::move(updated_actions_dag_outputs);
 
         auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_actions_dag));
-        rename_step->setStepDescription("Change column names to column identifiers");
+        rename_step->setStepDescription(select_query_options.ignore_rename_columns
+            ? "Change column identifiers to column names"
+            : "Change column names to column identifiers");
+
         query_plan.addStep(std::move(rename_step));
     }
     else
