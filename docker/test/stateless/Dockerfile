@@ -78,6 +78,12 @@ RUN arch=${TARGETARCH:-amd64} \
     && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o ./mc \
     && chmod +x ./mc ./minio
 
+# Donwload mongosh
+RUN wget -qO- https://www.mongodb.org/static/pgp/server-7.0.asc | sudo tee /etc/apt/trusted.gpg.d/server-7.0.asc \
+    && echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    && sudo apt-get update \
+    && sudo apt-get install -y mongodb-mongosh
+
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
