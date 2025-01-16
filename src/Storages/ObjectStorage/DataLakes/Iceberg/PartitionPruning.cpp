@@ -94,31 +94,27 @@ Range getPartitionRange(
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform: {}", partition_transform);
     }
-    auto column = dynamic_cast<const ColumnNullable *>(partition_column.get())->getNestedColumnPtr();
     if (partition_transform == Iceberg::PartitionTransform::Identity)
     {
-        Field entry = (*column.get())[index];
+        Field entry = (*partition_column.get())[index];
         return Range{entry, true, entry, true};
     }
-    const auto [nested_data_type, value] = [&]() -> std::pair<DataTypePtr, Int32>
+    if (partition_column->getDataType() != TypeIndex::Int32)
     {
-        if (column->getDataType() == TypeIndex::Int32)
-        {
-            const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
-            Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
-            return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
-        }
-        else if (column->getDataType() == TypeIndex::Date && (partition_transform == Iceberg::PartitionTransform::Day))
-        {
-            const auto * casted_innner_column = assert_cast<const ColumnDate *>(column.get());
-            Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
-            return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", column->getFamilyName());
-        }
-    }();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", partition_column->getFamilyName());
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("PartitionPruning"), "Column data type: {}", column_data_type->getName());
+
+    auto nested_data_type = column_data_type;
+    while (nested_data_type->isNullable())
+        nested_data_type = removeNullable(nested_data_type);
+
+    LOG_DEBUG(&Poco::Logger::get("PartitionPruning"), "Nested data type: {}", nested_data_type->getName());
+
+    const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(partition_column.get());
+    Int32 value = static_cast<Int32>(casted_innner_column->getInt(index));
+
     if (WhichDataType(nested_data_type).isDate() && (partition_transform != Iceberg::PartitionTransform::Hour))
     {
         const UInt16 begin_range_value = getDay(value, partition_transform);

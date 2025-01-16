@@ -185,7 +185,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         }
 
         partition_column_infos.emplace_back(transform, source_id);
-        partition_columns.push_back(big_partition_tuple->getColumnPtr(i));
+        partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
     }
 
     for (size_t i = 0; i < data_file_tuple_column->size(); ++i)

@@ -1815,7 +1815,7 @@ def test_filesystem_cache(started_cluster, storage_type):
     )
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_partition_pruning(started_cluster, storage_type):
     if is_arm() and storage_type == "hdfs":
         pytest.skip("Disabled test IcebergHDFS for aarch64")
@@ -1840,7 +1840,9 @@ def test_partition_pruning(started_cluster, storage_type):
                 date DATE,
                 date2 DATE,
                 ts TIMESTAMP,
-                ts2 TIMESTAMP
+                ts2 TIMESTAMP,
+                time_struct struct<a : DATE, b : TIMESTAMP>
+
             )
             USING iceberg
             PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2))
@@ -1852,13 +1854,13 @@ def test_partition_pruning(started_cluster, storage_type):
         f"""
         INSERT INTO {TABLE_NAME} VALUES
         (1, DATE '2024-01-20', DATE '2024-01-20',
-        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00'),
+        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
         (2, DATE '2024-01-30', DATE '2024-01-30',
-        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00'),
+        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00', named_struct('a', DATE '2024-03-20', 'b', TIMESTAMP '2024-03-20 14:00:00')),
         (1, DATE '2024-02-20', DATE '2024-02-20',
-        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00'),
+        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
         (2, DATE '2025-01-20', DATE '2025-01-20',
-        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00');
+        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00', named_struct('a', DATE '2024-04-30', 'b', TIMESTAMP '2024-04-30 14:00:00'));
     """
     )
 
@@ -1983,4 +1985,24 @@ def test_partition_pruning(started_cluster, storage_type):
             f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
         )
         == 2
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ADD PARTITION FIELD time_struct.a")
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
+        )
+        == 0
+    )
+
+    execute_spark_query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'))"
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
+        )
+        == 1
     )

@@ -219,7 +219,8 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
                 element_types.push_back(getFieldType(field, "type", required, current_full_name, true));
-                clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}];
+                clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}]
+                    = NameAndTypePair{current_full_name, element_types.back()};
             }
             else
             {
