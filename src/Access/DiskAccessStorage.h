@@ -69,8 +69,6 @@ private:
 
         std::shared_ptr<IAccessEntity> clone() const override { return std::make_shared<EntityOnDisk>(name, type); }
 
-        /// TYPE is required to throw exceptions from base class.
-        static constexpr const auto TYPE = AccessEntityType::USER;
         AccessEntityType getType() const override { return type; }
     protected:
         bool equal(const IAccessEntity & other) const override
