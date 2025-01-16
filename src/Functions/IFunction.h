@@ -298,6 +298,7 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
+        bool is_identity = false;    /// true if the function does not change the value anyhow (e.g. materialize)
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
