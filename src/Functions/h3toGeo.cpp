@@ -14,10 +14,17 @@
 #include <Common/typeid_cast.h>
 
 #include <h3api.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+namespace Setting 
+{
+    extern const SettingsBool use_legacy_h3togeo_order;
+}
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -34,7 +41,12 @@ class FunctionH3ToGeo : public IFunction
 public:
     static constexpr auto name = "h3ToGeo";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeo>(); }
+    const bool use_legacy_h3togeo_order;
+    explicit FunctionH3ToGeo(ContextPtr context)
+        : use_legacy_h3togeo_order(context->getSettingsRef()[Setting::use_legacy_h3togeo_order]) // Initialize constant
+    {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeo>(context); }
 
     std::string getName() const override { return name; }
 
@@ -92,8 +104,17 @@ public:
         }
 
         MutableColumns columns;
-        columns.emplace_back(std::move(longitude));
-        columns.emplace_back(std::move(latitude));
+        if (use_legacy_h3togeo_order) 
+        {
+            columns.emplace_back(std::move(longitude));
+            columns.emplace_back(std::move(latitude));
+        }
+        else
+        {
+            columns.emplace_back(std::move(latitude));
+            columns.emplace_back(std::move(longitude));
+        }
+        
         return ColumnTuple::create(std::move(columns));
     }
 };
