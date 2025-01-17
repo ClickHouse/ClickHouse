@@ -7,6 +7,7 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include "Core/Field.h"
 #include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>
@@ -170,7 +171,8 @@ private:
             AttributeContainerShardsType<IPv4>,
             AttributeContainerShardsType<IPv6>,
             AttributeContainerShardsType<StringRef>,
-            AttributeContainerShardsType<Array>>
+            AttributeContainerShardsType<Array>,
+            AttributeContainerShardsType<Map>>
             containers;
 
         /// One container per shard

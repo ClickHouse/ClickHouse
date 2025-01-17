@@ -9,6 +9,7 @@
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
+#include "Core/Field.h"
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 
@@ -622,7 +623,8 @@ private:
             ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>,
-            ContainerType<Field>> attribute_container;
+            ContainerType<Field>,
+            ContainerType<Map>> attribute_container;
     };
 
     template <typename ValueType, typename ValueSetter>

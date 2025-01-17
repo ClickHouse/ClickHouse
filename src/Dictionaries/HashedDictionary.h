@@ -206,7 +206,8 @@ private:
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,
             CollectionsHolder<StringRef>,
-            CollectionsHolder<Array>>
+            CollectionsHolder<Array>,
+            CollectionsHolder<Map>>
             containers;
     };
 

@@ -36,6 +36,8 @@ enum class AttributeUnderlyingType : TypeIndexUnderlying
 
     map_item(UUID), map_item(String), map_item(Array),
 
+    map_item(Map),
+
     map_item(IPv4), map_item(IPv6)
 };
 

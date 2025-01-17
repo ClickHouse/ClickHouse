@@ -10,6 +10,7 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
 
+#include "Core/Field.h"
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -140,7 +141,8 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<Array>,
+            ContainerType<Map>>
             container;
     };
 

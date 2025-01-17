@@ -178,7 +178,8 @@ private:
             AttributeContainerType<IPv4>,
             AttributeContainerType<IPv6>,
             AttributeContainerType<StringRef>,
-            AttributeContainerType<Array>>
+            AttributeContainerType<Array>,
+            AttributeContainerType<Map>>
             container;
 
         std::optional<std::vector<bool>> is_value_nullable;

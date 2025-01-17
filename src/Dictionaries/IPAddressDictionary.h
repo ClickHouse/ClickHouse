@@ -10,6 +10,7 @@
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
 #include <base/StringRef.h>
+#include "Core/Field.h"
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -127,7 +128,8 @@ private:
             IPv4,
             IPv6,
             String,
-            Array>
+            Array,
+            Map>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -153,7 +155,8 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<Array>,
+            ContainerType<Map>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };

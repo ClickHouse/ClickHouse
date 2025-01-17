@@ -2,6 +2,7 @@
 
 #include <Core/Types_fwd.h>
 
+
 namespace DB
 {
 
@@ -112,6 +113,9 @@ TYPEID_MAP(String)
 
 struct Array;
 TYPEID_MAP(Array)
+
+struct Map;
+TYPEID_MAP(Map)
 
 #undef TYPEID_MAP
 
