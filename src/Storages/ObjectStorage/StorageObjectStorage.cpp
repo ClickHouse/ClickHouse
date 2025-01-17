@@ -340,7 +340,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        getName(),
+        fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
         column_names,
         getVirtualsList(),
         query_info,
