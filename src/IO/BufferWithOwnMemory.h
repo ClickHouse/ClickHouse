@@ -2,9 +2,8 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Common/ProfileEvents.h>
 #include <Common/Allocator.h>
-#include <Common/GWPAsan.h>
+#include <Common/ProfileEvents.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>

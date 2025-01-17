@@ -478,7 +478,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -486,7 +486,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #endif
                 }
             }

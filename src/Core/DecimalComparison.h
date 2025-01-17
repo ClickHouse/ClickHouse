@@ -4,7 +4,6 @@
 #include <Core/Block.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>
-#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
