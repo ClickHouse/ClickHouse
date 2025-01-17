@@ -177,21 +177,14 @@ def test_size_adjustment(started_cluster):
     assert initial_cache_size > 50000000
 
     # Do a query that uses lots of memory (and fails), check that the cache was shrunk to ~page_cache_min_size.
-    query_id = uuid.uuid4().hex
     err = node.query_and_get_error(
-        "select groupArray(number) from numbers(10000000000)",
-        query_id=query_id,
+        "select groupArray(number) from numbers(10000000000)"
     )
     assert "MEMORY_LIMIT_EXCEEDED" in err
-    node.query("system flush logs; system reload asynchronous metrics;")
-    assert (
-        int(
-            node.query(
-                f"select memory_usage from system.query_log where query_id='{query_id}' and type = 'ExceptionWhileProcessing'"
-            )
-        )
-        >= 200000000
-    )
+
+    # (There used to be a check here that system.query_log shows high enough memory usage for the previous
+    #  query, but it was flaky because log flush sometimes hits memory limit and fails.)
+
     assert (
         int(
             node.query(
