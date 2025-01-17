@@ -1,5 +1,4 @@
 import logging
-import uuid
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -846,14 +845,12 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
         cursor.execute(f"INSERT INTO {table} SELECT 1")
 
     # Try to do some SQL injection to remove the original table
-    table = f"test_parameters_validation_for_postgresql_function_{uuid.uuid4().hex[:8]}"
+    table = "test_parameters_validation_for_postgresql_function"
     _create_and_fill_table(table)
-    try:
-        node1.query(
-            f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', 'mysecretpassword')"
-        )
-    except Exception:
-        pass
+    error = node1.query_and_get_error(
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', 'mysecretpassword')"
+    )
+    assert "PostgreSQL table whatever" in error and "does not exist" in error
 
     result = node1.query(
         f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}', 'postgres', 'mysecretpassword')"
