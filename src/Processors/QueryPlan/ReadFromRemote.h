@@ -43,7 +43,9 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
+
+    bool hasSerializedPlan() const;
 
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
@@ -93,7 +95,7 @@ public:
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
 
     void enableMemoryBoundMerging();
-    void enforceAggregationInOrder();
+    void enforceAggregationInOrder(const SortDescription & sort_description);
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);

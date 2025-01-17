@@ -60,6 +60,7 @@ struct ExternalTableData
 using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
 using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
+class QueryPlan;
 
 class IServerConnection : boost::noncopyable
 {
@@ -102,6 +103,8 @@ public:
         bool with_pending_data,
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) = 0;
+
+    virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
     virtual void sendCancel() = 0;
 

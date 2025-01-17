@@ -56,6 +56,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -655,7 +656,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+            std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->plan_and_sets, query_state->query_context, QueryFlags{}, query_state->stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -981,6 +982,9 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 if (state.skipping_data)
                     return processUnexpectedData();
                 return processData(state, packet_type == Protocol::Client::Scalar);
+
+            case Protocol::Client::QueryPlan:
+                return receiveQueryPlan(state);
 
             case Protocol::Client::Ping:
                 writeVarUInt(Protocol::Server::Pong, *out);
@@ -1882,6 +1886,11 @@ void TCPHandler::sendHello()
             session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
     }
 
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
+    {
+        writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION, *out);
+    }
+
     out->next();
 }
 
@@ -2218,6 +2227,21 @@ void TCPHandler::processUnexpectedQuery()
         skip_settings.read(*in, settings_format);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
+}
+
+bool TCPHandler::receiveQueryPlan(QueryState & state)
+{
+    bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
+    auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
+
+    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    LOG_TRACE(log, "Received query plan");
+
+    if (!state.skipping_data && unexpected_packet)
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+    state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
+    return true;
 }
 
 bool TCPHandler::processData(QueryState & state, bool scalar)
