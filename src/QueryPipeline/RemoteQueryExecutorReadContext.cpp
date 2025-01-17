@@ -1,5 +1,3 @@
-#include "Common/StackTrace.h"
-#include "Common/logger_useful.h"
 #if defined(OS_LINUX)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -78,8 +76,6 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
 void RemoteQueryExecutorReadContext::processAsyncEvent(
     int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
-
     connection_fd = fd;
     epoll.add(connection_fd, events);
     timeout = socket_timeout;
