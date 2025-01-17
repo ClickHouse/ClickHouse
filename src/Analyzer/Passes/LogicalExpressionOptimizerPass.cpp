@@ -1067,11 +1067,13 @@ private:
         };
 
         /// Step 1: identify constants, and store comparing pairs in hash
-        QueryTreeNodes greater_constants, less_constants;
+        QueryTreeNodes greater_constants;
+        QueryTreeNodes less_constants;
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
         using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, CompareType>>;
         using ComparePairs = std::unordered_map<QueryTreeNodePtr, QueryTreeNodeWithEquals>;
-        ComparePairs greater_pairs, less_pairs;
+        ComparePairs greater_pairs;
+        ComparePairs less_pairs;
 
         for (const auto & argument : function_node.getArguments())
         {
