@@ -2,14 +2,22 @@
 title : TabSeparatedRaw
 slug : /en/interfaces/formats/TabSeparatedRaw
 keywords : [TabSeparatedRaw]
+input_format: true
+output_format: true
+alias: ['TSVRaw', 'Raw']
 ---
+
+| Input | Output | Alias           |
+|-------|--------|-----------------|
+| ✔     | ✔      | `TSVRaw`, `Raw` |
 
 ## Description
 
-Differs from `TabSeparated` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
+Differs from the [`TabSeparated`](/en/interfaces/formats/TabSeparated) format in that rows are written without escaping.
 
-This format is also available under the names `TSVRaw`, `Raw`.
+:::note
+When parsing with this format, tabs or line-feeds are not allowed in each field.
+:::
 
 ## Example Usage
 
