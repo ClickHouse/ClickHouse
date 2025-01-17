@@ -654,7 +654,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         instance.query(
             f"""
             SELECT * FROM {table_function_expr}
-            SETTINGS object_storage_cluster_function_cluster='cluster_simple'
+            SETTINGS object_storage_cluster='cluster_simple'
             """,
             query_id=query_id_cluster_alt_syntax,
         )

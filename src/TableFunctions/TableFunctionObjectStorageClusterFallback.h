@@ -8,9 +8,9 @@ namespace DB
 /**
 * Class implementing s3/hdfs/azureBlobStorage(...) table functions,
 * which allow to use simple or distributed function variant based on settings.
-* If setting `object_storage_cluster_function_cluster` is empty,
+* If setting `object_storage_cluster` is empty,
 * simple single-host variant is used, if setting not empty, cluster variant is used.
-* `SELECT * FROM s3('s3://...', ...) SETTINGS object_storage_cluster_function_cluster='cluster'`
+* `SELECT * FROM s3('s3://...', ...) SETTINGS object_storage_cluster='cluster'`
 * is equal to
 * `SELECT * FROM s3Cluster('cluster', 's3://...', ...)`
 */

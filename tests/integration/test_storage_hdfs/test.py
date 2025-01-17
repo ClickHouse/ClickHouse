@@ -571,7 +571,7 @@ def test_hdfsCluster(started_cluster):
     query_id_cluster_alt_syntax = str(uuid.uuid4())
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id",
-        settings={"object_storage_cluster_function_cluster":"test_cluster_two_shards"},
+        settings={"object_storage_cluster":"test_cluster_two_shards"},
         query_id=query_id_cluster_alt_syntax,
     )
     assert actual == expected

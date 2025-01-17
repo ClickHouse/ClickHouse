@@ -71,8 +71,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"http_response_headers", "", "", "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
-            {"object_storage_cluster_function_cluster", "", "", "New setting"},
-            {"object_storage_cluster_function_max_hosts", 0, 0, "New setting"},
+            {"object_storage_cluster", "", "", "New setting"},
+            {"object_storage_max_nodes", 0, 0, "New setting"},
         }
     },
     {"24.11",

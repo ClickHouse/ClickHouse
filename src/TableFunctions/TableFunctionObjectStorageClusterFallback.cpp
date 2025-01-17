@@ -9,7 +9,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsString object_storage_cluster_function_cluster;
+    extern const SettingsString object_storage_cluster;
 }
 
 namespace ErrorCodes
@@ -85,11 +85,11 @@ void TableFunctionObjectStorageClusterFallback<Definition, Base>::parseArguments
 
     const auto & settings = context->getSettingsRef();
 
-    is_cluster_function = !settings[Setting::object_storage_cluster_function_cluster].value.empty();
+    is_cluster_function = !settings[Setting::object_storage_cluster].value.empty();
 
     if (is_cluster_function)
     {
-        ASTPtr cluster_name_arg = std::make_shared<ASTLiteral>(settings[Setting::object_storage_cluster_function_cluster].value);
+        ASTPtr cluster_name_arg = std::make_shared<ASTLiteral>(settings[Setting::object_storage_cluster].value);
         args.insert(args.begin(), cluster_name_arg);
         BaseCluster::parseArgumentsImpl(args, context);
         args.erase(args.begin());
@@ -159,7 +159,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
             .description=R"(The table function can be used to read the data stored on S3 in parallel for many nodes in a specified cluster or from single node.)",
             .examples{
                 {"s3", "SELECT * FROM s3(url, format, structure)", ""},
-                {"s3", "SELECT * FROM s3(url, format, structure) SETTINGS object_storage_cluster_function_cluster='cluster'", ""}
+                {"s3", "SELECT * FROM s3(url, format, structure) SETTINGS object_storage_cluster='cluster'", ""}
             },
         },
         .allow_readonly = false
@@ -182,7 +182,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                     "azureBlobStorage",
                     "SELECT * FROM azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
                     "[account_name, account_key, format, compression, structure]) "
-                    "SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },
@@ -204,7 +204,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                 {
                     "hdfs",
                     "SELECT * FROM hdfs(url, format, compression, structure]) "
-                    "SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },
@@ -226,7 +226,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                 {
                     "icebergS3",
                     "SELECT * FROM icebergS3(url, access_key_id, secret_access_key) "
-                    "SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },
@@ -248,7 +248,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                 {
                     "icebergAzure",
                     "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key) "
-                    "SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },
@@ -269,7 +269,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                 },
                 {
                     "icebergHDFS",
-                    "SELECT * FROM icebergHDFS(url) SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SELECT * FROM icebergHDFS(url) SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },
@@ -291,7 +291,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                 {
                     "deltaLake",
                     "SELECT * FROM deltaLake(url, access_key_id, secret_access_key) "
-                    "SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },
@@ -312,7 +312,7 @@ void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & fa
                 },
                 {
                     "hudi",
-                    "SELECT * FROM hudi(url, access_key_id, secret_access_key) SETTINGS object_storage_cluster_function_cluster='cluster'", ""
+                    "SELECT * FROM hudi(url, access_key_id, secret_access_key) SETTINGS object_storage_cluster='cluster'", ""
                 },
             }
         },

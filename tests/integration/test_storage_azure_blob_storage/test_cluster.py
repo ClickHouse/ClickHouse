@@ -100,7 +100,7 @@ def test_select_all(cluster):
         f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
         f"'auto') "
-        f"SETTINGS object_storage_cluster_function_cluster='simple_cluster'",
+        f"SETTINGS object_storage_cluster='simple_cluster'",
         query_id=query_id_distributed_alt_syntax,
     )
     print(distributed_azure_alt_syntax)
@@ -169,7 +169,7 @@ def test_count(cluster):
         f"SELECT count(*) from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_count.csv', "
         f"'devstoreaccount1','Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
         f"'auto', 'key UInt64')"
-        f"SETTINGS object_storage_cluster_function_cluster='simple_cluster'",
+        f"SETTINGS object_storage_cluster='simple_cluster'",
     )
     print(distributed_azure_alt_syntax)
     assert TSV(pure_azure) == TSV(distributed_azure)
