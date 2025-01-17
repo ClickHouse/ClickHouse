@@ -226,7 +226,7 @@ private:
     size_t result_bytes = 0;
 
     UInt64 progress_write_frequency_us = 0;
-    UInt64 prev_progress_write_ns = 0;
+    std::atomic<UInt64> prev_progress_write_ns = 0;
 };
 
 }
