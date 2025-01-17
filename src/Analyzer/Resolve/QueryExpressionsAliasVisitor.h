@@ -101,8 +101,18 @@ private:
         case QueryTreeNodeType::IDENTIFIER:
             {
                 auto [_1, inserted_expression] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
-                auto [_2, inserted_lambda] = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node);
-                auto [_3, inserted_table_expression] = aliases.alias_name_to_table_expression_node.emplace(alias, cloned_alias_node);
+                bool inserted_lambda           = true; // Avoid adding to duplicating aliases if identifier is compound.
+                bool inserted_table_expression = true; // Avoid adding to duplicating aliases if identifier is compound.
+
+                // Alias to compound identifier cannot reference table expression or lambda.
+                // Example: SELECT x.b as x FROM (SELECT 1 as a, 2 as b) as x
+                auto * identifier_node = node->as<IdentifierNode>();
+                if (identifier_node->getIdentifier().isShort())
+                {
+                    inserted_lambda = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node).second;
+                    inserted_table_expression = aliases.alias_name_to_table_expression_node.emplace(alias, cloned_alias_node).second;
+                }
+
                 if (!inserted_expression || !inserted_lambda || !inserted_table_expression)
                     addDuplicatingAlias(cloned_alias_node);
                 break;
