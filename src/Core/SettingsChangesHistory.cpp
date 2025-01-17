@@ -98,7 +98,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
-            {"object_storage_cluster_function_cluster", "", "", "A new setting"},
+            {"object_storage_cluster", "", "", "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
