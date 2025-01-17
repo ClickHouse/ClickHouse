@@ -15,7 +15,7 @@ def fill_nodes(nodes, shard):
                 CREATE DATABASE test;
 
                 CREATE TABLE test.test_table(date Date, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date) 
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date)
                 SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5,
                 cleanup_delay_period=0, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
             """.format(
@@ -129,13 +129,12 @@ def test_metrics_storage_buffer_size(start_cluster):
         )
         == "1\n"
     )
-    # By the way, this metric does not count the LowCardinality's dictionary size.
-    assert (
+    bytes = int(
         node1.query(
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
-        == "1\n"
     )
+    assert 24 <= bytes <= 25
 
     node1.query("INSERT INTO test.buffer_table VALUES('hello');")
     assert (
@@ -144,12 +143,12 @@ def test_metrics_storage_buffer_size(start_cluster):
         )
         == "2\n"
     )
-    assert (
+    bytes = int(
         node1.query(
             "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
         )
-        == "2\n"
     )
+    assert 24 <= bytes <= 25
 
     # flush
     node1.query("OPTIMIZE TABLE test.buffer_table")
@@ -165,6 +164,9 @@ def test_metrics_storage_buffer_size(start_cluster):
         )
         == "0\n"
     )
+
+    node1.query("DROP TABLE test.test_mem_table")
+    node1.query("DROP TABLE test.buffer_table")
 
 
 def test_attach_without_zk_incr_readonly_metric(start_cluster):
