@@ -447,7 +447,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         if (!table_metadata.last_processed_path.empty())
         {
-            std::atomic<size_t> noop = false;
+            std::atomic<size_t> noop = 0;
             ObjectStorageQueueOrderedFileMetadata(
                 zookeeper_path,
                 table_metadata.last_processed_path,
