@@ -1,3 +1,5 @@
+#define PRINT_ASSEMBLY 1
+
 #include "CHJIT.h"
 
 #if USE_EMBEDDED_COMPILER
@@ -27,37 +29,6 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
-
-#if defined(__x86_64__)
-
-#include <llvm/Transforms/Scalar/InstSimplifyPass.h>
-#include <llvm/Transforms/Scalar/LoopRotation.h>
-#include <llvm/Transforms/Scalar/LoopReroll.h>
-#include <llvm/Transforms/Vectorize/LoopVectorize.h>
-#include <llvm/Transforms/Vectorize/VectorCombine.h>
-#include <llvm/Transforms/Vectorize/LoadStoreVectorizer.h>
-#include <llvm/Transforms/Utils/Mem2Reg.h>
-#include <llvm/Transforms/Scalar/ADCE.h>
-#include <llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h>
-#include <llvm/Transforms/Scalar/Reassociate.h>
-#include <llvm/Transforms/Scalar/GVN.h>
-#include <llvm/Transforms/Utils/LoopSimplify.h>
-#include <llvm/Transforms/Scalar/SimplifyCFG.h>
-#include <llvm/Transforms/Scalar/Sink.h>
-#include <llvm/Transforms/Scalar/TailRecursionElimination.h>
-#include <llvm/Transforms/Vectorize/SLPVectorizer.h>
-#include <llvm/Transforms/Scalar/SROA.h>
-#include <llvm/Transforms/Scalar/LoopUnrollPass.h>
-#include <llvm/Transforms/Scalar/LICM.h>
-#include <llvm/Transforms/Scalar/SCCP.h>
-#include <llvm/Transforms/Scalar/IndVarSimplify.h>
-#include <llvm/Transforms/IPO/PartialInlining.h>
-#include <llvm/Transforms/IPO/DeadArgumentElimination.h>
-#include <llvm/Transforms/IPO/SCCP.h>
-#include <llvm/Transforms/IPO/MergeFunctions.h>
-#include <llvm/Transforms/IPO/GlobalOpt.h>
-
-#endif
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
@@ -289,9 +260,18 @@ public:
 
     void print(llvm::Module & module)
     {
+        //static int index = 0;
+        //std::error_code errorCode;
+        //llvm::raw_fd_ostream outputFileStream("/tmp/18.s" + std::to_string(index), errorCode);
+        //++index;
+        //if (errorCode) {
+        //    throw std::runtime_error("Failed to open output file: " + errorCode.message());
+        //}
+
         llvm::legacy::PassManager pass_manager;
         target_machine.Options.MCOptions.AsmVerbose = true;
-        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::AssemblyFile))
+        //if (target_machine.addPassesToEmitFile(pass_manager, outputFileStream, nullptr, llvm::CodeGenFileType::AssemblyFile))
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
         pass_manager.run(module);
@@ -430,7 +410,8 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
-    runOptimizationPassesOnModule(*module);
+    auto target_analysis = machine->getTargetIRAnalysis();
+    runOptimizationPassesOnModule(*module, std::move(target_analysis));
 
 #ifdef PRINT_ASSEMBLY
     AssemblyPrinter assembly_printer(*machine);
@@ -514,106 +495,58 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
     return mangled_name;
 }
 
-void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
+#ifndef NDEBUG
+
+static std::string DumpModuleIR(const llvm::Module& module)
 {
+    std::string ir;
+    llvm::raw_string_ostream stream(ir);
+    module.print(stream, nullptr);
+    return ir;
+}
+
+#endif
+
+void CHJIT::runOptimizationPassesOnModule(llvm::Module & module, llvm::TargetIRAnalysis target_analysis) const
+{
+    /// llvm::DebugFlag = true; // comment out to enable debug output
+    const char *argv[] = {
+        "CH-JIT",
+        "-extra-vectorizer-passes", // Enable ExtraVectorizerPasses
+    };
+    int argc = sizeof(argv) / sizeof(argv[0]);
+    llvm::cl::ParseCommandLineOptions(argc, argv, "CH-JIT");
+
     llvm::LoopAnalysisManager lam;
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
-    //llvm::MachineFunctionAnalysisManager mfm;
-
+    fam.registerPass([&] { return target_analysis; });
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
-    pto.MergeFunctions = true;
-    //pto.LoopInterleaving = true;
-    //pto.LoopVectorization = true;
-#if defined(__x86_64__)
+    pto.LoopInterleaving = true;
+    pto.LoopVectorization = true;
+    pto.LoopUnrolling = true;
+    pto.ForgetAllSCEVInLoopUnroll = false;
+    pto.CallGraphProfile = true;
+    pto.UnifiedLTO = false;
+    pto.MergeFunctions = false;
+    pto.EagerlyInvalidateAnalyses = true;
+
     llvm::PassBuilder pb(nullptr, pto);
-#else
-    llvm::PassBuilder pb(nullptr, pto);
-#endif
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
     pb.registerFunctionAnalyses(fam);
     pb.registerLoopAnalyses(lam);
-    //pb.registerMachineFunctionAnalyses(mfm);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-#if defined(__x86_64__)
-
-    llvm::FunctionPassManager FPM;
-
-    // mem2reg
-    FPM.addPass(llvm::PromotePass());
-    // Aggressive Instruction Combine
-    FPM.addPass(llvm::AggressiveInstCombinePass());
-    // Reassociate (reorder expressions to improve constant propagation)
-    FPM.addPass(llvm::ReassociatePass());
-    // Eliminate common subexpressions
-    FPM.addPass(llvm::GVNPass());
-    // Constant Propagation
-    FPM.addPass(llvm::SCCPPass());
-    // Aggressive Dead Code Elimination
-    FPM.addPass(llvm::ADCEPass());
-    // Loop Simplification (needs to be followed by a simplifycfg pass)
-    FPM.addPass(llvm::LoopSimplifyPass());
-    {
-        llvm::LoopPassManager loop_manager;
-        //llvm::LICMOptions licm_options{100, 250, false};
-        loop_manager.addPass(llvm::IndVarSimplifyPass());
-        //loop_manager.addPass(llvm::LICMPass(licm_options));
-        FPM.addPass(llvm::createFunctionToLoopPassAdaptor(
-                                    std::move(loop_manager)));
-    }
-    // Unroll loops where needed
-    FPM.addPass(llvm::LoopUnrollPass());
-    FPM.addPass(llvm::SimplifyCFGPass());
-    // Aggressive Dead Code Elimination
-    FPM.addPass(llvm::ADCEPass());
-    // Sink (move instructions to successor blocks where possible)
-    FPM.addPass(llvm::SinkingPass());
-    // Tail Call Elimination
-    FPM.addPass(llvm::TailCallElimPass());
-    // Change series of stores into vector-stores
-    FPM.addPass(llvm::SLPVectorizerPass());
-    // Try to convert aggregates to multiple scalar allocas, then convert to SSA
-    // where possible
-    llvm::SROAOptions sroa_options = llvm::SROAOptions();
-    FPM.addPass(llvm::SROAPass(sroa_options));
-    // Interprocedural Constant Propagation
-    FPM.addPass(llvm::SCCPPass());
-
-    llvm::LoopPassManager LPM;
-    // Add loop-specific passes to the loop pass manager
-    LPM.addPass(llvm::LoopRerollPass());
-    // Add passes to the function pass manager
-    FPM.addPass(llvm::LoopVectorizePass());
-    //FPM.addPass(llvm::LoadStoreVectorizerPass());
-    //FPM.addPass(llvm::VectorCombinePass());
-
-    FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM)));
-
-#endif
-
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
-
-#if defined(__x86_64__)
-    mpm.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
-
-    // Inlines parts of functions (e.g. if-statements if they surround a function body)
-    mpm.addPass(llvm::PartialInlinerPass());
-    // Interprocedural constant propagation
-    mpm.addPass(llvm::IPSCCPPass());
-    // Eliminates unused arguments and return values from functions
-    mpm.addPass(llvm::DeadArgumentEliminationPass());
-    // Merge identical functions
-    mpm.addPass(llvm::MergeFunctionsPass());
-    // Removes unused global variables
-    mpm.addPass(llvm::GlobalOptPass());
-#endif
-
     mpm.run(module, mam);
+
+    #ifndef NDEBUG
+    DumpModuleIR(module);
+    #endif
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
