@@ -58,9 +58,10 @@ All builds in Builds_1 and Builds_2 stages are always mandatory and will run ind
 - [ ] <!---no_ci_cache--> Disable CI cache
 
 <!--
-GitHub Actions automatically creates a merge commit with master on each push and runs the CI on it.
-This trashes the build cache since artifacts won't be reused if any new C++ code got into master.
-The following setting runs CI on branch's head to reuse the build cache as much as possible.
-Remove it to use a merge-commit against the target branch.
+GitHub Actions can run CI on a PR in one of two ways:
+1. Run CI on the branch HEAD.
+2. Merge master into the branch HEAD and run CI on the ephemeral merge commit.
+Option 2. is safer than 1. but also slower since incoming C++ changes from master typically trash the build artifact cache.
+The default in CI is 1. If you like to go for 2. remove the following line:
 #no_merge_commit
 -->
