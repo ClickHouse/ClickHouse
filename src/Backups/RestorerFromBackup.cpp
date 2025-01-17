@@ -483,7 +483,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     res_table_info.has_data = table_has_data;
     res_table_info.data_path_in_backup = data_path_in_backup;
 
-    tables_dependencies.addDependencies(table_name, table_dependencies);
+    tables_dependencies.addDependencies(table_name, table_dependencies.dependencies);
 
     if (partitions)
     {
