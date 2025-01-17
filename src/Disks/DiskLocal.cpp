@@ -24,6 +24,7 @@
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 
 

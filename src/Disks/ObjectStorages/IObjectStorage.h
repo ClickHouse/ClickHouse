@@ -28,11 +28,18 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+namespace DB::AzureBlobStorage
+{
+class ContainerClientWrapper;
+using ContainerClient = ContainerClientWrapper;
+}
 #endif
 
 #if USE_AWS_S3
-#include <IO/S3/Client.h>
+namespace DB::S3
+{
+class Client;
+}
 #endif
 
 namespace DB
