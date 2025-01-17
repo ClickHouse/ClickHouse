@@ -6,6 +6,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn
 
+# Dummy commit to trigger a new build
+
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
