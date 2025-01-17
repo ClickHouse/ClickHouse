@@ -37,6 +37,7 @@ def test_basics(started_cluster):
     )
 
     # Check that page cache is initially ~empty.
+    node.query("system reload asynchronous metrics;")
     assert (
         int(
             node.query(
@@ -185,6 +186,7 @@ def test_size_adjustment(started_cluster):
     # (There used to be a check here that system.query_log shows high enough memory usage for the previous
     #  query, but it was flaky because log flush sometimes hits memory limit and fails.)
 
+    node.query("system reload asynchronous metrics;")
     assert (
         int(
             node.query(
