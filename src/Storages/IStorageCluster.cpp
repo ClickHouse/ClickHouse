@@ -35,7 +35,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsUInt64 object_storage_cluster_function_max_hosts;
+    extern const SettingsUInt64 object_storage_max_nodes;
 }
 
 IStorageCluster::IStorageCluster(
@@ -126,7 +126,7 @@ void IStorageCluster::read(
     storage_snapshot->check(column_names);
 
     updateBeforeRead(context);
-    auto cluster = getCluster(context, context->getSettingsRef()[Setting::object_storage_cluster_function_max_hosts]);
+    auto cluster = getCluster(context, context->getSettingsRef()[Setting::object_storage_max_nodes]);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 

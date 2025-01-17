@@ -6027,7 +6027,7 @@ Enable PRQL - an alternative to SQL.
 Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
 )", EXPERIMENTAL) \
     \
-    DECLARE(UInt64, object_storage_cluster_function_max_hosts, 0, R"(
+    DECLARE(UInt64, object_storage_max_nodes, 0, R"(
 Limit for hosts used for request in object storage cluster table functions - azureBlobStorageCluster, s3Cluster, hdfsCluster, etc.
 
 Possible values:
