@@ -30,6 +30,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/QueryPlan/AddingTableNameVirtualColumnStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
@@ -43,8 +44,10 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include "Storages/StorageDistributed.h"
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMerge.h>
 
 namespace DB
 {
@@ -486,7 +489,7 @@ static void validateUpdateColumns(
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
 
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = *storage_snapshot->virtual_columns;
+    const auto & virtual_columns = *storage_snapshot->all_virtual_columns;
 
     for (const auto & column_name : updated_columns)
     {
@@ -563,6 +566,30 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     }
 
     return res;
+}
+
+static bool extractRequiredNonTableColumnsFromStorage(
+    const Names & columns_names,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    Names & extracted_column_names)
+{
+    if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    bool has_table_virtual_column = false;
+    for (const auto & column_name : columns_names)
+    {
+        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            extracted_column_names.push_back(column_name);
+    }
+
+    return has_table_virtual_column;
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
@@ -1301,7 +1328,19 @@ void MutationsInterpreter::Source::read(
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
         size_t max_streams = 1;
-        storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, max_streams);
+        Names extracted_column_names;
+        const auto has_table_virtual_column
+            = extractRequiredNonTableColumnsFromStorage(required_columns, storage, storage_snapshot, extracted_column_names);
+
+        storage->read(plan, has_table_virtual_column ? extracted_column_names : required_columns, storage_snapshot,
+            query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, max_streams);
+
+        if (has_table_virtual_column && plan.isInitialized())
+        {
+            const auto & table_name = storage->getStorageID().getTableName();
+            auto adding_table_name_virtual_column_step = std::make_unique<AddingTableNameVirtualColumnStep>(plan.getCurrentHeader(), table_name);
+            plan.addStep(std::move(adding_table_name_virtual_column_step));
+        }
 
         if (!plan.isInitialized())
         {
