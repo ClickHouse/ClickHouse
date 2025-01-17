@@ -170,10 +170,10 @@ def test_size_adjustment(started_cluster):
     )
     node.query("system reload asynchronous metrics")
     initial_cache_size = int(
-            node.query(
-                "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
-            )
+        node.query(
+            "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
         )
+    )
     assert initial_cache_size > 50000000
 
     # Do a query that uses lots of memory (and fails), check that the cache was shrunk to ~page_cache_min_size.
