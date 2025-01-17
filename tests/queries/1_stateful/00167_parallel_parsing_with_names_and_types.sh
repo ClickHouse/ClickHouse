@@ -14,7 +14,7 @@ do
 
     echo "$format, false";
     $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=false -q \
-    "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits LIMIT 5000 Format $format" | \
+    "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits ORDER BY CounterID, EventDate, intHash32(UserID) LIMIT 5000 Format $format" | \
     $CLICKHOUSE_CLIENT --max_threads=0 --input_format_skip_unknown_fields=1 --input_format_parallel_parsing=false -q "INSERT INTO parsing_with_names SETTINGS input_format_null_as_default=0 FORMAT $format"
 
     $CLICKHOUSE_CLIENT -q "SELECT * FROM parsing_with_names;" | md5sum
@@ -24,7 +24,7 @@ do
     $CLICKHOUSE_CLIENT -q "CREATE TABLE parsing_with_names(c FixedString(16), a DateTime('Asia/Dubai'),  b String) ENGINE=Memory()"
     echo "$format, true";
     $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=false -q \
-    "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits LIMIT 5000 Format $format" | \
+    "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits ORDER BY CounterID, EventDate, intHash32(UserID) LIMIT 5000 Format $format" | \
     $CLICKHOUSE_CLIENT --max_threads=0 --input_format_skip_unknown_fields=1 --input_format_parallel_parsing=true -q "INSERT INTO parsing_with_names SETTINGS input_format_null_as_default=0 FORMAT $format"
 
     $CLICKHOUSE_CLIENT -q "SELECT * FROM parsing_with_names;" | md5sum

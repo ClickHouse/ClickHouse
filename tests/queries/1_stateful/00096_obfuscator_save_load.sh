@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 model=$(mktemp "$CLICKHOUSE_TMP/obfuscator-model-XXXXXX.bin")
 
-$CLICKHOUSE_CLIENT --max_threads 1 --query="SELECT URL, Title, SearchPhrase FROM test.hits LIMIT 1000" > "${CLICKHOUSE_TMP}"/data.tsv
+$CLICKHOUSE_CLIENT --max_threads 1 --query="SELECT URL, Title, SearchPhrase FROM test.hits ORDER BY CounterID, EventDate, intHash32(UserID) LIMIT 1000" > "${CLICKHOUSE_TMP}"/data.tsv
 
 $CLICKHOUSE_OBFUSCATOR --structure "URL String, Title String, SearchPhrase String" --input-format TSV --output-format TSV --seed hello --limit 0 --save "$model" < "${CLICKHOUSE_TMP}"/data.tsv 2>/dev/null
 wc -c < "$model"
