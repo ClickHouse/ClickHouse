@@ -1,6 +1,5 @@
 #include <Processors/ResizeProcessor.h>
-#include "Common/logger_useful.h"
-#include "Interpreters/Squashing.h"
+#include <Interpreters/Squashing.h>
 
 namespace DB
 {
@@ -703,7 +702,6 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(
             const auto & info_chunks = data.chunk.getChunkInfos().get<ChunksToSquash>()->chunks;
             for (const auto & chunk : info_chunks)
             {
-                LOG_TRACE(getLogger("MEMORYDEPENDENTRESIZE 1"), "{}, {}, {}", chunk.dumpStructure(), chunk.bytes(), chunk_size);
                 chunk_size += chunk.bytes(); /// We have a vector of chunks to merge into one chunk as ChunkInfo
             }                                /// , so we count the cumulative size of that vector as a size of the chunk
         }
