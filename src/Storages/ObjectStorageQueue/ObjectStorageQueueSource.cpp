@@ -240,13 +240,12 @@ ObjectStorageQueueSource::FileIterator::next()
                 if (num_successful_objects != new_batch.size())
                 {
                     Source::ObjectInfos new_batch_copy;
-                    new_batch_copy.resize(num_successful_objects);
+                    new_batch_copy.reserve(num_successful_objects);
 
-                    size_t i = 0;
-                    for (const auto & object : new_batch)
+                    for (auto & object : new_batch)
                     {
                         if (object)
-                            new_batch_copy[i++] = std::move(object);
+                            new_batch_copy.push_back(std::move(object));
                     }
                     new_batch = std::move(new_batch_copy);
                 }
