@@ -34,11 +34,16 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     epoll.add(timer.getDescriptor());
 }
 
+bool RemoteQueryExecutorReadContext::read()
+{
+    resume();
+    return !isInProgress();
+}
+
 bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
 {
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
-
 
 void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
 {

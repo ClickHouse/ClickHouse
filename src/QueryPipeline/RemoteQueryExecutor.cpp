@@ -1,4 +1,3 @@
-#include "Common/StackTrace.h"
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -76,6 +75,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , stage(stage_)
     , extension(extension_)
     , priority_func(priority_func_)
+    , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
 }
 
@@ -445,14 +445,10 @@ int RemoteQueryExecutor::sendQueryAsync()
         return -1;
 
     if (!read_context)
-    {
-        const bool read_packet_type_separately
-            = context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests];
         read_context = std::make_unique<ReadContext>(
             *this,
             /*suspend_when_query_sent*/ true,
             read_packet_type_separately);
-    }
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -522,9 +518,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        const bool read_packet_type_separately
-            = context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests];
-        read_context = std::make_unique<ReadContext>(*this, false, read_packet_type_separately);
+        read_context = std::make_unique<ReadContext>(
+            *this,
+            /*suspend_when_query_sent*/ false,
+            read_packet_type_separately);
         recreate_read_context = false;
     }
 
@@ -537,14 +534,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (packet_in_progress)
         {
             chassert(read_context->readPacketTypeSeparately());
+            chassert(read_context->hasReadPacketType());
 
             /// packet type is handled already, read and parse packet itself
-            if (!read_context->hasReadPacket())
-            {
-                read_context->resume();
-                if (read_context->isInProgress())
-                    return ReadResult(read_context->getFileDescriptor());
-            }
+            if (!read_context->hasReadPacket() && !read_context->read())
+                return ReadResult(read_context->getFileDescriptor());
 
             packet_in_progress = false;
             auto read_result = processPacket(read_context->getPacket());
@@ -575,15 +569,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
 
-        if (read_context->readPacketTypeSeparately())
-        {
-            if (!read_context->hasReadPacket())
-            {
-                read_context->resume();
-                if (read_context->isInProgress())
-                    return ReadResult(read_context->getFileDescriptor());
-            }
-        }
+        /// if reading separately packet header and body enabled, try to read packet itself this time
+        if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
+            return ReadResult(read_context->getFileDescriptor());
 
         auto read_result = processPacket(read_context->getPacket());
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
@@ -633,8 +621,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Packet type = {}\n{}", Protocol::Server::toString(packet.type), StackTrace().toString());
-
     switch (packet.type)
     {
         case Protocol::Server::MergeTreeReadTaskRequest:
@@ -758,8 +744,6 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "replica_num={}", request.replica_num);
-
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
@@ -770,8 +754,6 @@ void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest re
 
 void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "replica_num={}", announcement.replica_num);
-
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
@@ -1006,33 +988,18 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
     if (was_cancelled)
         return false;
 
-    if (!read_context->hasReadPacketType())
-    {
-        read_context->resume();
-        if (read_context->isInProgress()) // <- nothing to process
-        {
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No packet type received yet");
-            return false;
-        }
-    }
+    // try to read packet type if hasn't read it yet
+    if (!read_context->hasReadPacketType() && !read_context->read())
+        return false;
 
     packet_in_progress = true;
 
     const auto packet_type = read_context->getPacketType();
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Packet type = {}", Protocol::Server::toString(packet_type));
-
     if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
     {
-        if (!read_context->hasReadPacket())
-        {
-            // resume reading packet
-            read_context->resume();
-            if (read_context->isInProgress()) // data is not arrived yet
-            {
-                LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "No data yet. Packet type = {}", Protocol::Server::toString(packet_type));
-                return false;
-            }
-        }
+        // try to read packet if hasn't read it yet
+        if (!read_context->hasReadPacket() && !read_context->read())
+            return false;
 
         packet_in_progress = false;
         processPacket(read_context->getPacket());

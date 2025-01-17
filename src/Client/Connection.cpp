@@ -1231,12 +1231,11 @@ UInt64 Connection::receivePacketType()
 {
     /// Have we already read packet type?
     if (last_input_packet_type)
-        return last_input_packet_type.value();
+        return *last_input_packet_type;
 
-    UInt64 type = -1;
+    UInt64 type;
     readVarUInt(type, *in);
-    last_input_packet_type = type;
-    return type;
+    return last_input_packet_type.emplace(type);
 }
 
 

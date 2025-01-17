@@ -26,9 +26,13 @@ class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
     explicit RemoteQueryExecutorReadContext(
-        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false, bool read_packet_type_separately_ = true);
+        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_);
 
     ~RemoteQueryExecutorReadContext() override;
+
+    /// returns true if packet or packet has been read
+    /// packet type is read separately if read_packet_type_separately is true
+    bool read();
 
     bool isInProgress() const { return is_in_progress.load(std::memory_order_relaxed); }
 

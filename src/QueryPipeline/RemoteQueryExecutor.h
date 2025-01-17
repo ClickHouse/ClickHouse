@@ -311,6 +311,8 @@ private:
 
     GetPriorityForLoadBalancing::Func priority_func;
 
+    const bool read_packet_type_separately = false;
+
     /// Send all scalars to remote servers
     void sendScalars();
 
