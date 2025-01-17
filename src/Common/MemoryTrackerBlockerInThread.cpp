@@ -24,10 +24,10 @@ MemoryTrackerBlockerInThread::~MemoryTrackerBlockerInThread()
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(std::nullopt_t)
     : previous_level(VariableContext::User), previous_counter(UINT64_MAX) {}
 
-MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread && rhs)
+MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread && rhs) noexcept
     : previous_level(rhs.previous_level), previous_counter(std::exchange(rhs.previous_counter, UINT64_MAX)) {}
 
-MemoryTrackerBlockerInThread & MemoryTrackerBlockerInThread::operator=(MemoryTrackerBlockerInThread && rhs)
+MemoryTrackerBlockerInThread & MemoryTrackerBlockerInThread::operator=(MemoryTrackerBlockerInThread && rhs) noexcept
 {
     reset();
     previous_level = rhs.previous_level;

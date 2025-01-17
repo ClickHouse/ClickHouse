@@ -24,9 +24,9 @@ private:
     explicit MemoryTrackerBlockerInThread(VariableContext level_);
 
     /// Empty.
-    MemoryTrackerBlockerInThread(std::nullopt_t);
-    MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread &&);
-    MemoryTrackerBlockerInThread & operator=(MemoryTrackerBlockerInThread &&);
+    explicit MemoryTrackerBlockerInThread(std::nullopt_t);
+    MemoryTrackerBlockerInThread(MemoryTrackerBlockerInThread &&) noexcept;
+    MemoryTrackerBlockerInThread & operator=(MemoryTrackerBlockerInThread &&) noexcept;
     void reset();
 
 public:
