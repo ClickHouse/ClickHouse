@@ -161,37 +161,36 @@ def test_size_adjustment(started_cluster):
     ):
         pytest.skip("sanitizer build has higher memory consumption; also it is slow")
 
-    # Insert 1200 MB of data, more than max_server_memory_usage. Then read it with cache enabled.
+    # Insert 1.6 GB of data, more than max_server_memory_usage (1.5 GB). Then read it with cache enabled.
     node.query(
         "create table a (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3';"
         "system stop merges a;"
-        "insert into a select * from numbers(150000000);"
+        "insert into a select * from numbers(200000000);"
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
     )
     node.query("system reload asynchronous metrics")
-    assert (
-        int(
+    initial_cache_size = int(
             node.query(
                 "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
             )
         )
-        > 300000000
-    )
+    assert initial_cache_size > 50000000
 
-    # Do a memory-intensive query and check that the cache was shrunk.
+    # Do a query that uses lots of memory (and fails), check that the cache was shrunk to ~page_cache_min_size.
     query_id = uuid.uuid4().hex
-    node.query(
-        "select sum(number) from numbers(37500000) settings max_block_size=1000000000, preferred_block_size_bytes=1000000000",
+    err = node.query_and_get_error(
+        "select groupArray(number) from numbers(10000000000)",
         query_id=query_id,
     )
+    assert "MEMORY_LIMIT_EXCEEDED" in err
     node.query("system flush logs; system reload asynchronous metrics;")
     assert (
         int(
             node.query(
-                f"select memory_usage from system.query_log where query_id='{query_id}' and type = 'QueryFinish'"
+                f"select memory_usage from system.query_log where query_id='{query_id}' and type = 'ExceptionWhileProcessing'"
             )
         )
-        > 200000000
+        >= 200000000
     )
     assert (
         int(
@@ -199,7 +198,7 @@ def test_size_adjustment(started_cluster):
                 "select value from system.asynchronous_metrics where metric = 'PageCacheBytes'"
             )
         )
-        < 300000000
+        < 50000000
     )
 
     node.query("drop table a;" "system drop page cache;")

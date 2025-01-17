@@ -308,7 +308,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             OvercommitResult overcommit_result = OvercommitResult::NONE;
 
             /// Try to shrink the userspace page cache.
-            DB::PageCache * page_cache_ptr;
+            DB::PageCache * page_cache_ptr = nullptr;
             if (level == VariableContext::Global && will_be_rss > current_hard_limit && ((page_cache_ptr = page_cache.load(std::memory_order_relaxed))))
             {
                 ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
@@ -339,13 +339,14 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}, maximum: {}."
+                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}{}, maximum: {}."
                     "{}{}",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
                     size,
                     formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
+                    page_cache_ptr ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                     overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
                     overcommit_result_ignore ? "" : toDescription(overcommit_result));
