@@ -427,7 +427,8 @@ bool DiskAccessStorage::exists(const UUID & id) const
 }
 
 
-bool DiskAccessStorage::isNotLoadedFromDisk(const AccessEntityPtr & entity) {
+bool DiskAccessStorage::isNotLoadedFromDisk(const AccessEntityPtr & entity)
+{
     return static_cast<bool>(std::dynamic_pointer_cast<const EntityOnDisk>(entity));
 }
 
@@ -436,7 +437,8 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
 {
     std::lock_guard lock{mutex};
     auto entity = memory_storage.read(id, /* throw_if_not_exists= */ false);
-    if (!entity) {
+    if (!entity)
+    {
         if (throw_if_not_exists)
             throwNotFound(id);
         else
@@ -478,9 +480,11 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         throwReadonlyCannotInsert(new_entity->getType(), new_entity->getName());
 
     /// In case of name collision old file should be removed.
-    if (replace_if_exists && write_on_disk) {
+    if (replace_if_exists && write_on_disk)
+    {
         std::optional<UUID> collision_id = memory_storage.find(new_entity->getType(), new_entity->getName());
-        if (collision_id.has_value()) {
+        if (collision_id.has_value())
+        {
             scheduleWriteLists(new_entity->getType());
             deleteAccessEntityOnDisk(collision_id.value());
         }
@@ -558,7 +562,8 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (readonly)
         throwReadonlyCannotUpdate(old_entity->getType(), old_entity->getName());
 
-    if (isNotLoadedFromDisk(old_entity)) {
+    if (isNotLoadedFromDisk(old_entity))
+    {
         old_entity = readAccessEntityFromDisk(id);
         memory_storage.insert(id, old_entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false, /* conflicting_id= */ nullptr);
     }
