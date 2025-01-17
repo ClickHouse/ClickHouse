@@ -22,7 +22,7 @@ CREATE DATABASE test [ENGINE = Atomic];
 
 ### Table UUID {#table-uuid}
 
-All tables in database `Atomic` have persistent [UUID](../../sql-reference/data-types/uuid.md) and store data in directory:
+Each table in the `Atomic` database has a persistent [UUID](../../sql-reference/data-types/uuid.md) and stores its data in the following directory:
 
 ```
 /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
