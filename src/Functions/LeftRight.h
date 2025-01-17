@@ -96,7 +96,7 @@ public:
                 {
                     sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), length_value);
                 }
-                // Following the docs if length_value < 0, we need to take suffix of the string from abs(length_value) position
+                // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
                     sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -length_value);
