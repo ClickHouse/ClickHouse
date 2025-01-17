@@ -181,36 +181,15 @@ See [CSVWithNamesAndTypes](formats/CSV/CSVWithNamesAndTypes.md)
 
 ## CustomSeparated {#format-customseparated}
 
-Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from [format_custom_field_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_field_delimiter), [format_custom_row_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_before_delimiter), [format_custom_row_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_after_delimiter), [format_custom_row_between_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_between_delimiter), [format_custom_result_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_before_delimiter) and [format_custom_result_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) settings, not from format strings.
-
-Additional settings:
-- [input_format_custom_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) - enables automatic detection of header with names and types if any. Default value - `true`.
-- [input_format_custom_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_custom_skip_trailing_empty_lines) - skip trailing empty lines at the end of file . Default value - `false`.
-- [input_format_custom_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_custom_allow_variable_number_of_columns) - allow variable number of columns in CustomSeparated format, ignore extra columns and use default values on missing columns. Default value - `false`.
-
-There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
+See [CustomSeparated](formats/CustomSeparated/CustomSeparated.md)
 
 ## CustomSeparatedWithNames {#customseparatedwithnames}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-:::
+See [CustomSeparatedWithNames](formats/CustomSeparated/CustomSeparatedWithNames.md)
 
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+See [CustomSeparatedWithNamesAndTypes](formats/CustomSeparated/CustomSeparatedWithNamesAndTypes.md)
 
 ## SQLInsert {#sqlinsert}
 
@@ -1273,52 +1252,11 @@ For column `y` data starts with byte `00` that indicates that column has actual 
 
 ## Values {#data-format-values}
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in a decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren’t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](/docs/en/sql-reference/syntax.md) is represented as `NULL`.
-
-The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
-
-This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
-
-## Values format settings {#values-format-settings}
-
-- [input_format_values_interpret_expressions](/docs/en/operations/settings/settings-formats.md/#input_format_values_interpret_expressions) - if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression. Default value - `true`.
-- [input_format_values_deduce_templates_of_expressions](/docs/en/operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) -if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. Default value - `true`.
-- [input_format_values_accurate_types_of_literals](/docs/en/operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals) - when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues. Default value - `true`.
-
+See [Values](formats/Values.md)
 
 ## Vertical {#vertical}
 
-Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
-
-[NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
-
-Example:
-
-``` sql
-SELECT * FROM t_null FORMAT Vertical
-```
-
-``` response
-Row 1:
-──────
-x: 1
-y: ᴺᵁᴸᴸ
-```
-
-Rows are not escaped in Vertical format:
-
-``` sql
-SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
-```
-
-``` response
-Row 1:
-──────
-test: string with 'quotes' and      with some special
- characters
-```
-
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+See [Vertical](formats/Vertical.md)
 
 ## XML {#xml}
 
