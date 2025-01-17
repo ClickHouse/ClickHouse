@@ -16,7 +16,7 @@ alias: ['TSVRaw', 'Raw']
 Differs from the [`TabSeparated`](/en/interfaces/formats/TabSeparated) format in that rows are written without escaping.
 
 :::note
-When parsing with this format, tabs or linefeeds are not allowed in each field.
+When parsing with this format, tabs or line-feeds are not allowed in each field.
 :::
 
 ## Example Usage
