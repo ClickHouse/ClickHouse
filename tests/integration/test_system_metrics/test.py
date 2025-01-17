@@ -175,8 +175,9 @@ def test_attach_without_zk_incr_readonly_metric(start_cluster):
         == "0\n"
     )
 
+    tbl_uuid = node1.query("SELECT generateUUIDv4()").strip()
     node1.query(
-        "ATTACH TABLE test.test_no_zk UUID 'a50b7933-59b2-49ce-8db6-59da3c9b4413' (i Int8, d Date) ENGINE = ReplicatedMergeTree('no_zk', 'replica') ORDER BY tuple()"
+        f"ATTACH TABLE test.test_no_zk UUID '{tbl_uuid}' (i Int8, d Date) ENGINE = ReplicatedMergeTree('no_zk_{tbl_uuid}', 'replica') ORDER BY tuple()"
     )
     assert_eq_with_retry(
         node1,
@@ -232,8 +233,9 @@ def get_zk(timeout=30.0):
 
 
 def test_broken_tables_readonly_metric(start_cluster):
+    tbl_uuid = node1.query("SELECT generateUUIDv4()").strip()
     node1.query(
-        "CREATE TABLE test.broken_table_readonly(initial_name Int8) ENGINE = ReplicatedMergeTree('/clickhouse/broken_table_readonly', 'replica') ORDER BY tuple()"
+        f"CREATE TABLE test.broken_table_readonly(initial_name Int8) ENGINE = ReplicatedMergeTree('/clickhouse/broken_table_readonly_{tbl_uuid}', 'replica') ORDER BY tuple()"
     )
     assert_eq_with_retry(
         node1,
@@ -263,3 +265,5 @@ def test_broken_tables_readonly_metric(start_cluster):
         node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
         == "1\n"
     )
+
+    node1.query("DROP TABLE test.broken_table_readonly")
