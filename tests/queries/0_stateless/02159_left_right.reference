@@ -136,6 +136,22 @@ SELECT right('Hello', 0);
 
 SELECT right('Hello', NULL);
 \N
+SELECT right(materialize('Hello'), -3);
+lo
+SELECT left(materialize('Hello'), -3);
+He
+SELECT right(materialize('Hello'), -5);
+
+SELECT left(materialize('Hello'), -5);
+
+SELECT rightUTF8(materialize('Hello'), -3);
+lo
+SELECT leftUTF8(materialize('Hello'), -3);
+He
+SELECT rightUTF8(materialize('Hello'), -5);
+
+SELECT leftUTF8(materialize('Hello'), -5);
+
 SELECT RIGHT(materialize('Привет'), 4);
 ет
 SELECT RIGHT(materialize('Привет'), -4);

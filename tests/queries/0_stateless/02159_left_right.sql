@@ -47,6 +47,15 @@ SELECT right('Hello', -6);
 SELECT right('Hello', 0);
 SELECT right('Hello', NULL);
 
+SELECT right(materialize('Hello'), -3);
+SELECT left(materialize('Hello'), -3);
+SELECT right(materialize('Hello'), -5);
+SELECT left(materialize('Hello'), -5);
+SELECT rightUTF8(materialize('Hello'), -3);
+SELECT leftUTF8(materialize('Hello'), -3);
+SELECT rightUTF8(materialize('Hello'), -5);
+SELECT leftUTF8(materialize('Hello'), -5);
+
 SELECT RIGHT(materialize('Привет'), 4);
 SELECT RIGHT(materialize('Привет'), -4);
 SELECT right('Привет', -4);
