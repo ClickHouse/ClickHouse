@@ -104,24 +104,21 @@ Range getPartitionRange(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", partition_column->getFamilyName());
     }
 
-    LOG_DEBUG(&Poco::Logger::get("PartitionPruning"), "Column data type: {}", column_data_type->getName());
-
     auto nested_data_type = column_data_type;
-    while (nested_data_type->isNullable())
+    if (nested_data_type->isNullable())
         nested_data_type = removeNullable(nested_data_type);
 
-    LOG_DEBUG(&Poco::Logger::get("PartitionPruning"), "Nested data type: {}", nested_data_type->getName());
-
     const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(partition_column.get());
-    Int32 value = static_cast<Int32>(casted_innner_column->getInt(index));
+    Int32 value = casted_innner_column->getElement(index);
 
-    if (WhichDataType(nested_data_type).isDate() && (partition_transform != Iceberg::PartitionTransform::Hour))
+    if ((WhichDataType(nested_data_type).isDate() || WhichDataType(nested_data_type).isDate32())
+        && (partition_transform != Iceberg::PartitionTransform::Hour))
     {
         const UInt16 begin_range_value = getDay(value, partition_transform);
         const UInt16 end_range_value = getDay(value + 1, partition_transform);
         return Range{begin_range_value, true, end_range_value, false};
     }
-    else if (WhichDataType(nested_data_type).isDateTime64())
+    else if (WhichDataType(nested_data_type).isDateTime64() || WhichDataType(nested_data_type).isDateTime())
     {
         const UInt64 begin_range_value = getTime(value, partition_transform);
         const UInt64 end_range_value = getTime(value + 1, partition_transform);

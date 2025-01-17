@@ -414,6 +414,7 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         std::vector<size_t> partition_pruning_indices;
         for (size_t i = 0; i < manifest_entry.getContent().getPartitionColumnInfos().size(); ++i)
         {
+            // Since some columns may be renamed or deleted, we need to determine the correct column names and types for partition pruning based on the current schema.
             std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(
                 current_schema_id, manifest_entry.getContent().getPartitionColumnInfos()[i].source_id);
             if (name_and_type)
