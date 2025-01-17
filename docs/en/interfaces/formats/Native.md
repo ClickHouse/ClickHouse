@@ -23,7 +23,7 @@ This is the format used in the native interface for interaction between servers,
 
 :::tip
 You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. 
-It does not make sense to work with this format yourself.
+It might not be practical to work with this format yourself.
 :::
 
 ## Example Usage
