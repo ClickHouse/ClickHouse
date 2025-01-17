@@ -25,16 +25,16 @@ public:
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
 
-    struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
-            const Source::ObjectInfo & object_info,
+            const ObjectInfo & object_info,
             ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_);
 
         ObjectStorageQueueMetadata::FileMetadataPtr file_metadata;
     };
 
-    class FileIterator : public StorageObjectStorageSource::IIterator
+    class FileIterator : public IObjectIterator
     {
     public:
         FileIterator(
@@ -50,13 +50,13 @@ public:
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        Source::ObjectInfoPtr nextImpl(size_t processor) override;
+        ObjectInfoPtr next(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
         /// If the key was taken from iterator via next() call,
         /// we might later want to return it back for retrying.
-        void returnForRetry(Source::ObjectInfoPtr object_info);
+        void returnForRetry(ObjectInfoPtr object_info);
 
         /// Release hold buckets.
         /// In fact, they could be released in destructors of BucketHolder,
@@ -79,7 +79,7 @@ public:
 
         struct ListedKeys
         {
-            std::deque<Source::ObjectInfoPtr> keys;
+            std::deque<ObjectInfoPtr> keys;
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
@@ -92,9 +92,9 @@ public:
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<Source::ObjectInfoPtr> objects_to_retry;
+        std::deque<ObjectInfoPtr> objects_to_retry;
 
-        std::pair<Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
+        std::pair<ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 

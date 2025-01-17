@@ -188,5 +188,8 @@ endif()
 if (TARGET ch_contrib::numactl)
     set(USE_NUMACTL 1)
 endif()
+if (TARGET ch_contrib::delta_kernel_rs)
+    set(USE_DELTA_KERNEL_RS 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

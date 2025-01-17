@@ -39,9 +39,9 @@ namespace ErrorCodes
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
-        const Source::ObjectInfo & object_info,
+        const ObjectInfo & object_info,
         ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : Source::ObjectInfo(object_info.relative_path, object_info.metadata)
+    : ObjectInfo(object_info.relative_path, object_info.metadata)
     , file_metadata(file_metadata_)
 {
 }
@@ -53,8 +53,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     bool file_deletion_on_processed_enabled_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
-    : StorageObjectStorageSource::IIterator("ObjectStorageQueueIterator")
-    , metadata(metadata_)
+    : metadata(metadata_)
     , object_storage(object_storage_)
     , glob_iterator(std::move(glob_iterator_))
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
@@ -76,9 +75,9 @@ size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
 }
 
-ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::nextImpl(size_t processor)
+ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 {
-    Source::ObjectInfoPtr object_info;
+    ObjectInfoPtr object_info;
     ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
 
     while (!shutdown_called)
@@ -155,7 +154,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
     return {};
 }
 
-void ObjectStorageQueueSource::FileIterator::returnForRetry(Source::ObjectInfoPtr object_info)
+void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object_info)
 {
     chassert(object_info);
     if (metadata->useBucketsForProcessing())
@@ -202,7 +201,7 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     }
 }
 
-std::pair<ObjectStorageQueueSource::Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr>
+std::pair<ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr>
 ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
     auto bucket_holder_it = bucket_holders.emplace(processor, std::vector<BucketHolderPtr>{}).first;

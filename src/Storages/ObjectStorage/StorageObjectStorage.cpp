@@ -269,7 +269,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
-    std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
+    std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
@@ -593,7 +593,6 @@ StorageObjectStorage::Configuration::Configuration(const Configuration & other)
     format = other.format;
     compression_method = other.compression_method;
     structure = other.structure;
-    partition_columns = other.partition_columns;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

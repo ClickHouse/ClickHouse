@@ -23,8 +23,6 @@ public:
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
-
     const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
@@ -45,7 +43,6 @@ private:
     const ConfigurationObserverPtr configuration;
     mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
 
     Strings getDataFilesImpl() const;
 };

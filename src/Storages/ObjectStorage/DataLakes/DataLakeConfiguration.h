@@ -56,11 +56,8 @@ public:
                     ErrorCodes::FORMAT_VERSION_TOO_OLD,
                     "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
             }
-            else
-            {
+            if (!supportsFileIterator())
                 BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-                BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
-            }
         }
     }
 
@@ -101,11 +98,23 @@ public:
         BaseStorageConfiguration::update(object_storage, context);
         if (updateMetadataObjectIfNeeded(object_storage, context))
         {
-            BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-            BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+            if (!supportsFileIterator())
+                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
         }
 
         return ColumnsDescription{current_metadata->getTableSchema()};
+    }
+
+    bool supportsFileIterator() const override
+    {
+        chassert(current_metadata);
+        return current_metadata->supportsFileIterator();
+    }
+
+    ObjectIterator iterate() override
+    {
+        chassert(current_metadata);
+        return current_metadata->iterate();
     }
 
 

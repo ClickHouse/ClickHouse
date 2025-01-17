@@ -130,6 +130,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -582,6 +583,10 @@ if (TARGET ch_contrib::datasketches)
     dbms_target_link_libraries(PUBLIC ch_contrib::datasketches)
 endif ()
 
+if (TARGET ch_contrib::delta_kernel_rs)
+    dbms_target_link_libraries(PUBLIC ch_contrib::delta_kernel_rs)
+endif()
+
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 if (TARGET ch_contrib::qatzstd_plugin)
@@ -640,6 +645,11 @@ endif()
 if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
+
+#if (TARGET ch_contrib::delta_kernel_ts)
+#    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+#endif ()
+dbms_target_link_libraries(PUBLIC ch_contrib::delta_kernel_rs)
 
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
