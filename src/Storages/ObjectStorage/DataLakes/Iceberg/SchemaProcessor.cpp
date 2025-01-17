@@ -139,6 +139,17 @@ std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristic
     return it->second;
 }
 
+NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
+{
+    NamesAndTypesList fields;
+    for (const auto & source_id : source_ids)
+    {
+        auto it = clickhouse_types_by_source_ids.find({schema_id, source_id});
+        if (it != clickhouse_types_by_source_ids.end())
+            fields.push_back(it->second);
+    }
+    return fields;
+}
 
 DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 {

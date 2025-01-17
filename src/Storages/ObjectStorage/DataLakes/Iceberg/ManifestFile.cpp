@@ -33,6 +33,17 @@ Int32 ManifestFileContent::getSchemaId() const
     return impl->schema_id;
 }
 
+std::vector<DB::Range> DataFileEntry::getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const
+{
+    std::vector<DB::Range> filtered_partition_ranges;
+    filtered_partition_ranges.reserve(partition_columns_ids.size());
+    for (const auto & partition_column_id : partition_columns_ids)
+    {
+        filtered_partition_ranges.push_back(partition_ranges.at(partition_column_id));
+    }
+    return filtered_partition_ranges;
+}
+
 
 const std::vector<PartitionColumnInfo> & ManifestFileContent::getPartitionColumnInfos() const
 {
@@ -206,15 +217,17 @@ ManifestFileContentImpl::ManifestFileContentImpl(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
 
         const auto file_path = data_path.substr(pos);
-        std::vector<DB::Range> partition_ranges;
-        partition_ranges.reserve(partition_columns.size());
+        std::unordered_map<Int32, Range> partition_ranges;
         for (size_t j = 0; j < partition_columns.size(); ++j)
         {
-            partition_ranges.push_back(getPartitionRange(
-                partition_column_infos[j].transform,
-                i,
-                partition_columns[j],
-                schema_processor.getFieldCharacteristics(schema_id, partition_column_infos[j].source_id).type));
+            const Int32 source_id = partition_column_infos[j].source_id;
+            partition_ranges.emplace(
+                source_id,
+                getPartitionRange(
+                    partition_column_infos[j].transform,
+                    i,
+                    partition_columns[j],
+                    schema_processor.getFieldCharacteristics(schema_id, source_id).type));
         }
         this->data_files.push_back({file_path, status, content_type, partition_ranges});
     }

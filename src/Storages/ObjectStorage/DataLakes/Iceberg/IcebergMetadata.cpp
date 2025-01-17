@@ -399,6 +399,24 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
     return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
 }
 
+std::vector<Int32>
+getRelevantPartitionColumnIds(const ManifestFileEntry & entry, const IcebergSchemaProcessor & schema_processor, Int32 current_schema_id)
+{
+    std::vector<Int32> partition_column_ids;
+    partition_column_ids.reserve(entry.getContent().getPartitionColumnInfos().size());
+    for (const auto & partition_column_info : entry.getContent().getPartitionColumnInfos())
+    {
+        std::optional<NameAndTypePair> name_and_type
+            = schema_processor.tryGetFieldCharacteristics(current_schema_id, partition_column_info.source_id);
+        if (name_and_type)
+        {
+            partition_column_ids.push_back(partition_column_info.source_id);
+        }
+    }
+    return partition_column_ids;
+}
+
+
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
@@ -410,43 +428,27 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     Strings data_files;
     for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
     {
-        NamesAndTypesList partition_pruning_names_and_types;
-        std::vector<size_t> partition_pruning_indices;
-        for (size_t i = 0; i < manifest_entry.getContent().getPartitionColumnInfos().size(); ++i)
-        {
-            // Since some columns may be renamed or deleted, we need to determine the correct column names and types for partition pruning based on the current schema.
-            std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(
-                current_schema_id, manifest_entry.getContent().getPartitionColumnInfos()[i].source_id);
-            if (name_and_type)
-            {
-                partition_pruning_names_and_types.push_back(name_and_type.value());
-                partition_pruning_indices.push_back(i);
-            }
-        }
-        ExpressionActionsPtr partition_minmax_idx_expr
-            = std::make_shared<ExpressionActions>(ActionsDAG(partition_pruning_names_and_types), ExpressionActionsSettings(getContext()));
+        const auto & partition_columns_ids = getRelevantPartitionColumnIds(manifest_entry, schema_processor, current_schema_id);
+        const auto & partition_pruning_columns_names_and_types
+            = schema_processor.tryGetFieldsCharacteristics(current_schema_id, partition_columns_ids);
+
+        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
+            ActionsDAG(partition_pruning_columns_names_and_types), ExpressionActionsSettings(getContext()));
         const KeyCondition partition_key_condition(
-            filter_dag, getContext(), partition_pruning_names_and_types.getNames(), partition_minmax_idx_expr);
+            filter_dag, getContext(), partition_pruning_columns_names_and_types.getNames(), partition_minmax_idx_expr);
 
         const auto & data_files_in_manifest = manifest_entry.getContent().getDataFiles();
         for (const auto & data_file : data_files_in_manifest)
         {
             if (data_file.status != ManifestEntryStatus::DELETED)
             {
-                std::vector<Range> ranges;
-                ranges.reserve(partition_pruning_indices.size());
-                for (const auto j : partition_pruning_indices)
-                {
-                    ranges.push_back(data_file.partition_ranges[j]);
-                }
-                if (partition_key_condition.checkInHyperrectangle(ranges, partition_pruning_names_and_types.getTypes()).can_be_true)
-                {
+                if (partition_key_condition
+                        .checkInHyperrectangle(
+                            data_file.getPartitionRanges(partition_columns_ids), partition_pruning_columns_names_and_types.getTypes())
+                        .can_be_true)
                     data_files.push_back(data_file.data_file_name);
-                }
                 else
-                {
                     ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
-                }
             }
         }
     }

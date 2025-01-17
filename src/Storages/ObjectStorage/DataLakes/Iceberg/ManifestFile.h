@@ -33,7 +33,9 @@ struct DataFileEntry
     String data_file_name;
     ManifestEntryStatus status;
     DataFileContent content;
-    std::vector<DB::Range> partition_ranges;
+    std::unordered_map<Int32, DB::Range> partition_ranges;
+
+    std::vector<DB::Range> getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const;
 };
 
 struct PartitionColumnInfo

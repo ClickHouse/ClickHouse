@@ -104,9 +104,7 @@ Range getPartitionRange(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", partition_column->getFamilyName());
     }
 
-    auto nested_data_type = column_data_type;
-    if (nested_data_type->isNullable())
-        nested_data_type = removeNullable(nested_data_type);
+    auto nested_data_type = removeNullable(column_data_type);
 
     const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(partition_column.get());
     Int32 value = casted_innner_column->getElement(index);
