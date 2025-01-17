@@ -1085,7 +1085,6 @@ class SettingsRandomizer:
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
-        "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
