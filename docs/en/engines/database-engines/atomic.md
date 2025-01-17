@@ -30,7 +30,7 @@ All tables in database `Atomic` have persistent [UUID](../../sql-reference/data-
 
 Where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is the UUID of the table.
 
-Usually, the UUID is generated automatically, but the user can also explicitly specify the UUID in the same way when creating the table, although this is not recommended. 
+By default, the UUID is generated automatically. However, users can explicitly specify the UUID when creating a table, though this is not recommended.
 
 For example:
 
