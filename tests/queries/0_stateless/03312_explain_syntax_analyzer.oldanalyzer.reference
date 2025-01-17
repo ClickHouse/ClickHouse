@@ -1,0 +1,106 @@
+SELECT
+    `_--a.number` AS `a.number`,
+    `_--b.number` AS `b.number`,
+    `_--c.number` AS `c.number`
+FROM
+(
+    SELECT
+        number AS `_--a.number`,
+        b.number AS `_--b.number`
+    FROM system.numbers AS a
+    CROSS JOIN system.numbers AS b
+    WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+) AS `--.s`
+CROSS JOIN
+(
+    SELECT number AS `_--c.number`
+    FROM system.numbers AS c
+) AS `--.t`
+WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+SELECT `_--a.number` AS `a.number`, `_--b.number` AS `b.number`, `_--c.number` AS `c.number` FROM (SELECT number AS `_--a.number`, b.number AS `_--b.number` FROM system.numbers AS a CROSS JOIN system.numbers AS b WHERE `_--a.number` IN (1, 2, 3, 4, 5)) AS `--.s` CROSS JOIN (SELECT number AS `_--c.number` FROM system.numbers AS c) AS `--.t` WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+SELECT
+    `_--a.number` AS `a.number`,
+    `_--b.number` AS `b.number`,
+    `_--c.number` AS `c.number`
+FROM
+(
+    SELECT
+        number AS `_--a.number`,
+        b.number AS `_--b.number`
+    FROM system.numbers AS a
+    CROSS JOIN system.numbers AS b
+    WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+) AS `--.s`
+CROSS JOIN
+(
+    SELECT number AS `_--c.number`
+    FROM system.numbers AS c
+) AS `--.t`
+WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+SELECT
+    `_--a.number` AS `a.number`,
+    `_--b.number` AS `b.number`,
+    `_--c.number` AS `c.number`
+FROM
+(
+    SELECT
+        number AS `_--a.number`,
+        b.number AS `_--b.number`
+    FROM system.numbers AS a
+    CROSS JOIN system.numbers AS b
+    WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+) AS `--.s`
+CROSS JOIN
+(
+    SELECT number AS `_--c.number`
+    FROM system.numbers AS c
+) AS `--.t`
+WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+SELECT
+    `_--a.number` AS `a.number`,
+    `_--b.number` AS `b.number`,
+    `_--c.number` AS `c.number`
+FROM
+(
+    SELECT
+        number AS `_--a.number`,
+        b.number AS `_--b.number`
+    FROM system.numbers AS a
+    CROSS JOIN system.numbers AS b
+    WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+) AS `--.s`
+CROSS JOIN
+(
+    SELECT number AS `_--c.number`
+    FROM system.numbers AS c
+) AS `--.t`
+WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+SELECT
+    `_--a.number` AS `a.number`,
+    `_--b.number` AS `b.number`,
+    `_--c.number` AS `c.number`
+FROM
+(
+    SELECT
+        number AS `_--a.number`,
+        b.number AS `_--b.number`
+    FROM system.numbers AS a
+    CROSS JOIN system.numbers AS b
+    WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+) AS `--.s`
+CROSS JOIN
+(
+    SELECT number AS `_--c.number`
+    FROM system.numbers AS c
+) AS `--.t`
+WHERE `_--a.number` IN (1, 2, 3, 4, 5)
+-- { echoOn }
+EXPLAIN SYNTAX run_query_tree_passes = 1, oneline = 1
+select  *
+from
+system.numbers AS a,
+system.numbers AS b,
+system.numbers AS c
+WHERE a.number == 1 OR a.number == 2 OR a.number == 3 OR a.number = 4 OR a.number = 5
+;
+SELECT `_--a.number` AS `a.number`, `_--b.number` AS `b.number`, `_--c.number` AS `c.number` FROM (SELECT number AS `_--a.number`, b.number AS `_--b.number` FROM system.numbers AS a CROSS JOIN system.numbers AS b WHERE `_--a.number` IN (1, 2, 3, 4, 5)) AS `--.s` CROSS JOIN (SELECT number AS `_--c.number` FROM system.numbers AS c) AS `--.t` WHERE `_--a.number` IN (1, 2, 3, 4, 5)

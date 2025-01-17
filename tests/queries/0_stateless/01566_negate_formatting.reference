@@ -6,6 +6,7 @@ SELECT
     -(-1),
     -(-1),
     -1 IN (-1)
+FROM system.one
 explain syntax select negate(1.), negate(-1.), - -1., -(-1.), (-1.) in (-1.);
 SELECT
     -(1.),
@@ -13,11 +14,13 @@ SELECT
     -(-1.),
     -(-1.),
     -1. IN (-1.)
+FROM system.one
 explain syntax select negate(-9223372036854775808), -(-9223372036854775808), - -9223372036854775808;
 SELECT
     -(-9223372036854775808),
     -(-9223372036854775808),
     -(-9223372036854775808)
+FROM system.one
 explain syntax select negate(0), negate(-0), - -0, -(-0), (-0) in (-0);
 SELECT
     -(0),
@@ -25,6 +28,7 @@ SELECT
     -(0),
     -(0),
     0 IN (0)
+FROM system.one
 explain syntax select negate(0.), negate(-0.), - -0., -(-0.), (-0.) in (-0.);
 SELECT
     -(0.),
@@ -32,3 +36,4 @@ SELECT
     -(-0.),
     -(-0.),
     -0. IN (-0.)
+FROM system.one
