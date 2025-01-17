@@ -94,7 +94,7 @@ public:
         size_t create_processing_node_idx = 0;
         size_t set_processing_id_node_idx = 0;
     };
-    SetProcessingResponseIndexes prepareSetProcessingRequests(Coordination::Requests & requests);
+    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(Coordination::Requests & requests);
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.

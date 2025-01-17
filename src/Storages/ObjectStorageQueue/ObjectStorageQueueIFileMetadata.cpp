@@ -259,15 +259,33 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     return success;
 }
 
-ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes
+std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
 {
-    [[maybe_unused]] auto state = file_status->state.load();
-    chassert (!(state == FileStatus::State::Processing
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
+    {
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        return std::nullopt;
+    }
+
+    auto state = file_status->state.load();
+    if (state == FileStatus::State::Processing
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
-            && file_status->retries >= max_loading_retries)), fmt::format("Oops something went wrong: {}", state));
+            && file_status->retries >= max_loading_retries))
+    {
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                 path, state, file_status->retries, max_loading_retries);
+
+        /// This is possible in case on the same server
+        /// there are more than one S3(Azure)Queue table processing the same keeper path.
+        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        return std::nullopt;
+    }
 
     return prepareProcessingRequestsImpl(requests);
 }
