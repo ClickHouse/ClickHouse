@@ -651,12 +651,12 @@ class CI:
                     required_builds = cls.get_job_config(job_name).required_builds
                     if required_builds:
                         if any(
-                                build
-                                in (
-                                        BuildNames.PACKAGE_RELEASE,
-                                        BuildNames.PACKAGE_AARCH64,
-                                )
-                                for build in required_builds
+                            build
+                            in (
+                                BuildNames.PACKAGE_RELEASE,
+                                BuildNames.PACKAGE_AARCH64,
+                            )
+                            for build in required_builds
                         ):
                             stage_type = WorkflowStages.TESTS_0
                 else:
