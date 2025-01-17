@@ -408,6 +408,9 @@
     No order guarantee with group_by_overflow_mode='any'
 02180_group_by_lowcardinality
 
+    RMT zookeeper test
+01154_move_partition_long
+
     plan and incorrect result
 01763_filter_push_down_bugs
 
@@ -419,6 +422,9 @@
 
     fail with parallel_replicas_local_plan=0
     03155_in_nested_subselects
+
+    !!!While executing Remote. (MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3390 (official build)) (from [::1]:59776) (comment: 02782_uniq_exact_parallel_merging_bug.sh) (in query: select count(distinct s) from test_372i6d19.t settings max_memory_usage = \'50Mi\')
+02782_uniq_exact_parallel_merging_bug
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
