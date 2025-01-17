@@ -75,7 +75,7 @@ protected:
 
     static const constexpr std::string_view NO_CHECKSUM = "no checksum";
 
-    static String getPartialChecksum(const BackupEntryPtr & backup_entry, size_t prefix_length)
+    static String getPartialChecksum(const BackupEntryPtr & backup_entry, UInt64 prefix_length)
     {
         auto partial_checksum = backup_entry->getPartialChecksum(prefix_length, {});
         if (!partial_checksum)

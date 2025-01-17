@@ -59,7 +59,7 @@ namespace
 
     /// Calculate checksum for backup entry if it's empty.
     /// Also able to calculate additional checksum of some prefix.
-    ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, size_t prefix_size, const ReadSettings & read_settings)
+    ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, UInt64 prefix_size, const ReadSettings & read_settings)
     {
         ChecksumsForNewEntry res;
         /// The partial checksum should be calculated before the full checksum to enable optimization in BackupEntryWithChecksumCalculation.
@@ -207,12 +207,13 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
 BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
+    LOG_TRACE(log, "Building file infos for backup entries");
+
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
     std::atomic_bool failed = false;
-
-    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)

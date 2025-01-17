@@ -1003,8 +1003,8 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
-
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
     /// *.bin
     for (const auto & data_file : data_files)
     {

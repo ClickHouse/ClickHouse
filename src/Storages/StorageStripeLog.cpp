@@ -573,7 +573,8 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
 
     /// data.bin
     {

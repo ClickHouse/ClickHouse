@@ -23,7 +23,10 @@ namespace
 }
 
 BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(
-    const DiskPtr & disk_, const String & file_path_, bool copy_encrypted_, const std::optional<UInt64> & file_size_)
+    const DiskPtr & disk_,
+    const String & file_path_,
+    bool copy_encrypted_,
+    const std::optional<UInt64> & file_size_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk->getDataSourceDescription())
