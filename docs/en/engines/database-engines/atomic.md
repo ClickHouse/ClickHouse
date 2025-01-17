@@ -44,7 +44,7 @@ You can use the [show_table_uuid_in_table_create_query_if_not_nil](../../operati
 
 ### RENAME TABLE {#rename-table}
 
-[`RENAME`](../../sql-reference/statements/rename.md) queries are performed without changing the UUID or moving table data. These queries do not wait for the completion of queries using the table and are executed instantly.
+[`RENAME`](../../sql-reference/statements/rename.md) queries do not modify the UUID or move table data. These queries execute immediately and do not wait for other queries that are using the table to complete.
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
