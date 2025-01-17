@@ -42,10 +42,10 @@ public:
 
     /// Per-value estimations.
     /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual Float64 estimateLess(const Field & val, Float64 * calculated_val) const;
-    Float64 estimateLess(const Field & val) const { return estimateLess(val, nullptr); }  /// summarized cardinality of values < val in the column
-    virtual Float64 estimateLessWithCustomBoundaries(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
+    virtual Float64 estimateEqual(const Field & val, std::optional<Float64> * calculated_val) const;
+    Float64 estimateEqual(const Field & val) const { return estimateEqual(val, nullptr); } /// cardinality of val in the column
+    virtual Float64 estimateLess(const Field & val, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
+    Float64 estimateLess(const Field & val) const { return estimateLess(val, nullptr, {}, {}); }  /// summarized cardinality of values < val in the column
 
 protected:
     SingleStatisticsDescription stat;
@@ -69,9 +69,9 @@ public:
 
     void build(const ColumnPtr & column);
 
-    Float64 estimateLess(const Field & val, Float64 * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
-    Float64 estimateGreater(const Field & val, Float64 * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
-    Float64 estimateEqual(const Field & val) const;
+    Float64 estimateLess(const Field & val, std::optional<Float64> * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
+    Float64 estimateGreater(const Field & val, std::optional<Float64> * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
+    Float64 estimateEqual(const Field & val, std::optional<Float64> * calculated_val = nullptr) const;
 
 private:
     friend class MergeTreeStatisticsFactory;

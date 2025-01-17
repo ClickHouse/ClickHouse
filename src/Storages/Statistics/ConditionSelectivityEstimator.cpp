@@ -58,20 +58,21 @@ void ConditionSelectivityEstimator::doSmth(const RPNBuilderTreeNode & node, cons
         return;
 
     auto function_node = node.toFunctionNode();
-    if (function_node.getArgumentsSize() != 2)
-        return;
-
     String function_name = function_node.getFunctionName();
-
-    auto lhs_argument = function_node.getArgumentAt(0);
-    auto rhs_argument = function_node.getArgumentAt(1);
 
     if (function_name == "and")
     {
-        doSmth(lhs_argument, qualified_column_name, result);
-        doSmth(rhs_argument, qualified_column_name, result);
+        for (size_t i = 0; i < function_node.getArgumentsSize(); ++i)
+            doSmth(function_node.getArgumentAt(i), qualified_column_name, result);
+
         return;
     }
+
+    if (function_node.getArgumentsSize() != 2)
+        return;
+
+    auto lhs_argument = function_node.getArgumentAt(0);
+    auto rhs_argument = function_node.getArgumentAt(1);
 
     auto lhs_argument_column_name = lhs_argument.getColumnName();
     auto rhs_argument_column_name = rhs_argument.getColumnName();
@@ -276,7 +277,7 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
 
     if (op_result.size() == 1)
     {
-        auto [op, val] = extractBinaryOp(node, result.first);
+        auto [op, val] = op_result[0];
         MY_LOG("Estimate op - {}", op);
 
         if (dummy)
@@ -291,12 +292,14 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         if (op == "equals")
             return estimator.estimateEqual(val, total_rows);
         if (op == "less" || op == "lessOrEquals")
-            return estimator.estimateLess(val, total_rows, nullptr, {}, {});
+            return estimator.estimateLess(val, total_rows);
         if (op == "greater" || op == "greaterOrEquals")
-            return estimator.estimateGreater(val, total_rows, nullptr, {}, {});
+            return estimator.estimateGreater(val, total_rows);
 
         return default_unknown_cond_factor * total_rows;
     }
+    else if (dummy)
+        return total_rows;
     else
     {
         Float64 curr_rows = total_rows;
@@ -321,18 +324,27 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
             }
             else
             {
-                Float64 calculated_val = 0.0;
+                std::optional<Float64> calculated_val = {};
                 if (op == "equals")
-                    curr_rows = estimator.estimateEqual(val, curr_rows);
+                {
+                    curr_rows = estimator.estimateEqual(val, curr_rows, &calculated_val, curr_min, curr_max);
+                    if (calculated_val.has_value())
+                    {
+                        curr_min = calculated_val;
+                        curr_max = calculated_val;
+                    }
+                }
                 else if (op == "less" || op == "lessOrEquals")
                 {
                     curr_rows = estimator.estimateLess(val, curr_rows, &calculated_val, curr_min, curr_max);
-                    curr_max = calculated_val;
+                    if (calculated_val.has_value())
+                        curr_max = calculated_val;
                 }
                 else if (op == "greater" || op == "greaterOrEquals")
                 {
                     curr_rows = estimator.estimateGreater(val, curr_rows, &calculated_val, curr_min, curr_max);
-                    curr_min = calculated_val;
+                    if (calculated_val.has_value())
+                        curr_min = calculated_val;
                 }
                 else
                     curr_rows *= default_unknown_cond_factor;
@@ -362,9 +374,10 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::addStatistics(St
     part_statistics[part_name] = stats;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     MY_LOG("estimateLess started with {} rows", rows);
+    // TODO: calculated_val may be bad here
     if (part_statistics.empty())
         return default_cond_range_factor * rows;
     MY_LOG("estimateLess has some stats");
@@ -383,7 +396,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(
     // return result * rows / part_rows;
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreater(const Field & val, Float64 rows, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     auto to_return = rows - estimateLess(val, rows, calculated_val, custom_min, custom_max);
     MY_LOG("estimateGreater final result - {}", to_return);
@@ -391,7 +404,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
     // return rows - estimateLess(val, rows);
 }
 
-Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
+Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     if (part_statistics.empty())
     {
@@ -401,9 +414,12 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual
     Float64 partial_cnt = 0;
     for (const auto & [key, estimator] : part_statistics)
     {
-        result += estimator->estimateEqual(val);
+        result += estimator->estimateEqual(val, calculated_val);
         partial_cnt += estimator->rowCount();
     }
+
+    if (calculated_val && calculated_val->has_value() && (custom_min > (**calculated_val) || custom_max < (**calculated_val)))
+        return 0;
     return result * rows / partial_cnt;
 }
 }

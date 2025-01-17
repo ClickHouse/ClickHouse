@@ -79,17 +79,12 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateEqual(const Field & /*val*/) const
+Float64 IStatistics::estimateEqual(const Field & /*val*/, std::optional<Float64> * /*calculated_val*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateLess(const Field & /*val*/, Float64 * /*calculated_val*/) const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
-}
-
-Float64 IStatistics::estimateLessWithCustomBoundaries(const Field & /*val*/, Float64 * /*calculated_val*/, std::optional<Float64> /*custom_min*/, std::optional<Float64> /*custom_max*/) const
+Float64 IStatistics::estimateLess(const Field & /*val*/, std::optional<Float64> * /*calculated_val*/, std::optional<Float64> /*custom_min*/, std::optional<Float64> /*custom_max*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
@@ -106,35 +101,35 @@ Float64 IStatistics::estimateLessWithCustomBoundaries(const Field & /*val*/, Flo
 /// Sometimes, it is possible to combine multiple statistics in a clever way. For that reason, all estimation are performed in a central
 /// place (here), and we don't simply pass the predicate to the first statistics object that supports it natively.
 
-Float64 ColumnPartStatistics::estimateLess(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ColumnPartStatistics::estimateLess(const Field & val, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     MY_LOG("estimateLess started");
     if (stats.contains(StatisticsType::TDigest))
-        return stats.at(StatisticsType::TDigest)->estimateLessWithCustomBoundaries(val, calculated_val, custom_min, custom_max);
+        return stats.at(StatisticsType::TDigest)->estimateLess(val, calculated_val, custom_min, custom_max);
     if (stats.contains(StatisticsType::MinMax))
     {
         MY_LOG("estimateLess MinMax stat found");
-        return stats.at(StatisticsType::MinMax)->estimateLessWithCustomBoundaries(val, calculated_val, custom_min, custom_max);
+        return stats.at(StatisticsType::MinMax)->estimateLess(val, calculated_val, custom_min, custom_max);
     }
     return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
-Float64 ColumnPartStatistics::estimateGreater(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 ColumnPartStatistics::estimateGreater(const Field & val, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     return rows - estimateLess(val, calculated_val, custom_min, custom_max);
 }
 
-Float64 ColumnPartStatistics::estimateEqual(const Field & val) const
+Float64 ColumnPartStatistics::estimateEqual(const Field & val, std::optional<Float64> * calculated_val) const
 {
     if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
-            return stats.at(StatisticsType::TDigest)->estimateEqual(val);
+            return stats.at(StatisticsType::TDigest)->estimateEqual(val, calculated_val);
     }
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
-        return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
+        return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val, calculated_val);
 #endif
     if (stats.contains(StatisticsType::Uniq))
     {

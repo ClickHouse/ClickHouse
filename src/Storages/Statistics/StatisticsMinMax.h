@@ -17,8 +17,7 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    Float64 estimateLess(const Field & val, Float64 * calculated_val) const override;
-    Float64 estimateLessWithCustomBoundaries(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const override;
+    Float64 estimateLess(const Field & val, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const override;
 
 private:
     Float64 min = std::numeric_limits<Float64>::max();

@@ -32,9 +32,9 @@ private:
 
         void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
 
-        Float64 estimateLess(const Field & val, Float64 rows, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
-        Float64 estimateGreater(const Field & val, Float64 rows, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const;
-        Float64 estimateEqual(const Field & val, Float64 rows) const;
+        Float64 estimateLess(const Field & val, Float64 rows, std::optional<Float64> * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
+        Float64 estimateGreater(const Field & val, Float64 rows, std::optional<Float64> * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
+        Float64 estimateEqual(const Field & val, Float64 rows, std::optional<Float64> * calculated_val = nullptr, std::optional<Float64> custom_min = {}, std::optional<Float64> custom_max = {}) const;
     };
 
     std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & qualified_column_name) const;

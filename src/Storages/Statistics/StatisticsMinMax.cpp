@@ -52,12 +52,7 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf)
     readFloatBinary(max, buf);
 }
 
-Float64 StatisticsMinMax::estimateLess(const Field & val, Float64 * calculated_val) const
-{
-    return estimateLessWithCustomBoundaries(val, calculated_val, min, max);
-}
-
-Float64 StatisticsMinMax::estimateLessWithCustomBoundaries(const Field & val, Float64 * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
+Float64 StatisticsMinMax::estimateLess(const Field & val, std::optional<Float64> * calculated_val, std::optional<Float64> custom_min, std::optional<Float64> custom_max) const
 {
     Float64 used_min = custom_min.has_value() ? *custom_min : min;
     Float64 used_max = custom_max.has_value() ? *custom_max : max;
