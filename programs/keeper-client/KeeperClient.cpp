@@ -146,7 +146,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("port"));
 
     options.addOption(
-        Poco::Util::Option("password", "", "password to connect to server")
+        Poco::Util::Option("password", "", "password to connect to keeper server")
             .argument("<password>")
             .binding("password"));
 
