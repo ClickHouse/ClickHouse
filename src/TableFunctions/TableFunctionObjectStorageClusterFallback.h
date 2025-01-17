@@ -22,8 +22,6 @@ public:
     using BaseCluster = Base;
     using BaseSimple = BaseCluster::Base;
 
-    virtual ~TableFunctionObjectStorageClusterFallback() override = default;
-
     static constexpr auto name = Definition::name;
 
     String getName() const override { return name; }
