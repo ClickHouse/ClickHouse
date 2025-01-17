@@ -25,7 +25,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/IPartMetadataManager.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
@@ -84,8 +83,6 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
-
-    using uint128 = IPartMetadataManager::uint128;
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
@@ -350,7 +347,7 @@ public:
         {
         }
 
-        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        void load(const MergeTreeData & data, const IMergeTreeDataPart & part);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
@@ -575,6 +572,10 @@ public:
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
 
+    /// Read a file associated to a part
+    std::unique_ptr<ReadBuffer> readFile(const String & file_name) const;
+    std::unique_ptr<ReadBuffer> readFileIfExists(const String & file_name) const;
+
     static std::optional<String> getStreamNameOrHash(
         const String & name,
         const IMergeTreeDataPart::Checksums & checksums);
@@ -643,8 +644,6 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    mutable PartMetadataManagerPtr metadata_manager;
-
     void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
@@ -664,8 +663,6 @@ protected:
     /// storage storage, excluding files in the second returned argument.
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
-
-    void initializePartMetadataManager();
 
     void initializeIndexGranularityInfo();
 
