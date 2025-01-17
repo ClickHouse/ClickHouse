@@ -69,13 +69,13 @@ public:
         {
             return std::make_shared<DataTypeTuple>(
                 DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-                Strings{"latitude", "longitude"});
+                Strings{"longitude", "latitude"});
         }
         else
         {
             return std::make_shared<DataTypeTuple>(
                 DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-                Strings{"longitude", "latitude"});
+                Strings{"latitude", "longitude"});
         }
     }
 
@@ -116,13 +116,13 @@ public:
         MutableColumns columns;
         if (h3togeo_lon_lat_result_order)
         {
-            columns.emplace_back(std::move(latitude));
             columns.emplace_back(std::move(longitude));
+            columns.emplace_back(std::move(latitude));
         }
         else
         {
-            columns.emplace_back(std::move(longitude));
             columns.emplace_back(std::move(latitude));
+            columns.emplace_back(std::move(longitude));
         }
         return ColumnTuple::create(std::move(columns));
     }

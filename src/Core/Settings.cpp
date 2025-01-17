@@ -3184,7 +3184,7 @@ Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hou
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
-    DECLARE(Bool, h3togeo_lon_lat_result_order, true, R"(
+    DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
 Function 'h3ToGeo' returns (lat, lon) if true, otherwise (lon, lat)
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
