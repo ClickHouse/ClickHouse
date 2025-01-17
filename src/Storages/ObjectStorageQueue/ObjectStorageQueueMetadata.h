@@ -192,7 +192,7 @@ private:
 
     /// Number of S3(Azure)Queue tables on the same
     /// clickhouse server instance referencing the same metadata object.
-    std::atomic<size_t> * metadata_ref_count;
+    std::atomic<size_t> * metadata_ref_count = nullptr;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;
