@@ -114,6 +114,17 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
             std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
     }
+    else if (join_by_layers_prefix)
+    {
+        joined_pipeline = QueryPipelineBuilder::joinPipelinesByLayers(
+            std::move(pipelines[0]),
+            std::move(pipelines[1]),
+            join,
+            join_algorithm_header,
+            max_block_size,
+            min_block_size_bytes,
+            &processors);
+    }
     else
     {
         joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
@@ -167,6 +178,8 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << name << ": " << value << '\n';
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
+    if (join_by_layers_prefix)
+        settings.out << prefix << "Layers prefix: " << join_by_layers_prefix << "\n";
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -175,6 +188,8 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
+    if (join_by_layers_prefix)
+        map.add("LayersPrefix", true);
 }
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)

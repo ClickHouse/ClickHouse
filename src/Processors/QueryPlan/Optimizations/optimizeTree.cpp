@@ -217,7 +217,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     applyOrder(optimization_settings, root);
 }
 
-void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -228,7 +228,11 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
         auto & frame = stack.back();
 
         if (frame.next_child == 0)
+        {
             optimizeJoin(*frame.node, nodes);
+            if (optimization_settings.optimize_join_read_by_layers)
+                optimizeJoinByLayers(*frame.node);
+        }
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())

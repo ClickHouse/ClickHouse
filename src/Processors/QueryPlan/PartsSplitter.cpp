@@ -119,7 +119,8 @@ int compareValues(const Values & lhs, const Values & rhs)
 class IndexAccess
 {
 public:
-    explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_)
+    explicit IndexAccess(const RangesInDataParts & parts_, size_t max_columns_in_index = std::numeric_limits<size_t>::max())
+        : parts(parts_), loaded_columns(max_columns_in_index)
     {
         /// Indices might be reloaded during the process and the reload might produce a different value
         /// (change in `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). Also, some suffix of index
@@ -206,7 +207,7 @@ public:
 private:
     const RangesInDataParts & parts;
     std::vector<IMergeTreeDataPart::IndexPtr> indices;
-    size_t loaded_columns = std::numeric_limits<size_t>::max();
+    size_t loaded_columns;
 };
 
 class RangesInDataPartsBuilder
@@ -640,9 +641,20 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
 
     return {std::move(non_intersecting_ranges_in_data_parts), std::move(intersecting_ranges_in_data_parts)};
 }
+}
 
-std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(RangesInDataParts intersecting_ranges_in_data_parts,
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
+    RangesInDataParts ranges_in_data_parts,
     size_t max_layers,
+    size_t max_columns_in_index,
     const LoggerPtr & logger)
 {
     /** We will advance the iterator pointing to the mark with the smallest PK value until
@@ -653,16 +665,16 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
       * We use PartRangeIndex to track currently processing ranges, because after sort, RangeStart event is always placed
       * before Range End event and it is possible to encounter overlapping Range Start events for the same part.
       */
-    IndexAccess index_access(intersecting_ranges_in_data_parts);
+    IndexAccess index_access(ranges_in_data_parts, max_columns_in_index);
 
     using PartsRangesIteratorWithIndex = std::pair<PartsRangesIterator, PartRangeIndex>;
     std::priority_queue<PartsRangesIteratorWithIndex, std::vector<PartsRangesIteratorWithIndex>, std::greater<>> parts_ranges_queue;
 
-    for (size_t part_index = 0; part_index < intersecting_ranges_in_data_parts.size(); ++part_index)
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
-        for (const auto & range : intersecting_ranges_in_data_parts[part_index].ranges)
+        for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
-            const auto & index_granularity = intersecting_ranges_in_data_parts[part_index].data_part->index_granularity;
+            const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
             PartsRangesIterator parts_range_start{index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart};
             PartRangeIndex parts_range_start_index(parts_range_start);
             parts_ranges_queue.push({std::move(parts_range_start), std::move(parts_range_start_index)});
@@ -686,7 +698,7 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
     std::vector<Values> borders;
     std::vector<RangesInDataParts> result_layers;
 
-    size_t total_intersecting_rows_count = intersecting_ranges_in_data_parts.getRowsCountAllParts();
+    size_t total_intersecting_rows_count = ranges_in_data_parts.getRowsCountAllParts();
     const size_t rows_per_layer = std::max<size_t>(total_intersecting_rows_count / max_layers, 1);
 
     while (!parts_ranges_queue.empty())
@@ -703,7 +715,7 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
             return marks_in_current_layer < intersected_parts * 2;
         };
 
-        RangesInDataPartsBuilder current_layer_builder(intersecting_ranges_in_data_parts);
+        RangesInDataPartsBuilder current_layer_builder(ranges_in_data_parts);
         result_layers.emplace_back();
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
@@ -780,7 +792,7 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
 
 
 /// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
-ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders)
+static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders)
 {
     auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = (!result) ? foo : makeASTFunction("and", result, foo); };
 
@@ -843,16 +855,6 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
             add_and_condition(filters[layer], makeASTFunction("not", lexicographically_greater(borders[layer])));
     }
     return filters;
-}
-}
-
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
 }
 
 static void reorderColumns(ActionsDAG & dag, const Block & header, const std::string & filter_column)
@@ -933,13 +935,24 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, logger);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), logger);
+    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
+    return result;
+}
+
+Pipes readByLayers(
+    SplitPartsByRanges split_ranges,
+    const KeyDescription & primary_key,
+    ReadingInOrderStepGetter && step_getter,
+    ContextPtr context)
+{
+    auto && [layers, borders] = std::move(split_ranges);
     auto filters = buildFilters(primary_key, borders);
-    result.merging_pipes.resize(layers.size());
+    Pipes merging_pipes(layers.size());
 
     for (size_t i = 0; i < layers.size(); ++i)
     {
-        result.merging_pipes[i] = create_merging_pipe(layers[i]);
+        merging_pipes[i] = step_getter(layers[i]);
 
         auto & filter_function = filters[i];
         if (!filter_function)
@@ -947,11 +960,11 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
+        reorderColumns(actions, merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
-        result.merging_pipes[i].addSimpleTransform(
+        merging_pipes[i].addSimpleTransform(
             [&](const Block & header)
             {
                 auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
@@ -960,7 +973,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
             });
     }
 
-    return result;
+    return merging_pipes;
 }
 
 }

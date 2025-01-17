@@ -131,6 +131,15 @@ public:
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByLayers(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        JoinPtr join,
+        const Block & output_header,
+        size_t max_block_size,
+        size_t min_block_size_bytes,
+        Processors * collected_processors = nullptr);
+
     /// Join two independent pipelines, processing them simultaneously.
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShaped(
         std::unique_ptr<QueryPipelineBuilder> left,
