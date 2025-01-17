@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS dst_sparse;
 DROP TABLE IF EXISTS mytable_sparse;
 
-CREATE or replace TABLE dst_sparse (
+CREATE TABLE dst_sparse (
     `id` Int64,
     `budget` Tuple(currencyCode String)
 )
@@ -27,7 +27,7 @@ ORDER BY table;
 DROP TABLE IF EXISTS dst_sparse;
 DROP TABLE IF EXISTS mytable_sparse;
 
-CREATE or replace TABLE dst_sparse (
+CREATE TABLE dst_sparse (
     `id` Int64,
     `budget` Tuple(currencyCode String)
 )
