@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 namespace
@@ -62,22 +61,8 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return result;
 }
 
-std::optional<Field> convertFieldToTypeCheckEnum(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool forbid_unknown_enum_values)
-{
-    try
-    {
-        return convertFieldToTypeStrict(from_value, from_type, to_type);
-    }
-    catch (const Exception & e)
-    {
-        if (!forbid_unknown_enum_values && isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
-            return {};
-        throw;
-    }
-}
-
 template <typename Collection>
-ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, GetSetElementParams params)
+ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
 {
     assert(collection.size() == value_types.size());
     size_t columns_size = block_types.size();
@@ -96,11 +81,13 @@ ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, 
         if (columns_size == 1)
         {
             const DataTypePtr & data_type = value_types[collection_index];
-            auto field = convertFieldToTypeCheckEnum(value, *data_type, *block_types[0], params.forbid_unknown_enum_values);
+            auto field = convertFieldToTypeStrict(value, *data_type, *block_types[0]);
             if (!field)
+            {
                 continue;
+            }
 
-            bool need_insert_null = params.transform_null_in && block_types[0]->isNullable();
+            bool need_insert_null = transform_null_in && block_types[0]->isNullable();
             if (!field->isNull() || need_insert_null)
                 columns[0]->insert(*field);
 
@@ -130,12 +117,12 @@ ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, 
         size_t i = 0;
         for (; i < tuple_size; ++i)
         {
-            auto converted_field = convertFieldToTypeCheckEnum(tuple[i], *tuple_value_type[i], *block_types[i], params.forbid_unknown_enum_values);
+            auto converted_field = convertFieldToTypeStrict(tuple[i], *tuple_value_type[i], *block_types[i]);
             if (!converted_field)
                 break;
             tuple_values[i] = std::move(*converted_field);
 
-            bool need_insert_null = params.transform_null_in && block_types[i]->isNullable();
+            bool need_insert_null = transform_null_in && block_types[i]->isNullable();
             if (tuple_values[i].isNull() && !need_insert_null)
                 break;
         }
@@ -157,7 +144,7 @@ ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, 
 
 }
 
-ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, GetSetElementParams params)
+ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
 {
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
@@ -181,7 +168,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expres
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
         Array array{value};
         DataTypes value_types{value_type};
-        result_block = createBlockFromCollection(array, value_types, set_element_types, params);
+        result_block = createBlockFromCollection(array, value_types, set_element_types, transform_null_in);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
@@ -193,13 +180,13 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expres
             const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
             size_t value_array_size = value.safeGet<const Array &>().size();
             DataTypes value_types(value_array_size, value_array_type->getNestedType());
-            result_block = createBlockFromCollection(value.safeGet<const Array &>(), value_types, set_element_types, params);
+            result_block = createBlockFromCollection(value.safeGet<const Array &>(), value_types, set_element_types, transform_null_in);
         }
         else if (rhs_which_type.isTuple())
         {
             const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
             const DataTypes & value_types = value_tuple_type->getElements();
-            result_block = createBlockFromCollection(value.safeGet<const Tuple &>(), value_types, set_element_types, params);
+            result_block = createBlockFromCollection(value.safeGet<const Tuple &>(), value_types, set_element_types, transform_null_in);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

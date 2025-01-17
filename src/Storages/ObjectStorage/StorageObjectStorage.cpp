@@ -1,5 +1,5 @@
-#include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -134,7 +134,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard())
+    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
         sample_path = getPathSample(context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
@@ -333,7 +333,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
+        getName(),
         column_names,
         getVirtualsList(),
         query_info,

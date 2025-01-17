@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
-#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -98,9 +97,6 @@ struct BackupSettings
     /// Internal, should not be specified by user.
     /// UUID of the backup. If it's not set it will be generated randomly.
     std::optional<UUID> backup_uuid;
-
-    /// Core settings specified in the query.
-    SettingsChanges core_settings;
 
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

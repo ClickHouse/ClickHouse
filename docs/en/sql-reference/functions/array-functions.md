@@ -928,7 +928,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 
-## arrayEnumerateUniq
+## arrayEnumerateUniq(arr, ...)
 
 Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
 For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1, 1, 2, 1\].
@@ -1000,7 +1000,7 @@ arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)
 
 **Example**
 
-With `clear_depth=1` and `max_array_depth=1`, the result of `arrayEnumerateUniqRanked` is identical to that which [`arrayEnumerateUniq`](#arrayenumerateuniq) would give for the same array.
+With `clear_depth=1` and `max_array_depth=1`, the result of `arrayEnumerateUniqRanked` is identical to that which [`arrayEnumerateUniq`](#arrayenumerateuniqarr) would give for the same array.
 
 Query:
 
@@ -2144,42 +2144,26 @@ Result:
 
 ## arrayROCAUC
 
-Calculates the area under the receiver operating characteristic (ROC) curve.
-A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
-The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
-The ROC AUC (also known as simply AUC) is a concept in machine learning.
+Calculates the Area Under the Curve (AUC), which is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
 
 ``` sql
-arrayROCAUC(arr_scores, arr_labels[, scale[, arr_partial_offsets]])
+arrayROCAUC(arr_scores, arr_labels[, scale])
 ```
 
 Alias: `arrayAUC`
 
 **Arguments**
 
-- `arr_scores` — Scores prediction model gives. [Array](../data-types/array.md) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md).
-- `arr_labels` — Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](../data-types/array.md) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md).
-- `scale` — Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true. [Bool](../data-types/boolean.md). Optional.
-- `arr_partial_offsets` — An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](../data-types/array.md) of non-negative [Integers](../data-types/int-uint.md). Optional.
-    - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
-    - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
-    - `total_positives`: The total number of positive samples in the entire dataset.
-    - `total_negatives`: The total number of negative samples in the entire dataset.
-
-::::note
-When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
-The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
-For example:
-- One partition could contain all scores in the range [0, 0.5).
-- Another partition could contain scores in the range [0.5, 1.0].
-::::
+- `arr_scores` — scores prediction model gives.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
 
 **Returned value**
 
-Returns area under the receiver operating characteristic (ROC) curve. [Float64](../data-types/float.md).
+Returns AUC value with type Float64.
 
 **Example**
 
@@ -2199,40 +2183,28 @@ Result:
 
 ## arrayAUCPR
 
-Calculates the area under the precision-recall (PR) curve.
+Calculate the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
 The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
-The PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
+PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
 
 ``` sql
-arrayAUCPR(arr_scores, arr_labels[, arr_partial_offsets])
+arrayAUCPR(arr_scores, arr_labels)
 ```
 
 Alias: `arrayPRAUC`
 
 **Arguments**
 
-- `arr_scores` — Scores prediction model gives. [Array](../data-types/array.md) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md).
-- `arr_labels` — Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](../data-types/array.md) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md).
-- `arr_partial_offsets` — Optional. An [Array](../data-types/array.md) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`]. [Array](../data-types/array.md) of non-negative [Integers](../data-types/int-uint.md). Optional.
-    - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
-    - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
-    - `total_positives`: The total number of positive samples in the entire dataset.
-
-::::note
-When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
-The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
-For example:
-- One partition could contain all scores in the range [0, 0.5).
-- Another partition could contain scores in the range [0.5, 1.0].
-::::
+- `arr_scores` — scores prediction model gives.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
 
 **Returned value**
 
-Returns area under the precision-recall (PR) curve. [Float64](../data-types/float.md).
+Returns PR-AUC value with type Float64.
 
 **Example**
 
@@ -3248,41 +3220,6 @@ Result:
 ┌─res─────┐
 │ [3,1,2] │
 └─────────┘
-```
-
-## arrayNormalizedGini
-
-Calculates the normalized Gini coefficient.
-
-**Syntax**
-
-```sql
-arrayNormalizedGini(predicted, label)
-```
-
-**Arguments**
-
-- `predicted` — Predicted values ([Array(T)](../data-types/array.md))
-- `label` — Actual values ([Array(T)](../data-types/array.md))
-
-**Returned Value**
-
-- A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients).
-
-**Examples**
-
-Query:
-
-```sql
-SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
-```
-
-Result:
-
-```
-┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
-│ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
-└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Distance functions

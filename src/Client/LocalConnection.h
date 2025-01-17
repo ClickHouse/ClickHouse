@@ -76,12 +76,6 @@ public:
         bool send_profile_events_,
         const String & server_display_name_);
 
-    explicit LocalConnection(
-        std::unique_ptr<Session> && session_,
-        bool send_progress_ = false,
-        bool send_profile_events_ = false,
-        const String & server_display_name_ = "");
-
     ~LocalConnection() override;
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
@@ -90,13 +84,6 @@ public:
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
         ReadBuffer * in = nullptr,
-        bool send_progress = false,
-        bool send_profile_events = false,
-        const String & server_display_name = "");
-
-    static ServerConnectionPtr createConnection(
-        const ConnectionParameters & connection_parameters,
-        std::unique_ptr<Session> && session,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");
@@ -173,7 +160,7 @@ private:
     bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
-    std::unique_ptr<Session> session;
+    Session session;
 
     bool send_progress;
     bool send_profile_events;

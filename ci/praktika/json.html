@@ -30,8 +30,8 @@
 
         body.night-theme {
             --background-color: #1F1F1C;
-            --text-color: #dedede;
-            --tile-background: #1F1F1C;
+            --text-color: #fff;
+            --tile-background: black;
             --header-background-color: #1F1F1C;
         }
 
@@ -275,10 +275,9 @@
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
-<!--    TODO: fix night theme and enable-->
-<!--    <div class="settings">-->
-<!--        <span id="theme-toggle">☀️</span>-->
-<!--    </div>-->
+    <div class="settings">
+        <span id="theme-toggle">☀️</span>
+    </div>
 </footer>
 
 <script>
@@ -299,8 +298,7 @@
     }
 
     // Attach the toggle function to the click event of the icon
-    // TODO: fix night theme and enable
-    // document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -420,8 +418,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        //keyElement.textContent = columnSymbols[key] + ':' || key;
-        keyElement.textContent = '';
+        keyElement.textContent = columnSymbols[key] + ':' || key;
         statusContainer.appendChild(keyElement);
 
         if (Array.isArray(links) && links.length > 0) {
@@ -445,8 +442,7 @@
         let valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
-        keyElement.textContent = '';
+        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
         valueElement.classList.add('status-value');
         valueElement.classList.add(getStatusClass(status));
         valueElement.textContent = status;
@@ -460,8 +456,7 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
-        keyElement.textContent = ''
+        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
         valueElement.textContent = formatTimestamp(start_time);
         keyValuePair.appendChild(keyElement);
         keyValuePair.appendChild(valueElement);
@@ -473,8 +468,7 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
-        keyElement.textContent = ''
+        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
         if (duration === null) {
             // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
             valueElement.textContent = '00:00:00';
@@ -534,11 +528,11 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        // name: '🗂️',
-        // status: '✅',
-        start_time: 'ts',
-        duration: 'dur',
-        // info: '📝',
+        name: '🗂️',
+        status: '✅',
+        start_time: '🕒',
+        duration: '⏳',
+        info: '📝',
         files: '📎'
     };
 
@@ -687,9 +681,8 @@
                     addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 
                     // Handle links
-                    if (nameParams.length > 1) {
-                        addFileButtonToStatus('files', targetData.links)
-                    }
+                    addFileButtonToStatus('files', targetData.links)
+
 
                     // Handle duration update if duration is null and start_time exists
                     if (targetData.duration === null && targetData.start_time) {
@@ -805,11 +798,10 @@
                 // Proceed with the rest of the initialization
                 addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
 
-                // These are present in naviagation bar at the bottom. Try to remove as names might be long and do not fit status bar
-                // if (nameParams[1]) {
-                //     addKeyValueToStatus("job", nameParams[1]);
-                // }
-                // addKeyValueToStatus("workflow", nameParams[0]);
+                if (nameParams[1]) {
+                    addKeyValueToStatus("job", nameParams[1]);
+                }
+                addKeyValueToStatus("workflow", nameParams[0]);
 
                 // Check if all required parameters are present to load JSON
                 if (PR && sha && root_name) {

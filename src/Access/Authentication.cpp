@@ -79,11 +79,6 @@ namespace
                 return true;
         return false;
     }
-
-    bool hasPublicKey(const std::vector<SSHKey> & keys, const SSHKey & key)
-    {
-        return std::ranges::find_if(keys, [&](const auto & x) { return key.isEqual(x); }) != keys.end();
-    }
 #endif
 
     bool checkKerberosAuthentication(
@@ -213,19 +208,6 @@ namespace
         return AuthenticationType::SSH_KEY == authentication_method.getType()
             && checkSshSignature(authentication_method.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
     }
-
-    /**
-     * The idea behind this simple check is that the most of the work and verification is done by libssh.
-     * What we need to do is to compare the public key extracted from the user's private key and compare it
-     * to our database of keys associated with the user. Similar to how it is done with ~/.ssh/authorized_keys
-     */
-    bool checkSSHLoginAuthentication(
-        const SSHPTYCredentials * ssh_login_credentials,
-        const AuthenticationData & authentication_method)
-    {
-        return AuthenticationType::SSH_KEY == authentication_method.getType()
-            && hasPublicKey(authentication_method.getSSHKeys(), ssh_login_credentials->getKey());
-    }
 #endif
 }
 
@@ -262,11 +244,6 @@ bool Authentication::areCredentialsValid(
     if (const auto * ssh_credentials = typeid_cast<const SshCredentials *>(&credentials))
     {
         return checkSshAuthentication(ssh_credentials, authentication_method);
-    }
-
-    if (const auto * ssh_login_credentials = typeid_cast<const SSHPTYCredentials *>(&credentials))
-    {
-        return checkSSHLoginAuthentication(ssh_login_credentials, authentication_method);
     }
 #endif
 

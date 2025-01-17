@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
@@ -315,7 +315,6 @@ std_cerr_cout_excludes=(
     /tests/
     _fuzzer
     # OK
-    base/base/ask.cpp
     src/Common/ProgressIndication.cpp
     src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -330,10 +329,7 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
-    src/Common/ProgressIndication.h
-    src/Client/LineReader.h
     src/Client/LineReader.cpp
-    src/Client/ReplxxLineReader.h
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Client/ClientBase.h
@@ -353,7 +349,7 @@ sources_with_std_cerr_cout=( $(
 ) )
 # Exclude comments
 for src in "${sources_with_std_cerr_cout[@]}"; do
-    # suppress stderr, since it may contain warning for #pragma once in headers
+    # suppress stderr, since it may contain warning for #pargma once in headers
     if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
         echo "$src: uses std::cerr/std::cout"
     fi

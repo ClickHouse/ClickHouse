@@ -116,10 +116,13 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    /** Output nodes can contain any column returned from DAG.
+      * You may manually change it if needed.
+      */
     NodeRawConstPtrs & getOutputs() { return outputs; }
+
+    const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;

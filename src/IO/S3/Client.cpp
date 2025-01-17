@@ -83,22 +83,10 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
-
-    /// It does not make sense to retry when GCS suggest to use Rewrite
-    if (useGCSRewrite(error))
-        return false;
+            return false;
 
     return error.ShouldRetry();
 }
-
-bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error)
-{
-    return error.GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT
-        && error.GetExceptionName() == "InternalError"
-        && error.GetMessage().contains("use the Rewrite method in the JSON API");
-}
-
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const

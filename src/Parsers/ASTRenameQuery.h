@@ -164,9 +164,9 @@ protected:
             if (elements.at(0).if_exists)
                 ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
-            elements.at(0).from.database->format(ostr, settings, state, frame);
+            elements.at(0).from.database->formatImpl(ostr, settings, state, frame);
             ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            elements.at(0).to.database->format(ostr, settings, state, frame);
+            elements.at(0).to.database->formatImpl(ostr, settings, state, frame);
             formatOnCluster(ostr, settings);
             return;
         }
@@ -194,23 +194,23 @@ protected:
 
             if (it->from.database)
             {
-                it->from.database->format(ostr, settings, state, frame);
+                it->from.database->formatImpl(ostr, settings, state, frame);
                 ostr << '.';
             }
 
             chassert(it->from.table);
-            it->from.table->format(ostr, settings, state, frame);
+            it->from.table->formatImpl(ostr, settings, state, frame);
 
             ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
 
             if (it->to.database)
             {
-                it->to.database->format(ostr, settings, state, frame);
+                it->to.database->formatImpl(ostr, settings, state, frame);
                 ostr << '.';
             }
 
             chassert(it->to.table);
-            it->to.table->format(ostr, settings, state, frame);
+            it->to.table->formatImpl(ostr, settings, state, frame);
 
         }
 

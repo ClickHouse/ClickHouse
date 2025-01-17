@@ -121,9 +121,6 @@ class Result(MetaClasses.Serializable):
     def is_ok(self):
         return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
 
-    def is_error(self):
-        return self.status in (Result.Status.ERROR,)
-
     def set_status(self, status) -> "Result":
         self.status = status
         self.dump()
@@ -141,20 +138,12 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_files(self, files) -> "Result":
-        if isinstance(files, (str, Path)):
-            files = [files]
         for file in files:
             assert Path(
                 file
             ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
-        for file in self.files:
-            if file in files:
-                print(
-                    f"WARNING: File [{file}] is already present in Result [{self.name}] - skip"
-                )
-                files.remove(file)
         self.files += files
         self.dump()
         return self
@@ -178,7 +167,7 @@ class Result(MetaClasses.Serializable):
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []
-        for result_dict in obj.get("results", []):
+        for result_dict in obj["results"] or []:
             sub_res = cls.from_dict(result_dict)
             sub_results.append(sub_res)
         obj["results"] = sub_results
@@ -188,7 +177,7 @@ class Result(MetaClasses.Serializable):
         if self.duration:
             return self
         if self.start_time:
-            self.duration = datetime.datetime.now().timestamp() - self.start_time
+            self.duration = datetime.datetime.utcnow().timestamp() - self.start_time
         else:
             print(
                 f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
@@ -285,7 +274,6 @@ class Result(MetaClasses.Serializable):
         name,
         command,
         with_log=False,
-        with_info=False,
         fail_fast=True,
         workdir=None,
         command_args=None,
@@ -298,7 +286,6 @@ class Result(MetaClasses.Serializable):
         :param command: Shell command (str) or Python callable, or list of them.
         :param workdir: Optional working directory.
         :param with_log: Boolean flag to log output to a file.
-        :param with_info: Fill in Result.info from command output
         :param fail_fast: Boolean flag to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
@@ -311,12 +298,11 @@ class Result(MetaClasses.Serializable):
         command_kwargs = command_kwargs or {}
 
         # Set log file path if logging is enabled
-        if with_log:
-            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-        elif with_info:
-            log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
-        else:
-            log_file = None
+        log_file = (
+            f"{Settings.TEMP_DIR}/{Utils.normalize_string(name)}.log"
+            if with_log
+            else None
+        )
 
         # Ensure the command is a list for consistent iteration
         if not isinstance(command, list):
@@ -326,28 +312,25 @@ class Result(MetaClasses.Serializable):
         print(f"> Starting execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
-        with ContextManager.cd(workdir):
-            for command_ in command:
-                if callable(command_):
-                    # If command is a Python function, call it with provided arguments
-                    result = command_(*command_args, **command_kwargs)
-                    if isinstance(result, bool):
-                        res = result
-                    elif result:
-                        error_infos.append(str(result))
-                        res = False
-                else:
-                    # Run shell command in a specified directory with logging and verbosity
+        for command_ in command:
+            if callable(command_):
+                # If command is a Python function, call it with provided arguments
+                result = command_(*command_args, **command_kwargs)
+                if isinstance(result, bool):
+                    res = result
+                elif result:
+                    error_infos.append(str(result))
+                    res = False
+            else:
+                # Run shell command in a specified directory with logging and verbosity
+                with ContextManager.cd(workdir):
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
-                    if with_info:
-                        with open(log_file, "r") as f:
-                            error_infos.append(f.read().strip())
                     res = exit_code == 0
 
-                # If fail_fast is enabled, stop on first failure
-                if not res and fail_fast:
-                    print(f"Execution stopped due to failure in [{command_}]")
-                    break
+            # If fail_fast is enabled, stop on first failure
+            if not res and fail_fast:
+                print(f"Execution stopped due to failure in [{command_}]")
+                break
 
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
@@ -355,7 +338,7 @@ class Result(MetaClasses.Serializable):
             status=res,
             stopwatch=stop_watch_,
             info=error_infos,
-            files=[log_file] if with_log else None,
+            files=[log_file] if log_file else None,
         )
 
     def complete_job(self):
@@ -405,7 +388,7 @@ class ResultInfo:
     GH_STATUS_ERROR = "Failed to set GH commit status"
 
     NOT_FINALIZED = (
-        "Job did not provide Result: job script bug, died CI runner or praktika bug"
+        "Job did not not provide Result: job script bug, died CI runner or praktika bug"
     )
 
     S3_ERROR = "S3 call failure"
@@ -543,7 +526,7 @@ class _ResultS3:
     #     return True
 
     @classmethod
-    def upload_result_files_to_s3(cls, result: Result, s3_subprefix=""):
+    def upload_result_files_to_s3(cls, result, s3_subprefix=""):
         s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
         if result.results:
             for result_ in result.results:
@@ -551,7 +534,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: File [{file}] was not found")
+                result.info += f"\nWARNING: Result file [{file}] was not found"
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False
@@ -569,7 +552,11 @@ class _ResultS3:
                     s3_subprefix=s3_subprefix,
                 )
             result.links.append(file_link)
-        result.files = []
+        if result.files:
+            print(
+                f"Result files [{result.files}] uploaded to s3 [{result.links[-len(result.files):]}] - clean files list"
+            )
+            result.files = []
         result.dump()
 
     @classmethod
@@ -608,7 +595,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
+    GTEST_RESULT_FILE = "/tmp/praktika/gtest.json"
 
     @classmethod
     def from_gtest(cls):
@@ -672,25 +659,8 @@ class ResultTranslator:
                 f"No test result file [{cls.GTEST_RESULT_FILE}]",
             )
 
-        try:
-            with open(
-                cls.GTEST_RESULT_FILE, "r", encoding="utf-8", errors="ignore"
-            ) as j:
-                report = json.load(j)
-        except Exception as e:
-            print(f"ERROR: failed to read json [{e}]")
-            return (
-                Result.Status.ERROR,
-                [
-                    Result(
-                        name="Parsing Error",
-                        status=Result.Status.ERROR,
-                        files=[cls.GTEST_RESULT_FILE],
-                        info=str(e),
-                    )
-                ],
-                "ERROR: failed to read gtest json",
-            )
+        with open(cls.GTEST_RESULT_FILE, "r", encoding="utf-8") as j:
+            report = json.load(j)
 
         total_counter = report["tests"]
         failed_counter = report["failures"]
@@ -736,7 +706,7 @@ class ResultTranslator:
                 )
 
         check_status = Result.Status.SUCCESS
-        test_status = Result.Status.SUCCESS
+        tests_status = Result.Status.SUCCESS
         tests_time = float(report["time"][:-1])
         if failed_counter:
             check_status = Result.Status.FAILED
@@ -744,7 +714,7 @@ class ResultTranslator:
         if error_counter:
             check_status = Result.Status.ERROR
             test_status = Result.Status.ERROR
-        test_results.append(Result(report["name"], test_status, duration=tests_time))
+        test_results.append(Result(report["name"], tests_status, duration=tests_time))
 
         if not description:
             description += (

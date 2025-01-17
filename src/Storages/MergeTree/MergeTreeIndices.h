@@ -17,7 +17,6 @@
 #include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
-constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
 
 namespace DB
 {
@@ -37,14 +36,6 @@ struct MergeTreeIndexFormat
     const char* extension;
 
     explicit operator bool() const { return version != 0; }
-};
-
-/// A vehicle which transports elements of the SELECT query to the vector similarity index.
-struct VectorSearchParameters
-{
-    String distance_function;
-    size_t limit;
-    std::vector<Float64> reference_vector;
 };
 
 /// Stores some info about a single block of data.
@@ -71,9 +62,6 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
-
-    /// The in-memory size of the granule. Not expected to be 100% accurate.
-    virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
@@ -111,7 +99,7 @@ public:
     /// Special method for vector similarity indexes:
     /// Returns the row positions of the N nearest neighbors in the index granule
     /// The returned row numbers are guaranteed to be sorted and unique.
-    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
@@ -122,7 +110,6 @@ using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
-
 
 /// IndexCondition that checks several indexes at the same time.
 class IMergeTreeIndexMergedCondition
@@ -192,15 +179,6 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
-
-    /// The vector similarity index overrides this method
-    virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * /*filter_actions_dag*/, ContextPtr /*context*/,
-        const std::optional<VectorSearchParameters> & /*parameters*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "createIndexCondition with vector search parameters is not implemented for index of type {}", index.type);
-    }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
 

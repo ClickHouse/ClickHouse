@@ -1,8 +1,7 @@
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
-SET parallel_replicas_local_plan = 1;
 
-SELECT trimBoth(explain)
+SELECT explain
 FROM (
 EXPLAIN actions=1
 SELECT SearchPhrase, MIN(URL), MIN(Title), COUNT(*) AS c, COUNT(DISTINCT UserID)
@@ -15,7 +14,7 @@ SETTINGS allow_reorder_prewhere_conditions = 0
 )
 WHERE explain like '%Prewhere filter column%';
 
-SELECT trimBoth(explain)
+SELECT explain
 FROM (
 EXPLAIN actions=1
 SELECT SearchPhrase, MIN(URL), MIN(Title), COUNT(*) AS c, COUNT(DISTINCT UserID)

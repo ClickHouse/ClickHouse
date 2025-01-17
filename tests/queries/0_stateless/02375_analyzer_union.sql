@@ -5,7 +5,7 @@ CREATE TABLE test_table
 (
     id UInt64,
     value String
-) ENGINE=MergeTree ORDER BY tuple();
+) ENGINE=TinyLog;
 
 INSERT INTO test_table VALUES (0, 'Value');
 

@@ -97,28 +97,15 @@ def test_dynamic_query_handler():
             == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
         )
 
-        assert (
-            cluster.instance.http_request(
-                "test_dynamic_handler_auth_with_password?query=select+currentUser()"
-            )
-            .content.strip()
-            .decode()
-            == "with_password"
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_dynamic_handler_auth_with_password_fail?query=select+currentUser()"
-            ).status_code
-            == 403
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_dynamic_handler_auth_without_password?query=select+currentUser()"
-            )
-            .content.strip()
-            .decode()
-            == "without_password"
-        )
+        assert cluster.instance.http_request(
+            "test_dynamic_handler_auth_with_password?query=select+currentUser()"
+        ).content, "with_password"
+        assert cluster.instance.http_request(
+            "test_dynamic_handler_auth_with_password_fail?query=select+currentUser()"
+        ).status_code, 403
+        assert cluster.instance.http_request(
+            "test_dynamic_handler_auth_without_password?query=select+currentUser()"
+        ).content, "without_password"
 
 
 def test_predefined_query_handler():
@@ -201,26 +188,15 @@ def test_predefined_query_handler():
         )
         assert b"max_threads\t1\n" == res1.content
 
-        assert (
-            cluster.instance.http_request("test_predefined_handler_auth_with_password")
-            .content.strip()
-            .decode()
-            == "with_password"
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_predefined_handler_auth_with_password_fail"
-            ).status_code
-            == 403
-        )
-        assert (
-            cluster.instance.http_request(
-                "test_predefined_handler_auth_without_password"
-            )
-            .content.strip()
-            .decode()
-            == "without_password"
-        )
+        assert cluster.instance.http_request(
+            "test_predefined_handler_auth_with_password"
+        ).content, "with_password"
+        assert cluster.instance.http_request(
+            "test_predefined_handler_auth_with_password_fail"
+        ).status_code, 403
+        assert cluster.instance.http_request(
+            "test_predefined_handler_auth_without_password"
+        ).content, "without_password"
 
 
 def test_fixed_static_handler():

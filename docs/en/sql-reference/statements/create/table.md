@@ -6,10 +6,6 @@ title: "CREATE TABLE"
 keywords: [compression, codec, schema, DDL]
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 Creates a new table. This query can have various syntax forms depending on a use case.
 
 By default, tables are created only on the current server. Distributed DDL queries are implemented as `ON CLUSTER` clause, which is [described separately](../../../sql-reference/distributed-ddl.md).
@@ -421,13 +417,15 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 #### ZSTD_QAT
 
-<CloudNotSupportedBadge/>
-
 `ZSTD_QAT[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable level, implemented by [Intel® QATlib](https://github.com/intel/qatlib) and [Intel® QAT ZSTD Plugin](https://github.com/intel/QAT-ZSTD-Plugin). Possible levels: \[1, 12\]. Default level: 1. Recommended level range: \[6, 12\]. Some limitations apply:
 
 - ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
 - For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
 - Decompression is always performed in software.
+
+:::note
+ZSTD_QAT is not available in ClickHouse Cloud.
+:::
 
 ### Specialized Codecs
 
@@ -550,39 +548,25 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 
 ## REPLACE TABLE
 
-The `REPLACE` statement allows you to update a table [atomically](/docs/en/concepts/glossary#atomicity).
+'REPLACE' query allows you to update the table atomically.
 
 :::note
-This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines, 
-which are the default database engines for ClickHouse and ClickHouse Cloud respectively.
+This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
 :::
 
-Ordinarily, if you need to delete some data from a table, 
-you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, 
-then drop the old table and rename the new one. 
-This approach is demonstrated in the example below:
+If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
-
-INSERT INTO myNewTable
-SELECT * FROM myOldTable 
-WHERE CounterID <12345;
-
+INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
 DROP TABLE myOldTable;
-
 RENAME TABLE myNewTable TO myOldTable;
 ```
 
-Instead of the approach above, it is also possible to use `REPLACE` (given you are using the default database engines) to achieve the same result:
+Instead of above, you can use the following:
 
 ```sql
-REPLACE TABLE myOldTable
-ENGINE = MergeTree()
-ORDER BY CounterID 
-AS
-SELECT * FROM myOldTable
-WHERE CounterID <12345;
+REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FROM myOldTable WHERE CounterID <12345;
 ```
 
 ### Syntax
@@ -591,133 +575,56 @@ WHERE CounterID <12345;
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 ```
 
-:::note
-All syntax forms for the `CREATE` statement also work for this statement. Invoking `REPLACE` for a non-existent table will cause an error.
-:::
+All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 
 ### Examples:
 
-<Tabs>
-<TabItem value="clickhouse_replace_example" label="Local" default>
-
-Consider the following table:
+Consider the table:
 
 ```sql
-CREATE DATABASE base 
-ENGINE = Atomic;
-
-CREATE OR REPLACE TABLE base.t1
-(
-    n UInt64,
-    s String
-)
-ENGINE = MergeTree
-ORDER BY n;
-
+CREATE DATABASE base ENGINE = Atomic;
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (1, 'test');
-
 SELECT * FROM base.t1;
+```
 
+```text
 ┌─n─┬─s────┐
 │ 1 │ test │
 └───┴──────┘
 ```
 
-We can use the `REPLACE` statement to clear all the data:
+Using `REPLACE` query to clear all data:
 
 ```sql
-CREATE OR REPLACE TABLE base.t1 
-(
-    n UInt64,
-    s Nullable(String)
-)
-ENGINE = MergeTree
-ORDER BY n;
-
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (2, null);
-
 SELECT * FROM base.t1;
+```
 
+```text
 ┌─n─┬─s──┐
 │ 2 │ \N │
 └───┴────┘
 ```
 
-Or we can use the `REPLACE` statement to change the table structure:
+Using `REPLACE` query to change table structure:
 
 ```sql
-REPLACE TABLE base.t1 (n UInt64) 
-ENGINE = MergeTree 
-ORDER BY n;
-
+REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (3);
-
 SELECT * FROM base.t1;
+```
 
+```text
 ┌─n─┐
 │ 3 │
 └───┘
-```  
-</TabItem>
-<TabItem value="cloud_replace_example" label="Cloud">
-
-Consider the following table on ClickHouse Cloud: 
-
-```sql
-CREATE DATABASE base;
-
-CREATE OR REPLACE TABLE base.t1 
-(
-    n UInt64,
-    s String
-)
-ENGINE = MergeTree
-ORDER BY n;
-
-INSERT INTO base.t1 VALUES (1, 'test');
-
-SELECT * FROM base.t1;
-
-1	test
 ```
-
-We can use the `REPLACE` statement to clear all the data:
-
-```sql
-CREATE OR REPLACE TABLE base.t1 
-(
-    n UInt64, 
-    s Nullable(String)
-)
-ENGINE = MergeTree
-ORDER BY n;
-
-INSERT INTO base.t1 VALUES (2, null);
-
-SELECT * FROM base.t1;
-
-2	
-```
-
-Or we can use the `REPLACE` statement to change the table structure:
-
-```sql
-REPLACE TABLE base.t1 (n UInt64) 
-ENGINE = MergeTree 
-ORDER BY n;
-
-INSERT INTO base.t1 VALUES (3);
-
-SELECT * FROM base.t1;
-
-3
-```    
-</TabItem>
-</Tabs>
 
 ## COMMENT Clause
 
-You can add a comment to the table when creating it.
+You can add a comment to the table when you creating it.
 
 **Syntax**
 

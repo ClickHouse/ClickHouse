@@ -2,8 +2,6 @@
 #include "AggregateFunctionIf.h"
 #include "AggregateFunctionNull.h"
 
-#include <absl/container/inlined_vector.h>
-
 namespace DB
 {
 
@@ -271,7 +269,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// This container stores the columns we really pass to the nested function.
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
 
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
@@ -290,10 +288,10 @@ public:
                 nested_columns[i] = columns[i];
         }
 
-        if (singleFilter(nested_columns.data(), row_num, number_of_arguments))
+        if (singleFilter(nested_columns, row_num, number_of_arguments))
         {
             this->setFlag(place);
-            this->nested_function->add(this->nestedPlace(place), nested_columns.data(), row_num, arena);
+            this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
         }
     }
 
@@ -326,7 +324,7 @@ public:
                 final_null_flags[i] = !filter_values[i];
         }
 
-        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        const IColumn * nested_columns[number_of_arguments];
         for (size_t arg = 0; arg < number_of_arguments; arg++)
         {
             if (is_nullable[arg])
@@ -361,7 +359,7 @@ public:
         {
             this->setFlag(place);
             this->nested_function->addBatchSinglePlaceNotNull(
-                row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_null_flags.get(), arena, -1);
+                row_begin, row_end, this->nestedPlace(place), nested_columns, final_null_flags.get(), arena, -1);
         }
     }
 

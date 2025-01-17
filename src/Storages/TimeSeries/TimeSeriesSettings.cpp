@@ -71,8 +71,4 @@ void TimeSeriesSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-bool TimeSeriesSettings::hasBuiltin(std::string_view name)
-{
-    return TimeSeriesSettingsImpl::hasBuiltin(name);
-}
 }

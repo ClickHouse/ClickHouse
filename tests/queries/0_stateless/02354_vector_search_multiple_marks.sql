@@ -3,10 +3,11 @@
 -- Tests correctness of vector similarity index with > 1 mark
 
 SET allow_experimental_vector_similarity_index = 1;
+SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance')) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 INSERT INTO tab SELECT number, [toFloat32(number), 0.0] from numbers(10000);
 
 WITH [1.0, 0.0] AS reference_vec

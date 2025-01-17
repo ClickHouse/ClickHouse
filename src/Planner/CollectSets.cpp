@@ -22,7 +22,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -70,17 +69,12 @@ public:
             if (sets.findStorage(set_key))
                 return;
 
-            sets.addFromStorage(set_key, storage_set->getSet(), second_argument_table->getStorageID());
+            sets.addFromStorage(set_key, storage_set->getSet());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
-                GetSetElementParams{
-                    .transform_null_in = settings[Setting::transform_null_in],
-                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-                });
-
+                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(), settings[Setting::transform_null_in]);
             DataTypes set_element_types = {in_first_argument->getResultType()};
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
             if (left_tuple_type && left_tuple_type->getElements().size() != 1)

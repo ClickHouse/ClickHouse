@@ -21,10 +21,8 @@ struct OvercommitRatio
 
     friend bool operator<(OvercommitRatio const & lhs, OvercommitRatio const & rhs) noexcept
     {
-        Int128 lhs_committed = lhs.committed;
-        Int128 lhs_soft_limit = lhs.soft_limit;
-        Int128 rhs_committed = rhs.committed;
-        Int128 rhs_soft_limit = rhs.soft_limit;
+        Int128 lhs_committed = lhs.committed, lhs_soft_limit = lhs.soft_limit;
+        Int128 rhs_committed = rhs.committed, rhs_soft_limit = rhs.soft_limit;
         // (a / b < c / d) <=> (a * d < c * b)
         return (lhs_committed * rhs_soft_limit) < (rhs_committed * lhs_soft_limit)
             || (lhs_soft_limit == 0 && rhs_soft_limit > 0)
