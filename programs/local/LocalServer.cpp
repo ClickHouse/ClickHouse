@@ -52,6 +52,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 #include "config.h"
 
@@ -269,7 +270,19 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
-    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, fs::weakly_canonical(context->getPath()), UUIDHelpers::generateV4(), context));
+
+    UUID default_database_uuid;
+
+    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
+    if (FS::isSymlinkNoThrow(existing_path_symlink))
+        default_database_uuid = parse<UUID>(FS::readSymlink(existing_path_symlink).parent_path().filename());
+    else
+        default_database_uuid = UUIDHelpers::generateV4();
+
+    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) / "store"
+        / DatabaseCatalog::getPathForUUID(default_database_uuid);
+
+    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
     return overlay;
 }
@@ -281,7 +294,7 @@ void LocalServer::tryInitPath()
 
     if (getClientConfiguration().has("path"))
     {
-        // User-supplied path.
+        /// User-supplied path.
         path = getClientConfiguration().getString("path");
         Poco::trimInPlace(path);
 
@@ -295,15 +308,15 @@ void LocalServer::tryInitPath()
     }
     else
     {
-        // The path is not provided explicitly - use a unique path in the system temporary directory
-        // (or in the current dir if a temporary doesn't exist)
+        /// The user requested to use a temporary path - use a unique path in the system temporary directory
+        /// (or in the current dir if a temporary doesn't exist)
         LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
         try
         {
-            // try to guess a tmp folder name, and check if it's a directory (throw exception otherwise)
+            /// Try to guess a tmp folder name, and check if it's a directory (throw an exception otherwise).
             parent_folder = std::filesystem::temp_directory_path();
 
         }
@@ -331,7 +344,7 @@ void LocalServer::tryInitPath()
         temporary_directory_to_delete = default_path;
 
         path = default_path.string();
-        LOG_DEBUG(log, "Working directory created: {}", path);
+        LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
 
     global_context->setPath(fs::path(path) / "");
@@ -861,30 +874,38 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
-        String path = global_context->getPath();
-        fs::create_directories(fs::path(path));
-
-        /// Lock path directory before read
-        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-
-        LOG_DEBUG(log, "Loading metadata from {}", path);
-        auto load_system_metadata_tasks = loadMetadataSystem(global_context);
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-        if (!getClientConfiguration().has("only-system-tables"))
+        String path = global_context->getPath();
+
+        /// Lock path directory before read
+        fs::create_directories(fs::path(path));
+        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+
+        if (fs::exists(fs::path(path) / "metadata"))
         {
-            DatabaseCatalog::instance().createBackgroundTasks();
-            waitLoad(loadMetadata(global_context));
-            DatabaseCatalog::instance().startupBackgroundTasks();
+            LOG_DEBUG(log, "Loading metadata from {}", path);
+
+            if (fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            {
+                LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
+                waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
+            }
+
+            if (!getClientConfiguration().has("only-system-tables"))
+            {
+                DatabaseCatalog::instance().createBackgroundTasks();
+                waitLoad(loadMetadata(global_context));
+                DatabaseCatalog::instance().startupBackgroundTasks();
+            }
+
+            /// For ClickHouse local if path is not set the loader will be disabled.
+            global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+            LOG_DEBUG(log, "Loaded metadata.");
         }
-
-        /// For ClickHouse local if path is not set the loader will be disabled.
-        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-
-        LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
@@ -959,7 +980,7 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
-        ("path", po::value<std::string>(), "Storage path")
+        ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
         ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
@@ -1001,8 +1022,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         getClientConfiguration().setBool("only-system-tables", true);
-    if (options.count("database"))
-        getClientConfiguration().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
