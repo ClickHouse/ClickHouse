@@ -639,7 +639,7 @@ See https://clickhouse.com/docs/en/getting-started/example-datasets/tpch
                     WHERE
                         c_acctbal &gt; 0.00
                         AND substring(c_phone FROM 1 for 2) in
-                            (&apos;13&apos;, &apos;31&apos;, &apos;23&apos;, &apos;29&apos;, &apos;30&apos;, &apos;18&apos;, &apos;17&apos&apos;)
+                            (&apos;13&apos;, &apos;31&apos;, &apos;23&apos;, &apos;29&apos;, &apos;30&apos;, &apos;18&apos;, &apos;17&apos;&apos;)
                 )
                 AND NOT EXISTS (
                     SELECT
