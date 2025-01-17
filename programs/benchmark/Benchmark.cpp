@@ -138,7 +138,8 @@ public:
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
-                secure));
+                secure,
+                "")); // TYOCUM TODO
 
             if (!round_robin || comparison_info_per_interval.empty())
             {

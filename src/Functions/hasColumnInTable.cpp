@@ -139,6 +139,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             treat_local_as_remote,
             treat_local_port_as_remote,
             /* secure= */ false,
+            /* bind_host= */ "", // TYOCUM TODO
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* password= */ ""
