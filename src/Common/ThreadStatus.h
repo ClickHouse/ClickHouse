@@ -185,8 +185,14 @@ public:
     ProfileEvents::Counters * current_performance_counters{&performance_counters};
 
     MemoryTracker memory_tracker{VariableContext::Thread};
-    /// Small amount of untracked memory (per thread atomic-less counter)
+    /// Small amount of untracked memory (per thread atomic-less counter).
+    /// I.e. a "debt" we owe to MemoryTracker::allocImpl or MemoryTracker::free (if negative).
+    /// MemoryTrackerBlockerInThread complicates this: the deferred allocImpl/free call needs to
+    /// happen with the same blocker state (level) as the original untracked alloc/free call.
+    ///
     Int64 untracked_memory = 0;
+    /// asdqwe
+    Int64 untracked_memory_with_default_blocker = 0;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
 

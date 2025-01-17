@@ -266,11 +266,6 @@ namespace ServerSetting
     extern const ServerSettingsString merge_workload;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
-    extern const ServerSettingsUInt64 page_cache_chunk_size;
-    extern const ServerSettingsUInt64 page_cache_mmap_size;
-    extern const ServerSettingsUInt64 page_cache_size;
-    extern const ServerSettingsBool page_cache_use_madv_free;
-    extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
@@ -298,6 +293,7 @@ namespace ServerSetting
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 page_cache_block_size;
+    extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
     extern const ServerSettingsUInt64 page_cache_min_size;
@@ -1099,7 +1095,9 @@ try
     if (server_settings[ServerSetting::page_cache_max_size] != 0)
     {
         global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_block_size], server_settings[ServerSetting::page_cache_policy], server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
+            server_settings[ServerSetting::page_cache_block_size],
+            std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
+            server_settings[ServerSetting::page_cache_policy], server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
     }
 

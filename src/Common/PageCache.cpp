@@ -49,18 +49,19 @@ std::string PageCacheKey::toString() const
     return fmt::format("{}:{}:{}{}{}", path, offset, size, file_version.empty() ? "" : ":", file_version);
 }
 
-PageCache::PageCache(size_t default_block_size_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_)
+PageCache::PageCache(size_t default_block_size_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_)
     : Base(cache_policy, min_size_in_bytes_, 0, size_ratio)
     , default_block_size(default_block_size_)
     , min_size_in_bytes(min_size_in_bytes_)
     , max_size_in_bytes(max_size_in_bytes_)
     , free_memory_ratio(free_memory_ratio_)
+    , history_window(history_window_)
 {
 }
 
 PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load)
 {
-    /// Prevent MemoryTrackre from calling autoResize() while we may be holding the mutex.
+    /// Prevent MemoryTracker from calling autoResize() while we may be holding the mutex.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
     Key key_hash = key.hash();
@@ -133,15 +134,22 @@ void PageCache::autoResize(size_t memory_usage, size_t memory_limit)
         std::lock_guard lock(mutex);
         size_t usage_excluding_cache = memory_usage - std::min(cache_size, memory_usage);
 
-        int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        int64_t bucket = now / 1000000;
-        if (bucket > cur_bucket + 1)
-            peak_memory_buckets = {0, 0};
-        else if (bucket > cur_bucket)
-            peak_memory_buckets = {0, peak_memory_buckets[0]};
-        cur_bucket = bucket;
-        peak_memory_buckets[0] = std::max(peak_memory_buckets[0], usage_excluding_cache);
-        peak = std::max(peak_memory_buckets[0], peak_memory_buckets[1]);
+        if (history_window.count() <= 0)
+        {
+            peak = usage_excluding_cache;
+        }
+        else
+        {
+            int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            int64_t bucket = now / history_window.count();
+            if (bucket > cur_bucket + 1)
+                peak_memory_buckets = {0, 0};
+            else if (bucket > cur_bucket)
+                peak_memory_buckets = {0, peak_memory_buckets[0]};
+            cur_bucket = bucket;
+            peak_memory_buckets[0] = std::max(peak_memory_buckets[0], usage_excluding_cache);
+            peak = std::max(peak_memory_buckets[0], peak_memory_buckets[1]);
+        }
     }
 
     size_t reduced_limit = size_t(memory_limit * (1. - std::min(free_memory_ratio, 1.)));

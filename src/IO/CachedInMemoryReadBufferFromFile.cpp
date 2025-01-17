@@ -14,9 +14,9 @@ namespace ErrorCodes
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
-    PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
+    PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_, bool restricted_seek_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_), block_size(cache->defaultBlockSize()), settings(settings_), in(std::move(in_))
-    , read_until_position(file_size.value())
+    , read_until_position(file_size.value()), restricted_seek(restricted_seek_)
 {
     cache_key.offset = 0;
 }
@@ -30,6 +30,15 @@ off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+
+    if (chunk && restricted_seek)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+            "Seek is allowed only before first read attempt from the buffer (current offset: "
+            "{}, new offset: {}, reading until position: {}, available: {})",
+            getPosition(), off, read_until_position, available());
+    }
 
     size_t offset = static_cast<size_t>(off);
     if (offset > file_size.value())

@@ -312,7 +312,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             if (level == VariableContext::Global && will_be_rss > current_hard_limit && ((page_cache_ptr = page_cache.load(std::memory_order_relaxed))))
             {
                 ProfileEvents::increment(ProfileEvents::PageCacheOvercommitResize);
-                page_cache_ptr->autoResize(std::max(will_be, will_be_rss), current_hard_limit);
+                page_cache_ptr->autoResize(will_be_rss, current_hard_limit);
                 will_be = amount.load(std::memory_order_relaxed);
                 will_be_rss = rss.load(std::memory_order_relaxed);
                 if (will_be <= current_hard_limit && will_be_rss <= current_hard_limit)

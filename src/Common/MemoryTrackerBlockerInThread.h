@@ -38,6 +38,11 @@ public:
         return counter > 0 && current_level >= level;
     }
 
+    static bool isBlockedAny()
+    {
+        return counter > 0;
+    }
+
     friend class MemoryTracker;
     friend struct AllocationTrace;
     friend class DB::PageCache;

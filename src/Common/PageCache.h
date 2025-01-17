@@ -77,7 +77,7 @@ public:
     using Mapped = typename Base::Mapped;
     using MappedPtr = typename Base::MappedPtr;
 
-    PageCache(size_t default_block_size_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_);
+    PageCache(size_t default_block_size_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_);
 
     /// Get or insert a chunk for the given key.
     ///
@@ -103,7 +103,10 @@ private:
     size_t max_size_in_bytes = 0;
     double free_memory_ratio = 1.;
 
-    //asdqwe
+    /// To avoid overreacting to brief drops in memory usage, we use peak memory usage over the last
+    /// `history_window` milliseconds. It's calculated using this "sliding" (leapfrogging?) window.
+    /// If history_window <= 0, there's no window and we just use current memory usage.
+    std::chrono::milliseconds history_window;
     std::array<size_t, 2> peak_memory_buckets {0, 0};
     int64_t cur_bucket = 0;
 
