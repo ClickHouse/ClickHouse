@@ -1,4 +1,3 @@
-#include "Common/DateLUT.h"
 #include "config.h"
 
 #if USE_H3
@@ -15,6 +14,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+
 #include <h3api.h>
 
 
@@ -22,7 +22,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool h3togeo_standard_order;
+    extern const SettingsBool h3togeo_lon_lat_result_order;
 }
 
 namespace ErrorCodes
@@ -38,14 +38,14 @@ namespace
 /// and returns the longitude and latitude that correspond to the provided h3 index
 class FunctionH3ToGeo : public IFunction
 {
-    const bool h3togeo_standard_order;
+    const bool h3togeo_lon_lat_result_order;
 public:
     static constexpr auto name = "h3ToGeo";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeo>(context); }
 
     explicit FunctionH3ToGeo(ContextPtr context)
-        : h3togeo_standard_order(context->getSettingsRef()[Setting::h3togeo_standard_order])
+        : h3togeo_lon_lat_result_order(context->getSettingsRef()[Setting::h3togeo_lon_lat_result_order])
     {
     }
 
@@ -65,7 +65,7 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arg->getName(), 1, getName());
 
-        if (h3togeo_standard_order)
+        if (h3togeo_lon_lat_result_order)
         {
             return std::make_shared<DataTypeTuple>(
                 DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
@@ -114,7 +114,7 @@ public:
         }
 
         MutableColumns columns;
-        if (h3togeo_standard_order)
+        if (h3togeo_lon_lat_result_order)
         {
             columns.emplace_back(std::move(latitude));
             columns.emplace_back(std::move(longitude));
