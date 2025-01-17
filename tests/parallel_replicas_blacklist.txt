@@ -529,3 +529,12 @@
 
     Failpoint
 02910_prefetch_unexpceted_exception
+
+
+    investigate failed tests
+00148_monotonic_functions_and_index
+00161_parallel_parsing_with_names
+00166_explain_estimate
+00141_transform
+00443_optimize_final_vertical_merge
+01660_join_or_any
