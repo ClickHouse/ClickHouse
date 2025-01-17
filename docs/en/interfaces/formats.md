@@ -134,38 +134,7 @@ See [TemplateIgnoreSpaces](../interfaces/formats/Template/TemplateIgnoreSpaces.m
 
 ## TSKV {#tskv}
 
-Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
-
-``` text
-SearchPhrase=   count()=8267016
-SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=clickhouse     count()=1655
-SearchPhrase=2014 spring fashion    count()=1549
-SearchPhrase=freeform photos       count()=1480
-SearchPhrase=angelina jolie    count()=1245
-SearchPhrase=omsk       count()=1112
-SearchPhrase=photos of dog breeds    count()=1091
-SearchPhrase=curtain designs        count()=1064
-SearchPhrase=baku       count()=1000
-```
-
-[NULL](/docs/en/sql-reference/syntax.md) is formatted as `\N`.
-
-``` sql
-SELECT * FROM t_null FORMAT TSKV
-```
-
-``` text
-x=1    y=\N
-```
-
-When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. Nevertheless, it is no worse than JSONEachRow in terms of efficiency.
-
-Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
-
-Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
-
-During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+See [TSKV](formats/TabSeparated/TSKV.md)
 
 ## CSV {#csv}
 
@@ -276,281 +245,27 @@ the types from metadata in input data will be compared with the types of the cor
 
 ## JSONStrings {#jsonstrings}
 
-Differs from JSON only in that data fields are output in strings, not in typed JSON values.
-
-Example:
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
-                        "type": "String"
-                },
-                {
-                        "name": "arr",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "num": "42",
-                        "str": "hello",
-                        "arr": "[0,1]"
-                },
-                {
-                        "num": "43",
-                        "str": "hello",
-                        "arr": "[0,1,2]"
-                },
-                {
-                        "num": "44",
-                        "str": "hello",
-                        "arr": "[0,1,2,3]"
-                }
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001403233,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
+See [JSONStrings](formats/JSON/JSONStrings.md)
 
 ## JSONColumns {#jsoncolumns}
 
-:::tip
-The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field;
-visually, the data is rotated 90 degrees to the left.
-:::
-
-In this format, all data is represented as a single JSON Object.
-Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
-
-Example:
-```json
-{
-	"num": [42, 43, 44],
-	"str": ["hello", "hello", "hello"],
-	"arr": [[0,1], [0,1,2], [0,1,2,3]]
-}
-```
-
-During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Columns that are not present in the block will be filled with default values (you can use the [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
-
+See [JSONColumns](formats/JSON/JSONColumns.md)
 
 ## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-Differs from JSONColumns format in that it also contains some metadata and statistics (similar to JSON format).
-Output format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
-
-Example:
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
-                        "type": "String"
-                },
-
-                {
-                        "name": "arr",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        {
-                "num": [42, 43, 44],
-                "str": ["hello", "hello", "hello"],
-                "arr": [[0,1], [0,1,2], [0,1,2,3]]
-        },
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.000272376,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
-For JSONColumnsWithMetadata input format, if setting [input_format_json_validate_types_from_metadata](/docs/en/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to 1,
-the types from metadata in input data will be compared with the types of the corresponding columns from the table.
+See [JSONColumnsWithMetadata](formats/JSON/JSONColumnsWithMetadata.md)
 
 ## JSONAsString {#jsonasstring}
 
-In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
-
-This format can only be parsed for a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted. Once you collect the whole JSON object to string you can use [JSON functions](/docs/en/sql-reference/functions/json-functions.md) to process it.
-
-**Examples**
-
-Query:
-
-``` sql
-DROP TABLE IF EXISTS json_as_string;
-CREATE TABLE json_as_string (json String) ENGINE = Memory;
-INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
-SELECT * FROM json_as_string;
-```
-
-Result:
-
-``` response
-┌─json──────────────────────────────┐
-│ {"foo":{"bar":{"x":"y"},"baz":1}} │
-│ {}                                │
-│ {"any json stucture":1}           │
-└───────────────────────────────────┘
-```
-
-**An array of JSON objects**
-
-Query:
-
-``` sql
-CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
-INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
-
-SELECT * FROM json_square_brackets;
-```
-
-Result:
-
-```response
-┌─field──────────────────────┐
-│ {"id": 1, "name": "name1"} │
-│ {"id": 2, "name": "name2"} │
-└────────────────────────────┘
-```
+See [JSONAsString](formats/JSON/JSONAsString.md)
 
 ## JSONAsObject {#jsonasobject}
 
-In this format, a single JSON object is interpreted as a single [JSON](/docs/en/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
-
-This format can only be parsed for a table with a single field of type [JSON](/docs/en/sql-reference/data-types/newjson.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized).
-
-**Examples**
-
-Query:
-
-``` sql
-SET allow_experimental_json_type = 1;
-CREATE TABLE json_as_object (json JSON) ENGINE = Memory;
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
-SELECT * FROM json_as_object FORMAT JSONEachRow;
-```
-
-Result:
-
-``` response
-{"json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
-{"json":{}}
-{"json":{"any json stucture":"1"}}
-```
-
-**An array of JSON objects**
-
-Query:
-
-``` sql
-SET allow_experimental_json_type = 1;
-CREATE TABLE json_square_brackets (field JSON) ENGINE = Memory;
-INSERT INTO json_square_brackets FORMAT JSONAsObject [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
-SELECT * FROM json_square_brackets FORMAT JSONEachRow;
-```
-
-Result:
-
-```response
-{"field":{"id":"1","name":"name1"}}
-{"field":{"id":"2","name":"name2"}}
-```
-
-**Columns with default values**
-
-```sql
-SET allow_experimental_json_type = 1;
-CREATE TABLE json_as_object (json JSON, time DateTime MATERIALIZED now()) ENGINE = Memory;
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}};
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {};
-INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
-SELECT time, json FROM json_as_object FORMAT JSONEachRow
-```
-
-```response
-{"time":"2024-09-16 12:18:10","json":{}}
-{"time":"2024-09-16 12:18:13","json":{"any json stucture":"1"}}
-{"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
-```
+See [JSONAsObject](formats/JSON/JSONAsObject.md)
 
 ## JSONCompact {#jsoncompact}
 
-Differs from JSON only in that data rows are output in arrays, not in objects.
-
-Example:
-
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
-                        "type": "String"
-                },
-                {
-                        "name": "arr",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                [42, "hello", [0,1]],
-                [43, "hello", [0,1,2]],
-                [44, "hello", [0,1,2,3]]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001222069,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
+See [JSONCompact](formats/JSON/JSONCompact.md)
 
 ## JSONCompactStrings {#jsoncompactstrings}
 
@@ -1252,18 +967,7 @@ For column `y` data starts with byte `00` that indicates that column has actual 
 
 ## Values {#data-format-values}
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in a decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren’t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](/docs/en/sql-reference/syntax.md) is represented as `NULL`.
-
-The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
-
-This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
-
-## Values format settings {#values-format-settings}
-
-- [input_format_values_interpret_expressions](/docs/en/operations/settings/settings-formats.md/#input_format_values_interpret_expressions) - if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression. Default value - `true`.
-- [input_format_values_deduce_templates_of_expressions](/docs/en/operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) -if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. Default value - `true`.
-- [input_format_values_accurate_types_of_literals](/docs/en/operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals) - when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues. Default value - `true`.
-
+See [Values](formats/Values.md)
 
 ## Vertical {#vertical}
 
