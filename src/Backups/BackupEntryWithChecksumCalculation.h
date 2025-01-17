@@ -21,6 +21,10 @@ protected:
                                             std::optional<UInt64> second_limit, UInt128 * second_checksum,
                                             const ReadSettings & read_settings) const;
 
+    bool canCalculateChecksumFromBlobPaths() const;
+    UInt128 calculateChecksumFromBlobPaths(UInt64 limit,
+                                           std::optional<UInt64> second_limit, UInt128 * second_checksum) const;
+
 private:
     mutable std::optional<UInt128> calculated_checksum;
 };

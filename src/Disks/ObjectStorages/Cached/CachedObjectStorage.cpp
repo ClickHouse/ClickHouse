@@ -46,6 +46,11 @@ CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string &
     return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
 }
 
+bool CachedObjectStorage::areObjectKeysRandom() const
+{
+    return object_storage->areObjectKeysRandom();
+}
+
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     return object_storage->patchSettings(read_settings);

@@ -33,4 +33,6 @@ using StoredObjects = std::vector<StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
 
+String remotePathsAndBytesSizesToString(const StoredObjects & objects);
+
 }

@@ -85,6 +85,8 @@ UInt128 BackupEntryFromImmutableFile::calculateChecksum(UInt64 limit, std::optio
     UInt128 checksum;
     if (passed_checksum && !copy_encrypted)
         checksum = *passed_checksum;
+    else if (canCalculateChecksumFromBlobPaths())
+        checksum = calculateChecksumFromBlobPaths(limit, {}, {});
     else if (passed_checksum && copy_encrypted)
         checksum = combineChecksums(*passed_checksum, disk->getEncryptedFileIV(file_path));
     else

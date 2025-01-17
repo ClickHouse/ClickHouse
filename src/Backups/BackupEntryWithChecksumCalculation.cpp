@@ -53,6 +53,9 @@ UInt128 BackupEntryWithChecksumCalculation::calculateChecksum(
     std::optional<UInt64> second_limit, UInt128 * second_checksum,
     const ReadSettings & read_settings) const
 {
+    if (canCalculateChecksumFromBlobPaths())
+        calculateChecksumFromBlobPaths(limit, second_limit, second_checksum);
+
     return calculateChecksumFromReadBuffer(limit, second_limit, second_checksum, read_settings);
 }
 
@@ -125,6 +128,75 @@ UInt128 BackupEntryWithChecksumCalculation::calculateChecksumFromReadBuffer(
                     "File {} ({} bytes): couldn't calculate checksum for bytes [0..{}) for backup (partial checksums are not allowed)",
                     getFilePath(), size, *second_limit);
         }
+    }
+
+    return checksum;
+}
+
+
+bool BackupEntryWithChecksumCalculation::canCalculateChecksumFromBlobPaths() const
+{
+    return !getFilePath().empty() && getDisk() && getDisk()->areBlobPathsRandom();
+}
+
+
+UInt128 BackupEntryWithChecksumCalculation::calculateChecksumFromBlobPaths(
+    UInt64 limit,
+    std::optional<UInt64> second_limit, UInt128 * second_checksum) const
+{
+    UInt64 size = getSize();
+    limit = std::min(limit, size);
+    if (second_limit)
+        second_limit = std::min(*second_limit, size);
+
+    UInt128 hash = 0;
+    size_t index = 0;
+
+    auto add_to_hash = [&](const StoredObject & obj)
+    {
+        if (index == 0)
+            hash = CityHash128(obj.remote_path.data(), obj.remote_path.length());
+        else
+            hash = CityHash128WithSeed(obj.remote_path.data(), obj.remote_path.length(), hash);
+    };
+
+    StoredObjects stored_objects = getDisk()->getStorageObjects(getFilePath());
+
+    size_t offset = 0;
+
+    while (index < stored_objects.size() && offset < limit)
+    {
+        add_to_hash(stored_objects[index]);
+        offset += stored_objects[index].bytes_size;
+        ++index;
+    }
+
+    if (offset != limit)
+    {
+        throw Exception(ErrorCodes::CANNOT_CALCULATE_CHECKSUM_FOR_BACKUP_ENTRY,
+            "File {} ({} bytes): couldn't calculate checksum for bytes [0..{}) for backup, blobs have unexpected sizes: {}",
+            getFilePath(), size, limit, remotePathsAndBytesSizesToString(stored_objects));
+    }
+
+    UInt128 checksum = hash;
+
+    if (second_limit)
+    {
+        while (index < stored_objects.size() && offset < *second_limit)
+        {
+            add_to_hash(stored_objects[index]);
+            offset += stored_objects[index].bytes_size;
+            ++index;
+        }
+
+        if (offset != *second_limit)
+        {
+            throw Exception(ErrorCodes::CANNOT_CALCULATE_CHECKSUM_FOR_BACKUP_ENTRY,
+                "File {} ({} bytes): couldn't calculate checksum for bytes [0..{}) for backup, blobs have unexpected sizes: {}",
+                getFilePath(), size, *second_limit, remotePathsAndBytesSizesToString(stored_objects));
+        }
+
+        *second_checksum = hash;
     }
 
     return checksum;
