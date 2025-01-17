@@ -1,5 +1,3 @@
-#define PRINT_ASSEMBLY 1
-
 #include "CHJIT.h"
 
 #if USE_EMBEDDED_COMPILER
