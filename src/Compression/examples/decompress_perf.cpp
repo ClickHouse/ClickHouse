@@ -1,6 +1,5 @@
 #include <cstring>
 #include <iomanip>
-#include <optional>
 #include <base/types.h>
 #include <lz4.h>
 

@@ -10,8 +10,6 @@
 
 #include <base/arithmeticOverflow.h>
 
-#include "config.h"
-
 
 namespace ProfileEvents
 {

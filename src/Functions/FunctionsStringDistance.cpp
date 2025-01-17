@@ -9,7 +9,6 @@
 #include <Common/iota.h>
 
 #include <algorithm>
-#include <numeric>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>

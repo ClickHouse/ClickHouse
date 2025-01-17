@@ -10,7 +10,6 @@
 #include <Common/ThreadStatus.h>
 #include "Client/ConnectionString.h"
 #include "Core/Protocol.h"
-#include "Parsers/formatAST.h"
 
 #include <Access/AccessControl.h>
 

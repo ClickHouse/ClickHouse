@@ -22,7 +22,10 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
+#ifdef USE_BAD_ARENA
 #include <array>
+#endif
+
 #include <iomanip>
 #include <memory>
 #include <variant>
