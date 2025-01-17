@@ -69,6 +69,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
+    extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
 }
 
 namespace ErrorCodes
@@ -168,6 +170,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , engine_name(engine_args->engine->name)
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
+    , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
+    , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
@@ -255,6 +259,15 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
     if (files_metadata)
     {
+        try
+        {
+            files_metadata->unregister(getStorageID(), /* active */true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
         files_metadata->shutdown();
         files_metadata.reset();
     }
@@ -452,6 +465,7 @@ void StorageObjectStorageQueue::threadFunc()
     if (shutdown_called)
         return;
 
+    const auto storage_id = getStorageID();
     try
     {
         const size_t dependencies_count = getDependencies();
@@ -461,6 +475,8 @@ void StorageObjectStorageQueue::threadFunc()
             SCOPE_EXIT({ mv_attached.store(false); });
 
             LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+            files_metadata->registerIfNot(storage_id, /* active */true);
 
             if (streamToViews())
             {
@@ -491,6 +507,18 @@ void StorageObjectStorageQueue::threadFunc()
     {
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_processing_interval_ms);
         task->scheduleAfter(reschedule_processing_interval_ms);
+
+        if (reschedule_processing_interval_ms > 5000) /// TODO: Add a setting
+        {
+            try
+            {
+                files_metadata->unregister(storage_id, /* active */true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
+        }
     }
 }
 
@@ -580,6 +608,7 @@ bool StorageObjectStorageQueue::streamToViews()
         total_rows += rows;
     }
 
+    LOG_TEST(log, "Processed rows: {}", total_rows);
     return total_rows > 0;
 }
 
@@ -923,17 +952,23 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
-    auto settings = configuration->getQuerySettings(local_context);
-    auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context,
-        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
-
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
     return std::make_shared<FileIterator>(
-        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
+        files_metadata,
+        object_storage,
+        configuration,
+        getStorageID(),
+        list_objects_batch_size,
+        predicate,
+        getVirtualsList(),
+        local_context,
+        log,
+        enable_hash_ring_filtering,
+        file_deletion_enabled,
+        shutdown_called);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

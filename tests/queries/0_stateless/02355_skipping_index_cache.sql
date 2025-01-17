@@ -2,6 +2,7 @@
 -- no-parallel: looks at server-wide metrics
 
 -- Tests the skipping index cache.
+SET parallel_replicas_local_plan=1;
 
 SYSTEM DROP SKIPPING INDEX CACHE;
 SELECT metric, value FROM system.metrics WHERE metric = 'SkippingIndexCacheSize';

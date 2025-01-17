@@ -259,6 +259,25 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     return success;
 }
 
+ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes
+ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
+{
+    [[maybe_unused]] auto state = file_status->state.load();
+    chassert (!(state == FileStatus::State::Processing
+        || state == FileStatus::State::Processed
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries)), fmt::format("Oops something went wrong: {}", state));
+
+    return prepareProcessingRequestsImpl(requests);
+}
+
+void ObjectStorageQueueIFileMetadata::finalizeProcessing(int processing_id_version_)
+{
+    processing_id_version = processing_id_version_;
+    file_status->onProcessing();
+}
+
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
     auto state = file_status->state.load();
@@ -401,7 +420,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 {
     if (!processing_id_version.has_value())
     {
-        /// Processing was not started.
+        chassert(false);
         return;
     }
 
