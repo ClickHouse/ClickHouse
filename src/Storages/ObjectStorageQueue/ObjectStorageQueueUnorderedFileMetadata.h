@@ -16,6 +16,7 @@ public:
         const std::string & path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<size_t> & metadata_ref_count_,
         LoggerPtr log_);
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }

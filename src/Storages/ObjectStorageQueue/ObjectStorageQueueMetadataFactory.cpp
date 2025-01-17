@@ -24,6 +24,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     if (it == metadata_by_path.end())
     {
         it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
+        it->second.metadata->setMetadataRefCount(it->second.ref_count);
     }
     else
     {
