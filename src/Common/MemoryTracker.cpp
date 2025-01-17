@@ -288,11 +288,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                "{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                "{}{}: fault injected. Would use {} (attempt to allocate chunk of {}), maximum: {}",
                 description ? description : "",
                 description ? " memory tracker" : "Memory tracker",
                 formatReadableSizeWithBinarySuffix(will_be),
-                size,
+                formatReadableSizeWithBinarySuffix(size),
                 formatReadableSizeWithBinarySuffix(current_hard_limit));
         }
 
@@ -339,12 +339,12 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}{}, maximum: {}."
+                    "would use {} (attempt to allocate chunk of {}), current RSS {}{}, maximum: {}."
                     "{}{}",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
-                    size,
+                    formatReadableSizeWithBinarySuffix(size),
                     formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
                     page_cache_ptr ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
