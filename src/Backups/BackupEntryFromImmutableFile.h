@@ -36,7 +36,7 @@ public:
 
 protected:
     virtual UInt64 calculateSize() const;
-    UInt128 calculateChecksum(const ReadSettings & read_settings) const override;
+    UInt128 calculateChecksum(UInt64 limit, std::optional<UInt64> second_limit, UInt128 * second_checksum, const ReadSettings & read_settings) const override;
 
     /// For immutable files we don't use partial checksums.
     bool isPartialChecksumAllowed() const override { return false; }

@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CALCULATE_CHECKSUM_FOR_BACKUP_ENTRY;
+}
+
 namespace
 {
     /// We mix the checksum calculated for non-encrypted data with IV generated to encrypt the file
@@ -62,15 +67,39 @@ UInt64 BackupEntryFromImmutableFile::calculateSize() const
     return disk->getFileSize(file_path);
 }
 
-UInt128 BackupEntryFromImmutableFile::calculateChecksum(const ReadSettings & read_settings) const
+UInt128 BackupEntryFromImmutableFile::calculateChecksum(UInt64 limit, std::optional<UInt64> second_limit, UInt128 * second_checksum, const ReadSettings & read_settings) const
 {
+    if (limit == 0)
+        return 0;
+
+    UInt64 size = getSize();
+    limit = std::min(limit, size);
+
+    if (limit < size)
+    {
+        throw Exception(ErrorCodes::CANNOT_CALCULATE_CHECKSUM_FOR_BACKUP_ENTRY,
+                "File {} ({} bytes): couldn't calculate checksum for bytes [0..{}) for backup (partial checksums are not allowed)",
+                getFilePath(), size, limit);
+    }
+
+    UInt128 checksum;
     if (passed_checksum && !copy_encrypted)
-        return *passed_checksum;
+        checksum = *passed_checksum;
+    else if (passed_checksum && copy_encrypted)
+        checksum = combineChecksums(*passed_checksum, disk->getEncryptedFileIV(file_path));
+    else
+        checksum = calculateChecksumFromReadBuffer(limit, {}, {}, read_settings);
 
-    if (passed_checksum && copy_encrypted)
-        return combineChecksums(*passed_checksum, disk->getEncryptedFileIV(file_path));
+    if (second_limit)
+    {
+        chassert(second_checksum);
+        if (std::min(*second_limit, size) == limit)
+            *second_checksum = checksum;
+        else
+            *second_checksum = calculateChecksum(*second_limit, {}, {}, read_settings);
+    }
 
-    return BackupEntryWithChecksumCalculation::calculateChecksum(read_settings);
+    return checksum;
 }
 
 }
