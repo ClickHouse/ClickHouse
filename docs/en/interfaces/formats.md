@@ -106,7 +106,7 @@ See [TabSeparated](../interfaces/formats/TabSeparated/TabSeparated.md)
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
-See [TabSeparatedRaw](/en/interfaces/formats/TabSeparatedRaw).
+See [TabSeparatedRaw](/en/interfaces/formats/TabSeparatedRaw)
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
@@ -118,174 +118,19 @@ See [TabSeparatedWithNamesAndTypes](../interfaces/formats/TabSeparated/TabSepara
 
 ## TabSeparatedRawWithNames {#tabseparatedrawwithnames}
 
-Differs from `TabSeparatedWithNames` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
-
-This format is also available under the names `TSVRawWithNames`, `RawWithNames`.
+See [TabSeparatedRawWithNames](../interfaces/formats/TabSeparated/TabSeparatedRawWithNames.md)
 
 ## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
-Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
-When parsing with this format, tabs or linefeeds are not allowed in each field.
-
-This format is also available under the names `TSVRawWithNamesAndNames`, `RawWithNamesAndNames`.
+See [TabSeparatedRawWithNamesAndTypes](../interfaces/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes.md)
 
 ## Template {#format-template}
 
-This format allows specifying a custom format string with placeholders for values with a specified escaping rule.
-
-It uses settings `format_template_resultset`, `format_template_row` (`format_template_row_format`), `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
-
-Setting `format_template_row` specifies the path to the file containing format strings for rows with the following syntax:
-
-`delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
-
-where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
-`column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped),
-`serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
-
-- `CSV`, `JSON`, `XML` (similar to the formats of the same names)
-- `Escaped` (similar to `TSV`)
-- `Quoted` (similar to `Values`)
-- `Raw` (without escaping, similar to `TSVRaw`)
-- `None` (no escaping rule, see further)
-
-If an escaping rule is omitted, then `None` will be used. `XML` is suitable only for output.
-
-So, for the following format string:
-
-      `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
-
-the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters respectively. For example:
-
-`Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
-
-In cases where it is challenging or not possible to deploy format output configuration for the template format to a directory on all nodes in a cluster, or if the format is trivial then `format_template_row_format` can be used to set the template string directly in the query, rather than a path to the file which contains it.
-
-The `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
-
-Setting `format_template_resultset` specifies the path to the file, which contains a format string for resultset. Setting `format_template_resultset_format` can be used to set the template string for the result set directly in the query itself. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
-
-- `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
-- `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
-- `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
-- `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
-- `rows` is the total number of output rows
-- `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
-- `time` is the request execution time in seconds
-- `rows_read` is the number of rows has been read
-- `bytes_read` is the number of bytes (uncompressed) has been read
-
-The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
-If the `format_template_resultset` setting is an empty string, `${data}` is used as the default value.
-For insert queries format allows skipping some columns or fields if prefix or suffix (see example).
-
-Select example:
-
-``` sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
-format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
-```
-
-`/some/path/resultset.format`:
-
-``` text
-<!DOCTYPE HTML>
-<html> <head> <title>Search phrases</title> </head>
- <body>
-  <table border="1"> <caption>Search phrases</caption>
-    <tr> <th>Search phrase</th> <th>Count</th> </tr>
-    ${data}
-  </table>
-  <table border="1"> <caption>Max</caption>
-    ${max}
-  </table>
-  <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
- </body>
-</html>
-```
-
-`/some/path/row.format`:
-
-``` text
-<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
-```
-
-Result:
-
-``` html
-<!DOCTYPE HTML>
-<html> <head> <title>Search phrases</title> </head>
- <body>
-  <table border="1"> <caption>Search phrases</caption>
-    <tr> <th>Search phrase</th> <th>Count</th> </tr>
-    <tr> <td></td> <td>8267016</td> </tr>
-    <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
-    <tr> <td>clickhouse</td> <td>1655</td> </tr>
-    <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
-    <tr> <td>freeform photos</td> <td>1480</td> </tr>
-  </table>
-  <table border="1"> <caption>Max</caption>
-    <tr> <td></td> <td>8873898</td> </tr>
-  </table>
-  <b>Processed 3095973 rows in 0.1569913 sec</b>
- </body>
-</html>
-```
-
-Insert example:
-
-``` text
-Some header
-Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
-Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
-Total rows: 2
-```
-
-``` sql
-INSERT INTO UserActivity SETTINGS
-format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
-FORMAT Template
-```
-
-`/some/path/resultset.format`:
-
-``` text
-Some header\n${data}\nTotal rows: ${:CSV}\n
-```
-
-`/some/path/row.format`:
-
-``` text
-Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
-```
-
-`PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows:` in suffix will be ignored.
-All delimiters in the input data must be strictly equal to delimiters in specified format strings.
+See [Template](../interfaces/formats/Template)
 
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
-This format is suitable only for input.
-Similar to `Template`, but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows specifying empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters.
-It’s possible to read `JSON` using this format if the values of columns have the same order in all rows. For example, the following request can be used for inserting data from its output example of format [JSON](#json):
-
-``` sql
-INSERT INTO table_name SETTINGS
-format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = ','
-FORMAT TemplateIgnoreSpaces
-```
-
-`/some/path/resultset.format`:
-
-``` text
-{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
-```
-
-`/some/path/row.format`:
-
-``` text
-{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
-```
+See [TemplateIgnoreSpaces](../interfaces/formats/Template/TemplateIgnoreSpaces.md)
 
 ## TSKV {#tskv}
 
@@ -324,127 +169,31 @@ During import, columns with unknown names will be skipped if setting [input_form
 
 ## CSV {#csv}
 
-Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
-
-When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](/docs/en/operations/settings/settings-formats.md/#format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
-
-``` bash
-$ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
-```
-
-\*By default, the delimiter is `,`. See the [format_csv_delimiter](/docs/en/operations/settings/settings-formats.md/#format_csv_delimiter) setting for more information.
-
-When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
-
-`NULL` is formatted according to setting [format_csv_null_representation](/docs/en/operations/settings/settings-formats.md/#format_csv_null_representation) (default value is `\N`).
-
-In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to the ENUM id.
-If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_csv_enum_as_number) to optimize ENUM parsing.
-
-The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
-
-### CSV format settings {#csv-format-settings}
-
-- [format_csv_delimiter](/docs/en/operations/settings/settings-formats.md/#format_csv_delimiter) - the character to be considered as a delimiter in CSV data. Default value - `,`.
-- [format_csv_allow_single_quotes](/docs/en/operations/settings/settings-formats.md/#format_csv_allow_single_quotes) - allow strings in single quotes. Default value - `true`.
-- [format_csv_allow_double_quotes](/docs/en/operations/settings/settings-formats.md/#format_csv_allow_double_quotes) - allow strings in double quotes. Default value - `true`.
-- [format_csv_null_representation](/docs/en/operations/settings/settings-formats.md/#format_tsv_null_representation) - custom NULL representation in CSV format. Default value - `\N`.
-- [input_format_csv_empty_as_default](/docs/en/operations/settings/settings-formats.md/#input_format_csv_empty_as_default) - treat empty fields in CSV input as default values. Default value - `true`. For complex default expressions, [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too.
-- [input_format_csv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_csv_enum_as_number) - treat inserted enum values in CSV formats as enum indices. Default value - `false`.
-- [input_format_csv_use_best_effort_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_csv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in CSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
-- [input_format_csv_arrays_as_nested_csv](/docs/en/operations/settings/settings-formats.md/#input_format_csv_arrays_as_nested_csv) - when reading Array from CSV, expect that its elements were serialized in nested CSV and then put into string. Default value - `false`.
-- [output_format_csv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#output_format_csv_crlf_end_of_line) - if it is set to true, end of line in CSV output format will be `\r\n` instead of `\n`. Default value - `false`.
-- [input_format_csv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_first_lines) - skip the specified number of lines at the beginning of data. Default value - `0`.
-- [input_format_csv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_csv_detect_header) - automatically detect header with names and types in CSV format. Default value - `true`.
-- [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
-- [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
-- [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
-- [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - allow variable number of columns in CSV format, ignore extra columns and use default values on missing columns. Default value - `false`.
-- [input_format_csv_use_default_on_bad_values](/docs/en/operations/settings/settings-formats.md/#input_format_csv_use_default_on_bad_values) - Allow to set default value to column when CSV field deserialization failed on bad value. Default value - `false`.
-- [input_format_csv_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_csv_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
+See [CSV](../interfaces/formats/CSV/CSV.md)
 
 ## CSVWithNames {#csvwithnames}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-:::
+See [CSVWithNames](formats/CSV/CSVWithNames.md)
 
 ## CSVWithNamesAndTypes {#csvwithnamesandtypes}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+See [CSVWithNamesAndTypes](formats/CSV/CSVWithNamesAndTypes.md)
 
 ## CustomSeparated {#format-customseparated}
 
-Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from [format_custom_field_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_field_delimiter), [format_custom_row_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_before_delimiter), [format_custom_row_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_after_delimiter), [format_custom_row_between_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_between_delimiter), [format_custom_result_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_before_delimiter) and [format_custom_result_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) settings, not from format strings.
-
-Additional settings:
-- [input_format_custom_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) - enables automatic detection of header with names and types if any. Default value - `true`.
-- [input_format_custom_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_custom_skip_trailing_empty_lines) - skip trailing empty lines at the end of file . Default value - `false`.
-- [input_format_custom_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_custom_allow_variable_number_of_columns) - allow variable number of columns in CustomSeparated format, ignore extra columns and use default values on missing columns. Default value - `false`.
-
-There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
+See [CustomSeparated](formats/CustomSeparated/CustomSeparated.md)
 
 ## CustomSeparatedWithNames {#customseparatedwithnames}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-:::
+See [CustomSeparatedWithNames](formats/CustomSeparated/CustomSeparatedWithNames.md)
 
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+See [CustomSeparatedWithNamesAndTypes](formats/CustomSeparated/CustomSeparatedWithNamesAndTypes.md)
 
 ## SQLInsert {#sqlinsert}
 
-Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
-
-Example:
-
-```sql
-SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
-```
-
-```sql
-INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
-INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
-INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
-INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
-INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
-```
-
-To read data output by this format you can use [MySQLDump](#mysqldump) input format.
-
-### SQLInsert format settings {#sqlinsert-format-settings}
-
-- [output_format_sql_insert_max_batch_size](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
-- [output_format_sql_insert_table_name](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_table_name) - The name of the table in the output INSERT query. Default value - `'table'`.
-- [output_format_sql_insert_include_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
-- [output_format_sql_insert_use_replace](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
-- [output_format_sql_insert_quote_names](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_quote_names) - Quote column names with "\`" characters. Default value - `true`.
+See [SQLInsert](formats/SQLInsert.md)
 
 ## JSON {#json}
 
@@ -1518,37 +1267,7 @@ This is the format that is used in `INSERT INTO t VALUES ...`, but you can also 
 
 ## Vertical {#vertical}
 
-Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
-
-[NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
-
-Example:
-
-``` sql
-SELECT * FROM t_null FORMAT Vertical
-```
-
-``` response
-Row 1:
-──────
-x: 1
-y: ᴺᵁᴸᴸ
-```
-
-Rows are not escaped in Vertical format:
-
-``` sql
-SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
-```
-
-``` response
-Row 1:
-──────
-test: string with 'quotes' and      with some special
- characters
-```
-
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+See [Vertical](formats/Vertical.md)
 
 ## XML {#xml}
 
@@ -2606,9 +2325,9 @@ e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
 it can be omitted and in this case, the format schema looks like `schemafile:MessageType`.
 
-If you input or output data via the [client](/docs/en/interfaces/cli.md) in the [interactive mode](/docs/en/interfaces/cli.md/#cli_usage), the file name specified in the format schema
+If you input or output data via the [client](/docs/en/interfaces/cli.md) in interactive mode, the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
-If you use the client in the [batch mode](/docs/en/interfaces/cli.md/#cli_usage), the path to the schema must be relative due to security reasons.
+If you use the client in the [batch mode](/docs/en/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
 
 If you input or output data via the [HTTP interface](/docs/en/interfaces/http.md) the file name specified in the format schema
 should be located in the directory specified in [format_schema_path](/docs/en/operations/server-configuration-parameters/settings.md/#format_schema_path)
