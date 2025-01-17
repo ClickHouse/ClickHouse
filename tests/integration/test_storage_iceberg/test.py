@@ -1683,21 +1683,14 @@ def test_uuid_column(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
-        "test_uuid_"
-        + format_version
-        + "_"
-        + storage_type
-        + "_"
-        + get_uuid_str()
+        "test_uuid_" + format_version + "_" + storage_type + "_" + get_uuid_str()
     )
 
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id UUID) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}', 'write.format.default' = '{format}')"
     )
 
-    spark.sql(
-        f"INSERT INTO {TABLE_NAME} select {get_uuid_str()}"
-    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select {get_uuid_str()}")
 
     default_upload_directory(
         started_cluster,
