@@ -76,6 +76,28 @@ REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 namespace S3
 {
 
+namespace
+{
+bool setValueFromConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3RequestSettingsImpl::SettingFieldRef & field)
+{
+    if (!config.has(path))
+        return false;
+
+    auto which = field.getValue().getType();
+    if (isInt64OrUInt64FieldType(which))
+        field.setValue(config.getUInt64(path));
+    else if (which == Field::Types::String)
+        field.setValue(config.getString(path));
+    else if (which == Field::Types::Bool)
+        field.setValue(config.getBool(path));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+
+    return true;
+}
+}
+
 S3RequestSettings::S3RequestSettings() : impl(std::make_unique<S3RequestSettingsImpl>())
 {
 }
@@ -108,23 +130,12 @@ S3RequestSettings::S3RequestSettings(
     {
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
-        if (!config.has(path))
+        bool updated = setValueFromConfig(config, path, field);
+        if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
             if (settings.has(setting_name) && settings.isChanged(setting_name))
-                impl->set(field.getName(), settings.get(setting_name));
-        }
-        else
-        {
-            auto which = field.getValue().getType();
-            if (isInt64OrUInt64FieldType(which))
-                impl->set(field.getName(), config.getUInt64(path));
-            else if (which == Field::Types::String)
-                impl->set(field.getName(), config.getString(path));
-            else if (which == Field::Types::Bool)
-                impl->set(field.getName(), config.getBool(path));
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+                field.setValue(settings.get(setting_name));
         }
     }
     finishInit(settings, validate_settings);
@@ -141,11 +152,11 @@ S3RequestSettings::S3RequestSettings(const NamedCollection & collection, const D
         {
             auto which = field.getValue().getType();
             if (isInt64OrUInt64FieldType(which))
-                impl->set(field.getName(), collection.get<UInt64>(path));
+                field.setValue(collection.get<UInt64>(path));
             else if (which == Field::Types::String)
-                impl->set(field.getName(), collection.get<String>(path));
+                field.setValue(collection.get<String>(path));
             else if (which == Field::Types::Bool)
-                impl->set(field.getName(), collection.get<bool>(path));
+                field.setValue(collection.get<bool>(path));
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
         }

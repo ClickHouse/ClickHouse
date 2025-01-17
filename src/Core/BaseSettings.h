@@ -268,8 +268,8 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (auto * setting_field = accessor.findSettingFieldPtr(name, *this))
-        return static_cast<Field>(*setting_field);
-    return static_cast<Field>(getCustomSetting(name));
+        return setting_field->operator Field();
+    return getCustomSetting(name).operator Field();
 }
 
 template <typename TTraits>
@@ -279,12 +279,12 @@ bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
     const auto & accessor = Traits::Accessor::instance();
     if (auto * setting_field = accessor.findSettingFieldPtr(name, *this))
     {
-        value = static_cast<Field>(*setting_field);
+        value = setting_field->operator Field();
         return true;
     }
     if (const auto * custom_setting = tryGetCustomSetting(name))
     {
-        value = static_cast<Field>(*custom_setting);
+        value = custom_setting->operator Field();
         return true;
     }
     return false;
@@ -329,7 +329,7 @@ void BaseSettings<TTraits>::resetToDefault()
     for (size_t i : collections::range(accessor.size()))
     {
         if (auto * setting_field = accessor.getSettingFieldPtr(i, *this); setting_field->changed)
-            *setting_field = static_cast<Field>(*accessor.getDefault(i));
+            *setting_field = accessor.getDefault(i)->operator Field();
     }
 
     if constexpr (Traits::allow_custom_settings)
@@ -343,7 +343,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
-        *accessor.getSettingFieldPtr(index, *this) = static_cast<Field>(*accessor.getDefault(index));
+        *accessor.getSettingFieldPtr(index, *this) = accessor.getDefault(index)->operator Field();
         return;
     }
 
@@ -419,7 +419,7 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
     {
         auto copy = accessor.getDefault(index)->clone();
         *copy = value;
-        return static_cast<Field>(*copy);
+        return copy->operator Field();
     }
     if constexpr (Traits::allow_custom_settings)
         return value;
@@ -455,7 +455,7 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
         {
             auto copy = accessor.getDefault(index)->clone();
             copy->parseFromString(str);
-            return static_cast<Field>(*copy);
+            return copy->operator Field();
         }
         if constexpr (Traits::allow_custom_settings)
             return Field::restoreFromDump(str);
@@ -568,7 +568,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
             {
                 SettingFieldCustom temp;
                 temp.parseFromString(BaseSettingsHelpers::readString(in));
-                // *ref = static_cast<Field>(temp);
+                *ref = temp.operator Field();
             }
             else if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
                 ref->parseFromString(BaseSettingsHelpers::readString(in));
@@ -794,9 +794,9 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return static_cast<Field>(custom_setting->second);
+            return custom_setting->second.operator Field();
     }
-    return static_cast<Field>(accessor->getSettingFieldPtr(index, *settings));
+    return accessor->getSettingFieldPtr(index, *settings)->operator Field();
 }
 
 template <typename TTraits>
@@ -902,6 +902,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     { \
         struct Data \
         { \
+            boost::blank BLOCK_START; \
             LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
         \
@@ -1052,7 +1053,8 @@ struct DefineAliases
     { \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
-            return reinterpret_cast<SettingFieldBase *>(reinterpret_cast<char *>(&data) + field_infos[it->second].offset_in_Data); \
+            return reinterpret_cast<SettingFieldBase *>( \
+                reinterpret_cast<char *>(&data.BLOCK_START) + field_infos[it->second].offset_in_Data); \
         return nullptr; \
     } \
     const SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, const Data & data) const \
@@ -1060,19 +1062,19 @@ struct DefineAliases
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
             return reinterpret_cast<const SettingFieldBase *>( \
-                reinterpret_cast<char *>(const_cast<Data *>(&data)) + field_infos[it->second].offset_in_Data); \
+                reinterpret_cast<char *>(&const_cast<Data *>(&data)->BLOCK_START) + field_infos[it->second].offset_in_Data); \
         return nullptr; \
     } \
     SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::getSettingFieldPtr(size_t index, Data & data) const \
     { \
         chassert(index < field_infos.size()); \
-        return reinterpret_cast<SettingFieldBase *>(reinterpret_cast<char *>(&data) + field_infos[index].offset_in_Data); \
+        return reinterpret_cast<SettingFieldBase *>(reinterpret_cast<char *>(&data.BLOCK_START) + field_infos[index].offset_in_Data); \
     } \
     const SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::getSettingFieldPtr(size_t index, const Data & data) const \
     { \
         chassert(index < field_infos.size()); \
         return reinterpret_cast<const SettingFieldBase *>( \
-            reinterpret_cast<char *>(const_cast<Data *>(&data)) + field_infos[index].offset_in_Data); \
+            reinterpret_cast<char *>(&const_cast<Data *>(&data)->BLOCK_START) + field_infos[index].offset_in_Data); \
     } \
 \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
@@ -1085,6 +1087,7 @@ struct DefineAliases
         DESCRIPTION, \
         static_cast<UInt64>(FLAGS), \
         std::make_unique<SettingField##TYPE>(DEFAULT), \
-        reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->NAME), \
+        reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->NAME) \
+            - reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->BLOCK_START), \
     });
 }
