@@ -127,6 +127,19 @@ StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(con
     };
 }
 
+StorageS3Configuration::Path StorageS3Configuration::getFullPath() const
+{
+    auto context = Context::getGlobalContextInstance();
+    const auto & config = context->getConfigRef();
+    const auto & settings = context->getSettingsRef();
+    auto s3_settings = getSettings(config, "s3" /* config_prefix */, context, url.uri_str, settings[Setting::s3_validate_request_settings]);
+    auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
+
+    auto region = client->getRegionForBucket(url.bucket, /*force_detect*/ true);
+    LOG_TEST(getLogger("KSSENII"), "Region: {}", region);
+    return client->GeneratePresignedUrl(url.bucket, url.key, Aws::Http::HttpMethod::HTTP_GET);
+}
+
 ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
     assertInitialized();

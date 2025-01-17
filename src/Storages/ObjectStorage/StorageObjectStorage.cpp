@@ -269,7 +269,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
-    std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
+    std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;

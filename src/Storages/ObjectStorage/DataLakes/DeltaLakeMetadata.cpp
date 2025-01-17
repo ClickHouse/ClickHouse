@@ -40,6 +40,9 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+
+#include "delta_kernel_ffi.hpp"
 
 namespace fs = std::filesystem;
 
@@ -183,7 +186,7 @@ struct DeltaLakeMetadataImpl
         std::set<String> & result)
     {
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+        ObjectInfo object_info(metadata_file_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
         char c;
@@ -495,7 +498,7 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(last_checkpoint_file);
+        ObjectInfo object_info(last_checkpoint_file);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -565,7 +568,7 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(checkpoint_path);
+        ObjectInfo object_info(checkpoint_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
@@ -687,16 +690,30 @@ struct DeltaLakeMetadataImpl
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
-DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+DeltaLakeMetadata::DeltaLakeMetadata(
+    ObjectStoragePtr object_storage_,
+    ConfigurationObserverPtr configuration_,
+    ContextPtr context_)
+    : log(getLogger("DeltaLakeMetadata"))
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
     auto result = impl.processMetadataFiles();
-    data_files = result.data_files;
-    schema = result.schema;
     partition_columns = result.partition_columns;
 
-    LOG_TRACE(impl.log, "Found {} data files, {} partition files, schema: {}",
-             data_files.size(), partition_columns.size(), schema.toString());
+    table_snapshot = std::make_shared<DeltaLake::TableSnapshot>(getKernelHelper(configuration_.lock()), log);
+    schema = table_snapshot->getSchema();
+}
+
+Strings DeltaLakeMetadata::getDataFiles() const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "getDataFiles() is not implemented, you should use iterate() method instead");
+}
+
+ObjectIterator DeltaLakeMetadata::iterate() const
+{
+    return table_snapshot->iterate();
 }
 
 }

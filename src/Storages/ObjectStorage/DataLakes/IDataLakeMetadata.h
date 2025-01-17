@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 #include "Interpreters/ActionsDAG.h"
 #include "PartitionColumns.h"
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 namespace DB
 {
@@ -21,6 +22,13 @@ public:
     virtual bool supportsExternalMetadataChange() const { return false; }
     virtual bool supportsUpdate() const { return false; }
     virtual bool update(const ContextPtr &) { return false; }
+    virtual bool supportsFileIterator() const { return false; }
+    virtual ObjectIterator iterate() const { throwNotImplemented("iterate()"); }
+
+    [[noreturn]] void throwNotImplemented(std::string_view method) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method {} is not implemented", method);
+    }
 };
 using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;
 

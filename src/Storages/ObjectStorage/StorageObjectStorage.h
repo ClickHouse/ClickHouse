@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include "Interpreters/ActionsDAG.h"
@@ -183,6 +184,9 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
+    virtual S3::URI getURL() const { return {}; }
+    virtual std::string getEndpoint() const { return {}; }
+    virtual Path getFullPath() const { return ""; }
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
@@ -241,6 +245,12 @@ public:
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
 
+    virtual bool supportsFileIterator() const { return false; }
+    virtual ObjectIterator iterate()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
+    }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -251,7 +261,6 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
-
 
     void assertInitialized() const;
 
