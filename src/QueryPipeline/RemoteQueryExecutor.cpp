@@ -445,7 +445,14 @@ int RemoteQueryExecutor::sendQueryAsync()
         return -1;
 
     if (!read_context)
-        read_context = std::make_unique<ReadContext>(*this, /*suspend_when_query_sent*/ true, context->canUseParallelReplicasOnInitiator());
+    {
+        const bool read_packet_type_separately
+            = context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests];
+        read_context = std::make_unique<ReadContext>(
+            *this,
+            /*suspend_when_query_sent*/ true,
+            read_packet_type_separately);
+    }
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -515,7 +522,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        read_context = std::make_unique<ReadContext>(*this, false, context->canUseParallelReplicasOnInitiator());
+        const bool read_packet_type_separately
+            = context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests];
+        read_context = std::make_unique<ReadContext>(*this, false, read_packet_type_separately);
         recreate_read_context = false;
     }
 
