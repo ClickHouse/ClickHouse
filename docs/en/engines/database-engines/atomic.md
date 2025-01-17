@@ -18,7 +18,7 @@ On ClickHouse Cloud, the `Replicated` database engine is used by default.
 CREATE DATABASE test [ENGINE = Atomic];
 ```
 
-## Specifics and recommendations {#specifics-and-recommendations}
+## Specifics and Recommendations {#specifics-and-recommendations}
 
 ### Table UUID {#table-uuid}
 
