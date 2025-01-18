@@ -4,10 +4,6 @@
 #include <Common/typeid_cast.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
-// Allow calling executeImpl from TableFunctionObjectStorage class
-// when it is overridden in TableFunctionObjectStorageCluster
-#pragma clang diagnostic ignored "-Wbugprone-parent-virtual-call"
-
 namespace DB
 {
 
