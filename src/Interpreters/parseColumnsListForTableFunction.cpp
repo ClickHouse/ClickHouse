@@ -51,6 +51,20 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
 {
 }
 
+static bool allowedInDataTypeLowCardinality(const IDataType & data_type)
+{
+    WhichDataType which(data_type);
+    if (which.isStringOrFixedString())
+        return true;
+
+    if (which.isDecimal128())
+        return true;
+
+    if (which.isDecimal256())
+        return true;
+
+    return false;
+}
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {
@@ -60,7 +74,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         {
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
             {
-                if (!isStringOrFixedString(*removeNullable(lc_type->getDictionaryType())))
+                if (!allowedInDataTypeLowCardinality(*removeNullable(lc_type->getDictionaryType())))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
