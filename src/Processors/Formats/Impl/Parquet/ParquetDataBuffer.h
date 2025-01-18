@@ -54,11 +54,10 @@ public:
         auto necessary_bytes = count * sizeof(ParquetType);
         checkAvaible(necessary_bytes);
 
-        const ParquetType* src = reinterpret_cast<const ParquetType*>(data);
-
         for (std::size_t i = 0; i < count; i++)
         {
-            dst[i] = static_cast<TValue>(src[i]);
+            auto offset = i * sizeof(ParquetType);
+            dst[i] = unalignedLoad<TValue>(data + offset);
         }
 
         consume(necessary_bytes);

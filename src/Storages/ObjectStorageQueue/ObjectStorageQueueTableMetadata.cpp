@@ -238,13 +238,13 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 from_zk.buckets, buckets);
         }
 
-        if (ObjectStorageQueueMetadata::getBucketsNum(*this) != ObjectStorageQueueMetadata::getBucketsNum(from_zk))
+        if (getBucketsNum() != from_zk.getBucketsNum())
         {
             throw Exception(
                 ErrorCodes::METADATA_MISMATCH,
                 "Existing table metadata in ZooKeeper differs in processing buckets. "
                 "Stored in ZooKeeper: {}, local: {}",
-                ObjectStorageQueueMetadata::getBucketsNum(from_zk), ObjectStorageQueueMetadata::getBucketsNum(*this));
+                from_zk.getBucketsNum(), getBucketsNum());
         }
     }
 

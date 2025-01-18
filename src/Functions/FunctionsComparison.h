@@ -49,7 +49,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
-    extern const SettingsBool validate_enum_literals_in_opearators;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -648,12 +648,12 @@ struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 struct ComparisonParams
 {
     bool check_decimal_overflow;
-    bool validate_enum_literals_in_opearators;
+    bool validate_enum_literals_in_operators;
     bool allow_not_comparable_types;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_opearators(context->getSettingsRef()[Setting::validate_enum_literals_in_opearators])
+        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
         , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
 };
@@ -906,7 +906,7 @@ private:
         {
             if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
                 return false;
-            if (params.validate_enum_literals_in_opearators)
+            if (params.validate_enum_literals_in_operators)
                 return false;
             if (!enum_values || string_value.getType() != Field::Types::String)
                 return false;
