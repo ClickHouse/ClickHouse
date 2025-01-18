@@ -35,6 +35,7 @@
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
 #include <base/coverage.h>
+#include <base/scope_guard.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
