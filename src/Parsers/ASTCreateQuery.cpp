@@ -241,6 +241,8 @@ ASTPtr ASTCreateQuery::clone() const
 
     if (columns_list)
         res->set(res->columns_list, columns_list->clone());
+    if (aliases_list)
+        res->set(res->aliases_list, aliases_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
     if (select)
@@ -477,6 +479,16 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
         columns_list->format(ostr, settings, state, frame_nested);
+        ostr << (settings.one_line ? ")" : "\n)");
+    }
+
+    frame.expression_list_always_start_on_new_line = true;
+
+    if (is_ordinary_view && aliases_list && !as_table_function)
+    {
+        ostr << (settings.one_line ? " (" : "\n(");
+        FormatStateStacked frame_nested = frame;
+        aliases_list->format(ostr, settings, state, frame_nested);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 

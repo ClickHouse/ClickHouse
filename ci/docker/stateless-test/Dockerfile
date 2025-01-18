@@ -17,11 +17,16 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT
+# git - required in one of FT TC
+# gnuplot - for perf tests
+# imagemagick - for perf tests
+# parallel - for perf tests
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
+            git \
             awscli \
             brotli \
             lz4 \
@@ -60,6 +65,9 @@ RUN apt-get update -y \
             wget \
             xz-utils \
             ripgrep \
+            gnuplot \
+            imagemagick \
+            parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -104,17 +112,13 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 # for minio to work without root
 RUN chmod 777 /home
 ENV HOME="/home"
-ENV TEMP_DIR="/tmp/praktika"
-ENV PATH="/wd/tests:/tmp/praktika/input:$PATH"
-
-RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
-    && tar -xvf hadoop-3.3.1.tar.gz \
-    && rm -rf hadoop-3.3.1.tar.gz \
-    && chmod 777 /hadoop-3.3.1
-
 
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
 
 ENV PYTHONPATH=".:./ci"
 USER clickhouse
+
+# A directory for cache
+RUN mkdir /dev/shm/clickhouse
+

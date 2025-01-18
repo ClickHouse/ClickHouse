@@ -460,6 +460,49 @@ static constexpr std::string_view statistics = R"(
     WHERE false; -- make sure this view is always empty
 )";
 
+/// MySQL-specific
+static constexpr std::string_view engines = R"(
+    ATTACH VIEW engines
+    (
+        engine String,
+        support String,
+        ENGINE String,
+        SUPPORT String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        name AS engine,
+        engine = getSetting('default_table_engine') ? 'DEFAULT' : 'YES' AS support,
+        engine AS ENGINE,
+        support AS SUPPORT
+    FROM system.table_engines
+)";
+
+static constexpr std::string_view character_sets = R"(
+    ATTACH VIEW character_sets
+    (
+        character_set_name String,
+        CHARACTER_SET_NAME String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        arrayJoin(['utf8', 'utf8mb4', 'ascii', 'binary']) AS character_set_name,
+        character_set_name AS CHARACTER_SET_NAME
+)";
+
+static constexpr std::string_view collations = R"(
+    ATTACH VIEW collations
+    (
+        collation_name String,
+        COLLATION_NAME String
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        name AS collation_name,
+        collation_name AS COLLATION_NAME
+    FROM system.collations
+)";
+
 /// View structures are taken from http://www.contrib.andrew.cmu.edu/~shadow/sql/sql1992.txt
 
 static void createInformationSchemaView(ContextMutablePtr context, IDatabase & database, const String & view_name, std::string_view query)
@@ -512,6 +555,9 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "key_column_usage", key_column_usage);
     createInformationSchemaView(context, information_schema_database, "referential_constraints", referential_constraints);
     createInformationSchemaView(context, information_schema_database, "statistics", statistics);
+    createInformationSchemaView(context, information_schema_database, "engines", engines);
+    createInformationSchemaView(context, information_schema_database, "character_sets", character_sets);
+    createInformationSchemaView(context, information_schema_database, "collations", collations);
 }
 
 }

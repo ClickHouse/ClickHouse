@@ -4,6 +4,9 @@ sidebar_position: 200
 sidebar_label: url
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # url
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
@@ -65,7 +68,6 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
-SET use_hive_partitioning = 1;
 SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
