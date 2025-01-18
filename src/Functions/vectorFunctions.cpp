@@ -136,7 +136,7 @@ public:
             ColumnWithTypeAndName left{left_elements[i], left_types[i], {}};
             ColumnWithTypeAndName right{right_elements[i], right_types[i], {}};
             auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
-            columns[i] = elem_func->execute({left, right}, elem_func->getResultType(), input_rows_count)
+            columns[i] = elem_func->execute({left, right}, elem_func->getResultType(), input_rows_count, /* dry_run = */ false)
                                   ->convertToFullColumnIfConst();
         }
 
@@ -221,7 +221,7 @@ public:
         {
             ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
             auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
-            columns[i] = elem_negate->execute({cur}, elem_negate->getResultType(), input_rows_count)
+            columns[i] = elem_negate->execute({cur}, elem_negate->getResultType(), input_rows_count, /* dry_run = */ false)
                                     ->convertToFullColumnIfConst();
         }
 
@@ -295,7 +295,7 @@ public:
         {
             ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
             auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
-            columns[i] = elem_func->execute({cur, p_column}, elem_func->getResultType(), input_rows_count)
+            columns[i] = elem_func->execute({cur, p_column}, elem_func->getResultType(), input_rows_count, /* dry_run = */ false)
                                   ->convertToFullColumnIfConst();
         }
 
@@ -413,7 +413,7 @@ public:
 
             ColumnWithTypeAndName column;
             column.type = elem_multiply->getResultType();
-            column.column = elem_multiply->execute({left, right}, column.type, input_rows_count);
+            column.column = elem_multiply->execute({left, right}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -423,7 +423,7 @@ public:
             {
                 auto plus_elem = plus->build({res, column});
                 auto res_type = plus_elem->getResultType();
-                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }
@@ -510,7 +510,7 @@ public:
             ColumnWithTypeAndName column{cur_elements[i], cur_types[i], {}};
             auto elem_plus = plus->build(ColumnsWithTypeAndName{i == 0 ? arguments[0] : res, column});
             auto res_type = elem_plus->getResultType();
-            res.column = elem_plus->execute({i == 0 ? arguments[0] : res, column}, res_type, input_rows_count);
+            res.column = elem_plus->execute({i == 0 ? arguments[0] : res, column}, res_type, input_rows_count, /* dry_run = */ false);
             res.type = res_type;
         }
 
@@ -665,14 +665,14 @@ public:
             {
                 auto minus = FunctionFactory::instance().get("minus", context);
                 auto elem_minus = minus->build({left, arguments[1]});
-                last_column = elem_minus->execute({left, arguments[1]}, arguments[1].type, input_rows_count)
+                last_column = elem_minus->execute({left, arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false)
                                         ->convertToFullColumnIfConst();
             }
             else
             {
                 auto plus = FunctionFactory::instance().get("plus", context);
                 auto elem_plus = plus->build({left, arguments[1]});
-                last_column = elem_plus->execute({left, arguments[1]}, arguments[1].type, input_rows_count)
+                last_column = elem_plus->execute({left, arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false)
                                         ->convertToFullColumnIfConst();
             }
         }
@@ -682,7 +682,7 @@ public:
             {
                 auto negate = FunctionFactory::instance().get("negate", context);
                 auto elem_negate = negate->build({arguments[1]});
-                last_column = elem_negate->execute({arguments[1]}, arguments[1].type, input_rows_count);
+                last_column = elem_negate->execute({arguments[1]}, arguments[1].type, input_rows_count, /* dry_run = */ false);
             }
             else
             {
@@ -783,7 +783,7 @@ public:
 
             ColumnWithTypeAndName column;
             column.type = elem_abs->getResultType();
-            column.column = elem_abs->execute({cur}, column.type, input_rows_count);
+            column.column = elem_abs->execute({cur}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -793,7 +793,7 @@ public:
             {
                 auto plus_elem = plus->build({res, column});
                 auto res_type = plus_elem->getResultType();
-                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }
@@ -885,7 +885,7 @@ public:
 
             ColumnWithTypeAndName column;
             column.type = elem_multiply->getResultType();
-            column.column = elem_multiply->execute({cur, cur}, column.type, input_rows_count);
+            column.column = elem_multiply->execute({cur, cur}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -895,7 +895,7 @@ public:
             {
                 auto plus_elem = plus->build({res, column});
                 auto res_type = plus_elem->getResultType();
-                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }
@@ -949,7 +949,7 @@ public:
 
         auto sqrt = FunctionFactory::instance().get("sqrt", context);
         auto sqrt_elem = sqrt->build({squared_res});
-        return sqrt_elem->execute({squared_res}, sqrt_elem->getResultType(), input_rows_count);
+        return sqrt_elem->execute({squared_res}, sqrt_elem->getResultType(), input_rows_count, /* dry_run = */ false);
     }
 };
 using FunctionL2Norm = FunctionLNorm<L2Label>;
@@ -1036,7 +1036,7 @@ public:
 
             ColumnWithTypeAndName column;
             column.type = elem_abs->getResultType();
-            column.column = elem_abs->execute({cur}, column.type, input_rows_count);
+            column.column = elem_abs->execute({cur}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -1046,7 +1046,7 @@ public:
             {
                 auto max_elem = max->build({res, column});
                 auto res_type = max_elem->getResultType();
-                res.column = max_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = max_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }
@@ -1163,14 +1163,14 @@ public:
         {
             ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
             auto elem_abs = abs->build(ColumnsWithTypeAndName{cur});
-            cur.column = elem_abs->execute({cur}, elem_abs->getResultType(), input_rows_count);
+            cur.column = elem_abs->execute({cur}, elem_abs->getResultType(), input_rows_count, /* dry_run = */ false);
             cur.type = elem_abs->getResultType();
 
             auto elem_pow = pow->build(ColumnsWithTypeAndName{cur, p_column});
 
             ColumnWithTypeAndName column;
             column.type = elem_pow->getResultType();
-            column.column = elem_pow->execute({cur, p_column}, column.type, input_rows_count);
+            column.column = elem_pow->execute({cur, p_column}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -1180,7 +1180,7 @@ public:
             {
                 auto plus_elem = plus->build({res, column});
                 auto res_type = plus_elem->getResultType();
-                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }
@@ -1188,7 +1188,7 @@ public:
         ColumnWithTypeAndName inv_p_column{DataTypeFloat64().createColumnConst(input_rows_count, 1 / p),
                                            std::make_shared<DataTypeFloat64>(), {}};
         auto pow_elem = pow->build({res, inv_p_column});
-        return pow_elem->execute({res, inv_p_column}, pow_elem->getResultType(), input_rows_count);
+        return pow_elem->execute({res, inv_p_column}, pow_elem->getResultType(), input_rows_count, /* dry_run = */ false);
     }
 };
 using FunctionLpNorm = FunctionLNorm<LpLabel>;
@@ -1247,12 +1247,12 @@ public:
         if constexpr (FuncLabel::name[0] == 'p')
         {
             auto func_elem = func->build({minus_res, arguments[2]});
-            return func_elem->execute({minus_res, arguments[2]}, func_elem->getResultType(), input_rows_count);
+            return func_elem->execute({minus_res, arguments[2]}, func_elem->getResultType(), input_rows_count, /* dry_run = */ false);
         }
         else
         {
             auto func_elem = func->build({minus_res});
-            return func_elem->execute({minus_res}, func_elem->getResultType(), input_rows_count);
+            return func_elem->execute({minus_res}, func_elem->getResultType(), input_rows_count, /* dry_run = */ false);
         }
     }
 };
@@ -1394,16 +1394,16 @@ public:
         ColumnWithTypeAndName multiply_result;
         multiply_result.type = multiply_elem->getResultType();
         multiply_result.column = multiply_elem->execute({first_norm, second_norm},
-                                                        multiply_result.type, input_rows_count);
+                                                        multiply_result.type, input_rows_count, /* dry_run = */ false);
 
         auto divide_elem = divide->build({dot_result, multiply_result});
         ColumnWithTypeAndName divide_result;
         divide_result.type = divide_elem->getResultType();
         divide_result.column = divide_elem->execute({dot_result, multiply_result},
-                                                    divide_result.type, input_rows_count);
+                                                    divide_result.type, input_rows_count, /* dry_run = */ false);
 
         auto minus_elem = minus->build({one, divide_result});
-        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count);
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count, /* dry_run = */ false);
     }
 };
 
@@ -1595,7 +1595,7 @@ Consecutively adds a tuple of intervals to a Date or a DateTime.
             .examples{
                 {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            .categories{"Tuple", "Interval", "Date", "DateTime"}
+            .category{"Dates and Times"}
         });
 
     factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
@@ -1607,7 +1607,7 @@ Consecutively subtracts a tuple of intervals from a Date or a DateTime.
             .examples{
                 {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            .categories{"Tuple", "Interval", "Date", "DateTime"}
+            .category{"Dates and Times"}
         });
 
     factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
@@ -1625,7 +1625,7 @@ If the types of the first interval (or the interval in the tuple) and the second
                 {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
                 {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
                 },
-            .categories{"Tuple", "Interval"}
+            .category{"Dates and Times"}
         });
     factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
         {
@@ -1642,7 +1642,7 @@ If the types of the first interval (or the interval in the tuple) and the second
                 {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
                 {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
                 },
-            .categories{"Tuple", "Interval"}
+            .category{"Dates and Times"}
         });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();

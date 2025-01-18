@@ -76,6 +76,12 @@ public:
         bool send_profile_events_,
         const String & server_display_name_);
 
+    explicit LocalConnection(
+        std::unique_ptr<Session> && session_,
+        bool send_progress_ = false,
+        bool send_profile_events_ = false,
+        const String & server_display_name_ = "");
+
     ~LocalConnection() override;
 
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
@@ -84,6 +90,13 @@ public:
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
         ReadBuffer * in = nullptr,
+        bool send_progress = false,
+        bool send_profile_events = false,
+        const String & server_display_name = "");
+
+    static ServerConnectionPtr createConnection(
+        const ConnectionParameters & connection_parameters,
+        std::unique_ptr<Session> && session,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");
@@ -114,11 +127,14 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
+
+    bool isSendDataNeeded() const override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
@@ -157,7 +173,7 @@ private:
     bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
-    Session session;
+    std::unique_ptr<Session> session;
 
     bool send_progress;
     bool send_profile_events;

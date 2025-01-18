@@ -14,12 +14,12 @@ namespace ErrorCodes
 
 
 BackupConcurrencyCheck::BackupConcurrencyCheck(
-    const UUID & backup_or_restore_uuid_,
     bool is_restore_,
     bool on_cluster_,
+    const String & zookeeper_path_,
     bool allow_concurrency_,
     BackupConcurrencyCounters & counters_)
-    : is_restore(is_restore_), backup_or_restore_uuid(backup_or_restore_uuid_), on_cluster(on_cluster_), counters(counters_)
+    : is_restore(is_restore_), on_cluster(on_cluster_), zookeeper_path(zookeeper_path_), counters(counters_)
 {
     std::lock_guard lock{counters.mutex};
 
@@ -32,7 +32,7 @@ BackupConcurrencyCheck::BackupConcurrencyCheck(
             size_t num_on_cluster_restores = counters.on_cluster_restores.size();
             if (on_cluster)
             {
-                if (!counters.on_cluster_restores.contains(backup_or_restore_uuid))
+                if (!counters.on_cluster_restores.contains(zookeeper_path))
                     ++num_on_cluster_restores;
             }
             else
@@ -47,7 +47,7 @@ BackupConcurrencyCheck::BackupConcurrencyCheck(
             size_t num_on_cluster_backups = counters.on_cluster_backups.size();
             if (on_cluster)
             {
-                if (!counters.on_cluster_backups.contains(backup_or_restore_uuid))
+                if (!counters.on_cluster_backups.contains(zookeeper_path))
                     ++num_on_cluster_backups;
             }
             else
@@ -64,9 +64,9 @@ BackupConcurrencyCheck::BackupConcurrencyCheck(
     if (on_cluster)
     {
         if (is_restore)
-            ++counters.on_cluster_restores[backup_or_restore_uuid];
+            ++counters.on_cluster_restores[zookeeper_path];
         else
-            ++counters.on_cluster_backups[backup_or_restore_uuid];
+            ++counters.on_cluster_backups[zookeeper_path];
     }
     else
     {
@@ -86,7 +86,7 @@ BackupConcurrencyCheck::~BackupConcurrencyCheck()
     {
         if (is_restore)
         {
-            auto it = counters.on_cluster_restores.find(backup_or_restore_uuid);
+            auto it = counters.on_cluster_restores.find(zookeeper_path);
             if (it != counters.on_cluster_restores.end())
             {
                 if (!--it->second)
@@ -95,7 +95,7 @@ BackupConcurrencyCheck::~BackupConcurrencyCheck()
         }
         else
         {
-            auto it = counters.on_cluster_backups.find(backup_or_restore_uuid);
+            auto it = counters.on_cluster_backups.find(zookeeper_path);
             if (it != counters.on_cluster_backups.end())
             {
                 if (!--it->second)

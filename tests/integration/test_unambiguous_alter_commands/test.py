@@ -43,3 +43,10 @@ ALTER TABLE a\\n    (DROP COLUMN b),\\n    (DROP COLUMN c)
 """
     result = node.query(INPUT)
     assert result == EXPECTED_OUTPUT
+
+
+def test_move_partition_to_table_command():
+    INPUT = "SELECT formatQuery('ALTER TABLE a MOVE PARTITION tuple() TO TABLE b')"
+    EXPECTED_OUTPUT = "ALTER TABLE a\\n    (MOVE PARTITION tuple() TO TABLE b)\n"
+    result = node.query(INPUT)
+    assert result == EXPECTED_OUTPUT

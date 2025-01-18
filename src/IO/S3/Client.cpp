@@ -83,10 +83,22 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            return false;
+        return false;
+
+    /// It does not make sense to retry when GCS suggest to use Rewrite
+    if (useGCSRewrite(error))
+        return false;
 
     return error.ShouldRetry();
 }
+
+bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT
+        && error.GetExceptionName() == "InternalError"
+        && error.GetMessage().contains("use the Rewrite method in the JSON API");
+}
+
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
@@ -156,10 +168,10 @@ namespace
 
 ProviderType deduceProviderType(const std::string & url)
 {
-    if (url.find(".amazonaws.com") != std::string::npos)
+    if (url.contains(".amazonaws.com"))
         return ProviderType::AWS;
 
-    if (url.find("storage.googleapis.com") != std::string::npos)
+    if (url.contains("storage.googleapis.com"))
         return ProviderType::GCS;
 
     return ProviderType::UNKNOWN;
@@ -645,7 +657,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             try
             {
                 /// S3 does retries network errors actually.
-                /// But it is matter when errors occur.
+                /// But it does matter when errors occur.
                 /// This code retries a specific case when
                 /// network error happens when XML document is being read from the response body.
                 /// Hence, the response body is a stream, network errors are possible at reading.
@@ -656,8 +668,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
                 return request_fn_(request_);
             }
-            catch (Poco::Net::ConnectionResetException &)
+            catch (Poco::Net::NetException &)
             {
+                /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
                 if constexpr (IsReadMethod)
                 {
