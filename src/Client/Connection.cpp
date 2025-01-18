@@ -38,6 +38,7 @@
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -819,6 +820,14 @@ void Connection::sendQuery(
 
     query_id = query_id_;
 
+    /// Avoid reusing connections that had been left in the intermediate state
+    /// (i.e. not all packets had been sent).
+    bool completed = false;
+    SCOPE_EXIT_MEMORY_SAFE({
+        if (!completed)
+            disconnect();
+    });
+
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -938,6 +947,8 @@ void Connection::sendQuery(
         sendData(Block(), "", false);
         out->next();
     }
+
+    completed = true;
 }
 
 
