@@ -235,7 +235,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, num_marks_in_part, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, num_marks_in_part, continue_reading, rows_to_read, 0, columns);
 
         if (rows_read)
         {
