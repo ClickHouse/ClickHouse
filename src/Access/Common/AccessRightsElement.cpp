@@ -273,6 +273,9 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
 
 void AccessRightsElement::replaceDeprecated()
 {
+    if (!access_flags)
+        return;
+
     if (access_flags.toAccessTypes().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
 
