@@ -132,7 +132,7 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricsFromStatFile(stat_buf, {"anon", "sock"});
+        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"});
     }
 
     std::string dumpAllStats() override
