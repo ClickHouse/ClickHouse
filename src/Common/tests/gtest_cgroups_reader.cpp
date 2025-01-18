@@ -57,7 +57,7 @@ kernel_stack 3833856
 pagetables 65441792
 sec_pagetables 0
 percpu 15232
-sock 0
+sock 4192
 vmalloc 0
 shmem 0
 zswap 0
@@ -160,7 +160,7 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageTest)
     ASSERT_EQ(
         reader->readMemoryUsage(),
         version == ICgroupsReader::CgroupsVersion::V1 ? /* rss from memory.stat */ 2232029184
-                                                                  : /* anon from memory.stat */ 10429399040);
+                                                                  : /* anon+sock+kernel from memory.stat */ 11967193184);
 }
 
 
