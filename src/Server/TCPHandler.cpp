@@ -816,19 +816,15 @@ void TCPHandler::runImpl()
                 /// Assume that we can't break output here
                 sendLogs(query_state.value());
 
+                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                    sendEndOfStream(query_state.value());
+                else
+                    sendException(*exception, send_exception_with_stack_trace);
+
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
-
-                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                {
-                    sendEndOfStream(query_state.value());
-                }
-                else
-                {
-                    sendException(*exception, send_exception_with_stack_trace);
-                }
 
                 LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
             }
