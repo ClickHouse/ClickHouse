@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
@@ -765,8 +766,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
 
-            if (!ranges.ranges.empty())
-                parts_with_ranges[part_index] = std::move(ranges);
+            parts_with_ranges[part_index] = std::move(ranges);
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
@@ -818,21 +818,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pool.wait();
         }
 
-        /// Skip empty ranges.
-        size_t next_part = 0;
-        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        if (!settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
-            auto & part = parts_with_ranges[part_index];
-            if (!part.data_part)
-                continue;
+            /// Skip empty ranges.
+            size_t next_part = 0;
+            for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+            {
+                auto & part = parts_with_ranges[part_index];
+                if (!part.data_part || part.ranges.empty())
+                    continue;
 
-            if (next_part != part_index)
-                std::swap(parts_with_ranges[next_part], part);
+                if (next_part != part_index)
+                    std::swap(parts_with_ranges[next_part], part);
 
-            ++next_part;
+                ++next_part;
+            }
+
+            parts_with_ranges.resize(next_part);
         }
-
-        parts_with_ranges.resize(next_part);
     }
 
     if (metadata_snapshot->hasPrimaryKey())
