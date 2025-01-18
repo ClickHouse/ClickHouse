@@ -166,82 +166,7 @@ See [SQLInsert](formats/SQLInsert.md)
 
 ## JSON {#json}
 
-Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren’t a LIMIT. Example:
-
-``` sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
-```
-
-``` json
-{
-        "meta":
-        [
-                {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
-                        "type": "String"
-                },
-                {
-                        "name": "arr",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                {
-                        "num": 42,
-                        "str": "hello",
-                        "arr": [0,1]
-                },
-                {
-                        "num": 43,
-                        "str": "hello",
-                        "arr": [0,1,2]
-                },
-                {
-                        "num": 44,
-                        "str": "hello",
-                        "arr": [0,1,2,3]
-                }
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001137687,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
-
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) to 0.
-
-`rows` – The total number of output rows.
-
-`rows_before_limit_at_least` The minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT.
-If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
-
-`totals` – Total values (when using WITH TOTALS).
-
-`extremes` – Extreme values (when extremes are set to 1).
-
-ClickHouse supports [NULL](/docs/en/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to 1.
-
-**See Also**
-
-- [JSONEachRow](#jsoneachrow) format
-- [output_format_json_array_of_rows](/docs/en/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting
-
-For JSON input format, if setting [input_format_json_validate_types_from_metadata](/docs/en/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to 1,
-the types from metadata in input data will be compared with the types of the corresponding columns from the table.
+See [JSON](formats/JSON/JSON.md)
 
 ## JSONStrings {#jsonstrings}
 
@@ -269,503 +194,75 @@ See [JSONCompact](formats/JSON/JSONCompact.md)
 
 ## JSONCompactStrings {#jsoncompactstrings}
 
-Differs from JSONStrings only in that data rows are output in arrays, not in objects.
-
-Example:
-f
-```json
-{
-        "meta":
-        [
-                {
-                        "name": "num",
-                        "type": "Int32"
-                },
-                {
-                        "name": "str",
-                        "type": "String"
-                },
-                {
-                        "name": "arr",
-                        "type": "Array(UInt8)"
-                }
-        ],
-
-        "data":
-        [
-                ["42", "hello", "[0,1]"],
-                ["43", "hello", "[0,1,2]"],
-                ["44", "hello", "[0,1,2,3]"]
-        ],
-
-        "rows": 3,
-
-        "rows_before_limit_at_least": 3,
-
-        "statistics":
-        {
-                "elapsed": 0.001572097,
-                "rows_read": 3,
-                "bytes_read": 24
-        }
-}
-```
+See [JSONCompactStrings](formats/JSON/JSONCompactStrings.md)
 
 ## JSONCompactColumns {#jsoncompactcolumns}
 
-In this format, all data is represented as a single JSON Array.
-Note that JSONCompactColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption
-
-Example:
-```json
-[
-	[42, 43, 44],
-	["hello", "hello", "hello"],
-	[[0,1], [0,1,2], [0,1,2,3]]
-]
-```
-
-Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+See [JSONCompactColumns](formats/JSON/JSONCompactColumns.md)
 
 ## JSONEachRow {#jsoneachrow}
 
-In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
-
-Example:
-
-```json
-{"num":42,"str":"hello","arr":[0,1]}
-{"num":43,"str":"hello","arr":[0,1,2]}
-{"num":44,"str":"hello","arr":[0,1,2,3]}
-```
-
-While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+See [JSONEachRow](formats/JSON/JSONEachRow.md)
 
 ## PrettyJSONEachRow {#prettyjsoneachrow}
 
-Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable only for output.
-
-Example
-
-```json
-{
-    "num": "42",
-    "str": "hello",
-    "arr": [
-        "0",
-        "1"
-    ],
-    "tuple": {
-        "num": 42,
-        "str": "world"
-    }
-}
-{
-    "num": "43",
-    "str": "hello",
-    "arr": [
-        "0",
-        "1",
-        "2"
-    ],
-    "tuple": {
-        "num": 43,
-        "str": "world"
-    }
-}
-```
+See [PrettyJSONEachRow](formats/JSON/PrettyJSONEachRow.md)
 
 ## JSONStringsEachRow {#jsonstringseachrow}
 
-Differs from JSONEachRow only in that data fields are output in strings, not in typed JSON values.
-
-Example:
-
-```json
-{"num":"42","str":"hello","arr":"[0,1]"}
-{"num":"43","str":"hello","arr":"[0,1,2]"}
-{"num":"44","str":"hello","arr":"[0,1,2,3]"}
-```
+See [JSONStringsEachRow](formats/JSON/JSONStringsEachRow.md)
 
 ## JSONCompactEachRow {#jsoncompacteachrow}
 
-Differs from JSONEachRow only in that data rows are output in arrays, not in objects.
-
-Example:
-
-```json
-[42, "hello", [0,1]]
-[43, "hello", [0,1,2]]
-[44, "hello", [0,1,2,3]]
-```
+See [JSONCompactEachRow](formats/JSON/JSONCompactEachRow.md)
 
 ## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
-Differs from JSONCompactEachRow only in that data fields are output in strings, not in typed JSON values.
-
-Example:
-
-```json
-["42", "hello", "[0,1]"]
-["43", "hello", "[0,1,2]"]
-["44", "hello", "[0,1,2,3]"]
-```
+See [JSONCompactStringsEachRow](formats/JSON/JSONCompactStringsEachRow.md)
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
+
+See [JSONEachRowWithProgress](formats/JSON/JSONEachRowWithProgress.md)
+
 ## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
-
-```json
-{"row":{"num":42,"str":"hello","arr":[0,1]}}
-{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
-{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
-{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
-```
+See [JSONStringsEachRowWithProgress](formats/JSON/JSONStringsEachRowWithProgress.md)
 
 ## JSONCompactEachRowWithNames {#jsoncompacteachrowwithnames}
 
-Differs from `JSONCompactEachRow` format in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-:::
+See [JSONCompactEachRowWithNames](formats/JSON/JSONCompactEachRowWithNames.md)
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
-Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+See [JSONCompactEachRowWithNamesAndTypes](formats/JSON/JSONCompactEachRowWithNamesAndTypes.md)
 
 ## JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
 
-Differs from `JSONCompactStringsEachRow` in that in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-:::
+See [JSONCompactStringsEachRowWithNames](formats/JSON/JSONCompactStringsEachRowWithNames.md)
 
 ## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
-
-```json
-["num", "str", "arr"]
-["Int32", "String", "Array(UInt8)"]
-[42, "hello", [0,1]]
-[43, "hello", [0,1,2]]
-[44, "hello", [0,1,2,3]]
-```
+See [JSONCompactStringsEachRowWithNamesAndTypes](formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes.md)
 
 ## JSONObjectEachRow {#jsonobjecteachrow}
 
-In this format, all data is represented as a single JSON Object, each row is represented as a separate field of this object similar to JSONEachRow format.
+See [JSONObjectEachRow](formats/JSON/JSONObjectEachRow.md)
 
-Example:
+### JSON Formats Settings {#json-formats-settings}
 
-```json
-{
-  "row_1": {"num": 42, "str": "hello", "arr":  [0,1]},
-  "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
-  "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
-}
-```
-
-To use an object name as a column value you can use the special setting [format_json_object_each_row_column_for_object_name](/docs/en/operations/settings/settings-formats.md/#format_json_object_each_row_column_for_object_name). The value of this setting is set to the name of a column, that is used as JSON key for a row in the resulting object.
-Examples:
-
-For output:
-
-Let's say we have the table `test` with two columns:
-```
-┌─object_name─┬─number─┐
-│ first_obj   │      1 │
-│ second_obj  │      2 │
-│ third_obj   │      3 │
-└─────────────┴────────┘
-```
-Let's output it in `JSONObjectEachRow` format and use `format_json_object_each_row_column_for_object_name` setting:
-
-```sql
-select * from test settings format_json_object_each_row_column_for_object_name='object_name'
-```
-
-The output:
-```json
-{
-	"first_obj": {"number": 1},
-	"second_obj": {"number": 2},
-	"third_obj": {"number": 3}
-}
-```
-
-For input:
-
-Let's say we stored output from the previous example in a file named `data.json`:
-```sql
-select * from file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
-```
-
-```
-┌─object_name─┬─number─┐
-│ first_obj   │      1 │
-│ second_obj  │      2 │
-│ third_obj   │      3 │
-└─────────────┴────────┘
-```
-
-It also works in schema inference:
-
-```sql
-desc file('data.json', JSONObjectEachRow) settings format_json_object_each_row_column_for_object_name='object_name'
-```
-
-```
-┌─name────────┬─type────────────┐
-│ object_name │ String          │
-│ number      │ Nullable(Int64) │
-└─────────────┴─────────────────┘
-```
-
-
-### Inserting Data {#json-inserting-data}
-
-``` sql
-INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
-```
-
-ClickHouse allows:
-
-- Any order of key-value pairs in the object.
-- Omitting some values.
-
-ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You do not have to separate them with line breaks.
-
-**Omitted values processing**
-
-ClickHouse substitutes omitted values with the default values for the corresponding [data types](/docs/en/sql-reference/data-types/index.md).
-
-If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting.
-
-Consider the following table:
-
-``` sql
-CREATE TABLE IF NOT EXISTS example_table
-(
-    x UInt32,
-    a DEFAULT x * 2
-) ENGINE = Memory;
-```
-
-- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
-- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
-
-:::note
-When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
-:::
-
-### Selecting Data {#json-selecting-data}
-
-Consider the `UserActivity` table as an example:
-
-``` response
-┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
-│ 4324182021466249494 │         5 │      146 │   -1 │
-│ 4324182021466249494 │         6 │      185 │    1 │
-└─────────────────────┴───────────┴──────────┴──────┘
-```
-
-The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
-
-``` response
-{"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
-{"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
-```
-
-Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
-
-:::info
-Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
-:::
-
-### Usage of Nested Structures {#jsoneachrow-nested}
-
-If you have a table with [Nested](/docs/en/sql-reference/data-types/nested-data-structures/index.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) setting.
-
-For example, consider the following table:
-
-``` sql
-CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
-```
-
-As you can see in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column (`n.s` and `n.i` for our table). You can insert data in the following way:
-
-``` sql
-INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
-```
-
-To insert data as a hierarchical JSON object, set [input_format_import_nested_json=1](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json).
-
-``` json
-{
-    "n": {
-        "s": ["abc", "def"],
-        "i": [1, 23]
-    }
-}
-```
-
-Without this setting, ClickHouse throws an exception.
-
-``` sql
-SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
-```
-
-``` response
-┌─name────────────────────────────┬─value─┐
-│ input_format_import_nested_json │ 0     │
-└─────────────────────────────────┴───────┘
-```
-
-``` sql
-INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
-```
-
-``` response
-Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
-```
-
-``` sql
-SET input_format_import_nested_json=1
-INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
-SELECT * FROM json_each_row_nested
-```
-
-``` response
-┌─n.s───────────┬─n.i────┐
-│ ['abc','def'] │ [1,23] │
-└───────────────┴────────┘
-```
-
-### JSON formats settings {#json-formats-settings}
-
-- [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
-- [input_format_json_read_bools_as_numbers](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
-- [input_format_json_read_bools_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_strings) - allow to parse bools as strings in JSON input formats. Default value - `true`.
-- [input_format_json_read_numbers_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `true`.
-- [input_format_json_read_arrays_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_arrays_as_strings) - allow to parse JSON arrays as strings in JSON input formats. Default value - `true`.
-- [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `true`.
-- [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
-- [input_format_json_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_numbers_from_strings) - try to infer numbers from string fields while schema inference. Default value - `false`.
-- [input_format_json_try_infer_named_tuples_from_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_named_tuples_from_objects) - try to infer named tuple from JSON objects during schema inference. Default value - `true`.
-- [input_format_json_infer_incomplete_types_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_infer_incomplete_types_as_strings) - use type String for keys that contains only Nulls or empty objects/arrays during schema inference in JSON input formats. Default value - `true`.
-- [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
-- [input_format_json_ignore_unknown_keys_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_ignore_unknown_keys_in_named_tuple) - ignore unknown keys in json object for named tuples. Default value - `false`.
-- [input_format_json_compact_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_json_compact_allow_variable_number_of_columns) - allow variable number of columns in JSONCompact/JSONCompactEachRow format, ignore extra columns and use default values on missing columns. Default value - `false`.
-- [input_format_json_throw_on_bad_escape_sequence](/docs/en/operations/settings/settings-formats.md/#input_format_json_throw_on_bad_escape_sequence) - throw an exception if JSON string contains bad escape sequence. If disabled, bad escape sequences will remain as is in the data. Default value - `true`.
-- [input_format_json_empty_as_default](/docs/en/operations/settings/settings-formats.md/#input_format_json_empty_as_default) - treat empty fields in JSON input as default values. Default value - `false`. For complex default expressions [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too.
-- [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
-- [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
-- [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
-- [output_format_json_quote_decimals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_decimals) - controls quoting of decimals in JSON output format. Default value - `false`.
-- [output_format_json_escape_forward_slashes](/docs/en/operations/settings/settings-formats.md/#output_format_json_escape_forward_slashes) - controls escaping forward slashes for string outputs in JSON output format. Default value - `true`.
-- [output_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings-formats.md/#output_format_json_named_tuples_as_objects) - serialize named tuple columns as JSON objects. Default value - `true`.
-- [output_format_json_array_of_rows](/docs/en/operations/settings/settings-formats.md/#output_format_json_array_of_rows) - output a JSON array of all rows in JSONEachRow(Compact) format. Default value - `false`.
-- [output_format_json_validate_utf8](/docs/en/operations/settings/settings-formats.md/#output_format_json_validate_utf8) - enables validation of UTF-8 sequences in JSON output formats (note that it doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8). Default value - `false`.
+See [JSON Format Settings](formats/JSON/format-settings.md)
 
 ## BSONEachRow {#bsoneachrow}
 
-In this format, ClickHouse formats/parses data as a sequence of BSON documents without any separator between them.
-Each row is formatted as a single document and each column is formatted as a single BSON document field with column name as a key.
-
-For output it uses the following correspondence between ClickHouse types and BSON types:
-
-| ClickHouse type                                                                                                       | BSON Type                                                                                                     |
-|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| [Bool](/docs/en/sql-reference/data-types/boolean.md)                                                                  | `\x08` boolean                                                                                                |
-| [Int8/UInt8](/docs/en/sql-reference/data-types/int-uint.md)/[Enum8](/docs/en/sql-reference/data-types/enum.md)        | `\x10` int32                                                                                                  |
-| [Int16/UInt16](/docs/en/sql-reference/data-types/int-uint.md)/[Enum16](/docs/en/sql-reference/data-types/enum.md)      | `\x10` int32                                                                                                  |
-| [Int32](/docs/en/sql-reference/data-types/int-uint.md)                                                                | `\x10` int32                                                                                                  |
-| [UInt32](/docs/en/sql-reference/data-types/int-uint.md)                                                               | `\x12` int64                                                                                                  |
-| [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)                                                         | `\x12` int64                                                                                                  |
-| [Float32/Float64](/docs/en/sql-reference/data-types/float.md)                                                         | `\x01` double                                                                                                 |
-| [Date](/docs/en/sql-reference/data-types/date.md)/[Date32](/docs/en/sql-reference/data-types/date32.md)               | `\x10` int32                                                                                                  |
-| [DateTime](/docs/en/sql-reference/data-types/datetime.md)                                                             | `\x12` int64                                                                                                  |
-| [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                         | `\x09` datetime                                                                                               |
-| [Decimal32](/docs/en/sql-reference/data-types/decimal.md)                                                             | `\x10` int32                                                                                                  |
-| [Decimal64](/docs/en/sql-reference/data-types/decimal.md)                                                             | `\x12` int64                                                                                                  |
-| [Decimal128](/docs/en/sql-reference/data-types/decimal.md)                                                            | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
-| [Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                                            | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
-| [Int128/UInt128](/docs/en/sql-reference/data-types/int-uint.md)                                                       | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
-| [Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                                       | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
-| [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `\x05` binary, `\x00` binary subtype or \x02 string if setting output_format_bson_string_as_string is enabled |
-| [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                     | `\x05` binary, `\x04` uuid subtype, size = 16                                                                 |
-| [Array](/docs/en/sql-reference/data-types/array.md)                                                                   | `\x04` array                                                                                                  |
-| [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                   | `\x04` array                                                                                                  |
-| [Named Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                             | `\x03` document                                                                                               |
-| [Map](/docs/en/sql-reference/data-types/map.md)                                                                       | `\x03` document                                                                                               |
-| [IPv4](/docs/en/sql-reference/data-types/ipv4.md)                                                                     | `\x10` int32                                                                                                  |
-| [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
-
-For input it uses the following correspondence between BSON types and ClickHouse types:
-
-| BSON Type                                | ClickHouse Type                                                                                                                                                                                                                             |
-|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `\x01` double                            | [Float32/Float64](/docs/en/sql-reference/data-types/float.md)                                                                                                                                                                               |
-| `\x02` string                            | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x03` document                          | [Map](/docs/en/sql-reference/data-types/map.md)/[Named Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                                   |
-| `\x04` array                             | [Array](/docs/en/sql-reference/data-types/array.md)/[Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                                                                                                     |
-| `\x05` binary, `\x00` binary subtype     | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)/[IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                             |
-| `\x05` binary, `\x02` old binary subtype | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x05` binary, `\x03` old uuid subtype   | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
-| `\x05` binary, `\x04` uuid subtype       | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
-| `\x07` ObjectId                          | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x08` boolean                           | [Bool](/docs/en/sql-reference/data-types/boolean.md)                                                                                                                                                                                        |
-| `\x09` datetime                          | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                                                                                                                                               |
-| `\x0A` null value                        | [NULL](/docs/en/sql-reference/data-types/nullable.md)                                                                                                                                                                                       |
-| `\x0D` JavaScript code                   | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x0E` symbol                            | [String](/docs/en/sql-reference/data-types/string.md)/[FixedString](/docs/en/sql-reference/data-types/fixedstring.md)                                                                                                                       |
-| `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)/[IPv4](/docs/en/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/docs/en/sql-reference/data-types/enum.md) |
-| `\x12` int64                             | [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal64](/docs/en/sql-reference/data-types/decimal.md)/[DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                       |
-
-Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8).
-Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) can be parsed from BSON Binary value with `\x00` binary subtype. In this case this format will validate that the size of binary data equals the size of expected value.
-
-Note: this format don't work properly on Big-Endian platforms.
-
-### BSON format settings {#bson-format-settings}
-
-- [output_format_bson_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_bson_string_as_string) - use BSON String type instead of Binary for String columns. Default value - `false`.
-- [input_format_bson_skip_fields_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for format BSONEachRow. Default value - `false`.
+See [BSONEachRow](formats/BSONEachRow.md)
 
 ## Native {#native}
 
-The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is “columnar” – it does not convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
-
-You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It does not make sense to work with this format yourself.
+See [Native](formats/Native.md)
 
 ## Null {#null}
 
-Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including performance testing.
-Obviously, this format is only appropriate for output, not for parsing.
+See [Null](formats/Null.md)
 
 ## Pretty {#pretty}
 
