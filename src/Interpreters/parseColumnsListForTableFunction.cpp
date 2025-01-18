@@ -77,7 +77,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&data_type))
             {
                 auto unwrapped = removeNullable(lc_type->getDictionaryType());
-                if (!allowedInDataTypeLowCardinality(*unwrapped)
+                if (!allowedInDataTypeLowCardinality(*unwrapped))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "
