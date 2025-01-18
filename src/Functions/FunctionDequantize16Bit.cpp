@@ -1,8 +1,62 @@
 #include "FunctionDequantize16Bit.h"
 #include <immintrin.h>
 #include "Functions/FunctionHelpers.h"
+#include "Functions/f16c.h"
 
-DECLARE_AVX512BF16_SPECIFIC_CODE(
+
+float halfToFloat(uint16_t half)
+{
+    uint32_t sign = (half >> 15) & 0x1;
+    uint32_t exp = (half >> 10) & 0x1F;
+    uint32_t mantissa = half & 0x3FF;
+
+    uint32_t f;
+
+    if (exp == 0)
+    {
+        if (mantissa == 0)
+        {
+            f = sign << 31;
+        }
+        else
+        {
+            while ((mantissa & 0x400) == 0)
+            {
+                mantissa <<= 1;
+                exp--;
+            }
+            exp++;
+            mantissa &= 0x3FF;
+            f = (sign << 31) | ((exp + 112) << 23) | (mantissa << 13);
+        }
+    }
+    else if (exp == 0x1F)
+    {
+        f = (sign << 31) | (0xFF << 23) | (mantissa << 13);
+    }
+    else
+    {
+        f = (sign << 31) | ((exp + 112) << 23) | (mantissa << 13);
+    }
+
+    float result;
+    std::memcpy(&result, &f, sizeof(float));
+    return result;
+}
+
+DECLARE_DEFAULT_CODE(
+
+    void dequantize16BitFallback(const UInt8 * input, float * output, size_t size) {
+        for (size_t i = 0; i < size; ++i)
+        {
+            uint16_t half = static_cast<uint16_t>(input[i * 2]) | (static_cast<uint16_t>(input[i * 2 + 1]) << 8);
+            output[i] = halfToFloat(half);
+        }
+    }
+
+)
+
+DECLARE_AVX512F_SPECIFIC_CODE(
 
     void dequantize16BitSIMD(const UInt8 * input, float * output, size_t size) {
         size_t i = 0;
@@ -37,7 +91,14 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 void FunctionDequantize16Bit::dequantize16Bit(const UInt8 * input, float * output, size_t size)
 {
-    ::TargetSpecific::AVX512BF16::dequantize16BitSIMD(input, output, size);
+    if (F16C_SUPPORTED)
+    {
+        ::TargetSpecific::AVX512F::dequantize16BitSIMD(input, output, size);
+    }
+    else
+    {
+        ::TargetSpecific::Default::dequantize16BitFallback(input, output, size);
+    }
 }
 
 void FunctionDequantize16Bit::processArray(
@@ -48,7 +109,15 @@ void FunctionDequantize16Bit::processArray(
     size_t fixed_string_length)
 {
     size_t offset_in_result = row * fixed_string_length;
-    ::TargetSpecific::AVX512BF16::dequantize16BitSIMD(src_data.data() + offset_in_result, result_data.data(), array_size);
+
+    if (F16C_SUPPORTED)
+    {
+        ::TargetSpecific::AVX512F::dequantize16BitSIMD(src_data.data() + offset_in_result, result_data.data(), array_size);
+    }
+    else
+    {
+        ::TargetSpecific::Default::dequantize16BitFallback(src_data.data(), result_data.data() + offset_in_result, array_size);
+    }
 }
 
 DataTypePtr FunctionDequantize16Bit::getReturnTypeImpl(const DataTypes & arguments) const

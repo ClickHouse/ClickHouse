@@ -1,8 +1,90 @@
 #include "FunctionQuantize16Bit.h"
 #include <immintrin.h>
+#include "Common/TargetSpecific.h"
 #include "Functions/FunctionHelpers.h"
+#include "Functions/f16c.h"
 
-DECLARE_AVX512BF16_SPECIFIC_CODE(
+uint16_t floatToHalf(float value)
+{
+    uint32_t f;
+    std::memcpy(&f, &value, sizeof(float));
+
+    uint16_t sign = (f >> 16) & 0x8000;
+
+    int32_t exp = (f >> 23) & 0xFF;
+    uint32_t mantissa = f & 0x7FFFFF;
+
+    if (exp == 0xFF)
+    {
+        if (mantissa)
+        {
+            return static_cast<uint16_t>(sign | 0x7E00 | (mantissa >> 13));
+        }
+        else
+        {
+            return static_cast<uint16_t>(sign | 0x7C00);
+        }
+    }
+    else if (exp == 0)
+    {
+        if (mantissa == 0)
+        {
+            return static_cast<uint16_t>(sign);
+        }
+        else
+        {
+            while ((mantissa & 0x800000) == 0)
+            {
+                mantissa <<= 1;
+                exp--;
+            }
+            exp++;
+            mantissa &= 0x7FFFFF;
+        }
+    }
+
+    exp += 112;
+
+    if (exp >= 0x1F)
+    {
+        return static_cast<uint16_t>(sign | 0x7C00);
+    }
+
+    if (exp <= 0)
+    {
+        mantissa |= 0x800000;
+        mantissa >>= (1 - exp);
+        exp = 0;
+    }
+
+    return static_cast<uint16_t>(sign | (exp << 10) | (mantissa >> 13));
+}
+
+
+DECLARE_DEFAULT_CODE(
+
+    void quantize16BitFallback(const float * input, UInt8 * output, size_t size) {
+        for (size_t i = 0; i < size; ++i)
+        {
+            uint16_t half = floatToHalf(input[i]);
+            output[i * 2] = half & 0xFF;
+            output[i * 2 + 1] = (half >> 8) & 0xFF;
+        }
+    }
+
+    void quantize16BitFallback(const double * input, UInt8 * output, size_t size) {
+        for (size_t i = 0; i < size; ++i)
+        {
+            float single = static_cast<float>(input[i]);
+            uint16_t half = floatToHalf(single);
+            output[i * 2] = half & 0xFF;
+            output[i * 2 + 1] = (half >> 8) & 0xFF;
+        }
+    }
+
+)
+
+DECLARE_AVX512F_SPECIFIC_CODE(
 
     void quantize16BitSIMD(const float * input, UInt8 * output, size_t size) {
         size_t i = 0;
@@ -49,7 +131,6 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
 
 )
 
-
 namespace DB
 {
 
@@ -60,13 +141,19 @@ extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-
 template <typename T>
 void FunctionQuantize16Bit::processArray(
     const PaddedPODArray<T> & src_data, size_t array_size, PaddedPODArray<UInt8> & result_chars, size_t row, size_t fixed_string_length)
 {
     size_t offset_in_result = row * fixed_string_length;
-    ::TargetSpecific::AVX512BF16::quantize16BitSIMD(src_data.data(), result_chars.data() + offset_in_result, array_size);
+    if (F16C_SUPPORTED)
+    {
+        ::TargetSpecific::AVX512F::quantize16BitSIMD(src_data.data(), result_chars.data() + offset_in_result, array_size);
+    }
+    else
+    {
+        ::TargetSpecific::Default::quantize16BitFallback(src_data.data(), result_chars.data() + offset_in_result, array_size);
+    }
 }
 
 DataTypePtr FunctionQuantize16Bit::getReturnTypeImpl(const DataTypes & arguments) const
