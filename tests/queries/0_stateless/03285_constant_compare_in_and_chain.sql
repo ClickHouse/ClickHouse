@@ -50,3 +50,4 @@ EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b < c) AND (c < a) AND
 
 -- miscellaneous
 EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a = b) AND (b = c) AND (c = 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (c < b) AND (a < 5) AND (b < 6) AND (b < 5)

@@ -987,3 +987,46 @@ QUERY id: 0
               LIST id: 21, nodes: 2
                 COLUMN id: 22, column_name: a, result_type: Int32, source_id: 3
                 CONSTANT id: 23, constant_value: UInt64_5, constant_value_type: UInt8
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (c < b) AND (a < 5) AND (b < 6) AND (b < 5)
+QUERY id: 0
+  PROJECTION COLUMNS
+    pk Int32
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: pk, result_type: Int32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 6
+          FUNCTION id: 6, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: c, result_type: Int32, source_id: 3
+                COLUMN id: 9, column_name: b, result_type: Int32, source_id: 3
+          FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 12, column_name: a, result_type: Int32, source_id: 3
+                CONSTANT id: 13, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 14, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                COLUMN id: 9, column_name: b, result_type: Int32, source_id: 3
+                CONSTANT id: 16, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 17, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 2
+                COLUMN id: 9, column_name: b, result_type: Int32, source_id: 3
+                CONSTANT id: 19, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 20, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 21, nodes: 2
+                COLUMN id: 22, column_name: c, result_type: Int32, source_id: 3
+                CONSTANT id: 23, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 24, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 25, nodes: 2
+                COLUMN id: 26, column_name: c, result_type: Int32, source_id: 3
+                CONSTANT id: 27, constant_value: UInt64_5, constant_value_type: UInt8
