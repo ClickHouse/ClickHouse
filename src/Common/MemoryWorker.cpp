@@ -73,7 +73,7 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
 
-        auto it = std::find(keys.begin(), keys.end(), current_key);
+        const auto * it = std::find(keys.begin(), keys.end(), current_key);
         if (it == keys.end())
         {
             std::string dummy;
@@ -92,7 +92,7 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
     }
     if (found_mask != (1l << keys.size()) - 1)
     {
-        for (auto it = keys.begin(); it != keys.end(); ++it)
+        for (const auto * it = keys.begin(); it != keys.end(); ++it)
         {
             if (!(found_mask & (1l << (it - keys.begin()))))
                 LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
