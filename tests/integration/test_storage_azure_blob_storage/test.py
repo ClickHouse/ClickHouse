@@ -1004,7 +1004,6 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
-    node.query(f"system drop schema cache for hdfs")
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -1366,8 +1365,6 @@ def test_format_detection(cluster):
 
     assert result == expected_result
 
-    node.query(f"system drop schema cache for hdfs")
-
     result = azure_query(
         node,
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
@@ -1458,6 +1455,10 @@ def test_format_detection(cluster):
     assert (
         result
         == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\', \\'none\\')\n"
+    )
+    azure_query(
+        node,
+        f"DROP TABLE test_format_detection",
     )
 
 
@@ -1593,7 +1594,10 @@ def test_hive_partitioning_with_one_parameter(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
     )
 
     query = (
@@ -1631,7 +1635,10 @@ def test_hive_partitioning_with_all_parameters(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
     )
 
     query = (
@@ -1657,7 +1664,10 @@ def test_hive_partitioning_without_setting(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
     )
 
     query = (

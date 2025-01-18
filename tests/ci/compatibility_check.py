@@ -134,7 +134,7 @@ def main():
     check_glibc = True
     # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
-        "aarch64" not in check_name.lower() and "arm64" not in check_name.lower()
+        "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
     stopwatch = Stopwatch()
@@ -155,9 +155,7 @@ def main():
     if check_name in ("amd_release", "amd_debug", "arm_release"):
         # this is praktika based CI
         print("Copy input *.deb artifacts")
-        assert Shell.check(
-            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
-        )
+        assert Shell.check(f"cp ./ci/tmp/*.deb {packages_path}", verbose=True)
     else:
         download_builds_filter(check_name, reports_path, packages_path, url_filter)
 

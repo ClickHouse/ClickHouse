@@ -30,7 +30,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnsNumber.h>
+#include <Common/FloatUtils.h>
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
@@ -38,8 +38,8 @@
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
-#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
@@ -49,7 +49,6 @@
         M(arrow::Type::UINT64, UInt64) \
         M(arrow::Type::INT64, Int64) \
         M(arrow::Type::DURATION, Int64) \
-        M(arrow::Type::HALF_FLOAT, Float32) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -269,15 +268,15 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
 {
     DataTypePtr internal_type;
     bool check_date_range = false;
-    /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
 
-    if (!type_hint || (type_hint && isDate32(*type_hint)))
+    if (!type_hint || isDateOrDate32(type_hint) || isDateTime(type_hint) || isDateTime64(type_hint))
     {
         internal_type = std::make_shared<DataTypeDate32>();
         check_date_range = true;
     }
     else
     {
+        /// If requested type is raw number, read as raw number without checking if it's a valid date.
         internal_type = std::make_shared<DataTypeInt32>();
     }
 
@@ -416,6 +415,21 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(const std::shared_ptr
         }
     }
     return {std::move(internal_column), internal_type, column_name};
+}
+
+static ColumnWithTypeAndName readColumnWithFloat16Data(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    auto column = ColumnFloat32::create();
+    auto & column_data = column->getData();
+    column_data.reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = dynamic_cast<arrow::HalfFloatArray &>(*(arrow_column->chunk(chunk_i)));
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            column_data.emplace_back(chunk.IsNull(value_i) ? 0 : convertFloat16ToFloat32(chunk.Value(value_i)));
+    }
+    return {std::move(column), std::make_shared<DataTypeFloat32>(), column_name};
 }
 
 template <typename DecimalArray>
@@ -995,9 +1009,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 tuple_names.emplace_back(std::move(column_with_type_and_name.name));
             }
 
-            auto tuple_column = ColumnTuple::create(std::move(tuple_elements));
+            ColumnPtr tuple_column;
+            if (tuple_elements.empty())
+                tuple_column = ColumnTuple::create(arrow_column->length());
+            else
+                tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
-            return {std::move(tuple_column), std::move(tuple_type), column_name};
+            return {tuple_column, tuple_type, column_name};
         }
         case arrow::Type::DICTIONARY:
         {
@@ -1062,6 +1080,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
+        case arrow::Type::HALF_FLOAT:
+        {
+            return readColumnWithFloat16Data(arrow_column, column_name);
+        }
         case arrow::Type::TIME32:
         {
             return readColumnWithTime32Data(arrow_column, column_name);

@@ -2,12 +2,12 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
 {
+struct FormatSettings;
 
 /**
  * Column for storing Variant(...) type values.

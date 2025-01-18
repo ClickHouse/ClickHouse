@@ -263,9 +263,8 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
     return res;
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_)
-    : IProcessor({input_header}, {Block()})
-    , join(std::move(join_))
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
+    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {}
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -334,6 +333,9 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         return Status::Ready;
     }
 
+    if (finish_counter->isLast())
+        join->onBuildPhaseFinish();
+
     output.finish();
     return Status::Finished;
 }
@@ -351,12 +353,11 @@ void FillingRightJoinSideTransform::work()
         stop_reading = !join->addBlockToJoin(block);
     }
 
-    if (input.isFinished())
+    if (input.isFinished() && !join->supportParallelJoin())
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
-
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     Block output_header_,
@@ -538,7 +539,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
     {
         // This counter is used to ensure that only the last DelayedJoinedBlocksWorkerTransform
         // could read right non-joined blocks from the join.
-        auto left_delayed_stream_finished_counter = std::make_shared<JoiningTransform::FinishCounter>(outputs.size());
+        auto left_delayed_stream_finished_counter = std::make_shared<FinishCounter>(outputs.size());
         for (auto & output : outputs)
         {
             Chunk chunk;

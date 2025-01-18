@@ -7,7 +7,7 @@ RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
     && mv "${GOPATH}/bin/htmltest" /usr/bin/htmltest
 
 # nodejs 17 prefers ipv6 and is broken in our environment
-FROM node:16-alpine
+FROM node:20-alpine
 
 RUN apk add --no-cache git openssh bash
 

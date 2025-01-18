@@ -4,8 +4,11 @@ sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
 ---
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # JSON Data Type
+
+<BetaBadge/>
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
@@ -86,6 +89,7 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 Using CAST from `Map`:
 
 ```sql
+SET enable_variant_type=1, use_variant_as_common_type=1;
 SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 
@@ -111,8 +115,6 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json
 :::note
 CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into `String` column containing JSON objects and deserializing it back to `JSON` type column. 
 :::
-
-CAST between `JSON` types with different arguments will be supported later.
 
 ## Reading JSON paths as subcolumns
 

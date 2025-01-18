@@ -302,6 +302,15 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
+    if [[ "$USE_PARALLEL_REPLICAS_STATELESS" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--parallel-replicas')
+        ADDITIONAL_OPTIONS+=('--no-zookeeper')
+        ADDITIONAL_OPTIONS+=('--no-shard')
+    else
+        ADDITIONAL_OPTIONS+=('--zookeeper')
+        ADDITIONAL_OPTIONS+=('--shard')
+    fi
+
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
@@ -310,8 +319,6 @@ function run_tests()
 
     TEST_ARGS=(
         --testname
-        --shard
-        --zookeeper
         --check-zookeeper-session
         --hung-check
         --print-time
@@ -377,6 +384,9 @@ done
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
 sleep 1
+# remove the webhook so it doesn't spam with errors once we stop ClickHouse
+./mc admin config reset clickminio logger_webhook:ch_server_webhook
+./mc admin config reset clickminio audit_webhook:ch_audit_webhook
 clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
 clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
 clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
