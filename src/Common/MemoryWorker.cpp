@@ -98,8 +98,6 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
                 LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
-    LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", key, buf.getFileName());
-    return 0;
     return sum;
 }
 
