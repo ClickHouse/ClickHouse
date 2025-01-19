@@ -122,6 +122,7 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
+  '-readability-qualified-auto',
 
   '-zircon-*'
 ]
