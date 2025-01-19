@@ -232,6 +232,7 @@ public:
             protocol.writeMetricsMetadata(write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+        response.setChunkedTransferEncoding(false);
         response.send();
 
 #else
