@@ -201,7 +201,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (create.if_not_exists)
             return {};
-        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
+        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", database_name);
     }
 
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw];
