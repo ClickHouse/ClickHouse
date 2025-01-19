@@ -2,14 +2,14 @@
 title : LineAsStringWithNamesAndTypes
 slug : /en/interfaces/formats/LineAsStringWithNamesAndTypes
 keywords : [LineAsStringWithNamesAndTypes]
-input_format: true
+input_format: false
 output_format: true
 alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     | ✔      |       |
+| ✗     | ✔      |       |
 
 ## Description
 
