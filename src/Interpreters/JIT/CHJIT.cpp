@@ -258,9 +258,18 @@ public:
 
     void print(llvm::Module & module)
     {
+        //static int index = 0;
+        //std::error_code errorCode;
+        //llvm::raw_fd_ostream outputFileStream("/tmp/18.s" + std::to_string(index), errorCode);
+        //++index;
+        //if (errorCode) {
+        //    throw std::runtime_error("Failed to open output file: " + errorCode.message());
+        //}
+
         llvm::legacy::PassManager pass_manager;
         target_machine.Options.MCOptions.AsmVerbose = true;
-        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::AssemblyFile))
+        //if (target_machine.addPassesToEmitFile(pass_manager, outputFileStream, nullptr, llvm::CodeGenFileType::AssemblyFile))
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
         pass_manager.run(module);
@@ -399,7 +408,8 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
-    runOptimizationPassesOnModule(*module);
+    auto target_analysis = machine->getTargetIRAnalysis();
+    runOptimizationPassesOnModule(*module, std::move(target_analysis));
 
 #ifdef PRINT_ASSEMBLY
     AssemblyPrinter assembly_printer(*machine);
@@ -483,15 +493,43 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
     return mangled_name;
 }
 
-void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
+#ifndef NDEBUG
+
+static std::string DumpModuleIR(const llvm::Module& module)
 {
+    std::string ir;
+    llvm::raw_string_ostream stream(ir);
+    module.print(stream, nullptr);
+    return ir;
+}
+
+#endif
+
+void CHJIT::runOptimizationPassesOnModule(llvm::Module & module, llvm::TargetIRAnalysis target_analysis) const
+{
+    /// llvm::DebugFlag = true; // comment out to enable debug output
+    const char *argv[] = {
+        "CH-JIT",
+        "-extra-vectorizer-passes", // Enable ExtraVectorizerPasses
+    };
+    int argc = sizeof(argv) / sizeof(argv[0]);
+    llvm::cl::ParseCommandLineOptions(argc, argv, "CH-JIT");
+
     llvm::LoopAnalysisManager lam;
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
-
+    fam.registerPass([&] { return target_analysis; });
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
+    pto.LoopInterleaving = true;
+    pto.LoopVectorization = true;
+    pto.LoopUnrolling = true;
+    pto.ForgetAllSCEVInLoopUnroll = false;
+    pto.CallGraphProfile = true;
+    pto.UnifiedLTO = false;
+    pto.MergeFunctions = false;
+    pto.EagerlyInvalidateAnalyses = true;
 
     llvm::PassBuilder pb(nullptr, pto);
 
@@ -503,6 +541,10 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
     mpm.run(module, mam);
+
+    #ifndef NDEBUG
+    DumpModuleIR(module);
+    #endif
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
