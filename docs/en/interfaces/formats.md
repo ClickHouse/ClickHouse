@@ -395,72 +395,19 @@ Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 
 
 ## RowBinary {#rowbinary}
 
-Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators. Because data is in the binary format the delimiter after `FORMAT RowBinary` is strictly specified as next: any number of whitespaces (`' '` - space, code `0x20`; `'\t'` - tab, code `0x09`; `'\f'` - form feed, code `0x0C`) followed by exactly one new line sequence (Windows style `"\r\n"` or Unix style `'\n'`), immediately followed by binary data.
-This format is less efficient than the Native format since it is row-based.
-
-Integers use fixed-length little-endian representation. For example, UInt64 uses 8 bytes.
-DateTime is represented as UInt32 containing the Unix timestamp as the value.
-Date is represented as a UInt16 object that contains the number of days since 1970-01-01 as the value.
-String is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
-FixedString is represented simply as a sequence of bytes.
-
-Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by successive elements of the array.
-
-For [NULL](/docs/en/sql-reference/syntax.md/#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](/docs/en/sql-reference/data-types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
+See [RowBinary](formats/RowBinary/RowBinary.md)
 
 ## RowBinaryWithNames {#rowbinarywithnames}
 
-Similar to [RowBinary](#rowbinary), but with added header:
-
-- [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-- N `String`s specifying column names
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-:::
+See [RowBinaryWithNames](formats/RowBinary/RowBinaryWithNames.md)
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
-Similar to [RowBinary](#rowbinary), but with added header:
-
-- [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-- N `String`s specifying column names
-- N `String`s specifying column types
-
-:::note
-If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Otherwise, the first row will be skipped.
-If setting [input_format_with_types_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to 1,
-the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+See [RowBinaryWithNamesAndTypes](formats/RowBinary/RowBinaryWithNamesAndTypes.md)
 
 ## RowBinaryWithDefaults {#rowbinarywithdefaults}
 
-Similar to [RowBinary](#rowbinary), but with an extra byte before each column that indicates if default value should be used.
-
-Examples:
-
-```sql
-:) select * from format('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
-
-┌──x─┬─y─┐
-│ 42 │ 1 │
-└────┴───┘
-```
-
-For column `x` there is only one byte `01` that indicates that default value should be used and no other data after this byte is provided.
-For column `y` data starts with byte `00` that indicates that column has actual value that should be read from the subsequent data `01000000`.
-
-## RowBinary format settings {#row-binary-format-settings}
-
-- [format_binary_max_string_size](/docs/en/operations/settings/settings-formats.md/#format_binary_max_string_size) - The maximum allowed size for String in RowBinary format. Default value - `1GiB`.
-- [output_format_binary_encode_types_in_binary_format](/docs/en/operations/settings/settings-formats.md/#output_format_binary_encode_types_in_binary_format) - Allows to write types in header using [binary encoding](/docs/en/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in RowBinaryWithNamesAndTypes output format. Default value - `false`.
-- [input_format_binary_encode_types_in_binary_format](/docs/en/operations/settings/settings-formats.md/#input_format_binary_encode_types_in_binary_format) - Allows to read types in header using [binary encoding](/docs/en/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in RowBinaryWithNamesAndTypes input format. Default value - `false`.
-- [output_format_binary_write_json_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string) - Allows to write values of [JSON](/docs/en/sql-reference/data-types/newjson.md) data type as JSON [String](/docs/en/sql-reference/data-types/string.md) values in RowBinary output format. Default value - `false`.
-- [input_format_binary_read_json_as_string](/docs/en/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string) - Allows to read values of [JSON](/docs/en/sql-reference/data-types/newjson.md) data type as JSON [String](/docs/en/sql-reference/data-types/string.md) values in RowBinary input format. Default value - `false`.
+See [RowBinaryWithDefaults](formats/RowBinary/RowBinaryWithDefaults.md)
 
 ## Values {#data-format-values}
 
