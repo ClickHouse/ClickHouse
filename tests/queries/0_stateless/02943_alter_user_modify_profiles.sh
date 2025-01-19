@@ -69,8 +69,6 @@ run_test user ${test_user}
 run_test role ${test_role}
 run_test profile ${test_profile}
 
-${CLICKHOUSE_CLIENT} --query="ALTER USER user1 DROP ALL PROFILES,,,,,,ADD PROFILE a" 2>&1 | grep -F -q 'Syntax error' && echo 'OK' || echo 'FAIL'
-
 $CLICKHOUSE_CLIENT -q "DROP PROFILE ${profile_a};"
 $CLICKHOUSE_CLIENT -q "DROP PROFILE ${profile_b};"
 $CLICKHOUSE_CLIENT -q "DROP PROFILE ${profile_c};"

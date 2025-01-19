@@ -5,7 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <city.h>
 
-constexpr size_t DBMS_DEFAULT_HASHING_BLOCK_SIZE = 2048ULL;
+#define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
 
 
 namespace DB

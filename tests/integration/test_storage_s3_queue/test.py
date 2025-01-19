@@ -8,7 +8,6 @@ import uuid
 from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -171,39 +170,9 @@ def started_cluster():
         cluster.add_instance(
             "instance2_24.5",
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
             tag="24.5",
             stay_alive=True,
-            user_configs=[
-                "configs/users.xml",
-            ],
-            with_installed_binary=True,
-        )
-        cluster.add_instance(
-            "instance3_24.5",
-            with_zookeeper=True,
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            main_configs=[
-                "configs/remote_servers_245.xml",
-            ],
-            user_configs=[
-                "configs/users.xml",
-            ],
-            with_installed_binary=True,
-        )
-        cluster.add_instance(
-            "instance4_24.5",
-            with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
-            image="clickhouse/clickhouse-server",
-            tag="24.5",
-            stay_alive=True,
-            main_configs=[
-                "configs/remote_servers_245.xml",
-            ],
             user_configs=[
                 "configs/users.xml",
             ],
@@ -253,17 +222,11 @@ def generate_random_files(
     row_num=10,
     start_ind=0,
     bucket=None,
-    use_prefix=None,
     use_random_names=False,
 ):
     if use_random_names:
         files = [
             (f"{files_path}/{random_str(10)}.csv", i)
-            for i in range(start_ind, start_ind + count)
-        ]
-    elif use_prefix is not None:
-        files = [
-            (f"{files_path}/{use_prefix}_{i}.csv", i)
             for i in range(start_ind, start_ind + count)
         ]
     else:
@@ -435,29 +398,17 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue"]
+        system_table_name = "s3queue_log"
     else:
-        system_tables = ["azure_queue_log", "azure_queue"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
             )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+        )
+        == files_num * row_num
+    )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -1029,9 +980,11 @@ def test_max_set_age(started_cluster):
             "tracked_file_ttl_sec": max_age,
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
+            "loading_retries": 0,
             "polling_max_timeout_ms": 5000,
             "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
+            "loading_retries": 0,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -1206,7 +1159,7 @@ def test_drop_table(started_cluster):
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
     ) or node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Shutdown was called"
+        f"StorageS3Queue (default.{table_name}): Shutdown was called, stopping sync"
     )
 
 
@@ -1862,6 +1815,7 @@ def test_exception_during_insert(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
+    files_to_generate = 10
 
     create_table(
         started_cluster,
@@ -1871,51 +1825,17 @@ def test_exception_during_insert(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "polling_min_timeout_ms": 100,
-            "polling_max_timeout_ms": 100,
-            "polling_backoff_ms": 0,
         },
     )
     node.rotate_logs()
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
 
-    node.query("system stop merges")
     create_mv(node, table_name, dst_table_name)
 
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    def wait_for_rows(expected_rows):
-        for _ in range(20):
-            if expected_rows == get_count():
-                break
-            time.sleep(1)
-        assert expected_rows == get_count()
-
-    expected_rows = [0]
-
-    def generate(check_inserted):
-        files_to_generate = 1
-        row_num = 1
-        time.sleep(10)
-        total_values = generate_random_files(
-            started_cluster,
-            files_path,
-            files_to_generate,
-            start_ind=0,
-            row_num=row_num,
-            use_random_names=1,
-        )
-        expected_rows[0] += files_to_generate * row_num
-        if check_inserted:
-            wait_for_rows(expected_rows[0])
-
-    generate(True)
-    generate(True)
-    generate(True)
-    generate(False)
-
     node.wait_for_log_line(
-        "Merges are processing significantly slower than inserts: while pushing to view default.test_exception_during_insert_"
+        "Failed to process data: Code: 252. DB::Exception: Too many parts"
     )
 
     time.sleep(2)
@@ -1924,14 +1844,35 @@ def test_exception_during_insert(started_cluster):
     )
     assert "Too many parts" in exception
 
-    node.query("system start merges")
-    node.query(f"optimize table {dst_table_name} final")
+    original_parts_to_throw_insert = 0
+    modified_parts_to_throw_insert = 10
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/merge_tree.xml",
+        f"parts_to_throw_insert>{original_parts_to_throw_insert}",
+        f"parts_to_throw_insert>{modified_parts_to_throw_insert}",
+    )
+    try:
+        node.restart_clickhouse()
 
-    wait_for_rows(expected_rows[0])
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+        expected_rows = 10
+        for _ in range(20):
+            if expected_rows == get_count():
+                break
+            time.sleep(1)
+        assert expected_rows == get_count()
+    finally:
+        node.replace_in_config(
+            "/etc/clickhouse-server/config.d/merge_tree.xml",
+            f"parts_to_throw_insert>{modified_parts_to_throw_insert}",
+            f"parts_to_throw_insert>{original_parts_to_throw_insert}",
+        )
+        node.restart_clickhouse()
 
 
-@pytest.mark.parametrize("processing_threads", [1, 8])
-def test_commit_on_limit(started_cluster, processing_threads):
+def test_commit_on_limit(started_cluster):
     node = started_cluster.instances["instance"]
 
     # A unique table name is necessary for repeatable tests
@@ -1954,7 +1895,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": processing_threads,
+            "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 0,
             "s3queue_max_processed_files_before_commit": 10,
         },
@@ -2023,12 +1964,6 @@ def test_commit_on_limit(started_cluster, processing_threads):
     assert 1 == int(
         node.count_in_log(f"Setting file {files_path}/test_9999.csv as failed")
     )
-    assert 1 == int(
-        node.count_in_log(
-            f"File {files_path}/test_9999.csv failed to process and will not be retried"
-        )
-    )
-
     assert failed_files_event_before + 1 == int(
         node.query(
             "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
@@ -2257,9 +2192,8 @@ def test_alter_settings(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 10,
-            "s3queue_loading_retries": 20,
-            "s3queue_tracked_files_limit": 1000,
+            "processing_threads_num": 10,
+            "loading_retries": 20,
         },
         database_name="r",
     )
@@ -2301,15 +2235,15 @@ def test_alter_settings(started_cluster):
         f"""
         ALTER TABLE r.{table_name}
         MODIFY SETTING processing_threads_num=5,
-        loading_retries=44,
+        loading_retries=10,
         after_processing='delete',
         tracked_files_limit=50,
         tracked_file_ttl_sec=10000,
         polling_min_timeout_ms=222,
-        s3queue_polling_max_timeout_ms=333,
+        polling_max_timeout_ms=333,
         polling_backoff_ms=111,
         max_processed_files_before_commit=444,
-        s3queue_max_processed_rows_before_commit=555,
+        max_processed_rows_before_commit=555,
         max_processed_bytes_before_commit=666,
         max_processing_time_sec_before_commit=777
     """
@@ -2317,7 +2251,7 @@ def test_alter_settings(started_cluster):
 
     int_settings = {
         "processing_threads_num": 5,
-        "loading_retries": 44,
+        "loading_retries": 10,
         "tracked_files_ttl_sec": 10000,
         "tracked_files_limit": 50,
         "polling_min_timeout_ms": 222,
@@ -2378,7 +2312,7 @@ def test_alter_settings(started_cluster):
 
     node1.query(
         f"""
-        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec, loading_retries, s3queue_tracked_files_limit
+        ALTER TABLE r.{table_name} RESET SETTING after_processing, tracked_file_ttl_sec
     """
     )
 
@@ -2386,7 +2320,7 @@ def test_alter_settings(started_cluster):
         "processing_threads_num": 5,
         "loading_retries": 10,
         "tracked_files_ttl_sec": 0,
-        "tracked_files_limit": 1000,
+        "tracked_files_limit": 50,
     }
     string_settings = {"after_processing": "keep"}
 
@@ -2643,228 +2577,13 @@ def test_upgrade_3(started_cluster):
     assert expected_rows == get_count()
 
     node.restart_with_latest_version()
-
     assert table_name in node.query("SHOW TABLES")
 
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
-    """
-    )
-    assert 111 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=222, polling_max_timeout_ms=333
-    """
-    )
-    assert 222 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    node.restart_clickhouse()
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-    node.query(f"DROP TABLE {table_name} SYNC")
-
-
-@pytest.mark.parametrize("setting_prefix", ["", "s3queue_"])
-def test_migration(started_cluster, setting_prefix):
-    node1 = started_cluster.instances["instance3_24.5"]
-    node2 = started_cluster.instances["instance4_24.5"]
-
-    for node in [node1, node2]:
-        if "24.5" not in node.query("select version()").strip():
-            node.restart_with_original_version()
-
-    table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
-    dst_table_name = f"{table_name}_dst"
-    mv_name = f"{dst_table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}"
-    files_path = f"{table_name}_data"
-
-    for node in [node1, node2]:
-        node.query("DROP DATABASE IF EXISTS r")
-
-    node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node1')"
-    )
-    node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb3', 'shard1', 'node2')"
-    )
-
-    create_table(
-        started_cluster,
-        node1,
-        table_name,
-        "ordered",
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "s3queue_polling_min_timeout_ms": 100,
-            "s3queue_polling_max_timeout_ms": 1000,
-            "s3queue_polling_backoff_ms": 100,
-        },
-        database_name="r",
-    )
-
-    for node in [node1, node2]:
-        create_mv(node, f"r.{table_name}", dst_table_name)
-
-    start_ind = [0]
-    expected_rows = [0]
-    last_processed_path = [""]
-    prefix_ind = [0]
-    prefixes = ["a", "b", "c", "d", "e"]
-
-    def add_files_and_check():
-        rows = 1000
-        use_prefix = prefixes[prefix_ind[0]]
-        total_values = generate_random_files(
-            started_cluster,
-            files_path,
-            rows,
-            start_ind=start_ind[0],
-            row_num=1,
-            use_prefix=use_prefix,
-        )
-        expected_rows[0] += rows
-        start_ind[0] += rows
-        prefix_ind[0] += 1
-
-        def get_count():
-            return int(
-                node1.query(
-                    f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
-                )
-            )
-
-        last_processed_path[0] = f"{use_prefix}_{expected_rows[0] - 1}.csv"
-        for _ in range(20):
-            if expected_rows[0] == get_count():
-                break
-            time.sleep(1)
-        assert expected_rows[0] == get_count()
-
-    add_files_and_check()
-
-    zk = started_cluster.get_kazoo_client("zoo1")
-    metadata = json.loads(zk.get(f"{keeper_path}/processed")[0])
-
-    assert last_processed_path[0].startswith("a_")
-    assert metadata["file_path"].endswith(last_processed_path[0])
-
-    for node in [node1, node2]:
-        node.restart_with_latest_version()
-        assert 0 == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
-        )
-
-    buckets_num = 3
     assert (
-        "Changing setting buckets is not allowed only with detached dependencies"
-        in node1.query_and_get_error(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num}"
+        "Cannot alter settings, because table engine doesn't support settings changes"
+        in node.query_and_get_error(
+            f"""
+        ALTER TABLE {table_name} MODIFY SETTING processing_threads_num=5
+    """
         )
     )
-
-    for node in [node1, node2]:
-        node.query(f"DETACH TABLE {mv_name}")
-
-    assert (
-        "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1"
-        in node1.query_and_get_error(
-            f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num}"
-        )
-    )
-
-    node1.query(
-        f"ALTER TABLE r.{table_name} MODIFY SETTING {setting_prefix}buckets={buckets_num} SETTINGS s3queue_migrate_old_metadata_to_buckets = 1"
-    )
-
-    for node in [node1, node2]:
-        assert buckets_num == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
-        )
-
-    metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
-    assert buckets_num == metadata["buckets"]
-
-    try:
-        zk.get(f"{keeper_path}/processed")
-        assert False
-    except NoNodeError:
-        pass
-
-    buckets = zk.get_children(f"{keeper_path}/buckets/")
-
-    assert len(buckets) == buckets_num
-    assert sorted(buckets) == [str(i) for i in range(buckets_num)]
-
-    for i in range(buckets_num):
-        metadata = json.loads(zk.get(f"{keeper_path}/buckets/{i}/processed")[0])
-        assert metadata["file_path"].endswith(last_processed_path[0])
-
-    for node in [node1, node2]:
-        node.query(f"ATTACH TABLE {mv_name}")
-
-    add_files_and_check()
-
-    for node in [node1, node2]:
-        node.restart_clickhouse()
-        assert buckets_num == int(
-            node.query(
-                f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'buckets'"
-            )
-        )
-
-    add_files_and_check()
-
-    try:
-        zk.get(f"{keeper_path}/processed")
-        assert False
-    except NoNodeError:
-        pass
-
-    buckets = zk.get_children(f"{keeper_path}/buckets/")
-    assert len(buckets) == buckets_num
-
-    found = False
-    for i in range(buckets_num):
-        metadata = json.loads(zk.get(f"{keeper_path}/buckets/{i}/processed")[0])
-        if metadata["file_path"].endswith(last_processed_path[0]):
-            found = True
-            break
-    assert found
-
-    metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
-    assert buckets_num == metadata["buckets"]
-
-    node.query(f"DROP TABLE r.{table_name} SYNC")

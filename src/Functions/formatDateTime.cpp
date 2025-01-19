@@ -33,9 +33,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
-    extern const SettingsBool formatdatetime_f_prints_single_zero;
     extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_f_prints_single_zero;
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
 }
 
@@ -496,48 +495,29 @@ private:
             return writeNumber2(dest, ToSecondImpl::execute(source, timezone));
         }
 
-        /// Always prints six digits (as specified by MySQL documentation)
         size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
-        {
-            /// Truncate to buffer size == 6 if more than 6 digits are passed in.
-            while (scale > 6)
-            {
-                --scale;
-                fractional_second /= 10;
-            }
-
-            for (UInt32 i = scale; i > 0 && fractional_second > 0; --i)
-            {
-                dest[i - 1] += fractional_second % 10;
-                fractional_second /= 10;
-            }
-            return 6;
-        }
-
-        /// Prints the number of digits that were specified by the scale of the DateTime64. Legacy.
-        size_t mysqlFractionalSecondScaleNumDigits(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 6;
 
-            for (UInt32 i = scale; i > 0; --i)
+            for (Int64 i = scale, value = fractional_second; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
-                fractional_second /= 10;
+                dest[i - 1] += value % 10;
+                value /= 10;
             }
             return scale;
         }
 
-        /// Same as mysqlFractionalSecondScaleNumDigits but prints a single zero if the value has no fractional seconds. Legacy.
+        /// Same as mysqlFractionalSecond but prints a single zero if the value has no fractional seconds
         size_t mysqlFractionalSecondSingleZero(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 1;
 
-            for (UInt32 i = scale; i > 0; --i)
+            for (Int64 i = scale, value = fractional_second; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
-                fractional_second /= 10;
+                dest[i - 1] += value % 10;
+                value /= 10;
             }
             return scale;
         }
@@ -800,7 +780,6 @@ private:
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
-    const bool mysql_f_prints_scale_number_of_digits;
     const bool mysql_format_ckl_without_leading_zeros;
 
 public:
@@ -811,7 +790,6 @@ public:
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
         : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
         , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
-        , mysql_f_prints_scale_number_of_digits(context->getSettingsRef()[Setting::formatdatetime_f_prints_scale_number_of_digits])
         , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
     {
     }
@@ -1252,22 +1230,10 @@ public:
                         }
                         else
                         {
-                            if (mysql_f_prints_scale_number_of_digits)
-                            {
-                                /// Print as many digits as specified by scale. Legacy behavior.
-                                Instruction<T> instruction;
-                                instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondScaleNumDigits);
-                                instructions.push_back(std::move(instruction));
-                                out_template += String(scale == 0 ? 6 : scale, '0');
-                            }
-                            else
-                            {
-                                /// Unconditionally print six digits (independent of scale). This is what MySQL does, may it live long and prosper.
-                                Instruction<T> instruction;
-                                instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
-                                instructions.push_back(std::move(instruction));
-                                out_template += String(6, '0');
-                            }
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
+                            instructions.push_back(std::move(instruction));
+                            out_template += String(scale == 0 ? 6 : scale, '0');
                         }
                         break;
                     }

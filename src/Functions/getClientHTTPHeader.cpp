@@ -96,7 +96,7 @@ If the function is used in the context of a distributed query, it returns non-em
             .syntax = "getClientHTTPHeader(name)",
             .arguments = {{"name", "The HTTP header name (String)"}},
             .returned_value = "The value of the header (String).",
-            .category{"Other"}});
+            .categories{"Miscellaneous"}});
 }
 
 }

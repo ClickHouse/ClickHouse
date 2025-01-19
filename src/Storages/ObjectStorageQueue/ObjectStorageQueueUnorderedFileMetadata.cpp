@@ -96,7 +96,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     }
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
+void ObjectStorageQueueUnorderedFileMetadata::setProcessedAtStartRequests(
     Coordination::Requests & requests,
     const zkutil::ZooKeeperPtr &)
 {
@@ -105,16 +105,118 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
+void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
 {
+    setProcessedImpl(false);
+}
+
+void ObjectStorageQueueUnorderedFileMetadata::resetProcessingImpl()
+{
+    setProcessedImpl(true);
+}
+
+void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl(bool remove_processing_nodes_only)
+{
+    /// In one zookeeper transaction do the following:
+    enum RequestType
+    {
+        CHECK_PROCESSING_ID_PATH,
+        REMOVE_PROCESSING_ID_PATH,
+        REMOVE_PROCESSING_PATH,
+        SET_PROCESSED_PATH,
+    };
+
+    const auto zk_client = getZooKeeper();
+    Coordination::Requests requests;
+    std::map<RequestType, UInt8> request_index;
+
     if (processing_id_version.has_value())
     {
+        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+        /// The order is important:
+        /// we must first check processing nodes and set processed_path the last.
+        request_index[CHECK_PROCESSING_ID_PATH] = 0;
+        request_index[REMOVE_PROCESSING_ID_PATH] = 1;
+        request_index[REMOVE_PROCESSING_PATH] = 2;
+
+        if (!remove_processing_nodes_only)
+            request_index[SET_PROCESSED_PATH] = 3;
     }
-    requests.push_back(
-        zkutil::makeCreateRequest(
-            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+    else if (!remove_processing_nodes_only)
+    {
+        request_index[SET_PROCESSED_PATH] = 0;
+    }
+
+    if (!remove_processing_nodes_only)
+        requests.push_back(
+            zkutil::makeCreateRequest(
+                processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+
+    Coordination::Responses responses;
+    auto is_request_failed = [&](RequestType type)
+    {
+        if (!request_index.contains(type))
+            return false;
+        chassert(request_index[type] < responses.size());
+        return responses[request_index[type]]->error != Coordination::Error::ZOK;
+    };
+
+    const auto code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+    {
+        if (remove_processing_nodes_only)
+            return;
+
+        if (max_loading_retries
+            && zk_client->tryRemove(failed_node_path + ".retriable", -1) == Coordination::Error::ZOK)
+        {
+            LOG_TEST(log, "Removed node {}.retriable", failed_node_path);
+        }
+
+        LOG_TRACE(log, "Moved file `{}` to processed (node path: {})", path, processed_node_path);
+        return;
+    }
+
+    bool unexpected_error = false;
+    std::string failure_reason;
+
+    if (Coordination::isHardwareError(code))
+    {
+        failure_reason = "Lost connection to keeper";
+    }
+    else if (is_request_failed(CHECK_PROCESSING_ID_PATH))
+    {
+        /// This is normal in case of expired session with keeper.
+        failure_reason = "Version of processing id node changed";
+    }
+    else if (is_request_failed(REMOVE_PROCESSING_ID_PATH))
+    {
+        /// Remove processing_id node should not actually fail
+        /// because we just checked in a previous keeper request that it exists and has a certain version.
+        unexpected_error = true;
+        failure_reason = "Failed to remove processing id path";
+    }
+    else if (is_request_failed(REMOVE_PROCESSING_PATH))
+    {
+        /// This is normal in case of expired session with keeper as this node is ephemeral.
+        failure_reason = "Failed to remove processing path";
+    }
+    else if (!remove_processing_nodes_only && is_request_failed(SET_PROCESSED_PATH))
+    {
+        unexpected_error = true;
+        failure_reason = "Cannot create a persistent node in /processed since it already exists";
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
+
+    if (unexpected_error)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
+
+    if (!remove_processing_nodes_only)
+        LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
 }
 
 }

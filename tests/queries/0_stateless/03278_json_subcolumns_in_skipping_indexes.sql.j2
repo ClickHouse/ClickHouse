@@ -19,13 +19,13 @@ system stop merges test;
 insert into test select number, toJSONString(map('a', number, 'b', 'str_' || number, 'c', range(number % 10))), 'Hello, World!' from numbers(4);
 insert into test select number, toJSONString(map('a', number, 'b', 'str_' || number, 'c', range(number % 10))), 'Hello, World!' from numbers(4, 4);
 
-select * from test where json.a < 2 order by id;
+select * from test where json.a < 2 order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.a < 2) where explain not like '%Expression%' and explain not like '%Filter%';
-select * from test where json.b::String < 'str_2' order by id;
+select * from test where json.b::String < 'str_2' order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.b::String < 'str_2') where explain not like '%Expression%' and explain not like '%Filter%';
-select * from test where json.a < 2 and json.b::String < 'str_1' order by id;
+select * from test where json.a < 2 and json.b::String < 'str_1' order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.a < 2 and json.b::String < 'str_1') where explain not like '%Expression%' and explain not like '%Filter%';
-select * from test where json.a || json.b::String < '2str_2' order by id;
+select * from test where json.a || json.b::String < '2str_2' order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.a || json.b::String < '2str_2') where explain not like '%Expression%' and explain not like '%Filter%';
 
 system start merges test;
@@ -33,13 +33,13 @@ optimize table test final;
 select count() from system.parts where active and table = 'test' and database = currentDatabase();
 
 
-select * from test where json.a < 2 order by id;
+select * from test where json.a < 2 order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.a < 2) where explain not like '%Expression%' and explain not like '%Filter%';
-select * from test where json.b::String < 'str_2' order by id;
+select * from test where json.b::String < 'str_2' order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.b::String < 'str_2') where explain not like '%Expression%' and explain not like '%Filter%';
-select * from test where json.a < 2 and json.b::String < 'str_1' order by id;
+select * from test where json.a < 2 and json.b::String < 'str_1' order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.a < 2 and json.b::String < 'str_1') where explain not like '%Expression%' and explain not like '%Filter%';
-select * from test where json.a || json.b::String < '2str_2' order by id;
+select * from test where json.a || json.b::String < '2str_2' order by all;
 select trimLeft(explain) from (explain indexes=1 select * from test where json.a || json.b::String < '2str_2') where explain not like '%Expression%' and explain not like '%Filter%';
 
 drop table test;

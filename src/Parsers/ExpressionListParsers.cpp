@@ -2604,8 +2604,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function;
-            ASTPtr argument;
+            ASTPtr function, argument;
 
             if (!layers.back()->popOperator(prev_op))
                 return Action::NONE;

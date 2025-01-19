@@ -947,7 +947,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
-            BackupKeeperSettings(backup_entries_collector.getContext()),
+            BackupKeeperSettings::fromContext(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement()
         );
 
@@ -977,7 +977,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
-        BackupKeeperSettings(restorer.getContext()),
+        BackupKeeperSettings::fromContext(restorer.getContext()),
         restorer.getContext()->getProcessListElement()
     );
 

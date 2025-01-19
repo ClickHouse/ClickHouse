@@ -24,15 +24,14 @@ public:
     using Source = StorageObjectStorageSource;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
-    using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
     struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
             const Source::ObjectInfo & object_info,
-            FileMetadataPtr file_metadata_);
+            ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_);
 
-        FileMetadataPtr file_metadata;
+        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -107,22 +106,12 @@ public:
         size_t max_processing_time_sec_before_commit;
     };
 
-    struct ProcessingProgress
-    {
-        std::atomic<size_t> processed_files = 0;
-        std::atomic<size_t> processed_rows = 0;
-        std::atomic<size_t> processed_bytes = 0;
-        Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
-    };
-    using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
-
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
         ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
-        ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
         const CommitSettings & commit_settings_,
@@ -144,30 +133,14 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void prepareCommitRequests(
-        Coordination::Requests & requests,
-        bool insert_succeeded,
-        StoredObjects & successful_files,
-        const std::string & exception_message = {});
-
-    /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
+    void commit(bool success, const std::string & exception_message = {});
 
 private:
-    Chunk generateImpl();
-    /// Log to system.s3(azure)_queue_log.
-    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
-    /// Commit processed files.
-    /// This method is only used for SELECT query, not for streaming to materialized views.
-    /// Which is defined by passing a flag commit_once_processed.
-    void commit(bool insert_succeeded, const std::string & exception_message = {});
-
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
     const ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
     const CommitSettings commit_settings;
@@ -182,24 +155,23 @@ private:
 
     LoggerPtr log;
 
-    enum class FileState
-    {
-        Processing,
-        ErrorOnRead,
-        Cancelled,
-        Processed,
-    };
-    struct ProcessedFile
-    {
-        explicit ProcessedFile(FileMetadataPtr metadata_)
-            : state(FileState::Processing), metadata(metadata_) {}
+    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
+    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
 
-        FileState state;
-        FileMetadataPtr metadata;
-        std::string exception_during_read;
-    };
-    std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
+
+    size_t processed_rows_from_file = 0;
+    size_t total_processed_rows = 0;
+    size_t total_processed_bytes = 0;
+
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+
+    Chunk generateImpl();
+    void applyActionAfterProcessing(const String & path);
+    void appendLogElement(
+        const std::string & filename,
+        ObjectStorageQueueMetadata::FileStatus & file_status_,
+        bool processed);
 };
 
 }

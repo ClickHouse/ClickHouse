@@ -52,28 +52,4 @@ select 1 = sequenceCount('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, dat
 select 0 = sequenceCount('(?1)(?t==2)(?2)')(time, data = 1, data = 2) from sequence_test;
 select 1 = sequenceCount('(?1)(?t==1)(?2)')(time, data = 1, data = 2) from sequence_test;
 
-select [] = sequenceMatchEvents('')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [] = sequenceMatchEvents('.')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [] = sequenceMatchEvents('.*')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0] = sequenceMatchEvents('(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [4] = sequenceMatchEvents('(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [5] = sequenceMatchEvents('(?3)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [] = sequenceMatchEvents('(?4)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,1] = sequenceMatchEvents('(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,1,2] = sequenceMatchEvents('(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,1,2,3] = sequenceMatchEvents('(?1)(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,1,2,3] = sequenceMatchEvents('(?1)(?1)(?1)(?1)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,1,2,3,4] = sequenceMatchEvents('(?1)(?1)(?1)(?1)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,11] = sequenceMatchEvents('(?1)(?t>10)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0] = sequenceMatchEvents('(?1)(?t>11)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0,4] = sequenceMatchEvents('(?1)(?t<11)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [3,5] = sequenceMatchEvents('(?1)(?t<3)(?3)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [3,5] = sequenceMatchEvents('(?1)(?t<=2)(?3)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [0] =  sequenceMatchEvents('(?1)(?t<2)(?3)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [4,11] = sequenceMatchEvents('(?2)(?t>=7)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [4] = sequenceMatchEvents('(?2)(?t>7)(?2)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [4,5,6] = sequenceMatchEvents('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test;
-select [4] = sequenceMatchEvents('(?1)(?t==2)(?2)')(time, data = 1, data = 2) from sequence_test;
-select [4,5] = sequenceMatchEvents('(?1)(?t==1)(?2)')(time, data = 1, data = 2) from sequence_test;
-
 drop table sequence_test;

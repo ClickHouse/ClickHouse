@@ -371,6 +371,7 @@ size_t HashJoin::getTotalRowCount() const
                 kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
         }
     }
+
     return res;
 }
 
@@ -1598,25 +1599,9 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     }
 }
 
-bool HashJoin::rightTableCanBeReranged() const
-{
-    return table_join->allowJoinSorting()
-            && !table_join->getMixedJoinExpression()
-            && isInnerOrLeft(kind)
-            && strictness == JoinStrictness::All;
-}
-
-size_t HashJoin::getAndSetRightTableKeys() const
-{
-    size_t total_rows = getTotalRowCount();
-    if (data)
-        data->keys_to_join = total_rows;
-    return total_rows;
-}
-
 void HashJoin::tryRerangeRightTableData()
 {
-    if (!rightTableCanBeReranged())
+    if (!table_join->allowJoinSorting() || table_join->getMixedJoinExpression() || !isInnerOrLeft(kind) || strictness != JoinStrictness::All)
         return;
 
     /// We should not rerange the right table on such conditions:

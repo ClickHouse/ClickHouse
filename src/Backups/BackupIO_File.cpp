@@ -108,6 +108,12 @@ void BackupWriterFile::removeFile(const String & file_name)
     (void)fs::remove(root_path / file_name);
 }
 
+void BackupWriterFile::removeFiles(const Strings & file_names)
+{
+    for (const auto & file_name : file_names)
+        (void)fs::remove(root_path / file_name);
+}
+
 void BackupWriterFile::removeEmptyDirectories()
 {
     removeEmptyDirectoriesImpl(root_path);

@@ -351,11 +351,12 @@ void FillingRightJoinSideTransform::work()
         stop_reading = !join->addBlockToJoin(block);
     }
 
-    if (input.isFinished() && !join->supportParallelJoin())
+    if (input.isFinished())
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
+
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     Block output_header_,

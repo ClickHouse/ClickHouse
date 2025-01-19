@@ -30,6 +30,8 @@
   "test_keeper_multinode_simple/test.py::test_session_expiration",
   "test_keeper_two_nodes_cluster/test.py::test_read_write_two_nodes_with_blocade",
   "test_limited_replicated_fetches/test.py::test_limited_fetches",
+  "test_materialized_mysql_database/test.py::test_network_partition_5_7",
+  "test_materialized_mysql_database/test.py::test_network_partition_8_0",
   "test_merge_tree_s3/test.py::test_store_cleanup_disk_s3",
   "test_mysql_database_engine/test.py::test_restart_server",
   "test_parts_delete_zookeeper/test.py::test_merge_doesnt_work_without_zookeeper",
@@ -181,7 +183,5 @@
 
   "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v4_fails_with_wrong_resolution",
   "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v4",
-  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v6",
-
-  "test_grpc_protocol/test.py"
+  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v6"
 ]

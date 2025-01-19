@@ -1,10 +1,8 @@
-import os
 import subprocess
 from pathlib import Path
 
+from praktika.settings import Settings
 from praktika.utils import Shell, Utils
-
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 
 class ClickHouseProc:
@@ -18,11 +16,11 @@ class ClickHouseProc:
 """
 
     def __init__(self, fast_test=False):
-        self.ch_config_dir = f"{temp_dir}/etc/clickhouse-server"
+        self.ch_config_dir = f"{Settings.TEMP_DIR}/etc/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
         self.user_files_path = f"{self.ch_config_dir}/user_files"
-        self.test_output_file = f"{temp_dir}/test_result.txt"
+        self.test_output_file = f"{Settings.OUTPUT_DIR}/test_result.txt"
         self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.ch_config_dir} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --keeper_server.storage_path {self.ch_config_dir}/coordination"
         self.proc = None
         self.pid = 0
@@ -44,8 +42,18 @@ class ClickHouseProc:
 
         self.minio_proc = None
 
+    def start_hdfs(self, log_file_path):
+        command = ["./ci/jobs/scripts/functional_tests/setup_hdfs_minicluster.sh"]
+        with open(log_file_path, "w") as log_file:
+            process = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT
+            )
+        print(
+            f"Started setup_hdfs_minicluster.sh asynchronously with PID {process.pid}"
+        )
+        return True
+
     def start_minio(self, test_type, log_file_path):
-        os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
             "./ci/jobs/scripts/functional_tests/setup_minio.sh",
             test_type,
@@ -58,22 +66,19 @@ class ClickHouseProc:
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
         return True
 
-    @staticmethod
-    def log_cluster_config():
+    def log_cluster_config(self):
         return Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster /tmp/praktika/etc/clickhouse-server/config.d/system_logs_export.yaml",
             verbose=True,
         )
 
-    @staticmethod
-    def log_cluster_setup_replication():
+    def log_cluster_setup_replication(self):
         return Shell.check(
             f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
             verbose=True,
         )
 
-    @staticmethod
-    def log_cluster_stop_replication():
+    def log_cluster_stop_replication(self):
         return Shell.check(
             f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,

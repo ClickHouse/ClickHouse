@@ -3,13 +3,10 @@ slug: /en/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/docs/en/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 
@@ -58,14 +55,14 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
 
 :::tip
-Here is a step-by-step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
+Here is a step by step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
 :::
 
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.
@@ -151,9 +148,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View
-
-<DeprecatedBadge/>
+## Live View [Deprecated]
 
 This feature is deprecated and will be removed in the future.
 
@@ -295,10 +290,7 @@ To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refresh
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 :::
 
-## Window View
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+## Window View [Experimental]
 
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.

@@ -251,8 +251,7 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start;
-        RangesPos end;
+        RangesPos start, end;
         auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)

@@ -34,13 +34,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsBool cloud_mode;
-    extern const SettingsBool s3queue_migrate_old_metadata_to_buckets;
 }
 
 namespace ObjectStorageQueueSetting
@@ -120,20 +118,18 @@ private:
 };
 
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
-    ObjectStorageType storage_type_,
     const fs::path & zookeeper_path_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
     size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
-    , storage_type(storage_type_)
     , mode(table_metadata.getMode())
     , zookeeper_path(zookeeper_path_)
+    , buckets_num(getBucketsNum(table_metadata_))
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
-    , buckets_num(getBucketsNum(table_metadata_))
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
@@ -225,7 +221,7 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Proces
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
 }
 
-void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
+void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes)
 {
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
@@ -312,40 +308,6 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             }
             new_table_metadata.tracked_files_ttl_sec = value;
         }
-        else if (change.name == "buckets")
-        {
-            if (mode != ObjectStorageQueueMode::ORDERED)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Changing `buckets` setting is allowed only for Ordered mode");
-            }
-
-            if (!context->getSettingsRef()[Setting::s3queue_migrate_old_metadata_to_buckets])
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Changing `buckets` setting is allowed only for migration of old metadata structure. "
-                    "To allow migration set s3queue_migrate_old_metadata_to_buckets = 1");
-            }
-
-            const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.buckets == value)
-            {
-                LOG_TRACE(log, "Setting `buckets` already equals {}. "
-                        "Will do nothing", value);
-                continue;
-            }
-            if (table_metadata.buckets != 0)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "It is not allowed to modify `buckets` settings "
-                    "when it is already set to a non-zero value");
-            }
-            migrateToBucketsInKeeper(value);
-            new_table_metadata.buckets = value;
-        }
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting `{}` is not changeable", change.name);
@@ -359,14 +321,6 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
     table_metadata.syncChangeableSettings(new_table_metadata);
-}
-
-void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
-{
-    chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
-    ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value);
-    buckets_num = value;
-    table_metadata.buckets = value;
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
@@ -408,7 +362,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     {
         if (zookeeper->exists(table_metadata_path))
         {
-            const auto metadata_str = zookeeper->get(table_metadata_path);
+            const auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata");
             const auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
 
             LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
@@ -459,7 +413,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 /* bucket_info */nullptr,
                 buckets_num,
                 table_metadata.loading_retries,
-                log).prepareProcessedAtStartRequests(requests, zookeeper);
+                log).setProcessedAtStartRequests(requests, zookeeper);
         }
 
         Coordination::Responses responses;

@@ -62,7 +62,6 @@ void registerInterpreterCreateNamedCollectionQuery(InterpreterFactory & factory)
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
 void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
-void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 
 void registerInterpreters()
 {
@@ -127,6 +126,5 @@ void registerInterpreters()
     registerInterpreterDropIndexQuery(factory);
     registerInterpreterBackupQuery(factory);
     registerInterpreterDeleteQuery(factory);
-    registerInterpreterParallelWithQuery(factory);
 }
 }

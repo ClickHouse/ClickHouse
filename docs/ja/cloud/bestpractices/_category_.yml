@@ -1,0 +1,7 @@
+label: 'Best Practices'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Best Practices
+  slug: /ja/cloud/bestpractices/

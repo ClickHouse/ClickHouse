@@ -26,7 +26,7 @@ Example:
 )",
         .examples{
             {"typical", "SELECT toBFloat16(12.3::Float32);", "12.3125"}},
-        .category{"Type Conversion"}});
+        .categories{"Conversion"}});
 
     factory.registerFunction<detail::FunctionToFloat32>();
     factory.registerFunction<detail::FunctionToFloat64>();
@@ -89,7 +89,7 @@ Example of a loss of precision:
             {"invalid1", "SELECT toBFloat16OrZero('abc');", "0"},
             {"invalid2", "SELECT toBFloat16OrZero(' 1');", "0"},
             {"precision", "SELECT toBFloat16OrZero('12.3456789');", "12.375"}},
-        .category{"Type Conversion"}});
+        .categories{"Conversion"}});
 
     factory.registerFunction<detail::FunctionToFloat32OrZero>();
     factory.registerFunction<detail::FunctionToFloat64OrZero>();
@@ -142,7 +142,7 @@ Example of a loss of precision:
         {"invalid1", "SELECT toBFloat16OrNull('abc');", "NULL"},
         {"invalid2", "SELECT toBFloat16OrNull(' 1');", "NULL"},
         {"precision", "SELECT toBFloat16OrNull('12.3456789');", "12.375"}},
-    .category{"Type Conversion"}});
+    .categories{"Conversion"}});
 
     factory.registerFunction<detail::FunctionToFloat32OrNull>();
     factory.registerFunction<detail::FunctionToFloat64OrNull>();

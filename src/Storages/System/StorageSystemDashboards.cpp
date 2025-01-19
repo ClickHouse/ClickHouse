@@ -220,10 +220,9 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "title", "Concurrent network connections" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
-    max(CurrentMetric_TCPConnection) AS TCP_Connections,
-    max(CurrentMetric_MySQLConnection) AS MySQL_Connections,
-    max(CurrentMetric_HTTPConnection) AS HTTP_Connections,
-    max(CurrentMetric_InterserverConnection) AS Interserver_Connections
+    sum(CurrentMetric_TCPConnection) AS TCP_Connections,
+    sum(CurrentMetric_MySQLConnection) AS MySQL_Connections,
+    sum(CurrentMetric_HTTPConnection) AS HTTP_Connections
 FROM merge('system', '^metric_log')
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY t

@@ -159,7 +159,7 @@ toInt8('-8'): -8
 **See also**
 
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrNull`](#toint8ornull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrZero
@@ -219,10 +219,10 @@ toInt8OrZero('abc'): 0
 **See also**
 
 - [`toInt8`](#toint8).
-- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrNull`](#toint8ornull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
-## toInt8OrNull {#toInt8OrNull}
+## toInt8OrNull
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -344,7 +344,7 @@ toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 
 - [`toInt8`](#toint8).
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrNull`](#toint8orNull).
 
 ## toInt16
 
@@ -1830,7 +1830,7 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 - [`toUInt8`](#touint8).
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8OrNull`](#touint8orNull).
 
 ## toUInt16
 
