@@ -956,6 +956,7 @@ if __name__ == "__main__":
         "Stateless tests (coverage)": "deb6778b88",
         "Stateless tests (aarch64)": "deb6778b88",
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)": "deb6778b88",
+        "Stateless tests (release, ParallelReplicas, s3 storage)": "deb6778b88",
         "Stateless tests (debug, s3 storage)": "deb6778b88",
         "Stateless tests (tsan, s3 storage)": "deb6778b88",
         "Stress test (debug)": "aa298abf10",
