@@ -1,0 +1,53 @@
+CREATE TABLE test
+(
+    `pk` int,
+    `a` int,
+    `b` int,
+    `c` int
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple(pk);
+
+INSERT INTO test values(1,1,1,1),(2,2,2,2),(3,3,3,3),(4,4,4,4),(5,5,5,5);
+
+SET allow_experimental_analyzer = 1;
+
+-- test where condition is constant false
+SELECT pk FROM test WHERE (a = 3) AND (a = 5);
+
+-- test where condition is not in
+SELECT pk FROM test WHERE (a != 1) AND (a != 2) AND (a != 4);
+
+-- { echo }
+-- constant is large
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b < c) AND (c < 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b > a) AND (c > b) AND (5 > c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (c > 0) AND (c < 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a <= b) AND (b <= c) AND (c <= 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b < c) AND (c <= 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b <= c) AND (c < 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b >= a) AND (c >= b) AND (5 >= c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b > a) AND (c > b) AND (5 >= c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b > a) AND (c >= b) AND (5 > c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a = b) AND (b = c) AND (c < 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b = c) AND (c <= 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b = c) AND (c = 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a > b) AND (b > c) AND (c > a) AND (a < 5);
+
+-- constant is small
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a > b) AND (b > c) AND (c > 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b < a) AND (c < b) AND (5 < c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a >= b) AND (b >= c) AND (c >= 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a > b) AND (b > c) AND (c >= 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a > b) AND (b >= c) AND (c > 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b <= a) AND (c <= b) AND (5 <= c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b < a) AND (c < b) AND (5 <= c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (b < a) AND (c <= b) AND (5 < c);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a = b) AND (b = c) AND (c > 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a > b) AND (b = c) AND (c >= 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a > b) AND (b = c) AND (c = 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a < b) AND (b < c) AND (c < a) AND (a > 5);
+
+-- miscellaneous
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (a = b) AND (b = c) AND (c = 5);
+EXPLAIN QUERY TREE SELECT pk FROM test WHERE (c < b) AND (a < 5) AND (b < 6) AND (b < 5)

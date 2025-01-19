@@ -556,6 +556,182 @@ void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& functio
         tryOptimizeCommonExpressionsInAnd(node, context);
 }
 
+void tryOptimizeAndCompareChain(QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
+        return;
+
+    auto & function_node = node->as<FunctionNode &>();
+    if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
+        return;
+
+    enum CompareType
+    {
+        less = 0,
+        greater,
+        lessOrEquals,
+        greaterOrEquals,
+        equals
+    };
+
+    /// Step 1: identify constants, and store comparing pairs in hash
+    QueryTreeNodes greater_constants;
+    QueryTreeNodes less_constants;
+    /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
+    using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, CompareType>>;
+    using ComparePairs = std::unordered_map<QueryTreeNodePtr, QueryTreeNodeWithEquals>;
+    ComparePairs greater_pairs;
+    ComparePairs less_pairs;
+
+    for (const auto & argument : function_node.getArguments())
+    {
+        auto * argument_function = argument->as<FunctionNode>();
+        const auto valid_functions = std::unordered_set<std::string>{
+            "less", "greater", "lessOrEquals", "greaterOrEquals", "equals"};
+        if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
+            continue;
+
+        const auto function_name = argument_function->getFunctionName();
+        const auto & function_arguments = argument_function->getArguments().getNodes();
+        const auto & lhs = function_arguments[0];
+        const auto & rhs = function_arguments[1];
+
+        if (function_name == "less")
+        {
+            if (rhs->as<ConstantNode>())
+                greater_constants.push_back(rhs);
+            greater_pairs[rhs].push_back({lhs, CompareType::less});
+            if (lhs->as<ConstantNode>())
+                less_constants.push_back(lhs);
+            less_pairs[lhs].push_back({rhs, CompareType::greater});
+        }
+        else if (function_name == "greater")
+        {
+            if (lhs->as<ConstantNode>())
+                greater_constants.push_back(lhs);
+            greater_pairs[lhs].push_back({rhs, CompareType::less});
+            if (rhs->as<ConstantNode>())
+                less_constants.push_back(rhs);
+            less_pairs[rhs].push_back({lhs, CompareType::greater});
+        }
+        else if (function_name == "lessOrEquals")
+        {
+            if (rhs->as<ConstantNode>())
+                greater_constants.push_back(rhs);
+            greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals});
+            if (lhs->as<ConstantNode>())
+                less_constants.push_back(lhs);
+            less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals});
+        }
+        else if (function_name == "greaterOrEquals")
+        {
+            if (lhs->as<ConstantNode>())
+                greater_constants.push_back(lhs);
+            greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals});
+            if (rhs->as<ConstantNode>())
+                less_constants.push_back(rhs);
+            less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals});
+        }
+        else if (function_name == "equals")
+        {
+            if (rhs->as<ConstantNode>())
+            {
+                greater_constants.push_back(rhs);
+                greater_pairs[rhs].push_back({lhs, CompareType::equals});
+                less_constants.push_back(rhs);
+                less_pairs[rhs].push_back({lhs, CompareType::equals});
+            }
+            else if (lhs->as<ConstantNode>())
+            {
+                greater_constants.push_back(lhs);
+                greater_pairs[lhs].push_back({rhs, CompareType::equals});
+                less_constants.push_back(lhs);
+                less_pairs[lhs].push_back({rhs, CompareType::equals});
+            }
+            else
+            {
+                /// Bidirection, needs to record visited
+                greater_pairs[lhs].push_back({rhs, CompareType::equals});
+                greater_pairs[rhs].push_back({lhs, CompareType::equals});
+                less_pairs[lhs].push_back({rhs, CompareType::equals});
+                less_pairs[rhs].push_back({lhs, CompareType::equals});
+            }
+        }
+    }
+
+    /// To avoid duplicate when traversing in equal condition
+    std::unordered_set<QueryTreeNodePtr> equal_set;
+    /// To avoid endless loop during the DFS, for example, a>b AND b>a AND a<5
+    std::unordered_set<QueryTreeNodePtr> check_path;
+    /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
+    std::set<std::pair<QueryTreeNodePtr, const ConstantNode *>> equal_funcs;
+
+    /// Step 2: populate from constants, to generate new comparing pair with constant in one side
+    std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *,
+        CompareType, std::unordered_set<QueryTreeNodePtr> &)> findPairs
+            = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant,
+                CompareType type, std::unordered_set<QueryTreeNodePtr> & path)
+    {
+        if (auto it = pairs.find(current); it != pairs.end())
+        {
+            for (const auto & left : it->second)
+            {
+                if (left.second == CompareType::equals && equal_set.contains(left.first))
+                    continue;
+
+                if (path.contains(left.first))
+                    continue;
+
+                equal_set.insert(left.first);
+                path.insert(left.first);
+                CompareType compare_type = std::min(type, left.second);
+
+                /// Non-sense to have both sides as constant, and no repeat of equal function
+                if (constant && !left.first->as<ConstantNode>()
+                    && (compare_type != CompareType::equals
+                        || equal_funcs.insert({left.first, constant}).second))
+                {
+                    String compare_function_name;
+                    if (compare_type == CompareType::less)
+                        compare_function_name = "less";
+                    else if (compare_type == CompareType::greater)
+                        compare_function_name = "greater";
+                    else if (compare_type == CompareType::lessOrEquals)
+                        compare_function_name = "lessOrEquals";
+                    else if (compare_type == CompareType::greaterOrEquals)
+                        compare_function_name = "greaterOrEquals";
+                    else if (compare_type == CompareType::equals)
+                        compare_function_name = "equals";
+
+                    const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
+                    and_node->getArguments().getNodes().push_back(left.first->clone());
+                    and_node->getArguments().getNodes().push_back(constant->clone());
+                    and_node->resolveAsFunction(
+                        FunctionFactory::instance().get(compare_function_name, context));
+                    function_node.getArguments().getNodes().push_back(and_node);
+                }
+
+                findPairs(pairs, left.first,
+                    constant ? constant : current->as<ConstantNode>(), compare_type, path);
+
+                path.erase(left.first);
+            }
+        }
+    };
+
+    /// Start from large constant
+    for (const auto & constant : greater_constants)
+        findPairs(greater_pairs, constant, nullptr, CompareType::equals, check_path);
+
+    equal_set.clear();
+    check_path.clear();
+    /// Start from small constant
+    for (const auto & constant : less_constants)
+        findPairs(less_pairs, constant, nullptr, CompareType::equals, check_path);
+
+    auto and_function_resolver = FunctionFactory::instance().get("and", context);
+    function_node.resolveAsFunction(and_function_resolver);
+}
 
 /// Visitor that optimizes logical expressions _only_ in JOIN ON section
 class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>
@@ -840,6 +1016,7 @@ public:
         if (function_node->getFunctionName() == "and")
         {
             tryOptimizeAndEqualsNotEqualsChain(node);
+            tryOptimizeAndCompareChain(node, getContext());
             return;
         }
 
