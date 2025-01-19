@@ -32,8 +32,8 @@ class _Environment(MetaClasses.Serializable):
     PR_BODY: str
     USER_LOGIN: str
     FORK_NAME: str
-    PR_LABELS: str
     LOCAL_RUN: bool = False
+    PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
@@ -118,6 +118,17 @@ class _Environment(MetaClasses.Serializable):
                 COMMIT_URL = CHANGE_URL
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
+                SHA = os.getenv(
+                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
+                )
+                PR_NUMBER = 0
+                CHANGE_URL = (
+                    github_event["repository"]["html_url"] + "/commit/" + SHA
+                )  # commit url
+                COMMIT_URL = CHANGE_URL
+            elif "inputs" in github_event:
+                # assume this is a dispatch
+                EVENT_TYPE = Workflow.Event.DISPATCH
                 SHA = os.getenv(
                     "GITHUB_SHA", "0000000000000000000000000000000000000000"
                 )
