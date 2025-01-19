@@ -936,6 +936,7 @@ RowBinary
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryFormatSettings
 Runtime
 SATA
 SELECTs
