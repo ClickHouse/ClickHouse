@@ -900,10 +900,10 @@ Allows or restricts using not comparable types (like JSON/Object/AggregateFuncti
     DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
 Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
-    DECLARE(Bool, compile_expressions, false, R"(
+    DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
-    DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
+    DECLARE(UInt64, min_count_to_compile_expression, 0, R"(
 Minimum count of executing same expression before it is get compiled.
 )", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, R"(
