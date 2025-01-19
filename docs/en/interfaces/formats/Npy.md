@@ -2,11 +2,22 @@
 title : Npy
 slug : /en/interfaces/formats/Npy
 keywords : [Npy]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
+The `Npy` format is designed to load a NumPy array from a `.npy` file into ClickHouse. 
+The NumPy file format is a binary format used for efficiently storing arrays of numerical data. 
+During import, ClickHouse treats the top level dimension as an array of rows with a single column. 
+
+The table below gives the supported Npy data types and their corresponding type in ClickHouse:
 
 ## Data Types Matching {#data_types-matching}
 
@@ -28,7 +39,7 @@ This function is designed to load a NumPy array from a .npy file into ClickHouse
 
 ## Example Usage
 
-## Saving an array in .npy format using Python
+### Saving an array in .npy format using Python
 
 ```Python
 import numpy as np
@@ -36,25 +47,23 @@ arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
 np.save('example_array.npy', arr)
 ```
 
-## Reading a NumPy file in ClickHouse
+### Reading a NumPy file in ClickHouse
 
-Query:
-```sql
+```sql title="Query"
 SELECT *
 FROM file('example_array.npy', Npy)
 ```
 
-Result:
-```
+```response title="Response"
 ┌─array─────────┐
 │ [[1],[2],[3]] │
 │ [[4],[5],[6]] │
 └───────────────┘
 ```
 
-## Selecting Data
+### Selecting Data
 
-You can select data from a ClickHouse table and save them into some file in the Npy format by the following command:
+You can select data from a ClickHouse table and save it into a file in the Npy format using the following command with clickhouse-client:
 
 ```bash
 $ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}

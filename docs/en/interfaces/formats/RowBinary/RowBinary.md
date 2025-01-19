@@ -19,6 +19,8 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](/docs/en/sql-reference/syntax.md/#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](/docs/en/sql-reference/data-types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
+For a comparison of the `RowBinary` format and the `RawBlob` format see: [Raw Formats Comparison](../RawBLOB.md/#raw-formats-comparison)
+
 ## Example Usage
 
 ## Format Settings
