@@ -252,6 +252,8 @@ public:
     }
 
     static void cleanResources();
+
+    std::optional<AuthenticationData> getAuthenticationData() const { return server->getAuthenticationData(); }
 };
 
 }
