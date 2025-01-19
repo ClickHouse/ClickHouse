@@ -14,9 +14,6 @@ node = cluster.add_instance(
     main_configs=[
         "configs/async_metrics_no.xml",
     ],
-    user_configs=[
-        "configs/disable_max_bytes_ratio_before_external_group_by.xml",
-    ],
     mem_limit="4g",
 )
 

@@ -21,6 +21,43 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
 - `file_changes` - 53M - 266,051 rows
 - `line_changes` - 2.7G - 7,535,157 rows
 
+# Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [Generating the data](#generating-the-data)
+- [Downloading and inserting the data](#downloading-and-inserting-the-data)
+- [Queries](#queries)
+  - [History of a single file](#history-of-a-single-file)
+  - [Find the current active files](#find-the-current-active-files)
+  - [List files with most modifications](#list-files-with-most-modifications)
+  - [What day of the week do commits usually occur?](#what-day-of-the-week-do-commits-usually-occur)
+  - [History of subdirectory/file - number of lines, commits and contributors over time](#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time)
+  - [List files with maximum number of authors](#list-files-with-maximum-number-of-authors)
+  - [Oldest lines of code in the repository](#oldest-lines-of-code-in-the-repository)
+  - [Files with longest history](#files-with-longest-history)
+  - [Distribution of contributors with respect to docs and code over the month](#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month)
+  - [Authors with the most diverse impact](#authors-with-the-most-diverse-impact)
+  - [Favorite files for an author](#favorite-files-for-an-author)
+  - [Largest files with lowest number of authors](#largest-files-with-lowest-number-of-authors)
+  - [Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories](#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories)
+  - [Matrix of authors that shows what authors tends to rewrite another authors code](#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code)
+  - [Who is the highest percentage contributor per day of week?](#who-is-the-highest-percentage-contributor-per-day-of-week)
+  - [Distribution of code age across repository](#distribution-of-code-age-across-repository)
+  - [What percentage of code for an author has been removed by other authors?](#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors)
+  - [List files that were rewritten most number of times?](#list-files-that-were-rewritten-most-number-of-times)
+  - [What weekday does the code have the highest chance to stay in the repository?](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)
+  - [Files sorted by average code age](#files-sorted-by-average-code-age)
+  - [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
+  - [How does an authors commits change over time with respect to code/comments percentage?](#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage)
+  - [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)
+  - [What is the worst time to write code in sense that the code has highest chance to be re-written?](#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written)
+  - [Which authors code is the most sticky?](#which-authors-code-is-the-most-sticky)
+  - [Most consecutive days of commits by an author](#most-consecutive-days-of-commits-by-an-author)
+  - [Line by line commit history of a file](#line-by-line-commit-history-of-a-file)
+- [Unsolved Questions](#unsolved-questions)
+  - [Git blame](#git-blame)
+- [Related Content](#related-content)
+
 # Generating the data
 
 This is optional. We distribute the data freely - see [Downloading and inserting the data](#downloading-and-inserting-the-data).
@@ -1761,7 +1798,7 @@ WITH
                 path,
                 max(time) AS last_time,
                 argMax(change_type, time) AS change_type
-            FROM git.clickhouse_file_changes
+            FROM git.file_changes
             GROUP BY path
         )
         GROUP BY path
@@ -1840,7 +1877,7 @@ SELECT
     countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
-FROM git.clickhouse_file_changes
+FROM git.file_changes
 GROUP BY author
 HAVING code > 20
 ORDER BY code DESC
@@ -1886,7 +1923,7 @@ WITH (
                 countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
                 countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
                 code / (code + test) AS ratio_code
-            FROM git.clickhouse_file_changes
+            FROM git.file_changes
             GROUP BY author
             HAVING code > 20
             ORDER BY code DESC
@@ -1932,7 +1969,7 @@ FROM
         countIf(line_type = 'Comment') AS comments,
         countIf(line_type = 'Code') AS code,
         if(comments > 0, comments / (comments + code), 0) AS ratio_comments
-    FROM git.clickhouse_line_changes
+    FROM git.line_changes
     GROUP BY
         author,
         commit_hash
@@ -1960,6 +1997,8 @@ Note we sort by code contributions. Surprisingly high % for all our largest cont
 ## How does an authors commits change over time with respect to code/comments percentage?
 
 To compute this by author is trivial,
+
+[play](#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZV9saW5lcywKICAgIGNvdW50SWYoKGxpbmVfdHlwZSA9ICdDb21tZW50JykgT1IgKGxpbmVfdHlwZSA9ICdQdW5jdCcpKSBBUyBjb21tZW50cywKICAgIGNvZGVfbGluZXMgLyAoY29tbWVudHMgKyBjb2RlX2xpbmVzKSBBUyByYXRpb19jb2RlLAogICAgdG9TdGFydE9mV2Vlayh0aW1lKSBBUyB3ZWVrCkZST00gZ2l0X2NsaWNraG91c2UubGluZV9jaGFuZ2VzCkdST1VQIEJZCiAgICB0aW1lLAogICAgYXV0aG9yCk9SREVSIEJZCiAgICBhdXRob3IgQVNDLAogICAgdGltZSBBU0MKTElNSVQgMTA=)
 
 ```sql
 SELECT
@@ -2075,7 +2114,7 @@ Encouragingly, our comment % is pretty constant and doesn't degrade the longer a
 
 ## What is the average time before code will be rewritten and the median (half-life of code decay)?
 
-We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
+We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
 
 [play](https://sql.clickhouse.com?query_id=WSHUEPJP9TNJUH7QITWWOR)
 
@@ -2135,7 +2174,7 @@ FROM rewrites
 
 ## What is the worst time to write code in sense that the code has highest chance to be re-written?
 
-Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times), except we aggregate by day of week. Adjust as required e.g. month of year.
+Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors), except we aggregate by day of week. Adjust as required e.g. month of year.
 
 [play](https://sql.clickhouse.com?query_id=8PQNWEWHAJTGN6FTX59KH2)
 

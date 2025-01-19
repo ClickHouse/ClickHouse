@@ -6,7 +6,6 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         libxml2-utils \
         python3-pip \
         locales \
-        ripgrep \
         git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*

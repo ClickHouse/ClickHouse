@@ -92,7 +92,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
-    loading_thread = std::thread([my_context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
         ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)

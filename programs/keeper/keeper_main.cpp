@@ -19,9 +19,8 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <base/coverage.h>
 #include <base/phdr_cache.h>
-#include <base/scope_guard.h>
+#include <base/coverage.h>
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv);

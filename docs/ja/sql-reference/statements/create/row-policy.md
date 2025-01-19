@@ -57,8 +57,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 
 は、ユーザー `peter` が `b=1` または `c=2` のいずれかの行を閲覧できるようにします。
 
-`AS` 句は、ポリシーを他のポリシーとどのように組み合わせるかを指定します。ポリシーは許可的(PERMISSIVE)または制限的(RESTRICTIVE)にできます。デフォルトでは、ポリシーは許可的で、論理演算子 `OR` を使って結合されます。
-he `AS` clause specifies how policies should be combined with other policies. Policies can be either permissive or restrictive. By default, policies are permissive, which means they are combined using the boolean `OR` operator.
+`AS` 句は、ポリシーを他のポリシーとどのように組み合わせるかを指定します。ポリシーは[許可的](PERMISSIVE)または[制限的](RESTRICTIVE)にできます。デフォルトでは、ポリシーは許可的で、論理演算子 `OR` を使って結合されます。
 
 代替としてポリシーを制限的に定義することができます。制限的ポリシーは論理演算子 `AND` を使って結合されます。
 

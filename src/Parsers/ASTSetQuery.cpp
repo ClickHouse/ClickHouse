@@ -66,48 +66,48 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     }
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (is_standalone)
-        ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
 
     bool first = true;
 
     for (const auto & change : changes)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(change.name, ostr);
+        formatSettingName(change.name, format.ostr);
         CustomType custom;
         if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            ostr << " = " << custom.toString(false);
+            format.ostr << " = " << custom.toString(false);
         else
-            ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
+            format.ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
     }
 
     for (const auto & setting_name : default_settings)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(setting_name, ostr);
-        ostr << " = DEFAULT";
+        formatSettingName(setting_name, format.ostr);
+        format.ostr << " = DEFAULT";
     }
 
     for (const auto & [name, value] : query_parameters)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, ostr);
-        ostr << " = " << quoteString(value);
+        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
+        format.ostr << " = " << quoteString(value);
     }
 }
 

@@ -54,8 +54,6 @@ struct RabbitMQSettings
 
     SettingsChanges getFormatSettings() const;
 
-    static bool hasBuiltin(std::string_view name);
-
 private:
     std::unique_ptr<RabbitMQSettingsImpl> impl;
 };

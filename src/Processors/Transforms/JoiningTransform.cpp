@@ -4,13 +4,6 @@
 
 #include <Common/logger_useful.h>
 
-namespace ProfileEvents
-{
-    extern const Event JoinBuildTableRowCount;
-    extern const Event JoinProbeTableRowCount;
-    extern const Event JoinResultRowCount;
-}
-
 namespace DB
 {
 
@@ -26,7 +19,6 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
-    materializeBlockInplace(header);
     LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
@@ -123,7 +115,7 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::NeedData;
 
     input_chunk = input.pull(true);
-    has_input = input_chunk.hasRows() || on_totals;
+    has_input = true;
     return Status::Ready;
 }
 
@@ -162,12 +154,8 @@ void JoiningTransform::work()
             return;
         }
 
-        if (block.rows())
-        {
-            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunks.emplace_back(block.getColumns(), block.rows());
-            has_output = true;
-        }
+        output_chunks.emplace_back(block.getColumns(), block.rows());
+        has_output = true;
     }
 }
 
@@ -201,18 +189,9 @@ void JoiningTransform::transform(Chunk & chunk)
         JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res.back());
     }
     else
-    {
         res = readExecute(chunk);
-    }
 
-    for (const auto & block : res)
-    {
-        if (block.rows())
-        {
-            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunks.emplace_back(block.getColumns(), block.rows());
-        }
-    }
+    std::ranges::for_each(res, [this](Block & block) { output_chunks.emplace_back(block.getColumns(), block.rows()); });
 }
 
 Blocks JoiningTransform::readExecute(Chunk & chunk)
@@ -222,7 +201,6 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
 
     auto join_block = [&]()
     {
-        ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
         if (join->isScatteredJoin())
         {
             join->joinBlock(block, remaining_blocks, res);
@@ -346,16 +324,14 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
-    {
-        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, block.rows());
         stop_reading = !join->addBlockToJoin(block);
-    }
 
-    if (input.isFinished() && !join->supportParallelJoin())
+    if (input.isFinished())
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
+
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     Block output_header_,

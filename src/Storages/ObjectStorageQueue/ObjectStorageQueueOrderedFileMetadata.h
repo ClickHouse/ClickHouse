@@ -4,8 +4,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
 
-#include <boost/noncopyable.hpp>
-
 namespace DB
 {
 
@@ -35,9 +33,6 @@ public:
     struct BucketHolder;
     using BucketHolderPtr = std::shared_ptr<BucketHolder>;
 
-    bool useBucketsForProcessing() const override;
-    size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
-
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
@@ -48,9 +43,7 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static void migrateToBuckets(const std::string & zk_path, size_t value);
-
-    void prepareProcessedAtStartRequests(
+    void setProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;
 
@@ -60,21 +53,20 @@ private:
     const BucketInfoPtr bucket_info;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-
-    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
+    void setProcessedImpl() override;
 
     bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const zkutil::ZooKeeperPtr & zk_client);
 
-    static bool getMaxProcessedFile(
+    bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
         const zkutil::ZooKeeperPtr & zk_client);
 
-    void prepareProcessedRequests(
+    void setProcessedRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client,
         const std::string & processed_node_path_,

@@ -2,11 +2,10 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FailPoint.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Disks/IVolume.h>
 
 #include <set>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -241,6 +240,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
+        moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
         String relative_path = part->getDataPartStorage().getPartDirectory();
         if (disk->existsFile(path_to_clone + relative_path))

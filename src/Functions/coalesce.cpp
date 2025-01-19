@@ -67,7 +67,7 @@ public:
 
             filtered_args.push_back(arg);
 
-            if (!canContainNull(*arg))
+            if (!arg->isNullable())
                 break;
         }
 
@@ -90,7 +90,7 @@ public:
         auto res = getLeastSupertype(new_args);
 
         /// if last argument is not nullable, result should be also not nullable
-        if (!canContainNull(*new_args.back()) && res->isNullable())
+        if (!new_args.back()->isNullable() && res->isNullable())
             res = removeNullable(res);
 
         return res;
@@ -113,7 +113,7 @@ public:
 
             filtered_args.push_back(arg);
 
-            if (!canContainNull(*type))
+            if (!type->isNullable())
                 break;
         }
 

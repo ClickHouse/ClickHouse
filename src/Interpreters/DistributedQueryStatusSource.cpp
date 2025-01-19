@@ -133,7 +133,8 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     String status_data;
     bool finished_exists = false;
 
-    auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
+    auto retries_ctl = ZooKeeperRetriesControl(
+        "executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo(), context->getProcessListElement());
     retries_ctl.retryLoop([&]() { finished_exists = context->getZooKeeper()->tryGet(status_path, status_data); });
     if (finished_exists)
         status.tryDeserializeText(status_data);
@@ -141,14 +142,13 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     return status;
 }
 
-ZooKeeperRetriesInfo DistributedQueryStatusSource::getRetriesInfo() const
+ZooKeeperRetriesInfo DistributedQueryStatusSource::getRetriesInfo()
 {
     const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
     return ZooKeeperRetriesInfo(
         config_ref.getInt("distributed_ddl_keeper_max_retries", 5),
         config_ref.getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
-        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000),
-        context->getProcessListElement());
+        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000));
 }
 
 std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const String & host_id)
@@ -159,16 +159,6 @@ std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const S
     host = host_and_port.first;
     port = host_and_port.second;
     return {host, port};
-}
-
-std::shared_ptr<DataTypeEnum8> DistributedQueryStatusSource::getStatusEnum()
-{
-    return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"OK", static_cast<Int8>(QueryStatus::OK)},
-        {"IN_PROGRESS", static_cast<Int8>(QueryStatus::IN_PROGRESS)},
-        {"QUEUED", static_cast<Int8>(QueryStatus::QUEUED)},
-        {"UNFINISHED", static_cast<Int8>(QueryStatus::UNFINISHED)},
-    });
 }
 
 Chunk DistributedQueryStatusSource::generate()
@@ -204,7 +194,8 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_active_hosts;
 
         {
-            auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
+            auto retries_ctl = ZooKeeperRetriesControl(
+                "executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo(), context->getProcessListElement());
             retries_ctl.retryLoop(
                 [&]()
                 {

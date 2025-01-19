@@ -88,17 +88,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return executeImpl(arguments, true, input_rows_count);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return executeImpl(arguments, false, input_rows_count);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {
         if constexpr (ignore_set)
             return ColumnUInt8::create(input_rows_count, 0u);
@@ -131,12 +121,7 @@ public:
 
         auto future_set = column_set->getData();
         if (!future_set)
-        {
-            if (dry_run)
-                return ColumnUInt8::create(input_rows_count, 0u);
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
-        }
 
         auto set = future_set->get();
         if (!set)

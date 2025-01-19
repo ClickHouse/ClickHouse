@@ -12,9 +12,9 @@ REGISTER_FUNCTION(TryBase64URLDecode)
     FunctionDocumentation::Arguments arguments = {{"encodedURL", "String column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the decoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"valid", "SELECT tryBase64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')", "https://clickhouse.com"}, {"invalid", "SELECT tryBase64UrlDecode('aHR0cHM6Ly9jbGlja')", ""}};
-    FunctionDocumentation::Category category = {"Encoding"};
+    FunctionDocumentation::Categories categories = {"String encoding"};
 
-    factory.registerFunction<FunctionBase64Conversion<TryBase64Decode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionBase64Conversion<TryBase64Decode<Base64Variant::URL>>>({description, syntax, arguments, returned_value, examples, categories});
 }
 }
 

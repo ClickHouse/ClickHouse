@@ -5,6 +5,7 @@ import shutil
 from enum import Enum
 
 from minio import Minio
+from pyhdfs import HdfsClient
 
 
 class CloudUploader:
@@ -16,7 +17,7 @@ class CloudUploader:
         # for local_file in glob.glob(local_path + "/**"):
         #     print("Local file: {}", local_file)
         for local_file in glob.glob(local_path + "/**"):
-            result_local_path = local_file
+            result_local_path = os.path.join(local_path, local_file)
             result_remote_blob_path = os.path.join(remote_blob_path, local_file)
             if os.path.isfile(local_file):
                 self.upload_file(result_local_path, result_remote_blob_path, **kwargs)
@@ -63,6 +64,23 @@ class LocalUploader(CloudUploader):
         self.clickhouse_node.copy_file_to_container(local_path, remote_blob_path)
 
 
+class HDFSUploader(CloudUploader):
+
+    def __init__(self, started_cluster):
+        self.started_cluster = started_cluster
+
+    def upload_file(self, local_path, remote_blob_path):
+        dir_path = os.path.dirname(remote_blob_path)
+        fs = HdfsClient(hosts=self.started_cluster.hdfs_ip)
+
+        exists = fs.exists(dir_path)
+        if not exists:
+            fs.mkdirs(dir_path)
+
+        hdfs_api = self.started_cluster.hdfs_api
+        hdfs_api.write_file(remote_blob_path, local_path)
+
+
 class AzureUploader(CloudUploader):
 
     def __init__(self, blob_service_client, container_name):
@@ -87,13 +105,6 @@ def upload_directory(minio_client, bucket, local_path, remote_path):
     return S3Uploader(minio_client=minio_client, bucket_name=bucket).upload_directory(
         local_path, remote_path
     )
-
-
-def remove_directory(minio_client, bucket, remote_path):
-    for obj in minio_client.list_objects(
-        bucket, prefix=f"{remote_path}/", recursive=True
-    ):
-        minio_client.remove_object(bucket, obj.object_name)
 
 
 def get_file_contents(minio_client, bucket, s3_path):

@@ -1,14 +1,6 @@
 #include <Client/ClientApplicationBase.h>
 
 #include <filesystem>
-#include <vector>
-#include <string>
-#include <utility>
-
-#include <boost/program_options.hpp>
-
-namespace po = boost::program_options;
-
 
 namespace DB
 {
@@ -80,6 +72,17 @@ private:
 
 void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
+    if (allow_repeated_settings)
+        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addToProgramOptions(options_description.main_description.value());
+
+    if (allow_merge_tree_settings)
+    {
+        auto & main_options = options_description.main_description.value();
+        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
+    }
+
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments)
                       .options(options_description.main_description.value())

@@ -35,6 +35,8 @@ public:
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
+    bool isStoredOnDisk() const override { return true; }
+
     bool isStoredOnReadonlyDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;
@@ -50,7 +52,6 @@ public:
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
-    void removeMarksFromCache(MarkCache * mark_cache) const override;
 
 protected:
     static void loadIndexGranularityImpl(
