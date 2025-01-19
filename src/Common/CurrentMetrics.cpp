@@ -40,6 +40,7 @@
     M(HTTPConnection, "Number of connections to HTTP server") \
     M(InterserverConnection, "Number of connections from other replicas to fetch parts") \
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
+    M(MongoDBConnection, "Number of client connections using MongoDB protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
     M(Compressing, "Number of compress operations using internal compression codecs") \
