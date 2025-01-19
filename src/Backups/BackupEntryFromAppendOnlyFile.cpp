@@ -10,13 +10,15 @@ namespace DB
 namespace
 {
     /// For append-only files we must calculate its size on the construction of a backup entry.
-    UInt64 calculateSize(const DiskPtr & disk, const String & file_path, bool copy_encrypted, std::optional<UInt64> unencrypted_file_size)
+    UInt64 calculateSize(const DiskPtr & disk, const String & file_path, bool copy_encrypted, std::optional<UInt64> passed_file_size)
     {
-        if (!unencrypted_file_size)
-            return copy_encrypted ? disk->getEncryptedFileSize(file_path) : disk->getFileSize(file_path);
         if (copy_encrypted)
-            return disk->getEncryptedFileSize(*unencrypted_file_size);
-        return *unencrypted_file_size;
+            return passed_file_size ? disk->getEncryptedFileSize(*passed_file_size) : disk->getEncryptedFileSize(file_path);
+
+        if (passed_file_size)
+            return *passed_file_size;
+
+        return disk->getFileSize(file_path);
     }
 }
 

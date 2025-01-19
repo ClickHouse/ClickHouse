@@ -199,6 +199,11 @@ public:
         return delegate->getBlobPath(wrapped_path);
     }
 
+    bool areBlobPathsRandom() const override
+    {
+        return delegate->areBlobPathsRandom();
+    }
+
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
         auto tx = createEncryptedTransaction();
