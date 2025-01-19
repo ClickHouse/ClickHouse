@@ -713,7 +713,7 @@ See [Protobuf](formats/Protobuf/Protobuf.md)
 
 ## ProtobufSingle {#protobufsingle}
 
-See [ProtobugSingle](formats/Protobuf/ProtobufSingle.md)
+See [ProtobufSingle](formats/Protobuf/ProtobufSingle.md)
 
 ## ProtobufList {#protobuflist}
 
