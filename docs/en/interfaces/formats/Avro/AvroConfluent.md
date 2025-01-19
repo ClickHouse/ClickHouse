@@ -7,6 +7,9 @@ output_format: false
 alias: []
 ---
 
+import AvroFormatSettings from './_snippets/common-format-settings-avro.md'
+import DataTypesMatching from './_snippets/data-types-matching.md'
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
@@ -19,13 +22,13 @@ Schemas are cached once resolved.
 
 ## Data Types Matching {#data_types-matching-1}
 
-The data types matching for the ClickHouse format are the same as for [Avro](/docs/en/interfaces/formats/Avro).
+<DataTypesMatching/>
 
 ## Example Usage
 
-To quickly verify schema resolution you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](/docs/en/operations/utilities/clickhouse-local.md):
+To quickly verify schema resolution, you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](/docs/en/operations/utilities/clickhouse-local.md):
 
-``` bash
+```bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
 1 a
 2 b
@@ -34,7 +37,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 
 To use `AvroConfluent` with [Kafka](/docs/en/engines/table-engines/integrations/kafka.md):
 
-``` sql
+```sql
 CREATE TABLE topic1_stream
 (
     field1 String,
