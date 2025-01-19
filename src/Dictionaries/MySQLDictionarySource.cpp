@@ -136,6 +136,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
+                    named_collection->getOrDefault<String>("ssl_ca", ""),
+                    named_collection->getOrDefault<String>("ssl_cert", ""),
+                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else
