@@ -681,11 +681,14 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         [this, read_settings, read_hint, file_size]
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        read_settings.remote_read_buffer_restrict_seek = restricted_seek;
+        bool use_page_cache =
+            (!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
+            && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache;
+
+        read_settings.remote_read_buffer_restrict_seek = restricted_seek && !use_page_cache;
         auto impl = object_storage->readObject(object_, read_settings, read_hint, file_size);
 
-        if ((!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
-            && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache)
+        if (use_page_cache)
         {
             /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
             /// former doesn't support seeks.
@@ -694,10 +697,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
             if (!object_namespace.empty())
                 cache_path_prefix += object_namespace + "/";
 
-            const auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_.remote_path };
+            const auto cache_key = PageCacheKey { .path = cache_path_prefix + object_.remote_path };
 
             impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-                cache_key, read_settings.page_cache, std::move(impl), read_settings);
+                cache_key, read_settings.page_cache, std::move(impl), read_settings, restricted_seek);
         }
         return impl;
     };
