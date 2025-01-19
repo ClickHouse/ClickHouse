@@ -42,12 +42,17 @@ public:
     }
 
     Block getSampleBlock();
+    std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
 
     static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
         const SelectQueryOptions & select_query_options = {});
 
     static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options = {});
+
+    static std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 

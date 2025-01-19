@@ -2920,6 +2920,9 @@ Allow push predicate to final subquery.
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
 )", 0) \
+    DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
+Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+)", 0) \
     \
     DECLARE(UInt64, low_cardinality_max_dictionary_size, 8192, R"(
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
