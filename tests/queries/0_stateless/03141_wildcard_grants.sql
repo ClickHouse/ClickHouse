@@ -21,5 +21,6 @@ SELECT '---';
 
 GRANT SELECT(bar) ON foo.test* TO user_03141; -- { clientError SYNTAX_ERROR }
 GRANT SELECT(bar) ON foo.* TO user_03141; -- { clientError SYNTAX_ERROR }
+GRANT SELECT(bar) ON *.* TO user_03141; -- { clientError SYNTAX_ERROR }
 
 DROP USER user_03141;
