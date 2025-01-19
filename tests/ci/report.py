@@ -443,6 +443,7 @@ class JobReport:
                     info=r.raw_logs,
                     links=list(r.log_urls) if r.log_urls else [],
                     duration=r.time,
+                    files=r.log_files or [],
                 )
             )
 

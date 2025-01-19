@@ -142,12 +142,18 @@ class Runner:
                     assert "*" in include_pattern
                 else:
                     s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                assert S3.copy_file_from_s3(
-                    s3_path=s3_path,
-                    local_path=Settings.INPUT_DIR,
-                    recursive=recursive,
-                    include_pattern=include_pattern,
-                )
+                if job.no_download_requires:
+                    print(
+                        f"WARNING: no_download_requires selected for job [{job.name}]. Dump artifact url [{s3_path}]"
+                    )
+                    S3._dump_urls(s3_path)
+                else:
+                    assert S3.copy_file_from_s3(
+                        s3_path=s3_path,
+                        local_path=Settings.INPUT_DIR,
+                        recursive=recursive,
+                        include_pattern=include_pattern,
+                    )
 
         return 0
 
@@ -157,8 +163,9 @@ class Runner:
         env.JOB_NAME = job.name
         env.dump()
 
+        # work around for old clickhouse jobs
+        os.environ["PRAKTIKA"] = "1"
         if workflow.dockers:
-            # work around for old clickhouse jobs
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_fs(workflow.name).digest_dockers

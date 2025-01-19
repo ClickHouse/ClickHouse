@@ -31,7 +31,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -53,9 +53,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Config Workflow" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Config Workflow" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   docker_builds:
@@ -69,7 +69,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -91,9 +91,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Docker Builds" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Docker Builds' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Docker Builds" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Docker Builds' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   style_check:
@@ -107,7 +107,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -129,9 +129,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Style Check" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Style Check' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Style Check" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Style Check' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   fast_test:
@@ -145,7 +145,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -167,9 +167,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Fast test" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Fast test' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Fast test" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Fast test' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_debug:
@@ -183,7 +183,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -205,9 +205,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_debug)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_release:
@@ -221,7 +221,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -243,9 +243,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_asan:
@@ -259,7 +259,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -281,9 +281,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_asan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_tsan:
@@ -297,7 +297,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -319,9 +319,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_tsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_msan:
@@ -335,7 +335,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -357,9 +357,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_msan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_ubsan:
@@ -373,7 +373,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -395,9 +395,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_ubsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_binary:
@@ -411,7 +411,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -433,9 +433,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_binary)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_binary)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_release:
@@ -449,7 +449,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -471,9 +471,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_asan:
@@ -487,7 +487,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -509,9 +509,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_asan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_coverage:
@@ -525,7 +525,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -547,9 +547,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_coverage)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_coverage)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_coverage)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_coverage)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_binary:
@@ -563,7 +563,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -585,9 +585,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_binary)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_binary)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_binary)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_tidy:
@@ -601,7 +601,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -623,9 +623,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_tidy)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_tidy)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_tidy)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_tidy)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_darwin:
@@ -639,7 +639,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -661,9 +661,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_darwin)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_darwin)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_darwin:
@@ -677,7 +677,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -699,9 +699,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_darwin)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_darwin)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_v80compat:
@@ -715,7 +715,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -737,9 +737,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_v80compat)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_v80compat)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_freebsd:
@@ -753,7 +753,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -775,9 +775,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_freebsd)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_freebsd)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_ppc64le:
@@ -791,7 +791,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -813,9 +813,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_ppc64le)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_ppc64le)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_ppc64le)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_ppc64le)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_compat:
@@ -829,7 +829,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -851,9 +851,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_compat)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_compat)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_musl:
@@ -867,7 +867,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -889,9 +889,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_musl)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_musl)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_riscv64:
@@ -905,7 +905,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -927,9 +927,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (riscv64)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (riscv64)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_s390x:
@@ -943,7 +943,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -965,9 +965,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (s390x)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (s390x)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_loongarch:
@@ -981,7 +981,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1003,9 +1003,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (loongarch)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (loongarch)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (loongarch)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (loongarch)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_fuzzers:
@@ -1019,7 +1019,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1041,12 +1041,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (fuzzers)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (fuzzers)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  stateless_tests_amd_debugparallel:
+  stateless_tests_amd_debug_parallel:
     runs-on: [builder]
     needs: [config_workflow, docker_builds, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcscGFyYWxsZWwp') }}
@@ -1057,7 +1057,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1079,12 +1079,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_debug,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_debug,parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_debug,parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_debug,parallel)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  stateless_tests_amd_debugnon_parallel:
+  stateless_tests_amd_debug_non_parallel:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_debug]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcsbm9uLXBhcmFsbGVsKQ==') }}
@@ -1095,7 +1095,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1117,12 +1117,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_debug,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_debug,non-parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_debug,non-parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_debug,non-parallel)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  stateless_tests_amd_releaseparallel:
+  stateless_tests_amd_release_parallel:
     runs-on: [builder]
     needs: [config_workflow, docker_builds, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfcmVsZWFzZSxwYXJhbGxlbCk=') }}
@@ -1133,7 +1133,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1155,12 +1155,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_release,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_release,parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_release,parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_release,parallel)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  stateless_tests_amd_releasenon_parallel:
+  stateless_tests_amd_release_non_parallel:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfcmVsZWFzZSxub24tcGFyYWxsZWwp') }}
@@ -1171,7 +1171,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1193,12 +1193,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_release,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_release,non-parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_release,non-parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (amd_release,non-parallel)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  stateless_tests_arm_asanparallel:
+  stateless_tests_arm_asan_parallel:
     runs-on: [builder-aarch64]
     needs: [config_workflow, docker_builds, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbixwYXJhbGxlbCk=') }}
@@ -1209,7 +1209,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1231,12 +1231,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (arm_asan,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (arm_asan,parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (arm_asan,parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (arm_asan,parallel)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  stateless_tests_arm_asannon_parallel:
+  stateless_tests_arm_asan_non_parallel:
     runs-on: [func-tester-aarch64]
     needs: [config_workflow, docker_builds, build_arm_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbixub24tcGFyYWxsZWwp') }}
@@ -1247,7 +1247,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1269,9 +1269,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (arm_asan,non-parallel)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateless tests (arm_asan,non-parallel)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_arm_release:
@@ -1285,7 +1285,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1307,9 +1307,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_asan:
@@ -1323,7 +1323,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1345,9 +1345,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_asan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_tsan:
@@ -1361,7 +1361,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1383,9 +1383,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_msan:
@@ -1399,7 +1399,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1421,9 +1421,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_ubsan:
@@ -1437,7 +1437,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1459,9 +1459,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_debug:
@@ -1475,7 +1475,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1497,12 +1497,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stateful tests (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  integration_tests_amd_asan1_5:
+  integration_tests_amd_asan_1_5:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLDEvNSk=') }}
@@ -1513,7 +1513,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1535,12 +1535,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,1/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,1/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,1/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,1/5)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  integration_tests_amd_asan2_5:
+  integration_tests_amd_asan_2_5:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLDIvNSk=') }}
@@ -1551,7 +1551,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1573,12 +1573,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,2/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,2/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,2/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,2/5)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  integration_tests_amd_asan3_5:
+  integration_tests_amd_asan_3_5:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLDMvNSk=') }}
@@ -1589,7 +1589,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1611,12 +1611,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,3/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,3/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,3/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,3/5)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  integration_tests_amd_asan4_5:
+  integration_tests_amd_asan_4_5:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLDQvNSk=') }}
@@ -1627,7 +1627,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1649,12 +1649,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,4/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,4/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,4/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,4/5)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  integration_tests_amd_asan5_5:
+  integration_tests_amd_asan_5_5:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLDUvNSk=') }}
@@ -1665,7 +1665,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1687,9 +1687,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,5/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,5/5)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,5/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Integration tests (amd_asan,5/5)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stress_tests_arm_release:
@@ -1703,7 +1703,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1725,9 +1725,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stress tests (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Stress tests (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_amd_debug:
@@ -1741,7 +1741,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1763,9 +1763,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_amd_msan:
@@ -1779,7 +1779,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1801,9 +1801,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_amd_tsan:
@@ -1817,7 +1817,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1839,9 +1839,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_arm_asan:
@@ -1855,7 +1855,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1877,12 +1877,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (arm_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Upgrade tests (arm_asan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  performance_comparison_amd_releasehead_master1_2:
+  performance_comparison_amd_release_head_master_1_2:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgY29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsaGVhZF9tYXN0ZXIsMS8yKQ==') }}
@@ -1893,7 +1893,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1915,12 +1915,12 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance comparison (amd_release,head_master,1/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Performance comparison (amd_release,head_master,1/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Performance comparison (amd_release,head_master,1/2)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Performance comparison (amd_release,head_master,1/2)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  performance_comparison_amd_releasehead_master2_2:
+  performance_comparison_amd_release_head_master_2_2:
     runs-on: [func-tester]
     needs: [config_workflow, docker_builds, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'UGVyZm9ybWFuY2UgY29tcGFyaXNvbiAoYW1kX3JlbGVhc2UsaGVhZF9tYXN0ZXIsMi8yKQ==') }}
@@ -1931,7 +1931,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1953,9 +1953,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Performance comparison (amd_release,head_master,2/2)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Performance comparison (amd_release,head_master,2/2)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   compatibility_check_amd_release:
@@ -1969,7 +1969,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -1991,9 +1991,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Compatibility check (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Compatibility check (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Compatibility check (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   compatibility_check_arm_release:
@@ -2007,7 +2007,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2029,9 +2029,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Compatibility check (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Compatibility check (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Compatibility check (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   docs_check:
@@ -2045,7 +2045,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2067,9 +2067,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Docs check" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Docs check' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Docs check" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Docs check' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   clickbench_amd_release:
@@ -2083,7 +2083,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2105,9 +2105,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "ClickBench (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'ClickBench (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "ClickBench (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'ClickBench (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   clickbench_arm_release:
@@ -2121,7 +2121,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2143,9 +2143,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "ClickBench (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'ClickBench (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "ClickBench (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'ClickBench (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   docker_server:
@@ -2159,7 +2159,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2181,9 +2181,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Docker server" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Docker server' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Docker server" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Docker server' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   sqltest:
@@ -2197,7 +2197,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2219,9 +2219,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "SQLTest" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'SQLTest' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "SQLTest" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'SQLTest' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   sqlancer:
@@ -2235,7 +2235,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2257,9 +2257,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "SQLancer" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'SQLancer' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "SQLancer" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'SQLancer' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   install_check_amd_release:
@@ -2273,7 +2273,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2295,9 +2295,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Install check (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Install check (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Install check (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Install check (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   install_check_arm_release:
@@ -2311,7 +2311,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2333,23 +2333,23 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Install check (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Install check (arm_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Install check (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Install check (arm_release)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
-  ast_fuzzer:
-    runs-on: [func-tester-aarch64]
-    needs: [config_workflow, docker_builds, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIEZ1enplcg==') }}
-    name: "AST Fuzzer"
+  ast_fuzzer_amd_debug:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIEZ1enplciAoYW1kX2RlYnVnKQ==') }}
+    name: "AST Fuzzer (amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2371,14 +2371,356 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "AST Fuzzer" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'AST Fuzzer (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "AST Fuzzer" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'AST Fuzzer (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  ast_fuzzer_amd_asan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIEZ1enplciAoYW1kX2FzYW4p') }}
+    name: "AST Fuzzer (amd_asan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'AST Fuzzer (amd_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'AST Fuzzer (amd_asan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  ast_fuzzer_amd_tsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_tsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIEZ1enplciAoYW1kX3RzYW4p') }}
+    name: "AST Fuzzer (amd_tsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'AST Fuzzer (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'AST Fuzzer (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  ast_fuzzer_amd_msan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_msan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIEZ1enplciAoYW1kX21zYW4p') }}
+    name: "AST Fuzzer (amd_msan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'AST Fuzzer (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'AST Fuzzer (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  ast_fuzzer_amd_ubsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_ubsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QVNUIEZ1enplciAoYW1kX3Vic2FuKQ==') }}
+    name: "AST Fuzzer (amd_ubsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'AST Fuzzer (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'AST Fuzzer (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  buzzhouse_amd_debug:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfZGVidWcp') }}
+    name: "BuzzHouse (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'BuzzHouse (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  buzzhouse_amd_asan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfYXNhbik=') }}
+    name: "BuzzHouse (amd_asan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'BuzzHouse (amd_asan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'BuzzHouse (amd_asan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  buzzhouse_amd_tsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_tsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfdHNhbik=') }}
+    name: "BuzzHouse (amd_tsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'BuzzHouse (amd_tsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  buzzhouse_amd_msan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_msan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfbXNhbik=') }}
+    name: "BuzzHouse (amd_msan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+          fi
+
+  buzzhouse_amd_ubsan:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_ubsan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnV6ekhvdXNlIChhbWRfdWJzYW4p') }}
+    name: "BuzzHouse (amd_ubsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'BuzzHouse (amd_ubsan)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+          else
+            python3 -m praktika run 'BuzzHouse (amd_ubsan)' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   finish_workflow:
     runs-on: [style-checker-aarch64]
-    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_amd_coverage, build_arm_binary, build_amd_tidy, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_amd_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch, build_fuzzers, stateless_tests_amd_debugparallel, stateless_tests_amd_debugnon_parallel, stateless_tests_amd_releaseparallel, stateless_tests_amd_releasenon_parallel, stateless_tests_arm_asanparallel, stateless_tests_arm_asannon_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, integration_tests_amd_asan1_5, integration_tests_amd_asan2_5, integration_tests_amd_asan3_5, integration_tests_amd_asan4_5, integration_tests_amd_asan5_5, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_comparison_amd_releasehead_master1_2, performance_comparison_amd_releasehead_master2_2, compatibility_check_amd_release, compatibility_check_arm_release, docs_check, clickbench_amd_release, clickbench_arm_release, docker_server, sqltest, sqlancer, install_check_amd_release, install_check_arm_release, ast_fuzzer]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_amd_binary, build_arm_release, build_arm_asan, build_amd_coverage, build_arm_binary, build_amd_tidy, build_amd_darwin, build_arm_darwin, build_arm_v80compat, build_amd_freebsd, build_amd_ppc64le, build_amd_compat, build_amd_musl, build_riscv64, build_s390x, build_loongarch, build_fuzzers, stateless_tests_amd_debug_parallel, stateless_tests_amd_debug_non_parallel, stateless_tests_amd_release_parallel, stateless_tests_amd_release_non_parallel, stateless_tests_arm_asan_parallel, stateless_tests_arm_asan_non_parallel, stateful_tests_arm_release, stateful_tests_amd_asan, stateful_tests_amd_tsan, stateful_tests_amd_msan, stateful_tests_amd_ubsan, stateful_tests_amd_debug, integration_tests_amd_asan_1_5, integration_tests_amd_asan_2_5, integration_tests_amd_asan_3_5, integration_tests_amd_asan_4_5, integration_tests_amd_asan_5_5, stress_tests_arm_release, upgrade_tests_amd_debug, upgrade_tests_amd_msan, upgrade_tests_amd_tsan, upgrade_tests_arm_asan, performance_comparison_amd_release_head_master_1_2, performance_comparison_amd_release_head_master_2_2, compatibility_check_amd_release, compatibility_check_arm_release, docs_check, clickbench_amd_release, clickbench_arm_release, docker_server, sqltest, sqlancer, install_check_amd_release, install_check_arm_release, ast_fuzzer_amd_debug, ast_fuzzer_amd_asan, ast_fuzzer_amd_tsan, ast_fuzzer_amd_msan, ast_fuzzer_amd_ubsan, buzzhouse_amd_debug, buzzhouse_amd_asan, buzzhouse_amd_tsan, buzzhouse_amd_msan, buzzhouse_amd_ubsan]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
@@ -2387,7 +2729,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-            ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref }}
 
       - name: Prepare env script
         run: |
@@ -2409,7 +2751,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Finish Workflow" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Finish Workflow' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Finish Workflow" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
+            python3 -m praktika run 'Finish Workflow' --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi

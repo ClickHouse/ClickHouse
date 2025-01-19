@@ -137,7 +137,7 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/integration-helper",
-        path="./docker/test/integration/runner",
+        path="./docker/test/integration/helper_container",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -293,6 +293,7 @@ class JobNames:
     SQLANCER = "SQLancer"
     INSTALL_CHECK = "Install check"
     ASTFUZZER = "AST Fuzzer"
+    BUZZHOUSE = "BuzzHouse"
 
 
 class ToolSet:
@@ -1009,10 +1010,56 @@ class Jobs:
             [ArtifactNames.DEB_ARM_RELEASE, ArtifactNames.CH_ARM_RELEASE],
         ],
     )
+    # ast_fuzzer_jobs = Job.Config(
+    #     name=JobNames.ASTFUZZER,
+    #     runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+    #     command="python3 ./ci/jobs/fuzzers_job.py",
+    #     requires=[ArtifactNames.CH_ARM_RELEASE],
+    #     run_in_docker="clickhouse/stateless-test",
+    # )
+    # TODO: rewrite to praktika style job (commented above)
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
-        command="python3 ./ci/jobs/fuzzers_job.py",
-        requires=[ArtifactNames.CH_ARM_RELEASE],
-        run_in_docker="clickhouse/stateless-test",
+        runs_on=["..params.."],
+        command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.ASTFUZZER}",
+        allow_merge_on_failure=True,
+        no_download_requires=True,
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_DEBUG,
+            BuildTypes.AMD_ASAN,
+            BuildTypes.AMD_TSAN,
+            BuildTypes.AMD_MSAN,
+            BuildTypes.AMD_UBSAN,
+        ],
+        runs_on=[[RunnerLabels.FUNC_TESTER_AMD] for _ in range(5)],
+        requires=[
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
+        ],
+    )
+    buzz_fuzzer_jobs = Job.Config(
+        name=JobNames.BUZZHOUSE,
+        runs_on=["..params.."],
+        command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.BUZZHOUSE}",
+        allow_merge_on_failure=True,
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_DEBUG,
+            BuildTypes.AMD_ASAN,
+            BuildTypes.AMD_TSAN,
+            BuildTypes.AMD_MSAN,
+            BuildTypes.AMD_UBSAN,
+        ],
+        runs_on=[[RunnerLabels.FUNC_TESTER_AMD] for _ in range(5)],
+        requires=[
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
+        ],
     )

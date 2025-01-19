@@ -55,6 +55,7 @@ class _Settings:
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
+    ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
 
     ######################################
     #        CI Cache settings           #
