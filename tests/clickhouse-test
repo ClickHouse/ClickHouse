@@ -1761,7 +1761,8 @@ class TestCase:
                 print("Cannot insert coverage data: ", str(e))
 
             # Check for dumped coverage files
-            file_pattern = "coverage.*"
+            coverage_prefix = os.getenv("CLICKHOUSE_WRITE_COVERAGE", "coverage")
+            file_pattern = coverage_prefix + ".*"
             matching_files = glob.glob(file_pattern)
             for file_path in matching_files:
                 try:
@@ -1918,8 +1919,24 @@ class TestCase:
             )
             replace_in_file(
                 self.stdout_file,
+                f"port {os.environ['CLICKHOUSE_PORT_TCP']}",
+                "port 9000",
+            )
+            replace_in_file(
+                self.stdout_file,
                 f"localhost	{os.environ['CLICKHOUSE_PORT_TCP']}",
                 "localhost	9000",
+            )
+            replace_in_file(
+                self.stdout_file,
+                f"127.0.0.1:{os.environ['CLICKHOUSE_PORT_TCP']}",
+                "127.0.0.1:9000",
+            )
+        if os.environ.get("CLICKHOUSE_PORT_MYSQL"):
+            replace_in_file(
+                self.stdout_file,
+                f"127.0.0.1:{os.environ['CLICKHOUSE_PORT_MYSQL']}",
+                "127.0.0.1:9004",
             )
 
         if os.environ.get("CLICKHOUSE_PORT_TCP_SECURE"):
@@ -2342,6 +2359,11 @@ class TestSuite:
             else:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
+
+        if args.run_parallel_only:
+            self.sequential_tests = []
+        if args.run_no_parallel_only:
+            self.parallel_tests = []
 
     def is_sequential_test(self, test_name):
         if args.sequential:
@@ -2838,6 +2860,9 @@ def do_run_tests(
         manager = multiprocessing.Manager()
         parallel_tests = manager.list()
         parallel_tests.extend(test_suite.parallel_tests)
+        # is_concurrent = (jobs > 1) or (
+        #     args.run_parallel_only or args.run_no_parallel_only
+        # )
 
         processes = []
         for _ in range(jobs):
@@ -3753,6 +3778,19 @@ def parse_args():
         "--capture-client-stacktrace",
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
+    )
+
+    parser.add_argument(
+        "--run-parallel-only",
+        action="store_true",
+        default=False,
+        help="",
+    )
+    parser.add_argument(
+        "--run-no-parallel-only",
+        action="store_true",
+        default=False,
+        help="",
     )
 
     return parser.parse_args()
