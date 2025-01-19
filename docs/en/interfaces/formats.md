@@ -266,132 +266,51 @@ See [Null](formats/Null.md)
 
 ## Pretty {#pretty}
 
-Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting colours in the terminal.
-A full grid of the table is drawn, and each row occupies two lines in the terminal.
-Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
-
-[NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
-
-Example (shown for the [PrettyCompact](#prettycompact) format):
-
-``` sql
-SELECT * FROM t_null
-```
-
-``` response
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-└───┴──────┘
-```
-
-Rows are not escaped in Pretty\* formats. Example is shown for the [PrettyCompact](#prettycompact) format:
-
-``` sql
-SELECT 'String with \'quotes\' and \t character' AS Escaping_test
-```
-
-``` response
-┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and      character │
-└──────────────────────────────────────┘
-```
-
-To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message “Showed first 10 000” is printed.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when ‘extremes’ is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](#prettycompact) format):
-
-``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
-```
-
-``` response
-┌──EventDate─┬───────c─┐
-│ 2014-03-17 │ 1406958 │
-│ 2014-03-18 │ 1383658 │
-│ 2014-03-19 │ 1405797 │
-│ 2014-03-20 │ 1353623 │
-│ 2014-03-21 │ 1245779 │
-│ 2014-03-22 │ 1031592 │
-│ 2014-03-23 │ 1046491 │
-└────────────┴─────────┘
-
-Totals:
-┌──EventDate─┬───────c─┐
-│ 1970-01-01 │ 8873898 │
-└────────────┴─────────┘
-
-Extremes:
-┌──EventDate─┬───────c─┐
-│ 2014-03-17 │ 1031592 │
-│ 2014-03-23 │ 1406958 │
-└────────────┴─────────┘
-```
+See [Pretty](formats/Pretty/Pretty.md)
 
 ## PrettyNoEscapes {#prettynoescapes}
 
-Differs from [Pretty](#pretty) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
-
-Example:
-
-``` bash
-$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
-```
-
-You can use the HTTP interface for displaying in the browser.
+See [PrettyNoEscapes](formats/Pretty/PrettyNoEscapes.md)
 
 ## PrettyMonoBlock {#prettymonoblock}
 
-Differs from [Pretty](#pretty) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+See [PrettyMonoBlock](formats/Pretty/PrettyMonoBlock.md)
 
 ## PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
 
-Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
-
+See [PrettyNoEscapesMonoBlock](formats/Pretty/PrettyNoEscapesMonoBlock.md)
 
 ## PrettyCompact {#prettycompact}
 
-Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
-This format is used by default in the command-line client in interactive mode.
+See [PrettyCompact](formats/Pretty/PrettyCompact.md)
 
 ## PrettyCompactNoEscapes {#prettycompactnoescapes}
 
-Differs from [PrettyCompact](#prettycompact) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+See [PrettyCompactNoEscapes](formats/Pretty/PrettyCompactNoEscapes.md)
 
 ## PrettyCompactMonoBlock {#prettycompactmonoblock}
 
-Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+See [PrettyCompactMonoBlock](formats/Pretty/PrettyCompactMonoBlock.md)
 
 ## PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
 
-Differs from [PrettyCompactNoEscapes](#prettycompactnoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+See [PrettyCompactNoEscapesMonoBlock](formats/Pretty/PrettyCompactNoEscapesMonoBlock.md)
 
 ## PrettySpace {#prettyspace}
 
-Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
+See [PrettySpace](formats/Pretty/PrettySpace.md)
 
 ## PrettySpaceNoEscapes {#prettyspacenoescapes}
 
-Differs from [PrettySpace](#prettyspace) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+See [PrettySpaceNoEscapes](formats/Pretty/PrettySpaceNoEscapes)
 
 ## PrettySpaceMonoBlock {#prettyspacemonoblock}
 
-Differs from [PrettySpace](#prettyspace) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+See [PrettySpaceMonoBlock](formats/Pretty/PrettySpaceMonoBlock.md)
 
 ## PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
 
-Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
-
-## Pretty formats settings {#pretty-formats-settings}
-
-- [output_format_pretty_max_rows](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_max_rows) - rows limit for Pretty formats. Default value - `10000`.
-- [output_format_pretty_max_column_pad_width](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width) - maximum width to pad all values in a column in Pretty formats. Default value - `250`.
-- [output_format_pretty_max_value_width](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_max_value_width) - Maximum width of value to display in Pretty formats. If greater - it will be cut. Default value - `10000`.
-- [output_format_pretty_color](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_color) - use ANSI escape sequences to paint colors in Pretty formats. Default value - `true`.
-- [output_format_pretty_grid_charset](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_grid_charset) - Charset for printing grid borders. Available charsets: ASCII, UTF-8. Default value - `UTF-8`.
-- [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `true`.
-- [output_format_pretty_display_footer_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) - Display column names in the footer if table contains many rows. Default value - `true`.
-- [output_format_pretty_display_footer_column_names_min_rows](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows) - Sets the minimum number of rows for which a footer will be displayed if [output_format_pretty_display_footer_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled. Default value - 50.
+See [PrettySpaceNoEscapesMonoBlock](formats/Pretty/PrettySpaceNoEscapesMonoBlock.md)
 
 ## RowBinary {#rowbinary}
 
