@@ -431,6 +431,31 @@ Waits until the specified [replicated database](https://clickhouse.com/docs/en/e
 SYSTEM SYNC DATABASE REPLICA replicated_database_name;
 ```
 
+### RESTORE DATABASE REPLICA
+
+Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
+
+**Syntax**
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA repl_db
+```
+
+**Example**
+
+```sql
+CREATE DATABASE repl_db 
+ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
+
+CREATE TABLE repl_db.test_table (n UInt32)
+ENGINE = ReplicatedMergeTree
+ORDER BY n PARTITION BY n % 10;
+
+-- zookeeper_delete_path("/clickhouse/repl_db", recursive=True) <- root loss.
+
+SYSTEM RESTORE DATABASE REPLICA repl_db;
+```
+
 ### RESTART REPLICA
 
 Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
