@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 #include <Common/Exception.h>
 
