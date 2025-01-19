@@ -6010,7 +6010,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
-                node.secure
+                node.secure,
+                node.bind_host
             );
 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(

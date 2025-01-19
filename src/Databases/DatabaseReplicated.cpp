@@ -363,6 +363,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
+        "", // TYOCUM TODO
         Priority{1},
         cluster_name,
         cluster_auth_info.cluster_secret};
