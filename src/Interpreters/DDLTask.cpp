@@ -35,11 +35,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool validate_access_consistency_between_instances;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -157,10 +152,8 @@ String DDLLogEntry::toString() const
 
     if (version >= INITIATOR_USER_VERSION)
     {
-        wb << "initiator_user: ";
-        writeEscapedString(initial_query_id, wb);
-        wb << '\n';
-        wb << "access_hash: " << access_hash << "\n";
+        wb << "initiator_user: " << initiator_user << "\n";
+        wb << "initiator_roles: " << initiator_user_roles << "\n";
     }
 
     return wb.str();
@@ -237,10 +230,8 @@ void DDLLogEntry::parse(const String & data)
 
     if (version >= INITIATOR_USER_VERSION)
     {
-        rb >> "initiator_user: ";
-        readEscapedString(initiator_user, rb);
-        rb >> "\n";
-        rb >> "access_hash: " >> access_hash >> "\n";
+        rb >> "initiator_user: " >> initiator_user >> "\n";
+        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
     }
 
     assertEOF(rb);
@@ -281,17 +272,9 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     const auto & access_control = from_context->getAccessControl();
     const auto user = access_control.tryRead<User>(entry.initiator_user);
     if (!user)
-    {
-        if (from_context->getServerSettings()[ServerSetting::validate_access_consistency_between_instances])
-            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION, "Initiator user is not present on instance.");
         LOG_WARNING(getLogger("DDLTask"), "Initiator user is not present on the instance. Will use the global user for the query execution. This is a security vulnerability!");
-    }
     else
-    {
-        query_context->setUser(access_control.getID<User>(entry.initiator_user));
-        if (sipHash64(user->access.toString()) != entry.access_hash && from_context->getServerSettings()[ServerSetting::validate_access_consistency_between_instances])
-            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION, "Inconsistent access for the '{}' user on the instance.", user->getName());
-    }
+        query_context->setUser(entry.initiator_user, entry.initiator_user_roles);
 
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);

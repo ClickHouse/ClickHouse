@@ -96,8 +96,8 @@ struct DDLLogEntry
     /// Only for DatabaseReplicated.
     std::optional<UUID> parent_table_uuid;
 
-    String initiator_user;
-    UInt64 access_hash;
+    UUID initiator_user;
+    std::vector<UUID> initiator_user_roles;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
