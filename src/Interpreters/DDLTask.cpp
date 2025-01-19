@@ -1,7 +1,10 @@
+#include <Access/AccessControl.h>
+#include <Access/User.h>
 #include <Interpreters/DDLTask.h>
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -147,6 +150,12 @@ String DDLLogEntry::toString() const
         wb << "\n";
     }
 
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        wb << "initiator_user: " << initiator_user << "\n";
+        wb << "initiator_roles: " << initiator_user_roles << "\n";
+    }
+
     return wb.str();
 }
 
@@ -219,6 +228,12 @@ void DDLLogEntry::parse(const String & data)
         rb >> "\n";
     }
 
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        rb >> "initiator_user: " >> initiator_user >> "\n";
+        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
+    }
+
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -253,8 +268,17 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+
+    const auto & access_control = from_context->getAccessControl();
+    const auto user = access_control.tryRead<User>(entry.initiator_user);
+    if (!user)
+        LOG_WARNING(getLogger("DDLTask"), "Initiator user is not present on the instance. Will use the global user for the query execution. This is a security vulnerability!");
+    else
+        query_context->setUser(entry.initiator_user, entry.initiator_user_roles);
+
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
+
     return query_context;
 }
 
