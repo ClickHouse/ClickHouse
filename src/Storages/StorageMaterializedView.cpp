@@ -787,6 +787,14 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
+bool StorageMaterializedView::supportsDynamicSubcolumns() const
+{
+    /// If target table was not created yet, we don't know if it supports dynamic subcolumns or not,
+    /// but it will be checked during its future creation anyway, so we can return true here.
+    auto target_table = tryGetTargetTable();
+    return target_table ? target_table->supportsDynamicSubcolumns() : true;
+}
+
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     /// We backup the target table's data only if it's inner.
