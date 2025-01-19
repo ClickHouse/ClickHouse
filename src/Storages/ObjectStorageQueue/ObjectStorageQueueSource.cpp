@@ -148,6 +148,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 return {};
             }
 
+            LOG_TEST(log, "Received batch of size: {}", result->size());
+
             new_batch = std::move(result.value());
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
@@ -187,13 +189,24 @@ ObjectStorageQueueSource::FileIterator::next()
                 result_indexes.resize(new_batch.size());
 
                 Coordination::Requests requests;
+                size_t num_successful_objects = 0;
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     const auto & object = new_batch[i];
                     file_metadatas[i] = metadata->getFileMetadata(
                         object->relative_path,
                         /* bucket_info */{}); /// No buckets for Unordered mode.
-                    result_indexes[i] = file_metadatas[i]->prepareSetProcessingRequests(requests);
+
+                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
+                    if (set_processing_result.has_value())
+                    {
+                        result_indexes[i] = set_processing_result.value();
+                        ++num_successful_objects;
+                    }
+                    else
+                    {
+                        new_batch[i] = nullptr;
+                    }
                 }
 
                 Coordination::Responses responses;
@@ -204,6 +217,9 @@ ObjectStorageQueueSource::FileIterator::next()
                     LOG_TEST(log, "Successfully set {} files as processing", new_batch.size());
                     for (size_t i = 0; i < new_batch.size(); ++i)
                     {
+                        if (!new_batch[i])
+                            continue;
+
                         const auto & response_indexes = result_indexes[i];
                         const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
                             *responses[response_indexes.set_processing_id_node_idx].get());
@@ -219,6 +235,19 @@ ObjectStorageQueueSource::FileIterator::next()
                               code, requests[failed_idx]->getPath());
 
                     file_metadatas.clear();
+                }
+
+                if (num_successful_objects != new_batch.size())
+                {
+                    Source::ObjectInfos new_batch_copy;
+                    new_batch_copy.reserve(num_successful_objects);
+
+                    for (auto & object : new_batch)
+                    {
+                        if (object)
+                            new_batch_copy.push_back(std::move(object));
+                    }
+                    new_batch = std::move(new_batch_copy);
                 }
             }
         }

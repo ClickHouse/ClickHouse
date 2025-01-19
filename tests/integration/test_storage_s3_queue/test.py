@@ -732,7 +732,7 @@ def test_streaming_to_many_views(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
-    for i in range(3):
+    for i in range(10):
         table = f"{table_name}_{i + 1}"
         create_table(
             started_cluster,
