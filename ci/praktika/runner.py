@@ -141,12 +141,15 @@ class Runner:
                     assert "*" in include_pattern
                 else:
                     s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                assert S3.copy_file_from_s3(
-                    s3_path=s3_path,
-                    local_path=Settings.INPUT_DIR,
-                    recursive=recursive,
-                    include_pattern=include_pattern,
-                )
+                if job.no_download_requires:
+                    S3._dump_urls(s3_path)
+                else:
+                    assert S3.copy_file_from_s3(
+                        s3_path=s3_path,
+                        local_path=Settings.INPUT_DIR,
+                        recursive=recursive,
+                        include_pattern=include_pattern,
+                    )
 
         return 0
 
