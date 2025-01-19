@@ -9,7 +9,6 @@
 #include <Common/iota.h>
 
 #include <algorithm>
-#include <numeric>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -139,7 +138,8 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(data, end - data));
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(data, end - data));
             }
         }
     }
