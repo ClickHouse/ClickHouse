@@ -38,6 +38,7 @@
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -751,7 +752,11 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
+    {
+        /// Close connection, to avoid leaving it in an unsynchronised state.
+        disconnect();
         throwUnexpectedPacket(response_type, "TablesStatusResponse");
+    }
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -818,6 +823,14 @@ void Connection::sendQuery(
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
+
+    /// Avoid reusing connections that had been left in the intermediate state
+    /// (i.e. not all packets had been sent).
+    bool completed = false;
+    SCOPE_EXIT_MEMORY_SAFE({
+        if (!completed)
+            disconnect();
+    });
 
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
@@ -938,6 +951,8 @@ void Connection::sendQuery(
         sendData(Block(), "", false);
         out->next();
     }
+
+    completed = true;
 }
 
 
