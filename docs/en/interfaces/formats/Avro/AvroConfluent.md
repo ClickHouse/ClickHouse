@@ -2,7 +2,14 @@
 title : AvroConfluent
 slug : /en/interfaces/formats/AvroConfluent
 keywords : [AvroConfluent]
+input_format: true
+output_format: false
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✗      |       |
 
 ## Description
 
@@ -49,8 +56,10 @@ SELECT * FROM topic1_stream;
 
 ## Format Settings
 
-The Schema Registry URL is configured with [format_avro_schema_registry_url](/docs/en/operations/settings/settings-formats.md/#format_avro_schema_registry_url).
+The Schema Registry URL is configured with [`format_avro_schema_registry_url`](/docs/en/operations/settings/settings-formats.md/#format_avro_schema_registry_url).
 
 :::note
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
+
+<AvroFormatSettings/>
