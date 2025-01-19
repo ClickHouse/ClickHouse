@@ -5,7 +5,7 @@ namespace BuzzHouse
 
 SQLType *size_tp = nullptr, *null_tp = nullptr;
 
-std::map<std::string, std::map<std::string, SQLType *>> systemTables;
+std::unordered_map<String, std::unordered_map<String, SQLType *>> systemTables;
 
 void loadSystemTables(const bool has_cloud_features)
 {

@@ -1247,4 +1247,15 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCtransactionLatestSnapshot, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCtransactionOldestSnapshot, 0, 0, 0, 0)};
 
+const std::vector<CHFunction> CHTableFuncs = {
+    //Table Functions
+    CHFunction(SQLTableFunc::TFfile, 0, 0, 1, 5),
+    CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFremote, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),
+    CHFunction(SQLTableFunc::TFpostgresql, 0, 0, 5, 7),
+    CHFunction(SQLTableFunc::TFsqlite, 0, 0, 2, 2),
+    CHFunction(SQLTableFunc::TFS3, 0, 0, 1, 8)};
+
 }

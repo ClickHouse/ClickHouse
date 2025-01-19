@@ -561,9 +561,9 @@ HugeInt::operator bool() const
     return *this != HugeInt(0);
 }
 
-void HugeInt::toString(std::string & res) const
+void HugeInt::toString(String & res) const
 {
-    std::string in;
+    String in;
     uint64_t remainder;
     HugeInt input = *this;
 
@@ -585,7 +585,7 @@ void HugeInt::toString(std::string & res) const
             break;
         }
         input = divModPositive(input, 10, remainder);
-        in.insert(0, std::string(1, static_cast<char>('0' + remainder)));
+        in.insert(0, String(1, static_cast<char>('0' + remainder)));
     }
     if (in.empty())
     {

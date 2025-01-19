@@ -1533,6 +1533,17 @@ enum SQLFunc {
     FUNCzookeeperSessionUptime = 1528;
 }
 
+enum SQLTableFunc {
+    TFfile = 1;
+    TFformat = 2;
+    TFgenerateSeries = 3;
+    TFmysql = 4;
+    TFpostgresql = 5;
+    TFremote = 6;
+    TFS3 = 7;
+    TFsqlite = 8;
+}
+
 message Database {
     required string database = 1;
 }
@@ -2356,7 +2367,7 @@ message FileFunc {
         InFormat informat = 2;
         OutFormat outformat = 3;
     }
-    required string structure = 4;
+    optional string structure = 4;
     optional FileCompression fcomp = 5;
 }
 
@@ -2417,6 +2428,11 @@ message S3Func {
     optional string fcomp = 6;
 }
 
+message SQLTableFuncCall {
+    required SQLTableFunc func = 1;
+    repeated SQLFuncArg args = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2427,6 +2443,7 @@ message TableFunction {
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
         S3Func s3 = 8;
+        SQLTableFuncCall func = 9;
     }
 }
 
@@ -2598,9 +2615,10 @@ message DatabaseEngine {
 }
 
 message CreateDatabase {
-    required Database database = 1;
-    required DatabaseEngine dengine = 2;
-    optional string comment = 3;
+    optional bool if_not_exists = 1;
+    required Database database = 2;
+    required DatabaseEngine dengine = 3;
+    optional string comment = 4;
 }
 
 message CreateFunction {
@@ -2608,9 +2626,27 @@ message CreateFunction {
     required LambdaExpr lexpr = 2;
 }
 
-message Decimal {
+message DecimalN {
+    enum DecimalPrecision {
+        D32 = 1;
+        D64 = 2;
+        D128 = 3;
+        D256 = 4;
+    }
+    required DecimalPrecision precision = 1;
+    required uint32 scale = 2;
+}
+
+message DecimalSimple {
     optional uint32 precision = 1;
     optional uint32 scale = 2;
+}
+
+message Decimal {
+    oneof decimal_oneof {
+        DecimalN decimaln = 1;
+        DecimalSimple decimal_simple = 2;
+    }
 }
 
 message ColumnPathList {
@@ -2952,7 +2988,7 @@ message TTLExpr {
 
 message TableEngine {
     optional TableEngineOption toption = 1;
-    required TableEngineValues engine = 2;
+    optional TableEngineValues engine = 2;
     repeated TableEngineParam params = 3;
     optional TableKey order = 4;
     optional TableKey partition_by = 5;
@@ -2968,7 +3004,12 @@ message CreateTableAs {
 }
 
 message CreateTable {
-    optional bool replace = 1;
+    enum CreateTableOption {
+        Create = 1;
+        Replace = 2;
+        CreateOrReplace = 3;
+    }
+    required CreateTableOption create_opt = 1;
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
@@ -3125,9 +3166,12 @@ message CheckTable {
 }
 
 message DescTable {
-    required ExprSchemaTable est = 1;
-    optional bool sub_cols = 2;
-    optional SettingValues setting_values = 3;
+    oneof desc_oneof {
+        ExprSchemaTable est = 1;
+        Select sel = 2;
+        SQLTableFuncCall stf = 3;
+    }
+    optional SettingValues setting_values = 4;
 }
 
 message DeduplicateExpr {
@@ -3273,12 +3317,17 @@ message RefreshableView {
     optional bool append = 5;
 }
 
+message CreateMatViewTo {
+    required ExprSchemaTable est = 1;
+    optional ColumnPathList col_list = 2;
+}
+
 message CreateView {
     optional bool replace = 1;
     optional bool materialized = 2;
     required ExprSchemaTable est = 3;
     optional RefreshableView refresh = 4;
-    optional ExprSchemaTable to_est = 5;
+    optional CreateMatViewTo to = 5;
     optional TableEngine engine = 6;
     optional bool populate = 7;
     optional bool empty = 8;
@@ -3468,6 +3517,7 @@ message SystemCommand {
         bool flush_async_insert_queue = 60;
         bool sync_filesystem_cache = 61;
         bool drop_cache = 62;
+        bool drop_skip_index_cache = 63;
     }
 }
 
