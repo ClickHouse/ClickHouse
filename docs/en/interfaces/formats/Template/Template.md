@@ -205,5 +205,36 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows:` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
 
+### In-line Specification
+
+Tired of manually formatting markdown tables? In this example we'll look at how we can use the `Template` format and in-line specification settings to achieve a simple task - `SELECT`ing the names of some ClickHouse formats from the `system.formats` table and formatting them as a markdown table. This can be easily achieved using the `Template` format and settings `format_template_row_format` and `format_template_resultset_format`.
+
+In previous examples we specified the result-set and row format strings in separate files, with the paths to those files specified using the `format_template_resultset` and `format_template_row` settings respectively. Here we'll do it in-line because our template is trivial, consisting only of a few `|` and `-` to make the markdown table. We'll specify our result-set template string using the setting `format_template_resultset_format`. To make the table header we've added `|ClickHouse Formats|\n|---|\n` before `${data}`. We use setting `format_template_row_format` to specify the template string `` |`{0:XML}`| `` for our rows. The `Template` format will insert our rows with the given format into placeholder `${data}`. In this example we have only one column, but if you wanted to add more you could do so by adding `{1:XML}`, `{2:XML}`... etc to your row template string, choosing the escaping rule as appropriate. In this example we've gone with escaping rule `XML`. 
+
+```sql title="Query"
+WITH formats AS
+(
+ SELECT * FROM system.formats
+ ORDER BY rand()
+ LIMIT 5
+)
+SELECT * FROM formats
+FORMAT Template
+SETTINGS
+ format_template_row_format='|`${0:XML}`|',
+ format_template_resultset_format='|ClickHouse Formats|\n|---|\n${data}\n'
+```
+
+Look at that! We've saved ourselves the trouble of having to manually add all those `|`s and `-`s to make that markdown table:
+
+```response title="Response"
+|ClickHouse Formats|
+|---|
+|`BSONEachRow`|
+|`CustomSeparatedWithNames`|
+|`Prometheus`|
+|`DWARF`|
+|`Avro`|
+```
 
 
