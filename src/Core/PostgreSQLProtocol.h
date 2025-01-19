@@ -50,6 +50,8 @@ enum class FrontMessageType : Int32
     FLUSH = 'H',
     CLOSE = 'C',
     EXECUTE = 'E',
+    COPY_DATA = 'd',
+    COPY_COMPLETION = 'c',
 };
 
 enum class MessageType : Int32
@@ -949,6 +951,130 @@ public:
         return MessageType::DATA_ROW;
     }
 };
+
+class CopyDataQuery : FrontMessage
+{
+public:
+    String query;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(query, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyInResponse : public BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('G');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<char>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(0), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 1 + 2;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_IN_RESPONSE;
+    }
+};
+
+class CopyOutResponse : public BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('H');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int8>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(1), out);
+        writeBinaryBigEndian(static_cast<Int16>(0), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 1 + 2 + 2;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_IN_RESPONSE;
+    }
+};
+
+class CopyData : FrontMessage
+{
+public:
+    String query;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        Int16 ending;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(query, in);
+        readBinaryBigEndian(ending, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyDataResponse : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('d');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyCompletionResponse : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('c');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DONE;
+    }
+};
+
 
 class CommandComplete : BackendMessage
 {

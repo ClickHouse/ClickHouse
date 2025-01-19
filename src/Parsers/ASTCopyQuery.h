@@ -20,6 +20,7 @@ public:
         COPY_TO = 1,
     } type;
 
+    String table_name;
     ASTPtr data;
     ASTPtr file;
 

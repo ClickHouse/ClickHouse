@@ -13,6 +13,7 @@ import psycopg2.extras
 import pytest
 
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from io import StringIO
 
 psycopg2.extras.register_uuid()
 
@@ -229,22 +230,23 @@ def test_copy_command(started_cluster):
     cur.execute("drop table if exists test_recreated;")
 
     cur.execute("create table test (x UInt32) engine=Memory();")
-    cur.execute("insert into test values (42);")
-    cur.execute("insert into test values (43);")
+    cur.execute("insert into test values (42),(43),(44),(45);")
+    cur.execute("select * from test order by x;")
 
-    cur.execute(f"copy test to file('test{file_index}.csv', 'CSV', 'x UInt32');")
-    cur.execute(
-        f"copy (select * from test) to file('test{file_index + 1}.csv', 'CSV', 'x UInt32');"
-    )
-    cur.execute("drop table if exists test;")
+    assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
+
+    with open("out.csv", 'w') as f:
+        cur.copy_to(file=f, table='test')
+    with open("out.csv", 'r') as f:
+        assert f.read() == "42\n43\n44\n45\n"
+    
 
     cur.execute("create table test_recreated (x UInt32) engine=Memory();")
-    cur.execute(
-        f"copy test_recreated from file('test{file_index}.csv', 'CSV', 'x UInt32');"
-    )
-    result = cur.execute("select * from test_recreated order by x;")
+    data_to_copy = "1\n2\n3\n4\n5\n"
+    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x",))
+    cur.execute("select * from test_recreated order by x;")
 
-    assert cur.fetchall() == [(42,), (43,)]
+    assert cur.fetchall() == [(1,), (2,), (3,), (4,), (5,)]
 
 
 def test_java_client(started_cluster):
