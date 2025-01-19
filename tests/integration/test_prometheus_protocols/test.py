@@ -194,6 +194,10 @@ def test_read_auth():
         )
 
     auth_ok = get("/read_auth_ok")
+    # FIXME: prometheus read handler requires proper payload with snappy
+    # compression, but it will first try to authenticate and only after try to
+    # interpret the payload, so those two lines below is a workaround to ensure
+    # that the authentication works
     assert auth_ok.status_code == 500
     assert "DB::Exception: snappy uncomress failed" in auth_ok.text
 
