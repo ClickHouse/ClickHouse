@@ -36,4 +36,25 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     ReadingInOrderStepGetter && in_order_reading_step_getter,
     bool split_parts_ranges_into_intersecting_and_non_intersecting,
     bool split_intersecting_parts_ranges_into_layers);
+
+struct SplitPartsByRanges
+{
+    using Values = std::vector<Field>;
+
+    std::vector<RangesInDataParts> layers;
+    std::vector<Values> borders;
+};
+
+SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
+    RangesInDataParts ranges_in_data_parts,
+    size_t max_layers,
+    size_t max_columns_in_index,
+    const LoggerPtr & logger);
+
+Pipes readByLayers(
+    SplitPartsByRanges split_ranges,
+    const KeyDescription & primary_key,
+    ReadingInOrderStepGetter && step_getter,
+    ContextPtr context);
+
 }

@@ -598,6 +598,97 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByLayers(
+    std::unique_ptr<QueryPipelineBuilder> left,
+    std::unique_ptr<QueryPipelineBuilder> right,
+    JoinPtr join,
+    const Block & output_header,
+    size_t max_block_size,
+    size_t min_block_size_bytes,
+    Processors * collected_processors)
+{
+    left->checkInitializedAndNotCompleted();
+    right->checkInitializedAndNotCompleted();
+
+    /// Extremes before join are useless. They will be calculated after if needed.
+    left->pipe.dropExtremes();
+    right->pipe.dropExtremes();
+
+    left->pipe.collected_processors = collected_processors;
+
+    /// Remember the last step of the right pipeline.
+    IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
+    /// Collect the NEW processors for the right pipeline.
+    QueryPipelineProcessorsCollector collector(*right, step);
+
+    if (left->hasTotals() || right->hasTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Join by layers is supported only for pipelines without totals");
+
+    if (!join->isCloneSupported())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clone is not supported for {}", join->getName());
+    if (join->hasDelayedBlocks())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delayed ports from {} are not supported with join by layers", join->getName());
+
+    ///                                     (left) ──────┐
+    ///                                                  ╞> Joining ─> (joined)
+    ///                                     (left) ─┐┌───┘
+    ///                                             └┼───┐
+    /// (right) ─> FillingJoin ──────────────────────┘   ╞> Joining ─> (joined)
+    /// (right) ─> FillingJoin ──────────────────────────┘
+
+    size_t num_streams = left->getNumStreams();
+    if (right->getNumStreams() != num_streams)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Join by layers expect the same number of ports for the left and the right pipeline. Actual: {} and {}.",
+            num_streams, right->getNumStreams());
+
+    Block left_header = left->getHeader();
+    std::vector<JoinPtr> joins;
+    right->addSimpleTransform([&](const Block & header)
+    {
+        joins.push_back(join->clone(std::make_shared<TableJoin>(join->getTableJoin()), left->getHeader(), header));
+        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back());
+    });
+
+    auto lit = left->pipe.output_ports.begin();
+    auto rit = right->pipe.output_ports.begin();
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
+        connect(**lit, squashing->getInputs().front());
+
+        auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(1);
+        auto joining = std::make_shared<JoiningTransform>(
+            left_header, output_header, joins[i], max_block_size, false, false, finish_counter);
+
+        connect(squashing->getOutputPort(), joining->getInputs().front());
+        connect(**rit, joining->getInputs().back());
+
+        *lit = &joining->getOutputs().front();
+
+        ++lit;
+        ++rit;
+        if (collected_processors)
+            collected_processors->emplace_back(joining);
+
+        left->pipe.processors->emplace_back(std::move(squashing));
+        left->pipe.processors->emplace_back(std::move(joining));
+    }
+
+    /// Move the collected processors to the last step in the right pipeline.
+    Processors processors = collector.detachProcessors();
+    if (step)
+        step->appendExtraProcessors(processors);
+
+    left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
+    left->resources = std::move(right->resources);
+    left->pipe.header = left->pipe.output_ports.front()->getHeader();
+    left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    return left;
+}
+
+
 void QueryPipelineBuilder::addCreatingSetsTransform(
     const Block & res_header,
     SetAndKeyPtr set_and_key,

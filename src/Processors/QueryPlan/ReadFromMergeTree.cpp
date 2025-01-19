@@ -801,6 +801,32 @@ struct PartRangesReadInfo
 
 }
 
+Pipe ReadFromMergeTree::readByLayers(const RangesInDataParts & parts_with_ranges, SplitPartsByRanges split_parts, const Names & column_names)
+{
+    const auto & settings = context->getSettingsRef();
+    const auto data_settings = data.getSettings();
+
+    LOG_TRACE(log, "Spreading mark ranges among streams (reading by layers)");
+
+    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    if (0 == info.sum_marks)
+        return {};
+
+    auto reading_step_getter = [this, &column_names, &info](auto parts)
+    {
+        return this->read(
+            std::move(parts),
+            column_names,
+            ReadType::Default,
+            1 /* num_streams */,
+            info.min_marks_for_concurrent_read,
+            info.use_uncompressed_cache);
+    };
+
+    auto pipes = ::readByLayers(std::move(split_parts), storage_snapshot->metadata->getPrimaryKey(), reading_step_getter, context);
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
@@ -2031,6 +2057,9 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         return spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, query_info.input_order_info);
     }
+
+    if (!result.split_parts.layers.empty())
+        return readByLayers(result.parts_with_ranges, std::move(result.split_parts), column_names_to_read);
 
     return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), num_streams, column_names_to_read);
 }

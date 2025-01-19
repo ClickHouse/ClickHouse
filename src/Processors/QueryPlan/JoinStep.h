@@ -41,6 +41,8 @@ public:
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
 
+    void enableJoinByLayers(size_t prefix) { join_by_layers_prefix = prefix; }
+
 private:
     void updateOutputHeader() override;
 
@@ -57,6 +59,7 @@ private:
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
     bool swap_streams = false;
+    size_t join_by_layers_prefix = 0;
 };
 
 /// Special step for the case when Join is already filled.
