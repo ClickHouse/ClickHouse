@@ -5,6 +5,8 @@
 #include <base/find_symbols.h>
 #include <Poco/String.h>
 #include <Common/logger_useful.h>
+#include "Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h"
+#include "Storages/ObjectStorage/StorageObjectStorage.h"
 
 namespace DB
 {
@@ -40,7 +42,7 @@ namespace ErrorCodes
     *    hoodie.parquet.max.file.size option. Once a single Parquet file is too large, Hudi creates a second file group.
     *    Each file group is identified by File Id.
     */
-Strings HudiMetadata::getDataFilesImpl() const
+DataFileInfos HudiMetadata::getDataFilesImpl() const
 {
     auto configuration_ptr = configuration.lock();
     auto log = getLogger("HudiMetadata");
@@ -76,12 +78,12 @@ Strings HudiMetadata::getDataFilesImpl() const
         }
     }
 
-    Strings result;
+    DataFileInfos result;
     for (auto & [partition, partition_data] : files)
     {
         LOG_TRACE(log, "Adding {} data files from partition {}", partition, partition_data.size());
         for (auto & [file_id, file_data] : partition_data)
-            result.push_back(std::move(file_data.key));
+            result.push_back(DataFileInfo{.filename = std::move(file_data.key), .meta = nullptr});
     }
     return result;
 }
@@ -91,7 +93,7 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserv
 {
 }
 
-Strings HudiMetadata::getDataFiles() const
+DataFileInfos HudiMetadata::getDataFiles() const
 {
     if (data_files.empty())
         data_files = getDataFilesImpl();

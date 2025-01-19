@@ -21,7 +21,7 @@ public:
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    Strings getDataFiles() const override { return data_files; }
+    DataFileInfos getDataFiles() const override { return data_files; }
 
     NamesAndTypesList getTableSchema() const override { return schema; }
 
@@ -43,7 +43,7 @@ public:
     }
 
 private:
-    mutable Strings data_files;
+    mutable DataFileInfos data_files;
     NamesAndTypesList schema;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;

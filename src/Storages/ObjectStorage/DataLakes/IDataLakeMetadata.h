@@ -4,14 +4,32 @@
 #include <boost/noncopyable.hpp>
 #include "Interpreters/ActionsDAG.h"
 #include "PartitionColumns.h"
+#include "Storages/ObjectStorage/StorageObjectStorage.h"
 
 namespace DB
 {
+
+struct DataFileMeta : StorageObjectStorage::Configuration::PathMetadata
+{
+    enum class DataFileType : uint8_t
+    {
+        DATA_FILE,
+
+        // Note: this types useful only for iceberg
+        ICEBERG_POSITIONAL_DELETE,
+    };
+    DataFileType type;
+    int64_t sequence_number;
+};
+
+using DataFileInfo = StorageObjectStorage::Configuration::Path;
+using DataFileInfos = std::vector<DataFileInfo>;
+
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
     virtual ~IDataLakeMetadata() = default;
-    virtual Strings getDataFiles() const = 0;
+    virtual DataFileInfos getDataFiles() const = 0;
     virtual NamesAndTypesList getTableSchema() const = 0;
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
     virtual const DataLakePartitionColumns & getPartitionColumns() const = 0;

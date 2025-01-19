@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include "Storages/ObjectStorage/StorageObjectStorage.h"
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
@@ -186,13 +187,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    if (configuration->getPath().empty())
+    if (configuration->getPath().filename.empty())
     {
-        configuration->setPath("/*");
+        configuration->setPath(StorageObjectStorage::Configuration::Path{.filename = "/*", .meta = configuration->getPath().meta});
     }
-    else if (configuration->getPath().ends_with('/'))
+    else if (configuration->getPath().filename.ends_with('/'))
     {
-        configuration->setPath(configuration->getPath() + '*');
+        configuration->setPath(StorageObjectStorage::Configuration::Path{.filename = configuration->getPath().filename + '*', .meta = configuration->getPath().meta});
     }
     else if (!configuration->isPathWithGlobs())
     {
