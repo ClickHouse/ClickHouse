@@ -19,7 +19,7 @@ GRANT INSERT ON *.* TO test_user_01073;
 GRANT DELETE ON *.* TO test_user_01073;
 GRANT SELECT(col1) ON *.* TO test_user_01073; -- { clientError 509 }
 GRANT SELECT(col1) ON db1.* TO test_user_01073; -- { clientError 509 }
-GRANT INSERT(col1, col2) ON db1.* TO test_user_01073; -- { clientError 509 }
+GRANT INSERT(col1, col2) ON db1.* TO test_user_01073; -- { clientError SYNTAX_ERROR }
 SHOW GRANTS FOR test_user_01073;
 
 SELECT 'D';
