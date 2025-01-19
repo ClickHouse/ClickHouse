@@ -9,6 +9,7 @@
 
 
 #include <Columns/ColumnTuple.h>
+#include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
 
 
@@ -32,6 +33,24 @@ Int32 ManifestFileContent::getSchemaId() const
     return impl->schema_id;
 }
 
+std::vector<DB::Range> DataFileEntry::getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const
+{
+    std::vector<DB::Range> filtered_partition_ranges;
+    filtered_partition_ranges.reserve(partition_columns_ids.size());
+    for (const auto & partition_column_id : partition_columns_ids)
+    {
+        filtered_partition_ranges.push_back(partition_ranges.at(partition_column_id));
+    }
+    return filtered_partition_ranges;
+}
+
+
+const std::vector<PartitionColumnInfo> & ManifestFileContent::getPartitionColumnInfos() const
+{
+    return impl->partition_column_infos;
+}
+
+
 ManifestFileContent::ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_) : impl(std::move(impl_))
 {
 }
@@ -44,7 +63,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     Int32 format_version_,
     const String & common_path,
     const DB::FormatSettings & format_settings,
-    Int32 schema_id_)
+    Int32 schema_id_,
+    const IcebergSchemaProcessor & schema_processor)
 {
     this->schema_id = schema_id_;
     avro::NodePtr root_node = manifest_file_reader_->dataSchema().root();
@@ -140,6 +160,45 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         content_int_column = assert_cast<const ColumnInt32 *>(content_column.get());
     }
 
+
+    Poco::JSON::Parser parser;
+
+    ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+    if (big_partition_column->getDataType() != TypeIndex::Tuple)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "The parsed column from Avro file of `partition` field should be Tuple type, got {}",
+            big_partition_column->getFamilyName());
+    }
+    const auto * big_partition_tuple = assert_cast<const ColumnTuple *>(big_partition_column.get());
+
+    auto avro_metadata = manifest_file_reader_->metadata();
+
+    std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
+    String partition_spec_json_string
+        = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
+    Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
+    const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+
+    std::vector<ColumnPtr> partition_columns;
+
+    for (size_t i = 0; i != partition_specification->size(); ++i)
+    {
+        auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
+
+        auto source_id = current_field->getValue<Int32>("source-id");
+        PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
+
+        if (transform == PartitionTransform::Unsupported || transform == PartitionTransform::Void)
+        {
+            continue;
+        }
+
+        partition_column_infos.emplace_back(transform, source_id);
+        partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
+    }
+
     for (size_t i = 0; i < data_file_tuple_column->size(); ++i)
     {
         DataFileContent content_type = DataFileContent::DATA;
@@ -158,7 +217,19 @@ ManifestFileContentImpl::ManifestFileContentImpl(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
 
         const auto file_path = data_path.substr(pos);
-        this->data_files.push_back({file_path, status, content_type});
+        std::unordered_map<Int32, Range> partition_ranges;
+        for (size_t j = 0; j < partition_columns.size(); ++j)
+        {
+            const Int32 source_id = partition_column_infos[j].source_id;
+            partition_ranges.emplace(
+                source_id,
+                getPartitionRange(
+                    partition_column_infos[j].transform,
+                    i,
+                    partition_columns[j],
+                    schema_processor.getFieldCharacteristics(schema_id, source_id).type));
+        }
+        this->data_files.push_back({file_path, status, content_type, partition_ranges});
     }
 }
 
