@@ -194,10 +194,10 @@ void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(Aggregat
     DB::addMergingAggregatedMemoryEfficientTransform(pipe, std::move(params), num_merging_processors);
 }
 
-void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
+void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict, bool memory_dependent)
 {
     checkInitializedAndNotCompleted();
-    pipe.resize(num_streams, force, strict);
+    pipe.resize(num_streams, force, strict, memory_dependent);
 }
 
 void QueryPipelineBuilder::narrow(size_t size)

@@ -682,7 +682,7 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
-void Pipe::resize(size_t num_streams, bool force, bool strict)
+void Pipe::resize(size_t num_streams, bool force, bool strict, bool memory_dependent)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
@@ -696,6 +696,9 @@ void Pipe::resize(size_t num_streams, bool force, bool strict)
         resize = std::make_shared<StrictResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
     else
         resize = std::make_shared<ResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+
+    if (memory_dependent)
+        resize = std::make_shared<MemoryDependentResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
 
     addTransform(std::move(resize));
 }
