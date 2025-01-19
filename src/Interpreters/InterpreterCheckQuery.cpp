@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <thread>
 
 #include <Access/Common/AccessFlags.h>
 

@@ -3,6 +3,7 @@
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
