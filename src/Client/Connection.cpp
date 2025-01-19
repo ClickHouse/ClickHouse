@@ -752,7 +752,11 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
+    {
+        /// Close connection, to avoid leaving it in an unsynchronised state.
+        disconnect();
         throwUnexpectedPacket(response_type, "TablesStatusResponse");
+    }
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
