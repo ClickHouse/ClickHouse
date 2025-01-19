@@ -59,7 +59,7 @@ def test_initiator_user_in_ddl(started_cluster):
         )
         SETTINGS distributed_ddl_entry_format_version = 5
         """,
-        user="test"
+        user="test",
     )
     assert "super_secret" in error
 
@@ -74,6 +74,6 @@ def test_initiator_user_in_ddl(started_cluster):
         )
         SETTINGS distributed_ddl_entry_format_version = 8
         """,
-        user="test"
+        user="test",
     )
     assert "super_secret" not in error
