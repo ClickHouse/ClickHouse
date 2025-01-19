@@ -38,24 +38,24 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
-        {AccessType::FILE, "File"},
-        {AccessType::URL, "URL"},
-        {AccessType::REMOTE, "Distributed"},
-        {AccessType::MONGO, "MongoDB"},
-        {AccessType::REDIS, "Redis"},
-        {AccessType::MYSQL, "MySQL"},
-        {AccessType::POSTGRES, "PostgreSQL"},
-        {AccessType::SQLITE, "SQLite"},
-        {AccessType::ODBC, "ODBC"},
-        {AccessType::JDBC, "JDBC"},
-        {AccessType::HDFS, "HDFS"},
-        {AccessType::S3, "S3"},
-        {AccessType::HIVE, "Hive"},
-        {AccessType::AZURE, "AzureBlobStorage"},
-        {AccessType::KAFKA, "Kafka"},
-        {AccessType::NATS, "NATS"},
-        {AccessType::RABBITMQ, "RabbitMQ"}
+    const std::vector<String> source_table_engines = {
+        "File",
+        "URL",
+        "Distributed",
+        "MongoDB",
+        "Redis",
+        "MySQL",
+        "PostgreSQL",
+        "SQLite",
+        "ODBC",
+        "JDBC",
+        "HDFS",
+        "S3",
+        "Hive",
+        "AzureBlobStorage",
+        "Kafka",
+        "NATS",
+        "RabbitMQ",
     };
 
 
@@ -251,33 +251,23 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
     }
 
-    /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
-
-    /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
+    /// Sync SOURCE_READ/WRITE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
     if (access_control.doesTableEnginesRequireGrant())
     {
-        for (const auto & source_and_table_engine : source_and_table_engines)
+        for (const auto & table_engine : source_table_engines)
         {
-            const auto & source = std::get<0>(source_and_table_engine);
-            if (res.isGranted(source))
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
+            if (res.isGranted(AccessType::SOURCES, AccessTypeObjects::unifySource(table_engine)))
                 res.grant(AccessType::TABLE_ENGINE, table_engine);
-            }
         }
     }
     else
     {
         /// Add TABLE_ENGINE on * and then remove TABLE_ENGINE on particular engines.
         res.grant(AccessType::TABLE_ENGINE);
-        for (const auto & source_and_table_engine : source_and_table_engines)
+        for (const auto & table_engine : source_table_engines)
         {
-            const auto & source = std::get<0>(source_and_table_engine);
-            if (!res.isGranted(source))
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
+            if (!res.isGranted(AccessType::SOURCES, AccessTypeObjects::unifySource(table_engine)))
                 res.revoke(AccessType::TABLE_ENGINE, table_engine);
-            }
         }
     }
 
@@ -688,24 +678,13 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
         if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
         {
-            AccessFlags new_flags;
-
+            AccessFlags new_flags = AccessType::SOURCES;
             String table_engine_name{getTableEngine(args...)};
-            for (const auto & source_and_table_engine : source_and_table_engines)
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
-                if (table_engine != table_engine_name) continue;
-                const auto & source = std::get<0>(source_and_table_engine);
-                /// Set the flags from Table Engine to SOURCES so that prompts can be meaningful.
-                new_flags = source;
-                break;
-            }
-
             /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
             if (new_flags.isEmpty())
                 return access_denied_no_grant(flags, args...);
 
-            return access_denied_no_grant(new_flags);
+            return access_denied_no_grant(new_flags, table_engine_name);
         }
 
         return access_denied_no_grant(flags, args...);

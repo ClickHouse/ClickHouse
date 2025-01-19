@@ -99,7 +99,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 {
     if (structure == "auto")
     {
-        context->checkAccess(getSourceAccessType());
+        if (auto access_object = getSourceAccessObject())
+            context->checkAccess(AccessType::SOURCE_READ, AccessTypeObjects::toStringSource(*access_object));
         if (format == "auto")
             return StorageURL::getTableStructureAndFormatFromData(
                        filename,

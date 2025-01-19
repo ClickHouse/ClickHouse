@@ -1,4 +1,5 @@
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -13,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -267,6 +269,33 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
 {
     if (isEmptyDatabase())
         database = current_database;
+}
+
+void AccessRightsElement::replaceDeprecated()
+{
+    if (!access_flags)
+        return;
+
+    if (access_flags.toAccessTypes().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
+
+    auto current_access_type = access_flags.toAccessTypes()[0];
+
+    switch (current_access_type)
+    {
+#define OVERRIDE_DEPRECATED(name, override_access_type, override_parameter) \
+        case(AccessType::name): \
+        { \
+            access_flags = AccessFlags{AccessType::override_access_type}; \
+            parameter = override_parameter; \
+            break; \
+        }
+
+    ADD_OVERRIDE_FOR_DEPRECATED_ACCESS_TYPES(OVERRIDE_DEPRECATED)
+#undef OVERRIDE_DEPRECATED
+        default:
+            break;
+    }
 }
 
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }

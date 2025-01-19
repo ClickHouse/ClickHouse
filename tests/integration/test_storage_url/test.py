@@ -95,7 +95,7 @@ def test_table_function_url_access_rights():
         f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
-    node1.query("GRANT URL ON *.* TO u1")
+    node1.query("GRANT READ ON URL TO u1")
     assert node1.query(
         f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')",
         user="u1",

@@ -38,7 +38,7 @@ def test_table_engine_and_source_grant():
     instance.query("CREATE USER A")
     instance.query("GRANT CREATE TABLE ON test.table1 TO A")
 
-    instance.query("GRANT POSTGRES ON *.* TO A")
+    instance.query("GRANT SOURCES ON POSTGRES TO A")
 
     instance.query(
         """
@@ -50,7 +50,7 @@ def test_table_engine_and_source_grant():
 
     instance.query("DROP TABLE test.table1")
 
-    instance.query("REVOKE POSTGRES ON *.* FROM A")
+    instance.query("REVOKE SOURCES ON POSTGRES FROM A")
 
     assert "Not enough privileges" in instance.query_and_get_error(
         """
@@ -62,7 +62,7 @@ def test_table_engine_and_source_grant():
 
     # expecting grant POSTGRES instead of grant PostgreSQL due to discrepancy between source access type and table engine
     # similarily, other sources should also use their own defined name instead of the name of table engine
-    assert "grant POSTGRES ON *.*" in instance.query_and_get_error(
+    assert "grant SOURCES ON PostgreSQL" in instance.query_and_get_error(
         """
         CREATE TABLE test.table1(a Integer)
         engine=PostgreSQL('localhost:5432', 'dummy', 'dummy', 'dummy', 'dummy');
@@ -70,7 +70,7 @@ def test_table_engine_and_source_grant():
         user="A",
     )
 
-    instance.query("GRANT SOURCES ON *.* TO A")
+    instance.query("GRANT SOURCES ON * TO A")
 
     instance.query(
         """
