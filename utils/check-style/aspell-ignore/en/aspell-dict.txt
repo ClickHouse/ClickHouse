@@ -838,6 +838,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyFormatSettings
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
