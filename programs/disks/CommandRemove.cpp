@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include "Common/Exception.h"
 #include "ICommand.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -35,10 +36,13 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
             }
 
+            LOG_INFO(&Poco::Logger::get("CommandRemove"), "Removing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
+
             disk.getDisk()->removeRecursiveWithLimit(path);
         }
         else if (disk.getDisk()->existsFile(path))
         {
+            LOG_INFO(&Poco::Logger::get("CommandRemove"), "Removing file '{}' at disk '{}'", path, disk.getDisk()->getName());
             disk.getDisk()->removeFileIfExists(path);
         }
         else

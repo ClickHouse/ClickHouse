@@ -17,8 +17,11 @@ A utility providing filesystem-like operations for ClickHouse disks. It can work
 * `--query, -q` -- single query that can be executed without launching interactive mode
 * `--help, -h` -- print all the options and commands with description
 
+## Lazy initialization
+All disks which are available in config are initialized lazily. This means that the corresponding object for a disk is initialized only when corresponding disk is used in some command. This is done to make the utility more robust and to avoid touching of disks which are described in config but not used by a user and can fail during initialization. However, there should be a disk which is initialized at the clickhouse-disks launch. This disk is specified with parameter `--disk` through command-line (default value is `default`).
+
 ## Default Disks
-After the launch two disks are initialized. The first one is a disk `local` that is supposed to imitate local file system from which clickhouse-disks utility was launched. The second one is a disk `default` that is mounted to the local filesystem in the directory that can be found in config as a parameter `clickhouse/path` (default value is `/var/lib/clickhouse`).
+After the launch two disks which are not specified in config but available for initialization. The first one is a disk `local` that is supposed to imitate local file system from which clickhouse-disks utility was launched (initial path is directory from which clickhouse-disks was launched, mount point is a filesystem root directory). The second one is a disk `default` that is mounted to the local filesystem in the directory that can be found in config as a parameter `clickhouse/path` (default value is `/var/lib/clickhouse`) with initial path `/`.
 
 ## Clickhouse-disks state
 For each disk that was added the utility stores current directory (as in a usual filesystem). User can change current directory and switch between disks.

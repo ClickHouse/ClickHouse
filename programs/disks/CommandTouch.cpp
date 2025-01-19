@@ -3,6 +3,7 @@
 #include "DisksApp.h"
 #include "DisksClient.h"
 #include "ICommand.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -23,7 +24,19 @@ public:
         const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsThrow<String>(options, "path");
 
-        disk.getDisk()->createFile(disk.getRelativeFromRoot(path));
+        if (!disk.getDisk()->existsFileOrDirectory(disk.getRelativeFromRoot(path)))
+        {
+            LOG_INFO(&Poco::Logger::get("CommandTouch"), "Creating file at path: {}", disk.getRelativeFromRoot(path));
+            disk.getDisk()->createFile(disk.getRelativeFromRoot(path));
+        }
+        else if (disk.getDisk()->existsFile(disk.getRelativeFromRoot(path)))
+        {
+            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "File already exists at path: {}", disk.getRelativeFromRoot(path));
+        }
+        else if (disk.getDisk()->existsDirectory(disk.getRelativeFromRoot(path)))
+        {
+            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "Directory already exists at path: {}", disk.getRelativeFromRoot(path));
+        }
     }
 };
 

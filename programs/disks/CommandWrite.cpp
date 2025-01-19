@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/TerminalSize.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -44,6 +45,7 @@ public:
             return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
+        LOG_INFO(&Poco::Logger::get("CommandWrite"), "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
         auto out = disk.getDisk()->writeFile(path_to);
         copyData(*in, *out);
         out->finalize();
