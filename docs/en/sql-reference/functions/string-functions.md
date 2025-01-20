@@ -1604,6 +1604,12 @@ Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
 
 The result type is UInt32.
 
+## CRC32C
+
+Returns the CRC32 checksum of a string, using CRC-32-C 802.3 polynomial and initial value `0xffffffff`.
+
+The result type is UInt32.
+
 ## CRC64
 
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
