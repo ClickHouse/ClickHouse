@@ -20,12 +20,6 @@ file(GLOB AZURE_SDK_SRC
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/private/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/src/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/src/*.cpp"
-    "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/src/cryptography/*.cpp"
-)
-
-file(GLOB AZURE_SDK_UNIFIED_SRC
-    ${AZURE_SDK_SRC}
 )
 
 set(AZURE_SDK_INCLUDES
@@ -33,8 +27,21 @@ set(AZURE_SDK_INCLUDES
     "${AZURE_SDK_LIBRARY_DIR}/identity/azure-identity/inc/"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/inc/"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/inc/"
-    "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/inc/"
-    "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-shared/inc/"
+)
+
+if (CLICKHOUSE_CLOUD)
+    list(APPEND AZURE_SDK_SRC
+        "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/src/*.cpp"
+        "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/src/cryptography/*.cpp"
+    )
+    list(APPEND AZURE_SDK_UNIFIED_SRC
+        "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/inc/"
+        "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-shared/inc/"
+    )
+endif()
+
+file(GLOB AZURE_SDK_UNIFIED_SRC
+    ${AZURE_SDK_SRC}
 )
 
 add_library(_azure_sdk ${AZURE_SDK_UNIFIED_SRC})
