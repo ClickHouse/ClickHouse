@@ -377,7 +377,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     if (settings.prefixes_deserialization_thread_pool)
     {
         /// Split deserialization of prefixes into several tasks and execute them in parallel inside thread pool.
-        size_t num_tasks = settings.prefixes_deserialization_thread_pool->getMaxThreads();
+        size_t num_tasks = std::min(settings.prefixes_deserialization_thread_pool->getMaxThreads(), structure_state_concrete->sorted_dynamic_paths.size());
         std::vector<std::shared_ptr<DeserializationTask>> tasks;
         tasks.reserve(num_tasks);
         /// We need to create a copy of states cache for each task, because it's not thread-safe.
