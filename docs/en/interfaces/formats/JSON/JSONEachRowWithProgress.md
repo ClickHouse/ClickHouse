@@ -2,11 +2,18 @@
 title : JSONEachRowWithProgress
 slug : /en/interfaces/formats/JSONEachRowWithProgress
 keywords : [JSONEachRowWithProgress]
+input_format: false
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
 ## Description
 
-Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
+Differs from [`JSONEachRow`](./JSONEachRow.md)/[`JSONStringsEachRow`](./JSONStringsEachRow.md) in that ClickHouse will also yield progress information as JSON values.
 
 ## Example Usage
 
