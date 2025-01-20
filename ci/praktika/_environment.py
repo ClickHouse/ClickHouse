@@ -30,6 +30,7 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
     PR_BODY: str
+    PR_TITLE: str
     USER_LOGIN: str
     FORK_NAME: str
     LOCAL_RUN: bool = False
@@ -94,6 +95,7 @@ class _Environment(MetaClasses.Serializable):
         USER_LOGIN = os.getenv("GITHUB_ACTOR")
         FORK_NAME = ""
         PR_BODY = ""
+        PR_TITLE = ""
         PR_LABELS = []
 
         if EVENT_FILE_PATH:
@@ -107,6 +109,7 @@ class _Environment(MetaClasses.Serializable):
                 CHANGE_URL = github_event["pull_request"]["html_url"]
                 COMMIT_URL = CHANGE_URL + f"/commits/{SHA}"
                 PR_BODY = github_event["pull_request"]["body"]
+                PR_TITLE = github_event["pull_request"]["title"]
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
@@ -183,6 +186,7 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_TYPE=INSTANCE_TYPE,
             INSTANCE_ID=INSTANCE_ID,
             PR_BODY=PR_BODY,
+            PR_TITLE=PR_TITLE,
             USER_LOGIN=USER_LOGIN,
             FORK_NAME=FORK_NAME,
             PR_LABELS=PR_LABELS,
