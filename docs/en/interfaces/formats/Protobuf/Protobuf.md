@@ -17,7 +17,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 ## Description
 
-The `Protobuf` format is a [Protocol Buffers](https://protobuf.dev/) format.
+The `Protobuf` format is the [Protocol Buffers](https://protobuf.dev/) format.
 
 This format requires an external format schema, which is cached between queries.
 
