@@ -26,12 +26,13 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsUInt64 grace_hash_join_max_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;

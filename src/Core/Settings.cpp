@@ -5943,10 +5943,10 @@ Wait for committed changes to become actually visible in the latest snapshot
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, grace_hash_join_initial_buckets, 1, R"(
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
 Initial number of grace hash join buckets
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, grace_hash_join_max_buckets, 1024, R"(
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
