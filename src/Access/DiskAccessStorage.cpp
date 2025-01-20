@@ -238,7 +238,7 @@ bool DiskAccessStorage::isPathEqual(const String & directory_path_) const
 
 bool DiskAccessStorage::readLists()
 {
-    std::vector<std::tuple<UUID, String, AccessEntityType>> ids_names_types;
+    std::vector<std::pair<UUID, AccessEntityPtr>> ids_entities;
 
     for (auto type : collections::range(AccessEntityType::MAX))
     {
@@ -251,8 +251,8 @@ bool DiskAccessStorage::readLists()
 
         try
         {
-            for (const auto & [id, name] : readListFile(file_path))
-                ids_names_types.emplace_back(id, name, type);
+            for (auto & [id, name] : readListFile(file_path))
+                ids_entities.emplace_back(id, std::make_shared<EntityOnDisk>(std::move(name), type));
         }
         catch (...)
         {
@@ -262,12 +262,8 @@ bool DiskAccessStorage::readLists()
     }
 
     memory_storage.removeAllExcept({});
-
-    for (auto & [id, name, type] : ids_names_types)
-    {
-        AccessEntityPtr entity = std::make_shared<EntityOnDisk>(std::move(name), type);
-        memory_storage.insert(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
-    }
+    /// This entities are not fully loaded yet, do not send notifications to AccessChangesNotifier
+    memory_storage.setAll(ids_entities, /* notify= */ false);
 
     return true;
 }
