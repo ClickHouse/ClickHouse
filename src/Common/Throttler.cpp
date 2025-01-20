@@ -111,4 +111,12 @@ Int64 Throttler::getAvailable()
     return static_cast<Int64>(tokens_value);
 }
 
+void Throttler::setMaxSpeed(size_t max_speed_)
+{
+    std::lock_guard lock(mutex);
+
+    max_speed = max_speed_;
+    max_burst = max_speed_ * default_burst_seconds;
+}
+
 }

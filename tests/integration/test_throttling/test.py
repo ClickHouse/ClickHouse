@@ -93,7 +93,7 @@ def next_backup_name(storage):
         raise Exception(storage)
 
 
-def node_update_config(mode, setting, value=None):
+def node_update_config(mode, setting, value=None, restart=True):
     if mode is None:
         return
     if mode == "server":
@@ -119,7 +119,8 @@ def node_update_config(mode, setting, value=None):
             f"echo '{config_content}' > {config_path}",
         ]
     )
-    node.restart_clickhouse()
+    if restart:
+        node.restart_clickhouse()
 
 
 def assert_took(took, should_take):
@@ -366,6 +367,38 @@ def test_read_throttling(policy, mode, setting, value, should_take):
     assert_took(took, should_take)
 
 
+def test_read_throttling_reload():
+    node.query(
+        f"""
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        insert into data select * from numbers(1e6);
+    """
+    )
+    # without bandwidth limit
+    _, took = elapsed(node.query, f"select * from data")
+    assert_took(took, 0)
+
+    # add bandwidth limit and reload config on fly
+    node_update_config(
+        "server", "max_remote_read_network_bandwidth_for_server", "2M", False
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
+    _, took = elapsed(node.query, f"select * from data")
+    assert_took(took, 3)
+
+    # update bandwidth back to 0
+    node_update_config(
+        "server", "max_remote_read_network_bandwidth_for_server", "0", False
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    _, took = elapsed(node.query, f"select * from data")
+    assert took < 1
+
+
 @pytest.mark.parametrize(
     "policy,mode,setting,value,should_take",
     [
@@ -425,6 +458,38 @@ def test_write_throttling(policy, mode, setting, value, should_take):
     )
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
     assert_took(took, should_take)
+
+
+def test_write_throttling_reload():
+    node.query(
+        f"""
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
+        insert into data select * from numbers(1e6);
+    """
+    )
+    # without bandwidth limit
+    _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
+    assert_took(took, 0)
+
+    # add bandwidth limit and reload config on fly
+    node_update_config(
+        "server", "max_remote_write_network_bandwidth_for_server", "2M", False
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
+    _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
+    assert_took(took, 3)
+
+    # update bandwidth back to 0
+    node_update_config(
+        "server", "max_remote_write_network_bandwidth_for_server", "0", False
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
+    assert took < 1
 
 
 def test_max_mutations_bandwidth_for_server():
