@@ -311,7 +311,8 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         return;
     }
 
-    if (responses[0]->error == Coordination::Error::ZBADVERSION)
+    if (responses[0]->error == Coordination::Error::ZBADVERSION
+        || responses[0]->error == Coordination::Error::ZNONODE)
     {
         LOG_WARNING(
             log, "Processing node no longer exists ({}) "
