@@ -1120,17 +1120,15 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 /** Resolve identifier from scope aliases.
   *
   * Resolve strategy:
-  * 1. If alias is registered in current expressions that are in resolve process and if top expression is not part of bottom expression with the same alias subtree
-  * throw cyclic aliases exception.
-  * Otherwise prevent cache usage for identifier lookup and return nullptr.
+  * 1. Try to find identifier first part in the corresponding alias table.
+  * 2. If alias is registered in current expressions that are in resolve process and if top expression is not part of bottom expression with the same alias subtree
+  * it may be cyclic aliases.
+  * In that case return nullptr and allow to continue identifier resolution in other places.
+  * TODO: If following identifier resolution fails throw an CYCLIC_ALIASES exception.
   *
   * This is special scenario where identifier has name the same as alias name in one of its parent expressions including itself.
   * In such case we cannot resolve identifier from aliases because of recursion. It is client responsibility to register and deregister alias
   * names during expressions resolve.
-  *
-  * We must prevent cache usage for lookup because lookup outside of expression is supposed to return other value.
-  * Example: SELECT (id + 1) AS id, id + 2. Lookup for id inside (id + 1) as id should return id from table, but lookup (id + 2) should return
-  * (id + 1) AS id.
   *
   * Below cases should work:
   * Example:
@@ -1143,9 +1141,9 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   * SELECT (id + b) AS id, id as b FROM test_table;
   * SELECT (1 + b + 1 + id) AS id, b as c, id as b FROM test_table;
   *
-  * 2. Depending on IdentifierLookupContext get alias name to node map from IdentifierResolveScope.
-  * 3. Try to bind identifier to alias name in map. If there are no such binding return nullptr.
-  * 4. If node in map is not resolved, resolve it. It is important in case of compound expressions.
+  * 3. Depending on IdentifierLookupContext select IdentifierResolveScope to resolve aliased expression.
+  * 4. Clone query tree of aliased expression (do not clone table expression from join tree).
+  * 5. Resolve the node. It is important in case of compound expressions.
   * Example: SELECT value.a, cast('(1)', 'Tuple(a UInt64)') AS value;
   *
   * Special case if node is identifier node.
@@ -1156,7 +1154,8 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   * If identifier is resolved, depending on lookup context, erase entry from expression or lambda map. Check QueryExpressionsAliasVisitor documentation.
   * Pop node from current scope expressions in resolve process stack.
   *
-  * 5. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
+  * 6. Save aliased expression result type for typo correction.
+  * 7. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
   */
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
@@ -1176,18 +1175,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     QueryTreeNodePtr alias_node = *it;
 
+    if (!alias_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Node with alias {} is not valid. In scope {}",
+            identifier_bind_part,
+            scope.scope_node->formatASTForErrorMessage());
+
     auto node_type = alias_node->getNodeType();
     if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
         scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
     }
-
-    if (!alias_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Node with alias {} is not valid. In scope {}",
-            identifier_bind_part,
-            scope.scope_node->formatASTForErrorMessage());
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
      * 1. SELECT dummy + 1 AS dummy
@@ -1273,12 +1272,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
-/** Try resolve identifier in current scope parent scopes.
+/** Try to resolve identifier recursively in parent scopes.
   *
-  * TODO: If column is matched, throw exception that nested subqueries are not supported.
-  *
-  * If initial scope is expression. Then try to resolve identifier in parent scopes until query scope is hit.
-  * For query scope resolve strategy is same as if initial scope if query.
+  * If identifier is resolved to expression it must be resolved in the context of the current scope.
   */
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveContext identifier_resolve_context)
 {
