@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 # Tag no-replicated-database: CREATE AS SELECT is disabled
-# Tag no-shared-merge-tree -- implemented separate test, just bad substituion here
+# Tag no-shared-merge-tree -- implemented separate test, just bad substitution here
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +25,7 @@ do
     $CLICKHOUSE_CLIENT --allow_nondeterministic_mutations=1 --mutations_sync=1 -q "alter table t
     delete where n global in (select t1.n from t as t1 full join t as t2 on t1.n=t2.n where t1.n global in (select 2::Int32))"
     $CLICKHOUSE_CLIENT -q "select count() from t"
-    $CLICKHOUSE_CLIENT -q "drop table t"
+    $CLICKHOUSE_CLIENT -q "drop table t sync"
 
     $CLICKHOUSE_CLIENT -q "drop table if exists test"
     $CLICKHOUSE_CLIENT -q "CREATE TABLE test ENGINE=$engine AS SELECT number + 100 AS n, 0 AS test FROM numbers(50)" 2>&1| grep -Ev "Removing leftovers from table|removed by another replica"
@@ -43,5 +43,5 @@ do
             UPDATE test = (SELECT groupArray(id) FROM t1)[n - 99] WHERE 1"
     fi
     $CLICKHOUSE_CLIENT -q "select count(), sum(n), sum(test) from test"
-    $CLICKHOUSE_CLIENT -q "drop table test"
+    $CLICKHOUSE_CLIENT -q "drop table test sync"
 done
