@@ -297,7 +297,10 @@ void DisksApp::addOptions()
         "test-mode", "Interactive interface in test regime");
 
     positional_options_description.add("disk", 1);
+}
 
+void DisksApp::registerCommands()
+{
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("copy", makeCommandCopy());
     command_descriptions.emplace("list", makeCommandList());
@@ -323,6 +326,7 @@ void DisksApp::addOptions()
         }
     }
 }
+
 
 void DisksApp::processOptions()
 {
@@ -493,6 +497,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         auto log_level = config().getString("log-level", "none");
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
+
+    registerCommands();
 
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();

@@ -36,6 +36,8 @@ public:
     ~DisksApp() override;
 
 private:
+    void registerCommands();
+
     void addOptions();
 
     void processOptions();
