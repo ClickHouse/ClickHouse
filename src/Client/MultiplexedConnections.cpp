@@ -343,11 +343,10 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
     if (current_connection == nullptr)
         throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
 
-    UInt64 packet_type;
     try
     {
         AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
-        packet_type = current_connection->receivePacketType();
+        return current_connection->receivePacketType();
     }
     catch (Exception & e)
     {
@@ -360,8 +359,6 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
         }
         throw;
     }
-
-    return packet_type;
 }
 
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
