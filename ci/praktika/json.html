@@ -647,7 +647,7 @@
     function loadResultsJSON(PR, sha, nameParams) {
         const infoElement = document.getElementById('info-container');
         let lastModifiedTime = null;
-        const task = nameParams[0].toLowerCase();
+        const task = nameParams[0].toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
 
         // Construct the URL dynamically based on PR, sha, and name_X
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');

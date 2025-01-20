@@ -1,18 +1,21 @@
 ---
 title : PrettyJSONEachRow
 slug : /en/interfaces/formats/PrettyJSONEachRow
-keywords : [PrettyJSONEachRow]
+keywords : [PrettyJSONEachRow, PrettyJSONLines, PrettyNDJSON]
+input_format: false
+output_format: true
+alias: ['PrettyJSONLines', 'PrettyNDJSON']
 ---
+
+| Input | Output | Alias                             |
+|-------|--------|-----------------------------------|
+| ✗     | ✔      | `PrettyJSONLines`, `PrettyNDJSON` |
 
 ## Description
 
-Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable only for output.
-
-Alias: `PrettyJSONLines`, `PrettyNDJSON`
+Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
 ## Example Usage
-
-Example
 
 ```json
 {
