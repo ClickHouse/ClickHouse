@@ -178,7 +178,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
-    extern const SettingsUInt64 merge_tree_use_deserialization_prefixes_cache;
+    extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
 }
 
 namespace MergeTreeSetting

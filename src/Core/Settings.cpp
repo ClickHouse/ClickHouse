@@ -1298,7 +1298,7 @@ Possible values:
 
 - Any positive integer.
 )", 0) \
-DECLARE(UInt64, merge_tree_use_deserialization_prefixes_cache, true, R"(
+DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
 Enables caching of deserialization prefixes during reading from Wide parts in MergeTree.
 )", 0) \
 DECLARE(UInt64Auto, merge_tree_prefixes_deserialization_thread_pool_size, "auto", R"(
