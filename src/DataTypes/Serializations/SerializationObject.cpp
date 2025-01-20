@@ -374,7 +374,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         settings.path.pop_back();
     }
 
-    if (settings.prefixes_deserialization_thread_pool)
+    if (settings.prefixes_deserialization_thread_pool && !structure_state_concrete->sorted_dynamic_paths.empty())
     {
         /// Split deserialization of prefixes into several tasks and execute them in parallel inside thread pool.
         size_t num_tasks = std::min(settings.prefixes_deserialization_thread_pool->getMaxThreads(), structure_state_concrete->sorted_dynamic_paths.size());
