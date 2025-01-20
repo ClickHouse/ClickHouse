@@ -52,6 +52,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
@@ -333,7 +334,7 @@ static bool hasEquiConditions(const JoinCondition & condition)
          || predicate.op == PredicateOperator::NullSafeEquals)
             return true;
     }
-    return true;
+    return false;
 }
 
 
@@ -482,6 +483,11 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     auto join_expression_node = getJoinExpressionFromNode(join_node);
 
+    const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
+    const auto & join_algorithms = query_settings[Setting::join_algorithm];
+    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
+
     /// CROSS/PASTE JOIN: doesn't have expression
     if (join_expression_node == nullptr)
     {
@@ -502,11 +508,6 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
                 "JOIN {} join expression expected function",
                 join_node.formatASTForErrorMessage());
 
-        const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
-        const auto & join_algorithms = query_settings[Setting::join_algorithm];
-        const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-            || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
-
         if (is_hash_join_enabled && query_settings[Setting::allow_general_join_planning])
             buildDisjunctiveJoinConditions2(join_expression_node, build_context);
         else
@@ -515,6 +516,9 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     else if (join_expression_constant.has_value())
     {
         auto & join_actions = build_context.result_join_expression_actions;
+
+        if (!is_hash_join_enabled)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
 
         /// Joined table expression always has __tableN prefix, other columns will appear only in projections, so these names are safe
         if (join_actions.left_pre_join_actions.tryFindInOutputs("__lhs_const"))
