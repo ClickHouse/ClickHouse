@@ -230,6 +230,12 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/qpl"]
+	path = contrib/qpl
+	url = https://github.com/intel/qpl
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/ClickHouse/idxd-config.git
 [submodule "contrib/QAT-ZSTD-Plugin"]
 	path = contrib/QAT-ZSTD-Plugin
 	url = https://github.com/intel/QAT-ZSTD-Plugin
