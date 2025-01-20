@@ -63,20 +63,23 @@ public:
         chassert(!hasPendingData());
         chassert(position() <= working_buffer.end());
 
-        bytes += offset();
-        bool res = nextImpl();
-        if (!res)
+        bool res = true;
+        do
         {
-            working_buffer = Buffer(pos, pos);
-        }
-        else
-        {
-            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            chassert(position() < working_buffer.end());
-        }
-        nextimpl_working_buffer_offset = 0;
+            bytes += offset();
+            res &= nextImpl();
+            if (!res)
+            {
+                working_buffer = Buffer(pos, pos);
+            }
+            else
+            {
+                pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+            }
+            nextimpl_working_buffer_offset = 0;
+        } while (res && available() == 0);
 
-        chassert(position() <= working_buffer.end());
+        chassert(res ? (position() < working_buffer.end()) : (position() <= working_buffer.end()));
 
         return res;
     }
