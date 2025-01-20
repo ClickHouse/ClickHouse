@@ -1,6 +1,6 @@
-# docker build -t clickhouse/sqltest .
+# docker build -t altinityinfra/sqltest .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 RUN apt-get update --yes \
     && env DEBIAN_FRONTEND=noninteractive \

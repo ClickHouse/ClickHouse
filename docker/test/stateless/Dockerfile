@@ -1,7 +1,7 @@
 # rebuild in #33610
-# docker build -t clickhouse/stateless-test .
+# docker build -t altinityinfra/stateless-test .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 

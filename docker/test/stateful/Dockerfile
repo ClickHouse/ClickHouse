@@ -1,7 +1,7 @@
 # rebuild in #47031
-# docker build -t clickhouse/stateful-test .
+# docker build -t altinityinfra/stateful-test .
 ARG FROM_TAG=latest
-FROM clickhouse/stateless-test:$FROM_TAG
+FROM altinityinfra/stateless-test:$FROM_TAG
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \

@@ -35,15 +35,13 @@ class SensitiveFormatter(logging.Formatter):
 
 def get_additional_envs(check_name: str) -> List[str]:
     result = []
-    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
-    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
+    # TODO(vnemkov): put proper Azure connection string into SSM and re-enable this one
+    # azure_connection_string = get_parameter_from_ssm("azure_connection_string")
+    # result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
-    if "azure" in check_name:
-        result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
-
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
@@ -164,10 +162,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         assert Shell.check(
             f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
         )
-        docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
+        docker_image = pull_image(get_docker_image("altinityinfra/stateful-test"))
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
-        docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+        docker_image = pull_image(get_docker_image("altinityinfra/stress-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)

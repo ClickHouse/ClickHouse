@@ -1,4 +1,4 @@
-# docker build -t clickhouse/python-bottle .
+# docker build -t altinityinfra/python-bottle .
 # Helper docker container to run python bottle apps
 
 FROM python:3

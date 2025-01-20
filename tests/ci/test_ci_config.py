@@ -148,7 +148,6 @@ class TestCIConfig(unittest.TestCase):
                     CI.JobNames.STYLE_CHECK,
                     CI.JobNames.FAST_TEST,
                     CI.JobNames.BUILD_CHECK,
-                    CI.JobNames.DOCS_CHECK,
                     CI.JobNames.BUGFIX_VALIDATE,
                 ):
                     expected_builds = []

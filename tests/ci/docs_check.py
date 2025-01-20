@@ -69,9 +69,7 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
-    docker_image = get_docker_image("clickhouse/docs-builder")
-    if args.pull_image:
-        docker_image = pull_image(docker_image)
+    docker_image = pull_image(get_docker_image("altinityinfra/docs-builder"))
 
     test_output = temp_path / "docs_check"
     test_output.mkdir(parents=True, exist_ok=True)

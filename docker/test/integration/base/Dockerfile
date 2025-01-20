@@ -1,7 +1,7 @@
 # rebuild in #33610
-# docker build -t clickhouse/integration-test .
+# docker build -t altinityinfra/integration-test .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 SHELL ["/bin/bash", "-c"]
 
@@ -73,5 +73,5 @@ maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg && \
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:0de95b3aeb28 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

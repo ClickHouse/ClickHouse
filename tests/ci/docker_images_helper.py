@@ -20,9 +20,9 @@ def docker_login(relogin: bool = True) -> None:
         "docker system info | grep --quiet -E 'Username|Registry'"
     ):
         Shell.check(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
+            "docker login --username 'altinityinfra' --password-stdin",
             strict=True,
-            stdin_str=get_parameter_from_ssm("dockerhub_robot_password"),
+            stdin_str=get_parameter_from_ssm("dockerhub-password"),
             encoding="utf-8",
         )
 

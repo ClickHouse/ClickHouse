@@ -4,6 +4,9 @@
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 name: Build ClickHouse
 'on':
@@ -34,12 +37,15 @@ name: Build ClickHouse
         description: additional ENV variables to setup the job
         type: string
     secrets:
-      robot_git_token:
+      secret_envs:
+        description: if given, it's passed to the environments
         required: false
-      ci_db_url:
-        required: false
-      ci_db_password:
-        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
 
 jobs:
   Build:
@@ -47,10 +53,10 @@ jobs:
     if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
-    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
           ref: ${{ fromJson(inputs.data).git_ref }}
@@ -61,18 +67,10 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
           DOCKER_TAG<<DOCKER_JSON
           ${{ toJson(fromJson(inputs.data).docker_data.images) }}
           DOCKER_JSON
-          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-          ${{secrets.robot_git_token}}
-          RCSK
-          CI_DB_URL<<CIDBU
-          ${{ secrets.ci_db_url }}
-          CIDBU
-          CI_DB_PASSWORD<<CIDBP
-          ${{ secrets.ci_db_password }}
-          CIDBP
           EOF
           python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
       - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
@@ -109,6 +107,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.build_name}}'
+      - name: Upload json report
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{ env.TEMP_PATH }}/build_report_*.json
+          name: build_report_${{inputs.build_name}}
       - name: Clean
         if: always()
         uses: ./.github/actions/clean
