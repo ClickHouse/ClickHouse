@@ -11,6 +11,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -239,24 +240,24 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
-    std::map<String, size_t> partition_column_name_to_value_index;
-    if (partition_columns)
+    std::set<size_t> constant_positions;
+    for (size_t i = 0; i < result.sample_block.columns(); ++i)
     {
-        for (auto i : collections::range(partition_columns->children.size()))
-            partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
+        if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
+            constant_positions.insert(i);
     }
+    result.sample_block.erase(constant_positions);
 
     const auto & analysis_result = select.getAnalysisResult();
     if (analysis_result.need_aggregate)
     {
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
         {
-            result.sample_block_for_keys.insert({nullptr, key.type, key.name});
-            auto it = partition_column_name_to_value_index.find(key.name);
-            if (it == partition_column_name_to_value_index.end())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "minmax_count projection can only have keys about partition columns. It's a bug");
-            result.partition_value_indices.push_back(it->second);
+            if (result.sample_block.has(key.name))
+            {
+                result.sample_block_for_keys.insert({nullptr, key.type, key.name});
+                result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
+            }
         }
     }
 
