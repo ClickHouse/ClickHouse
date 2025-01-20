@@ -1404,14 +1404,13 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 
     std::ifstream infile(fc.fuzz_out);
     buf.resize(0);
+    buf2.resize(0);
     while (std::getline(infile, buf))
     {
         const auto tabchar = buf.find('\t');
         const auto nname = buf.substr(0, tabchar);
         const auto nvalue = buf.substr(tabchar + 1);
 
-        buf.resize(0);
-        buf2.resize(0);
         buf2 += "SET ";
         buf2 += nname;
         buf2 += " = '";
@@ -1425,6 +1424,8 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         }
         buf2 += "';";
         clickhouse->performQueryOnServerOrRemote(pt, buf2);
+        buf.resize(0);
+        buf2.resize(0);
     }
 }
 
