@@ -86,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
             {"output_format_pretty_highlight_trailing_spaces", false, true, "A new setting."},
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
+            {"allow_push_predicate_ast_for_distributed_subqueries", false, true, "A new setting"},
             {"output_format_pretty_squash_consecutive_ms", 0, 50, "Add new setting"},
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
