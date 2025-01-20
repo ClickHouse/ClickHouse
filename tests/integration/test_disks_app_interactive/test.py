@@ -42,7 +42,16 @@ class DisksClient(object):
         self.working_path = working_path
 
         self.proc = subprocess.Popen(
-            [bin_path, "disks", "--test-mode", "--config", config_path, "--save-logs", "--log-level", "WARNING"],
+            [
+                bin_path,
+                "disks",
+                "--test-mode",
+                "--config",
+                config_path,
+                "--save-logs",
+                "--log-level",
+                "WARNING",
+            ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -84,7 +93,7 @@ class DisksClient(object):
                 elif file == self.proc.stderr:
                     error_line = self.proc.stderr.readline()
                     print(error_line)
-                    #raise ClickHouseDisksException(error_line.strip().decode())
+                    # raise ClickHouseDisksException(error_line.strip().decode())
 
             else:
                 raise ValueError(f"Failed to read from pipe. Flag {event}")
