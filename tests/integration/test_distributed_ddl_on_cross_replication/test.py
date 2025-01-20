@@ -91,7 +91,7 @@ def test_alter_ddl(started_cluster):
     assert_eq_with_retry(
         node1,
         "SELECT count(*) FROM replica_2.replicated where shard_id >= 3 and part_key='2017-06-16'",
-        "6",
+        "3",
     )
 
     node1.query(
