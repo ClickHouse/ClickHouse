@@ -356,7 +356,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             if (hasPrefix(path))
                 settings.prefixes_prefetch_callback(path);
         };
-        
+
         for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
         {
             enumerate_settings.path.push_back(Substream::ObjectDynamicPath);
