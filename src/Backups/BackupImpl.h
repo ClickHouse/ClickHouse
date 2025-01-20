@@ -16,8 +16,6 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
-class Context;
-using ContextPtr = std::shared_ptr<const Context>;
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
