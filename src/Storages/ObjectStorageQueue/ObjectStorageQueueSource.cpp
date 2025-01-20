@@ -56,11 +56,13 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
+    const StorageID & storage_id_,
     size_t list_objects_batch_size_,
     const ActionsDAG::Node * predicate_,
     const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
     LoggerPtr logger_,
+    bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
     std::atomic<bool> & shutdown_called_)
     : IIterator("ObjectStorageQueueFileIterator")
@@ -71,6 +73,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , virtual_columns(virtual_columns_)
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , mode(metadata->getTableMetadata().getMode())
+    , enable_hash_ring_filtering(enable_hash_ring_filtering_)
+    , storage_id(storage_id_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -122,7 +126,8 @@ size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
         return object_infos.size();
 }
 
-ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next()
+std::pair<ObjectStorageQueueSource::Source::ObjectInfoPtr, ObjectStorageQueueSource::FileMetadataPtr>
+ObjectStorageQueueSource::FileIterator::next()
 {
     std::lock_guard lock(next_mutex);
 
@@ -132,6 +137,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
 
     if (current_batch_processed)
     {
+        file_metadatas.clear();
         Source::ObjectInfos new_batch;
         while (new_batch.empty())
         {
@@ -162,17 +168,58 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
                     new_batch, paths, filter_expr, virtual_columns, getContext());
 
                 LOG_TEST(logger, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
-
-                size_t previous_size = new_batch.size();
-                filterOutProcessedAndFailed(new_batch);
-
-                LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
             }
-            else
+
+            size_t previous_size = new_batch.size();
+
+            /// Filter out files which we know we would not need to process.
+            filterProcessableFiles(new_batch);
+
+            LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
+
+            if (!new_batch.empty()
+                && enable_hash_ring_filtering
+                && mode == ObjectStorageQueueMode::UNORDERED)
             {
-                size_t previous_size = new_batch.size();
-                filterOutProcessedAndFailed(new_batch);
-                LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
+                file_metadatas.resize(new_batch.size());
+
+                std::vector<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes> result_indexes;
+                result_indexes.resize(new_batch.size());
+
+                Coordination::Requests requests;
+                for (size_t i = 0; i < new_batch.size(); ++i)
+                {
+                    const auto & object = new_batch[i];
+                    file_metadatas[i] = metadata->getFileMetadata(
+                        object->relative_path,
+                        /* bucket_info */{}); /// No buckets for Unordered mode.
+                    result_indexes[i] = file_metadatas[i]->prepareSetProcessingRequests(requests);
+                }
+
+                Coordination::Responses responses;
+                auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
+                auto code = zk_client->tryMulti(requests, responses);
+                if (code == Coordination::Error::ZOK)
+                {
+                    LOG_TEST(log, "Successfully set {} files as processing", new_batch.size());
+                    for (size_t i = 0; i < new_batch.size(); ++i)
+                    {
+                        const auto & response_indexes = result_indexes[i];
+                        const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
+                            *responses[response_indexes.set_processing_id_node_idx].get());
+
+                        file_metadatas[i]->finalizeProcessing(set_response.stat.version);
+                    }
+                }
+                else
+                {
+                    auto failed_idx = zkutil::getFailedOpIndex(code, responses);
+
+                    LOG_TRACE(log, "Failed to set files as processing in one request: {} ({})",
+                              code, requests[failed_idx]->getPath());
+
+                    file_metadatas.clear();
+                }
             }
         }
 
@@ -188,36 +235,55 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
             index, object_infos.size());
     }
 
-    return object_infos[index++];
+    auto result = std::make_pair(
+        object_infos[index],
+        file_metadatas.empty() ? nullptr : file_metadatas[index]);
+
+    if (result.second)
+        chassert(
+            result.first->getPath() == result.second->getPath(),
+            fmt::format("Mismatch {} vs {}", result.first->getPath(), result.second->getPath()));
+
+    ++index;
+    return result;
 }
 
-void ObjectStorageQueueSource::FileIterator::filterOutProcessedAndFailed(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
     for (const auto & object : objects)
         paths.push_back(object->getPath());
 
-    std::vector<size_t> indexes;
+    if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
+        metadata->filterOutForProcessor(paths, storage_id);
+
     if (mode == ObjectStorageQueueMode::UNORDERED)
-        indexes = ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
+        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
     else
-        indexes = ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
+
+    std::unordered_set<std::string> paths_set;
+    std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
 
     Source::ObjectInfos result;
-    result.reserve(indexes.size());
-    for (const auto & idx : indexes)
-        result.push_back(std::move(objects[idx]));
+    result.reserve(paths_set.size());
+    for (auto & object : objects)
+    {
+        if (paths_set.contains(object->getPath()))
+            result.push_back(std::move(object));
+    }
     objects = std::move(result);
 }
 
 ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::nextImpl(size_t processor)
 {
-    Source::ObjectInfoPtr object_info;
-    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
-
     while (!shutdown_called)
     {
+        FileMetadataPtr file_metadata;
+        Source::ObjectInfoPtr object_info;
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
+
         if (metadata->useBucketsForProcessing())
         {
             std::lock_guard lock(mutex);
@@ -228,7 +294,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
             std::lock_guard lock(mutex);
             if (objects_to_retry.empty())
             {
-                object_info = next();
+                std::tie(object_info, file_metadata) = next();
                 if (!object_info)
                     iterator_finished = true;
             }
@@ -251,40 +317,47 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
             return {};
         }
 
-        auto file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
-        if (file_metadata->trySetProcessing())
+        if (file_metadata)
         {
-            if (file_deletion_on_processed_enabled
-                && !object_storage->exists(StoredObject(object_info->relative_path)))
+            return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
+        }
+        else
+        {
+            file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
+            if (file_metadata->trySetProcessing())
             {
-                /// Imagine the following case:
-                /// Replica A processed fileA and deletes it afterwards.
-                /// Replica B has a list request batch (by default list batch is 1000 elements)
-                /// and this batch was collected from object storage before replica A processed fileA.
-                /// fileA could be somewhere in the middle of this batch of replica B
-                /// and replica A processed it before replica B reached fileA in this batch.
-                /// All would be alright, unless user has tracked_files_size_limit or tracked_files_ttl_limit
-                /// which could expire before replica B reached fileA in this list batch.
-                /// It would mean that replica B listed this file while it no longer
-                /// exists in object storage at the moment it wants to process it, but
-                /// because of tracked_files_size(ttl)_limit expiration - we no longer
-                /// have information in keeper that the file was actually processed before,
-                /// so replica B would successfully set itself as processor of this file in keeper
-                /// and face "The specified key does not exist" after that.
-                ///
-                /// This existence check here is enough,
-                /// only because we do applyActionAfterProcessing BEFORE setting file as processed
-                /// and because at this exact place we already successfully set file as processing,
-                /// e.g. file deletion and marking file as processed in keeper already took place.
-                ///
-                /// Note: this all applies only for Unordered mode.
-                LOG_TRACE(log, "Ignoring {} because of the race with list & delete", object_info->getPath());
+                if (file_deletion_on_processed_enabled
+                    && !object_storage->exists(StoredObject(object_info->relative_path)))
+                {
+                    /// Imagine the following case:
+                    /// Replica A processed fileA and deletes it afterwards.
+                    /// Replica B has a list request batch (by default list batch is 1000 elements)
+                    /// and this batch was collected from object storage before replica A processed fileA.
+                    /// fileA could be somewhere in the middle of this batch of replica B
+                    /// and replica A processed it before replica B reached fileA in this batch.
+                    /// All would be alright, unless user has tracked_files_size_limit or tracked_files_ttl_limit
+                    /// which could expire before replica B reached fileA in this list batch.
+                    /// It would mean that replica B listed this file while it no longer
+                    /// exists in object storage at the moment it wants to process it, but
+                    /// because of tracked_files_size(ttl)_limit expiration - we no longer
+                    /// have information in keeper that the file was actually processed before,
+                    /// so replica B would successfully set itself as processor of this file in keeper
+                    /// and face "The specified key does not exist" after that.
+                    ///
+                    /// This existence check here is enough,
+                    /// only because we do applyActionAfterProcessing BEFORE setting file as processed
+                    /// and because at this exact place we already successfully set file as processing,
+                    /// e.g. file deletion and marking file as processed in keeper already took place.
+                    ///
+                    /// Note: this all applies only for Unordered mode.
+                    LOG_TRACE(log, "Ignoring {} because of the race with list & delete", object_info->getPath());
 
-                file_metadata->resetProcessing();
-                continue;
+                    file_metadata->resetProcessing();
+                    continue;
+                }
+
+                return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
             }
-
-            return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, file_metadata);
         }
     }
     return {};
@@ -478,7 +551,8 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             return {};
         }
 
-        auto object_info = next();
+        auto [object_info, file_metadata] = next();
+        chassert(!file_metadata);
         if (object_info)
         {
             const auto bucket = metadata->getBucketForPath(object_info->relative_path);
@@ -660,7 +734,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
         if (reader)
         {
             chassert(processed_files.back().state == FileState::Processing);
-            chassert(processed_files.back().metadata->getPath() == reader.getObjectInfo()->getPath());
+            chassert(
+                processed_files.back().metadata->getPath() == reader.getObjectInfo()->getPath(),
+                fmt::format("Mismatch {} vs {}", processed_files.back().metadata->getPath(),
+                            reader.getObjectInfo()->getPath()));
 
             file_metadata = processed_files.back().metadata;
         }
