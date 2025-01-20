@@ -1,4 +1,4 @@
-# docker build -t clickhouse/docs-builder .
+# docker build -t altinityinfra/docs-builder .
 FROM golang:alpine AS htmltest-builder
 
 ARG HTMLTEST_VERSION=0.17.0

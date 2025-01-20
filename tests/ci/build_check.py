@@ -10,19 +10,20 @@ from typing import Tuple
 
 import docker_images_helper
 from ci_config import CI
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
 from git_helper import Git
-from pr_info import PRInfo
+from pr_info import PRInfo, EventType
 from report import FAILURE, SUCCESS, JobReport, StatusType
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
+    VersionType,
     get_version_from_repo,
     update_version_local,
 )
 
-IMAGE_NAME = "clickhouse/binary-builder"
+IMAGE_NAME = "altinityinfra/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
@@ -64,6 +65,8 @@ def get_packager_cmd(
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
+    cmd += f" --s3-access-key-id={S3_ACCESS_KEY_ID}"
+    cmd += f" --s3-secret-access-key={S3_SECRET_ACCESS_KEY}"
 
     if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
@@ -162,16 +165,31 @@ def main():
     version = get_version_from_repo(git=Git(True))
     logging.info("Got version from repo %s", version.string)
 
-    official_flag = pr_info.number == 0
+    # official_flag = pr_info.number == 0
 
-    version_type = "testing"
-    if is_release_pr(pr_info):
-        version_type = "stable"
-        official_flag = True
+    # version_type = "testing"
+    # if is_release_pr(pr_info):
+    #     version_type = "stable"
+    #     official_flag = True
+
+    # NOTE(vnemkov): For Altinity Stable builds, version flavor
+    #  (last part of version, like 'altinitystable') is obtained from tag.
+    # If there is no tag, then version is considered to be 'testing'
+    version_type = version._flavour = VersionType.TESTING
+    official_flag = True
+
+    if pr_info.event_type == EventType.PUSH \
+        and pr_info.ref.startswith('/ref/tags/'):
+        tag_name = pr_info.ref.removeprefix('/ref/tags/')
+        version_type = tag_name.split('.')[-1]
+        version._flavour = version_type
+        logging.info("Using version from tag: %s => %s", tag_name, version)
+
+    # TODO(vnemkov): make sure tweak part is incremented by 1 each time we merge a PR
 
     update_version_local(version, version_type)
 
-    logging.info("Updated local files with version")
+    logging.info("Updated local files with version %s", version)
 
     logging.info("Build short name %s", build_name)
 

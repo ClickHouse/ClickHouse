@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument(
         "-z",
         "--zcroot",
-        default="clickhouse/zero_copy",
+        default="altinityinfra/zero_copy",
         help="ZooKeeper node for new zero-copy data",
     )
     parser.add_argument(

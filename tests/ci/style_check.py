@@ -182,7 +182,7 @@ def main():
             is_style_image(file) or is_python(file) for file in pr_info.changed_files
         )
 
-    IMAGE_NAME = "clickhouse/style-test"
+    IMAGE_NAME = "altinityinfra/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
     docker_command = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "

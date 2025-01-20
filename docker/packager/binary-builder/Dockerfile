@@ -1,11 +1,11 @@
-# docker build -t clickhouse/binary-builder .
+# docker build -t altinityinfra/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG
+FROM altinityinfra/fasttest:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
+COPY --from=altinityinfra/cctools:0de95b3aeb28 /cctools /cctools
 
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup

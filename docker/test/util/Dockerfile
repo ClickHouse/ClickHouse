@@ -1,4 +1,4 @@
-# docker build -t clickhouse/test-util .
+# docker build -t altinityinfra/test-util .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -57,5 +57,5 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:0de95b3aeb28 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

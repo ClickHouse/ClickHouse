@@ -41,7 +41,7 @@ class CiCache:
         release - for jobs being executed on the release branch including master branch (not a PR branch)
     """
 
-    _REQUIRED_DIGESTS = [CI.JobNames.DOCS_CHECK, CI.BuildNames.PACKAGE_RELEASE]
+    _REQUIRED_DIGESTS = [CI.BuildNames.PACKAGE_RELEASE]
     _S3_CACHE_PREFIX = "CI_cache_v1"
     _CACHE_BUILD_REPORT_PREFIX = "build_report"
     _RECORD_FILE_EXTENSION = ".ci"
@@ -983,7 +983,6 @@ if __name__ == "__main__":
         "ClickBench (aarch64)": "45c07c4aa6",
         "Docker server image": "6a24d5b187",
         "Docker keeper image": "6a24d5b187",
-        "Docs check": "4764154c62",
         "Fast test": "cb269133f2",
         "Style check": "ffffffffff",
         "Stateful tests (ubsan, ParallelReplicas)": "32a9a1aba9",

@@ -134,7 +134,6 @@ _TEST_JOB_LIST = [
     "ClickBench (aarch64)",
     "libFuzzer tests",
     "Builds",
-    "Docs check",
     "Bugfix validation",
 ]
 

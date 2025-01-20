@@ -381,7 +381,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
             _get_ext_check_name(job_name),
         )
         ClickHouseHelper().insert_events_into(
-            db="default", table="checks", events=prepared_events
+            db="gh-data", table="checks", events=prepared_events
         )
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
@@ -955,7 +955,7 @@ def _add_build_to_version_history(
 
     print(f"::notice ::Log Adding record to versions history: {data}")
 
-    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+    ch_helper.insert_event_into(db="gh-data", table="version_history", event=data)
 
 
 def _run_test(job_name: str, run_command: str) -> int:
@@ -1291,7 +1291,7 @@ def main() -> int:
                 job_report.check_name or _get_ext_check_name(args.job_name),
             )
             ch_helper.insert_events_into(
-                db="default", table="checks", events=prepared_events
+                db="gh-data", table="checks", events=prepared_events
             )
 
             if "DockerServerImage" in args.job_name and indata is not None:
@@ -1365,7 +1365,7 @@ def main() -> int:
                 _get_ext_check_name(args.job_name),
             )
             ClickHouseHelper().insert_events_into(
-                db="default", table="checks", events=prepared_events
+                db="gh-data", table="checks", events=prepared_events
             )
     ### POST action: end
 
