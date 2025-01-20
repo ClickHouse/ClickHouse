@@ -10,15 +10,15 @@ description: How to build ClickHouse on macOS for macOS
 You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
 :::
 
-ClickHouse can be compiled on macOs x86_64 (Intel) and arm64 (Apple Silicon) using on macOS 10.15 (Catalina) or higher.
+ClickHouse can be compiled on macOS x86_64 (Intel) and arm64 (Apple Silicon) using on macOS 10.15 (Catalina) or higher.
 
-As compiler, only homebrew's Clang is supported.
+As compiler, only Clang from homebrew is supported.
 
 :::note
 Building with Apple's XCode `apple-clang` is not recommended, it may or may not work.
 :::
 
-## Install Homebrew {#install-homebrew}
+## Install Homebrew
 
 First install [Homebrew](https://brew.sh/)
 
@@ -43,7 +43,7 @@ Apple uses a case-insensitive file system by default. While this usually does no
 For serious development on macOS, make sure that the source code is stored on a case-sensitive disk volume, e.g. see [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 :::
 
-## Build ClickHouse {#build-clickhouse}
+## Build ClickHouse
 
 To build using Homebrew's Clang compiler:
 
@@ -69,7 +69,7 @@ cmake --open .
 # The resulting binary will be created at: ./programs/Debug/clickhouse
 ```
 
-## Caveats {#caveats}
+## Caveats
 
 If you intend to run `clickhouse-server`, make sure to increase the system’s `maxfiles` variable.
 
@@ -122,10 +122,3 @@ sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
 To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
-
-## Running ClickHouse server
-
-``` bash
-cd ClickHouse
-./build/programs/clickhouse-server --config-file ./programs/server/config.xml
-```
