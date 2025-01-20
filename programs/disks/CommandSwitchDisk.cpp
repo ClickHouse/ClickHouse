@@ -10,7 +10,7 @@ namespace DB
 class CommandSwitchDisk final : public ICommand
 {
 public:
-    explicit CommandSwitchDisk() : ICommand()
+    explicit CommandSwitchDisk() : ICommand("CommandSwitchDisk")
     {
         command_name = "switch-disk";
         description = "Switch disk (makes sense only in interactive mode)";

@@ -19,7 +19,7 @@ namespace ErrorCodes
 class CommandCopy final : public ICommand
 {
 public:
-    explicit CommandCopy() : ICommand()
+    explicit CommandCopy() : ICommand("CommandCopy")
     {
         command_name = "copy";
         description = "Recursively copy data from `path-from` to `path-to`";
@@ -47,7 +47,7 @@ public:
             if (!disk_to.getDisk()->existsDirectory(target_location))
             {
                 LOG_INFO(
-                    &Poco::Logger::get("CommandCopy"),
+                    log,
                     "Copying file from disk '{}', file path '{}' to disk '{}', file path '{}'",
                     disk_from.getDisk()->getName(),
                     path_from,
@@ -84,7 +84,7 @@ public:
                 disk_to.getDisk()->createDirectory(target_location);
             }
             LOG_INFO(
-                &Poco::Logger::get("CommandCopy"),
+                log,
                 "Copying directory content from disk '{}', directory path '{}' to disk '{}', directory path '{}'",
                 disk_from.getDisk()->getName(),
                 path_from,

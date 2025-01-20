@@ -40,8 +40,8 @@ public:
 
     std::vector<String> listAllFilesByPath(const String & any_path) const;
 
-    // If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
-    std::vector<String> getAllFilesByPattern(const String & pattern, bool ignore_exception) const;
+    /// If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
+    std::vector<String> getAllFilesByPrefix(const String & prefix, bool ignore_exception) const;
 
     DiskPtr getDisk() const { return disk; }
 
@@ -87,22 +87,23 @@ public:
     std::vector<String> getUninitializedDiskNames() const;
     std::vector<String> getAllDiskNames() const;
 
-    // If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
-    std::vector<String> getAllFilesByPatternFromInitializedDisks(const String & pattern, bool ignore_exception) const;
+    /// If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
+    std::vector<String> getAllFilesByPrefixFromInitializedDisks(const String & prefix, bool ignore_exception) const;
 
     void addDisk(String disk_name, std::optional<String> path);
 
-    bool isDiskInitialized(const String & disk_name) const { return created_disks.contains(disk_name); }
+    bool isDiskInitialized(const String & disk_name) const { return initialized_disks.contains(disk_name); }
 
 private:
     String current_disk;
     std::unordered_map<String, DiskWithPath> disks_with_paths;
-    DisksMap created_disks;
+    DisksMap initialized_disks;
 
     using PostponedDisksMap = std::map<String, std::pair<DiskCreator, std::optional<String>>>;
-    PostponedDisksMap postponed_disks;
+    PostponedDisksMap uninitialized_disks;
 
     const Poco::Util::AbstractConfiguration & config;
     ContextPtr context;
+    LoggerPtr log;
 };
 }

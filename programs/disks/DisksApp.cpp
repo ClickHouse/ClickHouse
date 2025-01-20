@@ -59,11 +59,11 @@ std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
     std::vector<String> answer{};
     if (multidisk_commands.contains(command_ptr->command_name))
     {
-        answer = client->getAllFilesByPatternFromInitializedDisks("", true);
+        answer = client->getAllFilesByPrefixFromInitializedDisks("", true);
     }
     else
     {
-        answer = client->getCurrentDiskWithPath().getAllFilesByPattern("", true);
+        answer = client->getCurrentDiskWithPath().getAllFilesByPrefix("", true);
     }
     for (const auto & disk_name : client->getAllDiskNames())
     {
@@ -158,9 +158,9 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     answer = [&]() -> std::vector<String>
     {
         if (multidisk_commands.contains(command->command_name))
-            return client->getAllFilesByPatternFromInitializedDisks(last_token, true);
+            return client->getAllFilesByPrefixFromInitializedDisks(last_token, true);
 
-        return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token, true);
+        return client->getCurrentDiskWithPath().getAllFilesByPrefix(last_token, true);
     }();
 
 
@@ -486,7 +486,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
         Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
-        Poco::Logger::root().setChannel(log);
+        logger().setChannel(log);
     }
     else
     {

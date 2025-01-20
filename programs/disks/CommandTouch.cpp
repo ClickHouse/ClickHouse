@@ -11,7 +11,7 @@ namespace DB
 class CommandTouch final : public ICommand
 {
 public:
-    explicit CommandTouch() : ICommand()
+    explicit CommandTouch() : ICommand("CommandTouch")
     {
         command_name = "touch";
         description = "Create a file by path";
@@ -24,18 +24,20 @@ public:
         const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsThrow<String>(options, "path");
 
-        if (!disk.getDisk()->existsFileOrDirectory(disk.getRelativeFromRoot(path)))
+        const auto & disk_impl = disk.getDisk();
+        const auto & relative_path = disk.getRelativeFromRoot(path);
+        if (disk_impl->existsFile(relative_path))
         {
-            LOG_INFO(&Poco::Logger::get("CommandTouch"), "Creating file at path: {}", disk.getRelativeFromRoot(path));
-            disk.getDisk()->createFile(disk.getRelativeFromRoot(path));
+            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "File already exists at path: {}", relative_path);
         }
-        else if (disk.getDisk()->existsFile(disk.getRelativeFromRoot(path)))
+        else if (disk_impl->existsDirectory(relative_path))
         {
-            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "File already exists at path: {}", disk.getRelativeFromRoot(path));
+            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "Directory already exists at path: {}", relative_path);
         }
-        else if (disk.getDisk()->existsDirectory(disk.getRelativeFromRoot(path)))
+        else
         {
-            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "Directory already exists at path: {}", disk.getRelativeFromRoot(path));
+            LOG_INFO(&Poco::Logger::get("CommandTouch"), "Creating file at path: {}", relative_path);
+            disk_impl->createFile(relative_path);
         }
     }
 };

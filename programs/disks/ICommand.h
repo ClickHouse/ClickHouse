@@ -37,7 +37,7 @@ namespace ErrorCodes
 class ICommand
 {
 public:
-    explicit ICommand() = default;
+    explicit ICommand(String logger_name) : log(getLogger(logger_name)) { }
 
     virtual ~ICommand() = default;
 
@@ -114,6 +114,7 @@ public:
 
 protected:
     PositionalProgramOptionsDescription positional_options_description;
+    LoggerPtr log;
 };
 
 DB::CommandPtr makeCommandCopy();

@@ -10,7 +10,7 @@ namespace DB
 class CommandListDisks final : public ICommand
 {
 public:
-    explicit CommandListDisks() : ICommand()
+    explicit CommandListDisks() : ICommand("CommandListDisks")
     {
         command_name = "list-disks";
         description = "Lists all available disks";
@@ -19,35 +19,23 @@ public:
     void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
         const std::vector<String> initialized_disks = client.getInitializedDiskNames();
-        std::vector<String> sorted_and_selected_disk_state;
-        sorted_and_selected_disk_state.reserve(initialized_disks.size());
-        std::vector<String> uninitialized_disks = client.getUninitializedDiskNames();
+        std::set<String> sorted_and_selected_disk_state;
 
 
         for (const auto & disk_name : initialized_disks)
         {
-            sorted_and_selected_disk_state.push_back(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
+            sorted_and_selected_disk_state.insert(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
         }
-        std::sort(sorted_and_selected_disk_state.begin(), sorted_and_selected_disk_state.end());
         if (!sorted_and_selected_disk_state.empty())
         {
-            std::cout << "Initialized disks:\n";
-            for (const auto & disk_state : sorted_and_selected_disk_state)
-            {
-                std::cout << disk_state << "\n";
-            }
-            std::cout << "\n";
+            std::cout << "Initialized disks:\n" << fmt::format("{}", fmt::join(sorted_and_selected_disk_state, "\n")) << "\n";
         }
 
+        std::vector<String> uninitialized_disks = client.getUninitializedDiskNames();
         if (!uninitialized_disks.empty())
         {
-            std::cout << "Uninitialized disks:\n";
-            std::sort(uninitialized_disks.begin(), uninitialized_disks.end());
-            for (const auto & disk_name : uninitialized_disks)
-            {
-                std::cout << disk_name << "\n";
-            }
-            std::cout << "\n";
+            std::set<String> sorted_uninitialized_disks(uninitialized_disks.begin(), uninitialized_disks.end());
+            std::cout << "Uninitialized disks:\n" << fmt::format("{}", fmt::join(sorted_uninitialized_disks, "\n")) << "\n";
         }
     }
 

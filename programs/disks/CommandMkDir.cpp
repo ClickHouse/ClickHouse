@@ -10,7 +10,7 @@ namespace DB
 class CommandMkDir final : public ICommand
 {
 public:
-    CommandMkDir()
+    CommandMkDir() : ICommand("CommandMkDir")
     {
         command_name = "mkdir";
         description = "Creates a directory";
@@ -28,13 +28,12 @@ public:
 
         if (recursive)
         {
-            LOG_INFO(
-                &Poco::Logger::get("CommandMkDir"), "Creating directory '{}' on disk '{}' recursively", path, disk.getDisk()->getName());
+            LOG_INFO(log, "Creating directory '{}' on disk '{}' recursively", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectories(path);
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("CommandMkDir"), "Creating directory '{}' on disk '{}'", path, disk.getDisk()->getName());
+            LOG_INFO(log, "Creating directory '{}' on disk '{}'", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectory(path);
         }
     }

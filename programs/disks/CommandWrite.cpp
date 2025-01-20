@@ -14,7 +14,7 @@ namespace DB
 class CommandWrite final : public ICommand
 {
 public:
-    CommandWrite()
+    CommandWrite() : ICommand("CommandWrite")
     {
         command_name = "write";
         description = "Write a file from `path-from` to `path-to`";
@@ -45,7 +45,7 @@ public:
             return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
-        LOG_INFO(&Poco::Logger::get("CommandWrite"), "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
+        LOG_INFO(log, "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
         auto out = disk.getDisk()->writeFile(path_to);
         copyData(*in, *out);
         out->finalize();
