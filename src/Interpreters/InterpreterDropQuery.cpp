@@ -245,13 +245,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
                 if (query.permanently)
                 {
-                    /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
-                    /// In case if this method throws an exception - the storage will remain in a fully working state.
-                    database->detachTablePermanently(context_, table_id.table_name);
-
-                    /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
+                    /// Server may fail to restart if we DETACH PERMANENTLY (sorry for the word order)
+                    /// a table with dependencies so we need to check them first.
                     bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                     bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+
+                    /// Check that table can be DETACHed. Note: method throws in case if the operation is not allowed.
+                    DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+
+                    /// Table will be dropped from the memory, the data remain untouched,
+                    /// metadata file.sql on disk renamed and be skipped during server restart
+                    /// In case if this method throws an exception - the storage will remain in a fully working state and all the dependencies will be in place.
+                    database->detachTablePermanently(context_, table_id.table_name);
+
+                    /// Now we can safely remove dependencies from the dependency graph.
                     DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 }
                 else
