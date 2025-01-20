@@ -906,7 +906,7 @@ Compile some scalar functions and operators to native code. Due to a bug in the 
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
 )", 0) \
-    DECLARE(Bool, compile_aggregate_expressions, true, R"(
+    DECLARE(Bool, compile_aggregate_expressions, false, R"(
 Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
 
 Possible values:
