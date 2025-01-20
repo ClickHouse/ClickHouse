@@ -845,7 +845,7 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
         cursor.execute(f"INSERT INTO {table} SELECT 1")
 
     # Try to do some SQL injection to remove the original table
-    table = "test_parameters_validation_for_postgresql_function"
+    table = "test_parameters_validation_for_postgresql_function_exception"
     _create_and_fill_table(table)
     error = node1.query_and_get_error(
         f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', 'mysecretpassword')"
@@ -859,7 +859,7 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     cursor.execute(f"DROP TABLE {table}")
 
     # Check that we can actually work with table names containing single quote
-    table = f"test_parameters_validation_for_postgresql_function_{uuid.uuid4().hex[:8]}"
+    table = "test_parameters_validation_for_postgresql_function_success"
     _create_and_fill_table(f'"{table}\'"')
     result = node1.query(
         f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', 'mysecretpassword')"
