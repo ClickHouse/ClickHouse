@@ -229,6 +229,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         if (has_to)
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
+            ExprSchemaTable * to_est = cmvt->mutable_est();
             const SQLTable & t = has_with_cols
                 ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(
                                                 [&next](const SQLTable & tt)
@@ -240,7 +241,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                       .get()
                 : rg.pickValueRandomlyFromMap(this->tables);
 
-            cmvt->mutable_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
+            if (t.db)
+            {
+                to_est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+            }
+            to_est->mutable_table()->set_table("t" + std::to_string(t.tname));
             if (has_with_cols && rg.nextBool())
             {
                 ColumnPathList * clist = cmvt->mutable_col_list();
