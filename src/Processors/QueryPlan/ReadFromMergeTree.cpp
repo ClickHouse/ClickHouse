@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -1813,6 +1814,29 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.total_marks_pk = total_marks_pk;
     result.selected_rows = sum_rows;
     result.has_exact_ranges = result.selected_parts == 0 || find_exact_ranges;
+
+    ConditionSelectivityEstimator estimator;
+
+    for (const auto & part : result.parts_with_ranges)
+    {
+        try
+        {
+            auto stats = part.data_part->loadStatistics();
+            estimator.incrementRowCount(part.getRowsCount());
+            for (const auto & stat : stats)
+                estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("ALEXLOG while loading statistics on part {}", part.data_part->info.getPartNameV1()));
+        }
+    }
+
+    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info_.query->clone(), query_info_.syntax_analyzer_result, context_);
+    RPNBuilderTreeContext tree_context(context_, std::move(block_with_constants), {});
+    RPNBuilderTreeNode node(query_info_.query->as<ASTSelectQuery &>().where().get(), tree_context);
+    const auto & unqualified_column_names = query_info_.buildNodeNameToInputNodeColumn();
+    result.selected_rows_after_size_hint = static_cast<UInt64>(std::ceil(estimator.estimateRowCount(node, unqualified_column_names)));
 
     if (query_info_.input_order_info)
         result.read_type = (query_info_.input_order_info->direction > 0)
