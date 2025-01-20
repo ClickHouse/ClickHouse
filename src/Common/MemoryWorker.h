@@ -4,10 +4,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
 
-namespace std::filesystem
-{
-class path;
-}
+#include <filesystem>
 
 namespace DB
 {
