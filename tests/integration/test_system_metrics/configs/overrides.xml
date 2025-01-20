@@ -1,4 +1,6 @@
 <clickhouse>
+    <async_load_databases>false</async_load_databases>
+
     <remote_servers>
         <test_cluster>
             <shard>
