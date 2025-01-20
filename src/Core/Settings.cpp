@@ -3184,7 +3184,9 @@ Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hou
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
-    \
+    DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
+Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
+)", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limit maximum number of partitions in the single INSERTed block. Zero means unlimited. Throw an exception if the block contains too many partitions. This setting is a safety threshold because using a large number of partitions is a common misconception.
 )", 0) \

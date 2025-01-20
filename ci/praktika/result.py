@@ -471,7 +471,7 @@ class _ResultS3:
         )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
         if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path)
+            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
             s3_path=s3_path_versioned,
             local_path=result.file_name(),
