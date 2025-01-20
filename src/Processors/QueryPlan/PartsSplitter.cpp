@@ -969,7 +969,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
             /// order while others are in descending order.
             if (in_reverse_order != primary_key.reverse_flags[i])
             {
-                result.merging_pipes.emplace_back(in_order_reading_step_getter(intersecting_parts_ranges));
+                result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
                 return result;
             }
         }

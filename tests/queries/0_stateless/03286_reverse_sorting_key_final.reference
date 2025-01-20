@@ -3,20 +3,11 @@
 (Expression)
 ExpressionTransform × 2
   (ReadFromMergeTree)
-  ExpressionTransform × 2
-    ReplacingSorted
-      FilterSortedStreamByRange
-      Description: filter values in [-inf, (4, 4))
-        ExpressionTransform
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
-            ReplacingSorted 2 → 1
-              FilterSortedStreamByRange × 2
-              Description: filter values in [(4, 4), +inf)
-                ExpressionTransform × 2
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
 (Expression)
 ExpressionTransform
   (ReadFromMergeTree)
   ExpressionTransform
     ReplacingSorted 2 → 1
-      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+      ExpressionTransform × 2
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
