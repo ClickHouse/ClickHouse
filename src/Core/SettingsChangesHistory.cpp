@@ -173,6 +173,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
+            {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
             {"allow_experimental_shared_set_join", 0, 0, "A setting for ClickHouse Cloud"},
@@ -199,6 +200,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
+            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
+            {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
+            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
+            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
+            {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
+            {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
+            {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "24.9",
         {
@@ -628,6 +636,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
+            {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", false, false, "New setting to fetch parts data from other replicas"},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
             {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
             {"add_minmax_index_for_string_columns", false, false, "New setting"},

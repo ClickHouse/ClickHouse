@@ -4,7 +4,6 @@
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>

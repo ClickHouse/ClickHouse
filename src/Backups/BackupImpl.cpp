@@ -9,7 +9,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
-#include <Interpreters/Context.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
