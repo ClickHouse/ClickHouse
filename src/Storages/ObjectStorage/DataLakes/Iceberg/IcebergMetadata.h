@@ -14,6 +14,7 @@
 #include <Poco/JSON/Parser.h>
 
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
@@ -43,7 +44,7 @@ public:
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
     /// without changing metadata file). Drops on every snapshot update.
-    Strings getDataFiles() const override;
+    Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
@@ -86,6 +87,11 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
+
+    Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
+
+    bool supportsPartitionPruning() override { return true; }
+
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
 
@@ -103,7 +109,7 @@ private:
     Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
-    mutable std::optional<Strings> cached_files_for_current_snapshot;
+    mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 
@@ -118,6 +124,8 @@ private:
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
     Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
+
+    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     //Fields are needed only for providing dynamic polymorphism
     std::unordered_map<String, String> column_name_to_physical_name;

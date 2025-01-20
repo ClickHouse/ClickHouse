@@ -2,15 +2,20 @@
 title : JSONStringsEachRow
 slug : /en/interfaces/formats/JSONStringsEachRow
 keywords : [JSONStringsEachRow]
+input_format: false
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
 ## Description
 
-Differs from JSONEachRow only in that data fields are output in strings, not in typed JSON values.
+Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
 
 ## Example Usage
-
-Example:
 
 ```json
 {"num":"42","str":"hello","arr":"[0,1]"}

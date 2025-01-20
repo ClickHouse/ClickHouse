@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
@@ -98,6 +99,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -110,7 +112,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
             {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
-            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
@@ -137,7 +138,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
             {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
-            {"allow_experimental_shared_set_join", 1, 0, "Disable a setting for ClickHouse Cloud"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
             {"allow_experimental_bfloat16_type", false, false, "Add new experimental BFloat16 type"},
