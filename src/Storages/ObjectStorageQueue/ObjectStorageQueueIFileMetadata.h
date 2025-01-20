@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// A base class to work with single file metadata in keeper.
@@ -85,12 +86,23 @@ public:
         Coordination::Requests & requests,
         const std::string & exception_message,
         bool reduce_retry_count);
+
+    struct SetProcessingResponseIndexes
+    {
+        size_t processed_path_doesnt_exist_idx = 0;
+        size_t failed_path_doesnt_exist_idx = 0;
+        size_t create_processing_node_idx = 0;
+        size_t set_processing_id_node_idx = 0;
+    };
+    SetProcessingResponseIndexes prepareSetProcessingRequests(Coordination::Requests & requests);
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
+    /// Do some work after prepared requests to set file as Processing succeeded.
+    void finalizeProcessing(int processing_id_version_);
 
     /// Set a starting point for processing.
     /// Done on table creation, when we want to tell the table
@@ -116,6 +128,11 @@ public:
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
+
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl() is not implemented");
+    }
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;

@@ -155,7 +155,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
             if output:
-                info = f"workflows are outdated: [{output}]"
+                info = f"workflows are outdated"
                 status = Result.Status.FAILED
                 print("ERROR: ", info)
             elif exit_code == 0 and not err:

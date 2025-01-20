@@ -19,7 +19,6 @@ body:
       description: |
         * A clear and concise description of what works not as it is supposed to.
         * A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
-      render: markdown
     validations:
       required: true
   - type: dropdown
@@ -35,6 +34,7 @@ body:
   - type: markdown
     attributes:
       value: |
+        -----
         > Change "enabled" to true in "send_crash_reports" section in `config.xml`:
         ```xml
         <send_crash_reports>
@@ -43,6 +43,7 @@ body:
                 <enabled>false</enabled>
         </send_crash_reports>
         ```
+        -----
   - type: textarea
     attributes:
       label: How to reproduce
@@ -53,7 +54,6 @@ body:
         * `CREATE TABLE` statements for all tables involved
         * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/master/programs/obfuscator/Obfuscator.cpp#L42-L80) if necessary
         * Queries to run that lead to unexpected result
-      render: markdown
     validations:
       required: true
   - type: textarea
@@ -61,13 +61,13 @@ body:
       label: Expected behavior
       description: A clear and concise description of what you expected to happen.
     validations:
-      required: true
+      required: false
   - type: textarea
     attributes:
       label: Error message and/or stacktrace
       description: If applicable, add screenshots to help explain your problem.
     validations:
-      required: true
+      required: false
   - type: textarea
     attributes:
       label: Additional context

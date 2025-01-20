@@ -18,6 +18,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
+#include <shared_mutex>
 
 
 namespace ProfileEvents
@@ -133,7 +134,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
-    , buckets_num(getBucketsNum(table_metadata_))
+    , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
@@ -152,6 +153,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
               table_metadata.mode, table_metadata.buckets, table_metadata.processing_threads_num, buckets_num);
 
+    update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -164,11 +166,8 @@ void ObjectStorageQueueMetadata::shutdown()
     shutdown_called = true;
     if (task)
         task->deactivate();
-}
-
-ObjectStorageQueueMetadata::FileStatusPtr ObjectStorageQueueMetadata::getFileStatus(const std::string & path)
-{
-    return local_file_statuses->get(path, /* create */false);
+    if (update_registry_thread && update_registry_thread->joinable())
+        update_registry_thread->join();
 }
 
 ObjectStorageQueueMetadata::FileStatuses ObjectStorageQueueMetadata::getFileStatuses() const
@@ -200,13 +199,6 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 log);
     }
-}
-
-size_t ObjectStorageQueueMetadata::getBucketsNum(const ObjectStorageQueueTableMetadata & metadata)
-{
-    if (metadata.buckets)
-        return metadata.buckets;
-    return metadata.processing_threads_num;
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -384,7 +376,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     size_t buckets_num = 0;
     if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::ORDERED)
     {
-        buckets_num = getBucketsNum(table_metadata);
+        buckets_num = table_metadata.getBucketsNum();
         if (buckets_num == 0)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -506,6 +498,14 @@ namespace
             return self;
         }
 
+        UInt128 hash() const
+        {
+            SipHash hash;
+            hash.update(hostname);
+            hash.update(table_id);
+            return hash.get128();
+        }
+
         std::string serialize() const
         {
             WriteBufferFromOwnString buf;
@@ -529,7 +529,34 @@ namespace
     };
 }
 
-void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id)
+void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, bool active)
+{
+    if (active)
+        registerActive(storage_id);
+    else
+        registerNonActive(storage_id);
+}
+
+void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
+{
+    const auto id = getProcessorID(storage_id);
+    const auto table_path = zookeeper_path / "registry" / id;
+    const auto self = Info::create(storage_id);
+
+    auto zk_client = getZooKeeper();
+    auto code = zk_client->tryCreate(
+        table_path,
+        self.serialize(),
+        zkutil::CreateMode::Ephemeral);
+
+    if (code != Coordination::Error::ZOK
+        && code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException(code);
+
+    LOG_TRACE(log, "Added {} to active registry ({})", self.table_id, id);
+}
+
+void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
@@ -563,7 +590,10 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id)
             code = zk_client->trySet(registry_path, new_registry_str, stat.version);
         }
         else
-            code = zk_client->tryCreate(registry_path, self.serialize(), zkutil::CreateMode::Persistent);
+            code = zk_client->tryCreate(
+                registry_path,
+                self.serialize(),
+                zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)
         {
@@ -580,7 +610,51 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot register in keeper. Last error: {}", code);
 }
 
-size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id)
+Strings ObjectStorageQueueMetadata::getRegistered(bool active)
+{
+    const auto registry_path = zookeeper_path / "registry";
+    auto zk_client = getZooKeeper();
+    Strings registered;
+    if (active)
+    {
+        auto code = zk_client->tryGetChildren(registry_path, registered);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(code);
+    }
+    else
+    {
+        std::string registry_str;
+        if (zk_client->tryGet(registry_path, registry_str))
+            splitInto<','>(registered, registry_str);
+    }
+    return registered;
+}
+
+size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active)
+{
+    if (active)
+        return unregisterActive(storage_id);
+    else
+        return unregisterNonActive(storage_id);
+}
+
+size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
+{
+    const auto zk_client = getZooKeeper();
+    const auto registry_path = zookeeper_path / "registry";
+    const auto table_path = registry_path / getProcessorID(storage_id);
+
+    zk_client->tryRemove(table_path);
+    const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
+
+    LOG_TRACE(
+        log, "Removed {} from active registry (remaining: {})",
+        storage_id.getFullTableName(), remaining_nodes_num);
+
+    return remaining_nodes_num;
+}
+
+size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
@@ -641,6 +715,141 @@ size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id)
         throw zkutil::KeeperException(code);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister in keeper. Last error: {}", code);
+}
+
+class ObjectStorageQueueMetadata::ServersHashRing
+{
+public:
+    ServersHashRing(size_t total_nodes_, LoggerPtr log_) : total_nodes(total_nodes_), log(log_) {}
+
+    void rebuild(const NameSet & servers)
+    {
+        virtual_nodes.clear();
+        if (servers.empty())
+            return;
+
+        size_t virtual_nodes_num = std::max<size_t>(1, total_nodes / servers.size());
+        for (const auto & server : servers)
+        {
+            for (size_t i = 0; i < virtual_nodes_num; ++i)
+                virtual_nodes.emplace(hash(server + DB::toString(i)), server);
+
+            LOG_TRACE(log, "Adding node {}, virtual_nodes: {}", server, virtual_nodes_num);
+        }
+        nodes_num = servers.size();
+    }
+
+    std::string chooseServer(const UInt128 & hash) const
+    {
+        if (virtual_nodes.empty())
+            return {};
+        auto it = virtual_nodes.lower_bound(hash);
+        if (it == virtual_nodes.end())
+            it = virtual_nodes.begin();
+        return it->second;
+    }
+
+    size_t size() const { return nodes_num; }
+
+    template<typename... Args>
+    static UInt128 hash(Args... args)
+    {
+        auto hash = SipHash();
+        (hash.update(args), ...);
+        return hash.get128();
+    }
+
+private:
+    const size_t total_nodes;
+    LoggerPtr log;
+    std::map<UInt128, std::string> virtual_nodes;
+    size_t nodes_num;
+};
+
+std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)
+{
+    return toString(Info::create(storage_id).hash());
+}
+
+void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const StorageID & storage_id) const
+{
+    std::shared_lock lock(active_servers_mutex);
+    if (active_servers.empty() || !active_servers_hash_ring)
+        return;
+
+    const auto self = getProcessorID(storage_id);
+    Strings result;
+    for (auto & path : paths)
+    {
+        const auto chosen = active_servers_hash_ring->chooseServer(ServersHashRing::hash(path));
+        if (chosen == self)
+            result.emplace_back(std::move(path));
+        else
+            LOG_TEST(log, "Will skip file {}: it should be processed by {} (self {})", path, chosen, self);
+    }
+    paths = std::move(result);
+}
+
+void ObjectStorageQueueMetadata::updateRegistryFunc()
+{
+    try
+    {
+        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
+        while (!shutdown_called.load())
+        {
+            try
+            {
+                updateRegistry(getRegistered(/* active */true));
+            }
+            catch (const Coordination::Exception & e)
+            {
+                if (Coordination::isHardwareError(e.code))
+                {
+                    LOG_INFO(
+                        log, "Lost ZooKeeper connection, will try to connect again: {}",
+                        DB::getCurrentExceptionMessage(true));
+
+                    sleepForSeconds(1);
+                }
+                else
+                {
+                    DB::tryLogCurrentException(log);
+                    chassert(false);
+                }
+                continue;
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(log);
+                chassert(false);
+            }
+
+            if (shutdown_called.load())
+                break;
+
+            wait_event->tryWait(1000);
+        }
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log);
+        chassert(false);
+    }
+}
+
+void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
+{
+    NameSet registered_set(registered_.begin(), registered_.end());
+    if (registered_set == active_servers)
+        return;
+
+    std::unique_lock lock(active_servers_mutex);
+    active_servers = registered_set;
+
+    if (!active_servers_hash_ring)
+        active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.
+
+    active_servers_hash_ring->rebuild(active_servers);
 }
 
 void ObjectStorageQueueMetadata::cleanupThreadFunc()
