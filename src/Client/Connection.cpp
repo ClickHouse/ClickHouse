@@ -476,11 +476,7 @@ void Connection::performHandshakeForSSHAuth()
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-        {
-            /// Close connection, to not stay in unsynchronised state.
-            disconnect();
             throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
-        }
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -579,8 +575,6 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         /// because after disconnect socket will be invalid.
         timeout_setter.reset();
 
-        /// Close connection, to not stay in unsynchronised state.
-        disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
     }
 }
@@ -752,11 +746,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-    {
-        /// Close connection, to avoid leaving it in an unsynchronised state.
-        disconnect();
         throwUnexpectedPacket(response_type, "TablesStatusResponse");
-    }
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -1479,8 +1469,11 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 }
 
 
-void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
+void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected)
 {
+    /// Close connection, to avoid leaving it in an unsynchronised state.
+    disconnect();
+
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
                        getDescription(), expected, String(Protocol::Server::toString(packet_type)));

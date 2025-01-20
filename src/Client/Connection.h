@@ -311,7 +311,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected);
 };
 
 template <typename Conn>
