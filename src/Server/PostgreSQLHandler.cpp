@@ -483,19 +483,29 @@ void PostgreSQLHandler::processQuery()
 
         if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_TO)
         {
-            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse());
             auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
-
-            std::string select_query = fmt::format("SELECT * FROM {} FORMAT CSV;", copy_query->table_name);
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
-            ReadBufferFromString read_buf(select_query);
-            ReadBufferFromString read_buf_test(select_query);
-            std::vector<char> res;
-            WriteBufferFromVectorImpl out_buf(res);
+
             {
+                auto columns_count = fmt::format("SELECT count() FROM system.columns WHERE table = {} FORMAT CSV;", copy_query->table_name);
+                std::vector<char> res;
+                WriteBufferFromVectorImpl out_buf(res);
+                ReadBufferFromString read_buf_test(columns_count);
+                executeQuery(read_buf_test, out_buf, false, query_context, {});
+                int num_columns = std::stoi(std::string(res.begin(), res.end()));
+                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));                
+            }
+
+            {
+                std::string select_query = fmt::format("SELECT * FROM {} FORMAT CSV;", copy_query->table_name);
+                ReadBufferFromString read_buf(select_query);
+                ReadBufferFromString read_buf_test(select_query);
+                std::vector<char> res;
+                WriteBufferFromVectorImpl out_buf(res);
+
                 executeQuery(read_buf_test, out_buf, false, query_context, {});
                 while (!res.empty() && res.back() == 0)
                     res.pop_back();
