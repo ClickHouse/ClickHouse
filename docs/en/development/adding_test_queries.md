@@ -1,7 +1,7 @@
 ---
 slug: /en/development/adding_test_queries
 sidebar_label: Adding Test Queries
-sidebar_position: 63
+sidebar_position: 45
 title: How to add test queries to ClickHouse CI
 description: Instructions on how to add a test case to ClickHouse continuous integration
 ---
