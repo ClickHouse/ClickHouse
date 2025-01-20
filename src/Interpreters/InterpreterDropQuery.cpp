@@ -238,26 +238,30 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             else
                 table->checkTableCanBeDetached();
 
+            {
+                TableExclusiveLockHolder table_lock;
+                if (database->getUUID() == UUIDHelpers::Nil)
+                    table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+                if (query.permanently)
+                {
+                    /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
+                    bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
+                    bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+                    DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                    /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
+                    database->detachTablePermanently(context_, table_id.table_name);
+                }
+                else
+                {
+                    /// Drop table from memory, don't touch data and metadata
+                    database->detachTable(context_, table_id.table_name);
+                }
+            }
+
+            /// After we detached the table from the database we can safely shut it down.
+            /// We don't need a lock for this, because this table it no longer visible from the outside.
             table->flushAndShutdown();
-            TableExclusiveLockHolder table_lock;
-
-            if (database->getUUID() == UUIDHelpers::Nil)
-                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-            if (query.permanently)
-            {
-                /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
-                bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-                /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
-                database->detachTablePermanently(context_, table_id.table_name);
-            }
-            else
-            {
-                /// Drop table from memory, don't touch data and metadata
-                database->detachTable(context_, table_id.table_name);
-            }
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {

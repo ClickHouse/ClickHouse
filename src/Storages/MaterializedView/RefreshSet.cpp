@@ -52,6 +52,7 @@ void RefreshSet::Handle::rename(StorageID new_id, std::optional<StorageID> new_i
 
 void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)
 {
+    chassert(parent_set, "Parent refresh set should exist");
     std::lock_guard lock(parent_set->mutex);
     RefreshTaskPtr task = *iter;
     parent_set->removeDependenciesLocked(task, dependencies);
