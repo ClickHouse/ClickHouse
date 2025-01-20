@@ -24,7 +24,8 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
             --header-background-color: #f4f4f4;
         }
 
@@ -54,6 +55,8 @@
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
+            overflow-y: auto;
+            margin-bottom: 40px;
         }
 
         #status-container a {
@@ -63,9 +66,16 @@
             cursor: pointer;
             display: inline-block;
             margin-top: 5px;
-            margin-left: 20px;
+            margin-left: 10px;
             padding: 2px 0;
-            font-size: 0.8em;
+            font-size: 0.7em;
+            font-family: 'Roboto Condensed', sans-serif;
+            font-stretch: ultra-condensed;
+
+            max-width: 270px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         #status-container a:hover {
@@ -110,6 +120,8 @@
             font-weight: normal;
             flex-grow: 1;
             margin-bottom: 40px;
+            overflow-x: auto;
+            white-space: nowrap;
         }
 
         #footer {
@@ -275,9 +287,10 @@
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
-    <div class="settings">
-        <span id="theme-toggle">☀️</span>
-    </div>
+<!--    TODO: fix night theme and enable-->
+<!--    <div class="settings">-->
+<!--        <span id="theme-toggle">☀️</span>-->
+<!--    </div>-->
 </footer>
 
 <script>
@@ -298,7 +311,8 @@
     }
 
     // Attach the toggle function to the click event of the icon
-    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    // TODO: fix night theme and enable
+    // document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -499,13 +513,19 @@
         let pathLinks = [];
         let currentObj = jsonObj;
 
-        // Add the first entry (root level)
-        baseParams.set(`name_0`, currentObj.name);
-        pathNames.push(currentObj.name);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
+        // Add the first entry (workflow level)
+        baseParams.set(`name_0`, nameArray[0]);
+        pathNames.push(nameArray[0]);
+        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[0]}</a>`);
+        // Add the second entry (job level)
+        if (nameArray.length > 1) {
+            baseParams.set(`name_1`, nameArray[1]);
+            pathNames.push(nameArray[1]);
+            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[1]}</a>`);
+        }
         // Iterate through the nameArray starting at index 0
         for (const [index, name] of nameArray.entries()) {
-            if (index === 0) continue;
+            if (index === 0 || index === 1) continue;
             if (currentObj && Array.isArray(currentObj.results)) {
                 const nextResult = currentObj.results.find(result => result.name === name);
                 if (nextResult) {
@@ -532,11 +552,11 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '🗂️',
-        status: '✅',
-        start_time: '🕒',
-        duration: '⏳',
-        info: '📝',
+        // name: '🗂️',
+        // status: '✅',
+        start_time: 'ts',
+        duration: 'dur',
+        // info: '📝',
         files: '📎'
     };
 
@@ -645,7 +665,15 @@
     function loadResultsJSON(PR, sha, nameParams) {
         const infoElement = document.getElementById('info-container');
         let lastModifiedTime = null;
-        const task = nameParams[0].toLowerCase();
+        // There are result json files of 2 levels:
+        //     0. top level - workflow result
+        //     1. job level - job result
+        //   if nameParams.length > 1 - it's a job result
+        const task = (nameParams.length > 1 ? nameParams[1] : nameParams[0])
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/_+$/, '');
 
         // Construct the URL dynamically based on PR, sha, and name_X
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
@@ -672,7 +700,13 @@
                     data.links.forEach(link => {
                         const a = document.createElement('a');
                         a.href = link;
-                        a.textContent = link.split('/').pop();
+                        if (link.includes('/pull/')) {
+                            a.textContent = 'PR';
+                        } else if (link.includes('/actions/runs/')) {
+                            a.textContent = 'Run';
+                        } else {
+                            a.textContent = link.split('/').pop();
+                        }
                         a.target = '_blank';
                         footerRight.appendChild(a);
                     });
@@ -688,7 +722,6 @@
                     if (nameParams.length > 1) {
                         addFileButtonToStatus('files', targetData.links)
                     }
-
 
                     // Handle duration update if duration is null and start_time exists
                     if (targetData.duration === null && targetData.start_time) {

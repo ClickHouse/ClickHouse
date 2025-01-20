@@ -33,7 +33,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerIfNot(storage_id);
+    it->second.metadata->registerIfNot(storage_id, false);
     it->second.ref_count += 1;
     return it->second.metadata;
 }
@@ -51,7 +51,7 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     size_t registry_size;
     try
     {
-        registry_size = it->second.metadata->unregister(storage_id);
+        registry_size = it->second.metadata->unregister(storage_id, false);
         LOG_TRACE(log, "Remaining registry size: {}", registry_size);
     }
     catch (const zkutil::KeeperException & e)

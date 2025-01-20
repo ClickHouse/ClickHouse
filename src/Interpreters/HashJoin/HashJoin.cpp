@@ -124,12 +124,15 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
 }
 
+static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
+
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
     const Block & right_sample_block_,
     bool any_take_last_row_,
     size_t reserve_num_,
-    const String & instance_id_)
+    const String & instance_id_,
+    bool use_two_level_maps)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -217,13 +220,13 @@ HashJoin::HashJoin(
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
             auto & asof_key_sizes = key_sizes.emplace_back();
-            data->type = chooseMethod(kind, key_columns, asof_key_sizes);
+            data->type = chooseMethod(kind, key_columns, asof_key_sizes, use_two_level_maps);
             asof_key_sizes.push_back(asof_size);
         }
         else
         {
             /// Choose data structure to use for JOIN.
-            auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back());
+            auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), use_two_level_maps);
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
@@ -235,8 +238,10 @@ HashJoin::HashJoin(
         dataMapInit(maps);
 }
 
-HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
+static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
+    using Type = HashJoin::Type;
+
     size_t keys_size = key_columns.size();
 
     if (keys_size == 0)
@@ -308,6 +313,35 @@ HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_c
     return Type::hashed;
 }
 
+static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps)
+{
+    using Type = HashJoin::Type;
+
+    if (!use_two_level_maps)
+        return chooseMethod(kind, key_columns, key_sizes);
+
+    // if `use_two_level_maps == true` returns two-level version of the map
+    switch (auto type = chooseMethod(kind, key_columns, key_sizes))
+    {
+        case Type::key32:
+            return Type::two_level_key32;
+        case Type::key64:
+            return Type::two_level_key64;
+        case Type::keys128:
+            return Type::two_level_keys128;
+        case Type::keys256:
+            return Type::two_level_keys256;
+        case Type::key_string:
+            return Type::two_level_key_string;
+        case Type::key_fixed_string:
+            return Type::two_level_key_fixed_string;
+        case Type::hashed:
+            return Type::two_level_hashed;
+        default:
+            return type;
+    }
+}
+
 template <typename KeyGetter, bool is_asof_join>
 static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
@@ -329,12 +363,7 @@ void HashJoin::dataMapInit(MapsVariant & map)
         return;
     auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
     joinDispatchInit(kind, strictness, map, prefer_use_maps_all);
-    joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.create(data->type); });
-
-    if (reserve_num)
-    {
-        joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
-    }
+    joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.create(data->type, reserve_num); });
 
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin::dataMapInit called with empty data");
@@ -671,7 +700,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                     prefer_use_maps_all,
                     [&](auto kind_, auto strictness_, auto & map)
                     {
-                        size_t size = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
+                        HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
                             *this,
                             data->type,
                             map,
@@ -687,9 +716,6 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                         if (flag_per_row)
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
                                 &stored_block->getSourceBlock());
-                        else if (is_inserted)
-                            /// Number of buckets + 1 value from zero storage
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(size + 1);
                     });
             }
 
@@ -1647,4 +1673,24 @@ void HashJoin::tryRerangeRightTableData()
     data->sorted = true;
 }
 
+void HashJoin::onBuildPhaseFinish()
+{
+    if (needUsedFlagsForPerRightTableRow(table_join))
+        return;
+
+    const bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    for (auto & map : data->maps)
+    {
+        joinDispatch(
+            kind,
+            strictness,
+            map,
+            prefer_use_maps_all,
+            [this](auto kind_, auto strictness_, auto & map_)
+            {
+                used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
+                    map_.getBufferSizeInCells(data->type) + 1);
+            });
+    }
+}
 }

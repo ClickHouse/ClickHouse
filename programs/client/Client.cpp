@@ -115,10 +115,10 @@ void Client::showWarnings()
         std::vector<String> messages = loadWarningMessages();
         if (!messages.empty())
         {
-            std::cout << "Warnings:" << std::endl;
+            output_stream << "Warnings:" << std::endl;
             for (const auto & message : messages)
-                std::cout << " * " << message << std::endl;
-            std::cout << std::endl;
+                output_stream << " * " << message << std::endl;
+            output_stream << std::endl;
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -334,8 +334,8 @@ try
     auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
-    std::cout << std::fixed << std::setprecision(3);
-    std::cerr << std::fixed << std::setprecision(3);
+    output_stream << std::fixed << std::setprecision(3);
+    error_stream << std::fixed << std::setprecision(3);
 
     registerFormats();
     registerFunctions();
@@ -451,11 +451,14 @@ void Client::connect()
     {
         try
         {
+            const auto host = ConnectionParameters::Host{hosts_and_ports[attempted_address_index].host};
+            const auto database = ConnectionParameters::Database{default_database};
+
             connection_parameters = ConnectionParameters(
-                config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
+                config(), host, database, hosts_and_ports[attempted_address_index].port);
 
             if (is_interactive)
-                std::cout << "Connecting to "
+                output_stream << "Connecting to "
                           << (!connection_parameters.default_database.empty()
                                   ? "database " + connection_parameters.default_database + " at "
                                   : "")
@@ -515,6 +518,10 @@ void Client::connect()
     load_suggestions
         = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
+    if (load_suggestions)
+    {
+        suggestion_limit = config().getInt("suggestion_limit");
+    }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
     if (server_display_name.empty())
@@ -522,7 +529,7 @@ void Client::connect()
 
     if (is_interactive)
     {
-        std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
+        output_stream << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
 #if not CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
@@ -530,13 +537,13 @@ void Client::connect()
 
         if (client_version_tuple < server_version_tuple)
         {
-            std::cout << "ClickHouse client version is older than ClickHouse server. "
+            output_stream << "ClickHouse client version is older than ClickHouse server. "
                       << "It may lack support for new features." << std::endl
                       << std::endl;
         }
         else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
         {
-            std::cout << "ClickHouse server version is older than ClickHouse client. "
+            output_stream << "ClickHouse server version is older than ClickHouse client. "
                       << "It may indicate that the server is out of date and can be upgraded." << std::endl
                       << std::endl;
         }
@@ -644,19 +651,22 @@ void Client::printChangedSettings() const
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void Client::printHelpMessage(const OptionsDescription & options_description)
 {
-    std::cout << options_description.main_description.value() << "\n";
-    std::cout << options_description.external_description.value() << "\n";
-    std::cout << options_description.hosts_and_ports_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-    std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    if (options_description.main_description.has_value())
+        output_stream << options_description.main_description.value() << "\n";
+    if (options_description.external_description.has_value())
+        output_stream << options_description.external_description.value() << "\n";
+    if (options_description.hosts_and_ports_description.has_value())
+        output_stream << options_description.hosts_and_ports_description.value() << "\n";
+
+    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
 
-void Client::addOptions(OptionsDescription & options_description)
+void Client::addExtraOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()("config,c", po::value<std::string>(), "config-file path (another shorthand)")(
@@ -896,13 +906,38 @@ void Client::processConfig()
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
-        auto query_id = config().getString("query_id", "");
+        query_id = config().getString("query_id", "");
         if (!query_id.empty())
             global_context->setCurrentQueryId(query_id);
     }
-    print_stack_trace = config().getBool("stacktrace", false);
+
+    if (is_interactive || delayed_interactive)
+    {
+        if (home_path.empty())
+        {
+            const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+            if (home_path_cstr)
+                home_path = home_path_cstr;
+        }
+
+        /// Load command history if present.
+        if (config().has("history_file"))
+            history_file = config().getString("history_file");
+        else
+        {
+            auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+            if (history_file_from_env)
+                history_file = history_file_from_env;
+            else if (!home_path.empty())
+                history_file = home_path + "/.clickhouse-client-history";
+        }
+    }
 
     pager = config().getString("pager", "");
+    enable_highlight = config().getBool("highlight", true);
+    multiline = config().has("multiline");
+    print_stack_trace = config().getBool("stacktrace", false);
+    default_database = config().getString("database", "");
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }

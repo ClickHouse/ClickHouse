@@ -459,7 +459,9 @@ class JobReport:
 
     @staticmethod
     def get_start_time_from_current():
-        return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
     @classmethod
     def create_dummy(cls, status: str, job_skipped: bool) -> "JobReport":
@@ -481,7 +483,7 @@ class JobReport:
             start_time = datetime.datetime.strptime(
                 self.start_time, "%Y-%m-%d %H:%M:%S"
             )
-            current_time = datetime.datetime.utcnow()
+            current_time = datetime.datetime.now(datetime.timezone.utc)
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):

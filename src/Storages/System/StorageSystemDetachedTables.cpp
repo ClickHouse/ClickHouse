@@ -93,7 +93,11 @@ protected:
             }
 
              if (rows_count == max_block_size)
+             {
+                if (!detached_tables_it->isValid())
+                    ++database_idx;
                 break;
+             }
         }
 
         if (databases->size() == database_idx)

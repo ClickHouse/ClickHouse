@@ -2,7 +2,7 @@ Expression ((Project names + Projection))
 Actions: INPUT :: 0 -> count() UInt64 : 0
 Positions: 0
   Aggregating
-  Keys: 
+  Keys:
   Aggregates:
       count()
         Function: count() → UInt64

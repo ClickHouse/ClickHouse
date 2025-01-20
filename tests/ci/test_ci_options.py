@@ -77,6 +77,7 @@ _TEST_JOB_LIST = [
     "Stateless tests (msan)",
     "Stateless tests (ubsan)",
     "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
+    "Stateless tests (release, ParallelReplicas, s3 storage)"
     "Stateless tests (debug, s3 storage)",
     "Stateless tests (tsan, s3 storage)",
     "Stateless tests flaky check (asan)",

@@ -99,12 +99,6 @@ DOCKERS = [
         depends_on=[],
     ),
     # Docker.Config(
-    #     name="clickhouse/test-base",
-    #     path="./ci/docker/test/base",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-util"],
-    # ),
-    # Docker.Config(
     #     name="clickhouse/keeper-jepsen-test",
     #     path="./ci/docker/test/keeper-jepsen",
     #     platforms=Docker.Platforms.arm_amd,
@@ -119,12 +113,6 @@ DOCKERS = [
     # Docker.Config(
     #     name="clickhouse/sqllogic-test",
     #     path="./ci/docker/test/sqllogic",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/sqltest",
-    #     path="./ci/docker/test/sqltest",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=["clickhouse/test-base"],
     # ),
@@ -168,6 +156,24 @@ DOCKERS = [
         name="clickhouse/docs-builder",
         path="./docker/docs/builder",
         platforms=[Docker.Platforms.ARM],
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/install-deb-test",
+        path="docker/test/install/deb",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/install-rpm-test",
+        path="docker/test/install/rpm",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/sqlancer-test",
+        path="./ci/docker/sqlancer-test",
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
 ]
@@ -214,23 +220,6 @@ DOCKERS = [
 #     "name": "clickhouse/kerberos-kdc",
 #     "dependent": []
 # },
-# "docker/test/integration/kerberized_hadoop": {
-#     "only_amd64": true,
-#     "name": "clickhouse/kerberized-hadoop",
-#     "dependent": []
-# },
-# "docker/test/sqlancer": {
-#     "name": "clickhouse/sqlancer-test",
-#     "dependent": []
-# },
-# "docker/test/install/deb": {
-#     "name": "clickhouse/install-deb-test",
-#     "dependent": []
-# },
-# "docker/test/install/rpm": {
-#     "name": "clickhouse/install-rpm-test",
-#     "dependent": []
-# },
 # "docker/test/integration/nginx_dav": {
 #     "name": "clickhouse/nginx-dav",
 #     "dependent": []
@@ -261,6 +250,10 @@ class JobNames:
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
     CLICKBENCH = "ClickBench"
+    DOCKER_SERVER = "Docker server"
+    SQL_TEST = "SQLTest"
+    SQLANCER = "SQLancer"
+    INSTALL_CHECK = "Install check"
 
 
 class ToolSet:
@@ -763,5 +756,79 @@ class Jobs:
         requires=[
             [ArtifactNames.CH_AMD_RELEASE],
             [ArtifactNames.CH_ARM_RELEASE],
+        ],
+    )
+    # docker_job = Job.Config(
+    #     name=JobNames.DOCKER_SERVER,
+    #     runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+    #     command="python3 ./ci/jobs/docker_server_job.py --from-binary",
+    #     digest_config=Job.CacheDigestConfig(
+    #         include_paths=[
+    #             "./ci/jobs/docker_server_from_binary.py",
+    #             "./ci/docker/clickhouse-server",
+    #         ],
+    #     ),
+    #     requires=[ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ARM_RELEASE],
+    # )
+    docker_job = Job.Config(
+        name=JobNames.DOCKER_SERVER,
+        # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
+        runs_on=[RunnerLabels.STYLE_CHECK_AMD],
+        command="python3 ./ci/jobs/docker_server_job.py --from-deb",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docker_server_job.py",
+                "./ci/docker/clickhouse-server",
+            ],
+        ),
+        requires=[ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.DEB_ARM_RELEASE],
+    )
+    # TODO: make it release only
+    sqltest_job = Job.Config(
+        name=JobNames.SQL_TEST,
+        # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="python3 ./ci/jobs/sqltest_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqltest_job.py",
+            ],
+        ),
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        run_in_docker="clickhouse/stateless-test",
+        timeout=10800,
+    )
+    sqlancer_job = Job.Config(
+        name=JobNames.SQLANCER,
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="./ci/jobs/sqlancer_job.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/sqlancer_job.sh"],
+        ),
+        run_in_docker="clickhouse/sqlancer-test",
+        requires=[ArtifactNames.CH_ARM_RELEASE],
+        timeout=3600,
+    )
+    # TODO: add tgz and rpm
+    install_check_job = Job.Config(
+        name=JobNames.INSTALL_CHECK,
+        runs_on=["..."],
+        command="python3 ./tests/ci/install_check.py dummy_check_name --no-rpm --no-tgz --no-download",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./tests/ci/install_check.py"],
+        ),
+        timeout=900,
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_RELEASE,
+            BuildTypes.ARM_RELEASE,
+        ],
+        runs_on=[
+            [RunnerLabels.STYLE_CHECK_AMD],
+            [RunnerLabels.STYLE_CHECK_ARM],
+        ],
+        requires=[
+            [ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.CH_AMD_RELEASE],
+            [ArtifactNames.DEB_ARM_RELEASE, ArtifactNames.CH_ARM_RELEASE],
         ],
     )
