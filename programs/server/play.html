@@ -57,6 +57,8 @@
             --background-color-rotate: 215;
             --background-color: oklch(96% 0.0296 var(--background-color-rotate));
             --element-background-color: #FFF;
+            --element-background-color-ok: #EFE;
+            --element-background-color-fail: #FEE;
             --bar-color: #FF8; /* Light bar in background of table cells. */
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
@@ -82,6 +84,8 @@
             --background-color-rotate: 250;
             --background-color: oklch(15% 0.0296 var(--background-color-rotate));
             --element-background-color: #000;
+            --element-background-color-ok: #020;
+            --element-background-color-fail: #300;
             --bar-color: #221800;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
@@ -204,6 +208,16 @@
             margin-left: -1px;
         }
 
+        input.ok
+        {
+            background-color: var(--element-background-color-ok);
+        }
+
+        input.fail
+        {
+            background-color: var(--element-background-color-fail);
+        }
+
         #run_div
         {
             margin-top: 1rem;
@@ -217,6 +231,7 @@
         #run
         {
             grid-area: run;
+            user-select: none;
             color: var(--button-text-color);
             background-color: var(--button-color);
             padding: 0.25rem 1rem;
@@ -474,6 +489,32 @@
             height: 70vh;
         }
 
+        #url_status
+        {
+            position: absolute;
+            display: inline-block;
+            font-size: 11pt;
+            padding: 0.25rem;
+            transform: translateX(-100%);
+            color: transparent;
+            user-select: none;
+        }
+
+        #url_status.ok
+        {
+            color: #0F0;
+        }
+
+        #url_status.fail
+        {
+            color: #F00;
+        }
+
+        #server_info
+        {
+            color: var(--misc-text-color);
+        }
+
         /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
         .u-wrap {position: relative;user-select: none;}
         .u-over, .u-under, .u-axis {position: absolute;}
@@ -504,7 +545,7 @@
 <body>
     <div id="controls">
         <div id="inputs">
-            <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+            <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
         </div>
         <div id="query_div"><textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
         <div id="run_div">
@@ -566,23 +607,27 @@ const opened_locally = location.protocol == 'file:';
 /// Run query instantly after page is loaded if the run parameter is present.
 const run_immediately = current_url.searchParams.has("run");
 
+let url_elem = document.getElementById('url');
+let user_elem = document.getElementById('user');
+let password_elem = document.getElementById('password');
+
 const server_address = current_url.searchParams.get('url');
 if (server_address) {
-    document.getElementById('url').value = server_address;
+    url_elem.value = server_address;
 } else if (!opened_locally) {
     /// Substitute the address of the server where the page is served.
-    document.getElementById('url').value = location.origin;
+    url_elem.value = location.origin;
 }
 
 /// Substitute username if it's specified in the query string
 const user_from_url = current_url.searchParams.get('user');
 if (user_from_url) {
-    document.getElementById('user').value = user_from_url;
+    user_elem.value = user_from_url;
 }
 
 const pass_from_url = current_url.searchParams.get('password');
 if (pass_from_url) {
-    document.getElementById('password').value = pass_from_url;
+    password_elem.value = pass_from_url;
     /// Browsers don't allow manipulating history for the 'file:' protocol.
     if (!opened_locally) {
         let replaced_pass = current_url.searchParams;
@@ -592,6 +637,79 @@ if (pass_from_url) {
             + replaced_pass.toString() + window.location.hash);
     }
 }
+
+async function ping(url) {
+    try {
+        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS' });
+        return response.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+let ping_request_num = 0;
+function checkURL() {
+    ++ping_request_num;
+    const current_ping_request_num = ping_request_num;
+    let elem = document.getElementById('url_status');
+    elem.className = '';
+    document.getElementById('server_info').innerText = '';
+    ping(url_elem.value).then(status => {
+        if (current_ping_request_num == ping_request_num) {
+            elem.className = status ? 'ok' : 'fail';
+            if (status) {
+                checkCredentials();
+            }
+        }
+    });
+};
+
+url_elem.addEventListener('input', checkURL);
+checkURL();
+
+async function getServerStatus(server_address, user, password) {
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1&default_format=JSONEachRow';
+    if (user) url += '&user=' + encodeURIComponent(user);
+    if (password) url += '&password=' + encodeURIComponent(password);
+    try {
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t" });
+        if (!response.ok) return false;
+        json = await response.json();
+        return json;
+    } catch (e) {
+        return false;
+    }
+}
+
+function formatUptime(t) {
+    if (t < 60) { return t + " sec" }
+    if (t < 3600) { return Number(t / 60).toFixed() + " min" }
+    if (t < 86400) { return Number(t / 3600).toFixed() + " hr" }
+    const days = Number(t / 86400).toFixed();
+    return days + " day" + (days > 1 ? 's' : '');
+}
+
+let check_credentials_request_num = 0;
+function checkCredentials() {
+    ++check_credentials_request_num;
+    const current_check_credentials_request_num = check_credentials_request_num;
+    getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
+        if (current_check_credentials_request_num == check_credentials_request_num) {
+            if (json) {
+                [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
+                document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
+            } else {
+                [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
+            }
+        }
+    });
+}
+
+user_elem.addEventListener('input', checkCredentials);
+password_elem.addEventListener('input', checkCredentials);
+
 
 function queryToColor(str) {
     let hash = 0;
@@ -607,21 +725,15 @@ function queryToColor(str) {
 let controller = null;
 async function postImpl(posted_request_num, query)
 {
-    const user = document.getElementById('user').value;
-    const password = document.getElementById('password').value;
-
-    const server_address = document.getElementById('url').value;
-
+    const user = user_elem.value;
+    const password = password_elem.value;
+    const server_address = url_elem.value;
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Ask server to allow cross-domain requests.
         'add_http_cors_header=1';
-    if (user) {
-        url += '&user=' + encodeURIComponent(user);
-    }
-    if (password) {
-        url += '&password=' + encodeURIComponent(password);
-    }
+    if (user) url += '&user=' + encodeURIComponent(user);
+    if (password) url += '&password=' + encodeURIComponent(password);
     url += '&default_format=JSONEachRowWithProgress' +
         '&enable_http_compression=1' +
         '&extremes=1';
