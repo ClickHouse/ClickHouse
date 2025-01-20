@@ -58,7 +58,7 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 The Pretty format supports outputting total values (when using `WITH TOTALS`) and extremes (when ‘extremes’ is set to 1). 
 In these cases, total values and extreme values are output after the main data, in separate tables. 
-This is show in the following example which uses the [`PrettyCompact`](./PrettyCompact.md) format:
+This is shown in the following example which uses the [`PrettyCompact`](./PrettyCompact.md) format:
 
 ```sql title="Query"
 SELECT EventDate, count() AS c 
