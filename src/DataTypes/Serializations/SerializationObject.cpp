@@ -356,15 +356,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             if (hasPrefix(path))
                 settings.prefixes_prefetch_callback(path);
         };
-
-        for (const auto & path : sorted_typed_paths)
-        {
-            settings.path.push_back(Substream::ObjectTypedPath);
-            settings.path.back().object_path_name = path;
-            typed_path_serializations.at(path)->enumerateStreams(enumerate_settings, enumerate_callback, SubstreamData(typed_path_serializations.at(path)));
-            settings.path.pop_back();
-        }
-
+        
         for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
         {
             enumerate_settings.path.push_back(Substream::ObjectDynamicPath);
