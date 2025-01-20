@@ -653,6 +653,7 @@ public:
     void setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants = true);
     void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
+    void switchImpersonateUser(const RolesOrUsersSet & new_user);
     std::vector<UUID> getCurrentRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
@@ -726,6 +727,7 @@ public:
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
     void setQueryKindReplicatedDatabaseInternal();
+    void setAuthUserName(const String & auth_user_name);
     void setCurrentUserName(const String & current_user_name);
     void setCurrentAddress(const Poco::Net::SocketAddress & current_address);
     void setInitialUserName(const String & initial_user_name);

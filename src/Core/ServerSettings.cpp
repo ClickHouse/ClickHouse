@@ -901,6 +901,9 @@ namespace DB
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
+    DECLARE(Bool, allow_impersonate_user, true, R"(
+    Enable/disable the IMPERSONATE feature (EXECUTE AS <user>).
+    )", 0) \
     DECLARE(Bool, send_settings_to_client, true, R"(
     Send user settings from server configuration to clients (in the server Hello message).
     )", 0) \
