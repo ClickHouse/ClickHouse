@@ -25,7 +25,7 @@ sudo apt-get install clang-19
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
-Let’s remember the path where we install `cctools` as ${CCTOOLS}
+Let’s remember the path where we install `cctools` as `${CCTOOLS}`
 
 ``` bash
 mkdir ~/cctools

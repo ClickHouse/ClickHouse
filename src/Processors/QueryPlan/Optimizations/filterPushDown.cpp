@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -408,14 +409,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (filter->getExpression().hasStatefulFunctions())
         return 0;
 
-    if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
+    const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());
+    const auto * aggregating = typeid_cast<AggregatingStep *>(child.get());
+
+    if (aggregating || merging_aggregated)
     {
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
-        if (aggregating->isGroupingSets())
+        bool is_grouping_sets = aggregating ? aggregating->isGroupingSets() : merging_aggregated->isGroupingSets();
+        if (is_grouping_sets)
         {
-            /// Cannot push down filter if type has been changed.
-            if (aggregating->isGroupByUseNulls())
+            /// Cannot push down filter if type has been changed. MergingAggregated does not change types.
+            if (aggregating && aggregating->isGroupByUseNulls())
                 return 0;
 
             const auto & actions = filter->getExpression();
@@ -423,11 +428,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
             auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
 
-            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
+            const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
+            if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
         }
 
-        const auto & params = aggregating->getParams();
+        const auto & params = aggregating ? aggregating->getParams() : merging_aggregated->getParams();
         const auto & keys = params.keys;
         /** The filter is applied either to aggregation keys or aggregation result
           * (columns under aggregation is not available in outer scope, so we can't have a filter for them).

@@ -50,7 +50,6 @@ Autocompletion
 AvroConfluent
 AzureQueue
 Azurite
-arrayNormalizedGini
 BFloat
 BIGINT
 BIGSERIAL
@@ -172,6 +171,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickPipes
 ClickVisual
 ClickableSquare
 CloudAvailableBadge
@@ -206,6 +206,9 @@ Crowdsourced
 Ctrl
 CurrentMetrics
 CustomSeparated
+CustomSeparatedIgnoreSpaces
+CustomSeparatedIgnoreSpacesWithNames
+CustomSeparatedIgnoreSpacesWithNamesAndTypes
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBAs
@@ -251,6 +254,7 @@ DeliveryTag
 DeltaLake
 Deltalake
 Denormalize
+DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
@@ -378,6 +382,7 @@ Heredoc
 HexAreaKm
 HexAreaM
 HexRing
+HiveText
 Holistics
 Homebrew
 Homebrew's
@@ -479,6 +484,7 @@ JSONExtractString
 JSONExtractUInt
 JSONHas
 JSONLength
+JSONLines
 JSONObjectEachRow
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
@@ -539,6 +545,8 @@ Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineAsStringWithNames
+LineAsStringWithNamesAndTypes
 LineString
 Linf
 LinfDistance
@@ -648,6 +656,7 @@ MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
 MySQLThreads
+MySQLWire
 NATS
 NCHAR
 NDJSON
@@ -691,6 +700,7 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+ODBCDriver
 OFNS
 OLAP
 OLTP
@@ -809,6 +819,7 @@ PostLink
 PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
+PostgreSQLWire
 Postgres
 PostgresSQL
 Precompiled
@@ -818,7 +829,9 @@ PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyJSONEachRow
+PrettyJSONLines
 PrettyMonoBlock
+PrettyNDJSON
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
 PrettySpace
@@ -827,6 +840,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
@@ -870,6 +884,8 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
+RawWithNames
+RawWithNamesAndTypes
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1025,7 +1041,10 @@ TMIN
 TPCH
 TSDB
 TSVRaw
+TSVRawWithNames
+TSVRawWithNamesAndTypes
 TSVWithNames
+TSVWithNamesAndTypes
 TSVs
 TSan
 TThe
@@ -1271,6 +1290,7 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
+arrayNormalizedGini
 arrayPartialReverseSort
 arrayPartialShuffle
 arrayPartialSort
@@ -1334,6 +1354,7 @@ azureBlobStorage
 azureBlobStorageCluster
 backend
 backoff
+backtick
 backticks
 backupview
 balancer
@@ -2425,6 +2446,7 @@ pread
 preallocate
 prebuild
 prebuilt
+preconfigured
 preemptable
 preferServerCiphers
 prefetch
@@ -2474,6 +2496,7 @@ protocol
 proxied
 pseudorandom
 pseudorandomize
+pseudoterminal
 psql
 ptrs
 punycodeDecode
@@ -2658,6 +2681,7 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
+sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
@@ -2886,6 +2910,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBFloat
 toBool
 toColumnTypeName
 toDate
@@ -3099,6 +3124,7 @@ userspace
 userver
 utils
 uuid
+uuids
 uuidv
 vCPU
 varPop

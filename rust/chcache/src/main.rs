@@ -1,12 +1,17 @@
 use blake3::Hasher;
-use log::{info, trace, warn};
+use log::{trace, info, warn, error};
 use std::fs;
+use std::path::Path;
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(default)]
 struct Config {
     hostname: String,
     user: String,
     password: String,
+
+    source_table: String,
+    target_table: String,
 }
 
 impl Default for Config {
@@ -15,6 +20,9 @@ impl Default for Config {
             hostname: "https://build-cache.eu-west-1.aws.clickhouse-staging.com".to_string(),
             user: "reader".to_string(),
             password: "reader".to_string(),
+
+            source_table: "default.build_cache".to_string(),
+            target_table: "default.build_cache".to_string(),
         }
     }
 }
@@ -57,6 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hostname: std::env::var("CH_HOSTNAME").unwrap(),
                 user: std::env::var("CH_USER").unwrap(),
                 password: std::env::var("CH_PASSWORD").unwrap(),
+
+                ..Default::default()
             }
         }
         (false, false) => {
@@ -256,15 +266,18 @@ fn write_to_fscache(hash: &String, data: &Vec<u8>) {
 }
 
 async fn load_from_clickhouse(
+    config: &Config,
     client: &clickhouse::Client,
     hash: &String,
     compiler_version: &String,
 ) -> Result<Option<Vec<u8>>, clickhouse::error::Error> {
+    let query = format!("SELECT ?fields FROM {} WHERE hash = ? and compiler_version = ? LIMIT 1", &config.source_table);
+
     let mut cursor = client
-        .query("SELECT ?fields FROM default.build_cache WHERE hash = ? and compiler_version = ? LIMIT 1")
+        .query(&query)
         .bind(hash)
         .bind(compiler_version)
-        .fetch::<MyRow>()
+        .fetch::<CacheLine>()
         .unwrap();
 
     while let Some(row) = cursor.next().await? {
@@ -275,7 +288,7 @@ async fn load_from_clickhouse(
 }
 
 #[derive(Debug, clickhouse::Row, serde::Serialize, serde::Deserialize)]
-struct MyRow {
+struct CacheLine {
     #[serde(with = "serde_bytes")]
     blob: Vec<u8>,
     hash: String,
@@ -283,14 +296,15 @@ struct MyRow {
 }
 
 async fn load_to_clickhouse(
+    config: &Config,
     client: &clickhouse::Client,
     hash: &String,
     compiler_version: &String,
     data: &Vec<u8>,
 ) -> Result<(), clickhouse::error::Error> {
-    let mut insert = client.insert("default.build_cache").unwrap();
+    let mut insert = client.insert(&config.target_table).unwrap();
 
-    let row = MyRow {
+    let row = CacheLine {
         blob: data.clone(),
         hash: hash.clone(),
         compiler_version: compiler_version.clone(),
@@ -309,10 +323,27 @@ async fn compiler_cache_entrypoint(config: &Config) {
 
     trace!("Args: {:?}", rest_of_args);
 
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap()
+        .trim_end_matches('/')
+        .to_string();
+    trace!("Current working directory: {}", cwd);
+
     let assumed_base_path = assume_base_path(&rest_of_args);
     trace!("Assumed base path: {}", assumed_base_path);
 
+    let is_private = Path::new(&assumed_base_path).join("PRIVATE.md").exists();
+    trace!("Is private: {}", is_private);
+
     let stripped_args = rest_of_args
+        .iter()
+        .map(|x| x.replace(&cwd, "/"))
+        .collect::<Vec<String>>();
+
+    let stripped_args = stripped_args
         .iter()
         .map(|x| x.replace(&assumed_base_path, "/"))
         .collect::<Vec<String>>();
@@ -368,7 +399,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
             trace!("Cache miss");
 
             let compiled_bytes =
-                match load_from_clickhouse(&client, &total_hash, &compiler_version).await {
+                match load_from_clickhouse(config, &client, &total_hash, &compiler_version).await {
                     Ok(Some(bytes)) => {
                         did_load_from_cache = true;
                         info!("Loaded from ClickHouse");
@@ -397,15 +428,29 @@ async fn compiler_cache_entrypoint(config: &Config) {
     };
 
     write_to_fscache(&total_hash, &compiled_bytes);
-    if !did_load_from_cache && config.user != "reader" {
+
+    let should_upload = {
+        let default_config = Config::default();
+
+        !did_load_from_cache && config.user != default_config.user
+    };
+
+    if should_upload {
+        let mut tries = 3;
         loop {
             let upload_result =
-                load_to_clickhouse(&client, &total_hash, &compiler_version, &compiled_bytes).await;
+                load_to_clickhouse(config, &client, &total_hash, &compiler_version, &compiled_bytes).await;
             if upload_result.is_ok() {
                 info!("Uploaded to ClickHouse");
                 break;
             }
             warn!("Failed to upload to ClickHouse, retrying...");
+
+            tries -= 1;
+            if tries == 0 {
+                error!("Failed to upload to ClickHouse: {}", upload_result.err().unwrap());
+                break;
+            }
         }
     }
 }

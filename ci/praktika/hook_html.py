@@ -148,7 +148,7 @@ class HtmlRunnerHooks:
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [",
+            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         if not (res1 or res2):
             Utils.raise_with_error(

@@ -191,6 +191,7 @@ std_cerr_cout_excludes=(
     /tests/
     _fuzzer
     # OK
+    base/base/ask.cpp
     src/Common/ProgressIndication.cpp
     src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests

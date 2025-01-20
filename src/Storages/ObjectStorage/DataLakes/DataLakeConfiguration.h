@@ -40,7 +40,7 @@ public:
 
     bool isDataLakeConfiguration() const override { return true; }
 
-    std::string getEngineName() const override { return DataLakeMetadata::name; }
+    std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {

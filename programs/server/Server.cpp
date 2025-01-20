@@ -30,7 +30,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -131,6 +131,9 @@
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
+#    include <Server/SSH/SSHPtyHandlerFactory.h>
+#    include <Common/LibSSHInitializer.h>
+#    include <Common/LibSSHLogger.h>
 #endif
 
 #if USE_GRPC
@@ -217,6 +220,10 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString skipping_index_cache_policy;
+    extern const ServerSettingsUInt64 skipping_index_cache_size;
+    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
+    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -302,6 +309,7 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace ProfileEvents
@@ -872,6 +880,11 @@ try
 {
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
+#endif
+
+#if USE_SSL
+    ::ssh::LibSSHInitializer::instance();
+    ::ssh::libsshLogger::initialize();
 #endif
 
     Stopwatch startup_watch;
@@ -1639,6 +1652,17 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
+    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
+    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
+    size_t skipping_index_cache_max_entries = server_settings[ServerSetting::skipping_index_cache_max_entries];
+    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
+    if (skipping_index_cache_size > max_cache_size)
+    {
+        skipping_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
+    }
+    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_entries, skipping_index_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -1816,17 +1840,11 @@ try
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] > 0 && new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = new_server_settings[ServerSetting::concurrent_threads_soft_limit_num];
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] > 0)
-            {
-                auto value = new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] * getNumberOfCPUCoresToUse();
-                if (value > 0 && value < concurrent_threads_soft_limit)
-                    concurrent_threads_soft_limit = value;
-            }
-            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
+            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
@@ -1940,6 +1958,7 @@ try
             global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
+            global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
 
@@ -2508,6 +2527,8 @@ try
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
 
+            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
+
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
@@ -2612,7 +2633,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "mysql")
             return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
+#if USE_SSL
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+#else
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+#endif
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
@@ -2856,6 +2881,37 @@ void Server::createServers(
             });
         }
 
+        if (server_type.shouldStart(ServerType::Type::TCP_SSH))
+        {
+            port_name = "tcp_ssh_port";
+            createServer(
+                config,
+                listen_host,
+                port_name,
+                listen_try,
+                start_servers,
+                servers,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if 0 && USE_SSH && defined(OS_LINUX) /// SSH server is insecure until and it is disabled until all special cases are fixed.
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "SSH PTY: " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new SSHPtyHandlerFactory(*this, config),
+                            server_pool,
+                            socket,
+                            new Poco::Net::TCPServerParams));
+#else
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
+#endif
+                });
+        }
+
         if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
@@ -2886,7 +2942,11 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
+#if USE_SSL
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+#else
                     std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+#endif
             });
         }
 

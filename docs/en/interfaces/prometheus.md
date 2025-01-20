@@ -51,7 +51,7 @@ Settings:
 |---|---|---|---|
 | `port` | none | Port for serving the exposing metrics protocol. |
 | `endpoint` | `/metrics` | HTTP endpoint for scraping metrics by prometheus server. Starts with `/`. Should not be used with the `<handlers>` section. |
-| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [<http_handlers>](/en/interfaces/http) section. |
+| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/en/interfaces/http) section. |
 | `metrics` | true | Expose metrics from the [system.metrics](/en/operations/system-tables/metrics) table. |
 | `asynchronous_metrics` | true | Expose current metrics values from the [system.asynchronous_metrics](/en/operations/system-tables/asynchronous_metrics) table. |
 | `events` | true | Expose metrics from the [system.events](/en/operations/system-tables/events) table. |
@@ -89,7 +89,7 @@ Settings:
 | Name | Default | Description |
 |---|---|---|---|
 | `port` | none | Port for serving the `remote-write` protocol. |
-| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [<http_handlers>](/en/interfaces/http) section. |
+| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/en/interfaces/http) section. |
 | `table` | none | The name of a [TimeSeries](/en/engines/table-engines/special/time_series) table to write data received by the `remote-write` protocol. This name can optionally contain the name of a database too. |
 | `database` | none | The name of a database where the table specified in the `table` setting is located if it's not specified in the `table` setting. |
 
@@ -119,7 +119,7 @@ Settings:
 | Name | Default | Description |
 |---|---|---|---|
 | `port` | none | Port for serving the `remote-read` protocol. |
-| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [<http_handlers>](/en/interfaces/http) section. |
+| `url` / `headers` / `method` | none | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/en/interfaces/http) section. |
 | `table` | none | The name of a [TimeSeries](/en/engines/table-engines/special/time_series) table to read data to send by the `remote-read` protocol. This name can optionally contain the name of a database too. |
 | `database` | none | The name of a database where the table specified in the `table` setting is located if it's not specified in the `table` setting. |
 

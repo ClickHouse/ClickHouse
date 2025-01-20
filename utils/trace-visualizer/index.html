@@ -173,7 +173,7 @@
                 t1: convertTime(+span.start_time_us),
                 t2: convertTime(+span.finish_time_us),
                 band,
-                color: d3.interpolateRainbow((strHash(span.color) % 256) / 256),
+                color: d3.interpolateRainbow((strHash(span.color) % 1024) / 1024),
                 text: span.operation_name
             });
         }

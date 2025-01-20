@@ -43,6 +43,7 @@ Keep an eye out for upcoming meetups and events around the world. Somewhere else
 
 Upcoming meetups
 * [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/305126993/) - Jan 23
+* [Zagreb Meetup](https://www.meetup.com/clickhouse-croatia-user-group/events/305455877/) - Jan 30
 * [FOSDEM 2025](https://www.fosdem.org/2025/schedule/event/fosdem-2025-6351-how-we-built-a-new-powerful-json-data-type-for-clickhouse/) - Feb 1, 2
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/305146729/) - Feb 5
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 10

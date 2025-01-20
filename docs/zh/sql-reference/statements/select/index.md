@@ -158,4 +158,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 有关详细信息，请参阅部分 “Settings”. 可以使用外部排序（将临时表保存到磁盘）和外部聚合。
 
-{## [原始文章](https://clickhouse.com/docs/en/sql-reference/statements/select/) ##}
+[原始文章](/docs/en/sql-reference/statements/select/)
