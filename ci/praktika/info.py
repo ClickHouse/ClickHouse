@@ -14,6 +14,10 @@ class Info:
         return self.env.get().PR_BODY
 
     @property
+    def pr_title(self):
+        return self.env.get().PR_TITLE
+
+    @property
     def repo_name(self):
         return self.env.get().REPOSITORY
 
