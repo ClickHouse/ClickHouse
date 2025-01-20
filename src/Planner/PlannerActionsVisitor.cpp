@@ -148,7 +148,10 @@ public:
                 */
                 if (planner_context.isASTLevelOptimizationAllowed())
                 {
-                    result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                        result = calculateActionNodeName(constant_node.getSourceExpression());
+                    else
+                        result = calculateActionNodeNameWithCastIfNeeded(constant_node);
                 }
                 else
                 {
@@ -720,6 +723,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
          */
         if (planner_context->isASTLevelOptimizationAllowed())
         {
+            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
             return calculateActionNodeNameWithCastIfNeeded(constant_node);
         }
 
