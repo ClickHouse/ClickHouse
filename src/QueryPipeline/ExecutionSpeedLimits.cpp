@@ -1,6 +1,5 @@
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 
-#include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
@@ -9,6 +8,8 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
+    extern const Event OverflowBreak;
+    extern const Event OverflowThrow;
 }
 
 

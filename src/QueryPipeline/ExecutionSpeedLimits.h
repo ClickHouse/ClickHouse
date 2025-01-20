@@ -2,8 +2,8 @@
 
 #include <Poco/Timespan.h>
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentThread.h>
 #include <QueryPipeline/SizeLimits.h>
 
 class Stopwatch;
@@ -60,3 +60,4 @@ public:
 };
 
 }
+
