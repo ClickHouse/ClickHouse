@@ -38,6 +38,9 @@ class DockerImage:
     def __str__(self):
         return f"{self.name}:{self.version}"
 
+    def __repr__(self):
+        return f"DockerImage({self.name}:{self.version})"
+
 
 def pull_image(image: DockerImage) -> DockerImage:
     try:

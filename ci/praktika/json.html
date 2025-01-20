@@ -704,21 +704,38 @@
                 let targetData = navigatePath(data, nameParams);
                 let nest_level = nameParams.length;
 
-                // Add footer links from top-level  Result
-                if (Array.isArray(data.links) && data.links.length > 0) {
-                    data.links.forEach(link => {
-                        const a = document.createElement('a');
-                        a.href = link;
-                        if (link.includes('/pull/')) {
-                            a.textContent = 'PR';
-                        } else if (link.includes('/actions/runs/')) {
-                            a.textContent = 'Run';
-                        } else {
-                            a.textContent = link.split('/').pop();
-                        }
-                        a.target = '_blank';
-                        footerRight.appendChild(a);
-                    });
+                // helper func
+                function createLinkElement(href, textContent, footer) {
+                    const a = document.createElement('a');
+                    a.href = href;
+                    a.textContent = textContent;
+                    a.target = '_blank';
+                    footer.appendChild(a);
+                }
+
+                if (nameParams.length === 1) {
+                    // Add PR/Run links to the footer if not the top result.json
+                    if (Array.isArray(data.links) && data.links.length > 0) {
+                        data.links.forEach(link => {
+                            let textContent;
+                            if (link.includes('/pull/')) {
+                                textContent = 'PR';
+                                localStorage.setItem('pr_link', JSON.stringify(link));
+                            } else if (link.includes('/actions/runs/')) {
+                                textContent = 'Run';
+                                localStorage.setItem('run_link', JSON.stringify(link));
+                            } else {
+                                return; // Skip links that don't match the criteria
+                            }
+                            createLinkElement(link, textContent, footerRight);
+                        });
+                    }
+                } else {
+                    // Retrieve stored links and add them to the footer
+                    const prLink = JSON.parse(localStorage.getItem('pr_link'));
+                    const runLink = JSON.parse(localStorage.getItem('run_link'));
+                    if (prLink) createLinkElement(prLink, 'PR', footerRight);
+                    if (runLink) createLinkElement(runLink, 'Run', footerRight);
                 }
 
                 if (targetData) {

@@ -189,8 +189,15 @@ def main():
     if IS_NEW_CI:
         print("WARNING: yet another hack for praktika ci")
         for image in images:
-            if image.name in ("clickhouse/integration-test",):
+            if image.name in (
+                "clickhouse/integration-test",
+                "clickhouse/integration-tests-runner",
+                "clickhouse/integration-helper",
+                "clickhouse/python-bottle",
+                "clickhouse/nginx-dav",
+            ):
                 image.version = "latest"
+        print(images)
 
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)

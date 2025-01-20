@@ -456,6 +456,7 @@ class JobReport:
             files=(
                 [str(f) for f in self.additional_files] if self.additional_files else []
             ),
+            info=self.description,
         )
 
     @staticmethod

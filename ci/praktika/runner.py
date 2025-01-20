@@ -293,8 +293,8 @@ class Runner:
 
         result.update_duration().dump()
 
-        if result.is_error():
-            result.set_files([Settings.RUN_LOG])
+        # if result.is_error():
+        result.set_files([Settings.RUN_LOG])
 
         if run_exit_code == 0:
             providing_artifacts = []

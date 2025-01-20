@@ -175,7 +175,7 @@ def main():
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         # test generates its own report.html
-        additional_files=[v for _, v in paths.items()],
+        additional_files=[v for _, v in paths.items() if Path(v).is_file()],
     ).dump()
 
     logging.info("Result: '%s', '%s'", status, description)

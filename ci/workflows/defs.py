@@ -198,6 +198,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/s3-proxy",
+        path="./docker/test/integration/s3_proxy",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/style-test",
         path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
@@ -230,10 +236,6 @@ DOCKERS = [
 ]
 
 # TODO:
-# "docker/test/integration/s3_proxy": {
-#     "name": "clickhouse/s3-proxy",
-#     "dependent": []
-# },
 # "docker/test/sqlancer": {
 #     "name": "clickhouse/sqlancer-test",
 #     "dependent": []
@@ -1046,6 +1048,7 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.BUZZHOUSE}",
         allow_merge_on_failure=True,
+        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,

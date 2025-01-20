@@ -329,10 +329,28 @@ def _finish_workflow(workflow, job_name):
     )
     workflow_result = Result.from_fs(workflow.name)
 
+    update_final_report = False
+    results = []
+    if Settings.PIPELINE_POSTCHECKS:
+        sw_ = Utils.Stopwatch()
+        res_ = workflow_result.results
+        update_final_report = True
+        for check in Settings.PIPELINE_POSTCHECKS:
+            if callable(check):
+                name = check.__name__
+            else:
+                name = str(check)
+            res_.append(
+                Result.from_commands_run(name=name, command=check, with_info=True)
+            )
+
+        results.append(
+            Result.create_from(name="Post Checks", results=res_, stopwatch=sw_)
+        )
+
     ready_for_merge_status = Result.Status.SUCCESS
     ready_for_merge_description = ""
     failed_results = []
-    update_final_report = False
     for result in workflow_result.results:
         if result.name == job_name or result.status in (
             Result.Status.SUCCESS,
@@ -374,7 +392,7 @@ def _finish_workflow(workflow, job_name):
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
-    Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
+    Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_results(results)
 
 
 if __name__ == "__main__":
