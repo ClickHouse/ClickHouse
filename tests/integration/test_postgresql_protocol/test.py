@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import uuid
+from io import StringIO
 
 import psycopg
 import psycopg2 as py_psql
@@ -13,7 +14,6 @@ import psycopg2.extras
 import pytest
 
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
-from io import StringIO
 
 psycopg2.extras.register_uuid()
 
@@ -235,11 +235,10 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
 
-    with open("out.csv", 'w') as f:
-        cur.copy_to(file=f, table='test')
-    with open("out.csv", 'r') as f:
+    with open("out.csv", "w") as f:
+        cur.copy_to(file=f, table="test")
+    with open("out.csv", "r") as f:
         assert f.read() == "42\n43\n44\n45\n"
-    
 
     cur.execute("create table test_recreated (x UInt32) engine=Memory();")
     data_to_copy = "1\n2\n3\n4\n5\n"

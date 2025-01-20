@@ -66,7 +66,6 @@
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/ASTCopyQuery.h"
 #include <Core/Settings.h>
 
 
@@ -382,10 +381,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
-    }
-    else if (query->as<ASTCopyQuery>())
-    {
-        interpreter_name = "InterpreterCopyQuery";
     }
 
     if (!interpreters.contains(interpreter_name))
