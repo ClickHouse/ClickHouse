@@ -46,6 +46,7 @@ class Runner:
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
             PR_BODY="",
+            PR_TITLE="",
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
@@ -151,13 +152,14 @@ class Runner:
         env.JOB_NAME = job.name
         env.dump()
 
-        # work around for old clickhouse jobs
-        try:
-            os.environ["DOCKER_TAG"] = json.dumps(
-                RunConfig.from_fs(workflow.name).digest_dockers
-            )
-        except Exception as e:
-            print(f"WARNING: Failed to set DOCKER_TAG, ex [{e}]")
+        if workflow.dockers:
+            # work around for old clickhouse jobs
+            try:
+                os.environ["DOCKER_TAG"] = json.dumps(
+                    RunConfig.from_fs(workflow.name).digest_dockers
+                )
+            except Exception as e:
+                print(f"WARNING: Failed to set DOCKER_TAG, ex [{e}]")
 
         if param:
             if not isinstance(param, str):

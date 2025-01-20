@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
@@ -85,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
             {"output_format_pretty_highlight_trailing_spaces", false, true, "A new setting."},
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
+            {"allow_push_predicate_ast_for_distributed_subqueries", false, true, "A new setting"},
             {"output_format_pretty_squash_consecutive_ms", 0, 50, "Add new setting"},
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
@@ -98,6 +100,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
