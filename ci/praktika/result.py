@@ -178,7 +178,7 @@ class Result(MetaClasses.Serializable):
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []
-        for result_dict in obj["results"] or []:
+        for result_dict in obj.get("results", []):
             sub_res = cls.from_dict(result_dict)
             sub_results.append(sub_res)
         obj["results"] = sub_results
@@ -188,7 +188,7 @@ class Result(MetaClasses.Serializable):
         if self.duration:
             return self
         if self.start_time:
-            self.duration = datetime.datetime.utcnow().timestamp() - self.start_time
+            self.duration = datetime.datetime.now().timestamp() - self.start_time
         else:
             print(
                 f"NOTE: start_time is not set for job [{self.name}] Result - do not update duration"
@@ -285,6 +285,7 @@ class Result(MetaClasses.Serializable):
         name,
         command,
         with_log=False,
+        with_info=False,
         fail_fast=True,
         workdir=None,
         command_args=None,
@@ -297,6 +298,7 @@ class Result(MetaClasses.Serializable):
         :param command: Shell command (str) or Python callable, or list of them.
         :param workdir: Optional working directory.
         :param with_log: Boolean flag to log output to a file.
+        :param with_info: Fill in Result.info from command output
         :param fail_fast: Boolean flag to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
@@ -309,11 +311,12 @@ class Result(MetaClasses.Serializable):
         command_kwargs = command_kwargs or {}
 
         # Set log file path if logging is enabled
-        log_file = (
-            f"{Settings.TEMP_DIR}/{Utils.normalize_string(name)}.log"
-            if with_log
-            else None
-        )
+        if with_log:
+            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
+        elif with_info:
+            log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
+        else:
+            log_file = None
 
         # Ensure the command is a list for consistent iteration
         if not isinstance(command, list):
@@ -323,25 +326,28 @@ class Result(MetaClasses.Serializable):
         print(f"> Starting execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
-        for command_ in command:
-            if callable(command_):
-                # If command is a Python function, call it with provided arguments
-                result = command_(*command_args, **command_kwargs)
-                if isinstance(result, bool):
-                    res = result
-                elif result:
-                    error_infos.append(str(result))
-                    res = False
-            else:
-                # Run shell command in a specified directory with logging and verbosity
-                with ContextManager.cd(workdir):
+        with ContextManager.cd(workdir):
+            for command_ in command:
+                if callable(command_):
+                    # If command is a Python function, call it with provided arguments
+                    result = command_(*command_args, **command_kwargs)
+                    if isinstance(result, bool):
+                        res = result
+                    elif result:
+                        error_infos.append(str(result))
+                        res = False
+                else:
+                    # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(command_, verbose=True, log_file=log_file)
+                    if with_info:
+                        with open(log_file, "r") as f:
+                            error_infos.append(f.read().strip())
                     res = exit_code == 0
 
-            # If fail_fast is enabled, stop on first failure
-            if not res and fail_fast:
-                print(f"Execution stopped due to failure in [{command_}]")
-                break
+                # If fail_fast is enabled, stop on first failure
+                if not res and fail_fast:
+                    print(f"Execution stopped due to failure in [{command_}]")
+                    break
 
         # Create and return the result object with status and log file (if any)
         return Result.create_from(
@@ -349,7 +355,7 @@ class Result(MetaClasses.Serializable):
             status=res,
             stopwatch=stop_watch_,
             info=error_infos,
-            files=[log_file] if log_file else None,
+            files=[log_file] if with_log else None,
         )
 
     def complete_job(self):
@@ -399,7 +405,7 @@ class ResultInfo:
     GH_STATUS_ERROR = "Failed to set GH commit status"
 
     NOT_FINALIZED = (
-        "Job did not not provide Result: job script bug, died CI runner or praktika bug"
+        "Job did not provide Result: job script bug, died CI runner or praktika bug"
     )
 
     S3_ERROR = "S3 call failure"
@@ -465,7 +471,7 @@ class _ResultS3:
         )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
         if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path)
+            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
             s3_path=s3_path_versioned,
             local_path=result.file_name(),
@@ -545,7 +551,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: Result file [{file}] was not found")
+                result.set_info(f"WARNING: File [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False
@@ -602,7 +608,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "/tmp/praktika/gtest.json"
+    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
 
     @classmethod
     def from_gtest(cls):

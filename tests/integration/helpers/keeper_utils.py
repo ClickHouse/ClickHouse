@@ -10,6 +10,8 @@ from os import path as p
 from typing import Iterable, List, Optional, Sequence, Union
 
 from kazoo.client import KazooClient
+from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
+from kazoo.handlers.threading import KazooTimeoutError
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -255,18 +257,19 @@ class KeeperClient(object):
             client.stop()
 
 
-def get_keeper_socket(cluster, node, port=9181):
-    hosts = cluster.get_instance_ip(node.name)
+def get_keeper_socket(cluster, nodename, port=9181):
+    host = cluster.get_instance_ip(nodename)
     client = socket.socket()
     client.settimeout(10)
-    client.connect((hosts, port))
+    client.connect((host, port))
     return client
 
 
 def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
     client = None
+    logging.debug("Sending %s to %s:%d", cmd, node, port)
     try:
-        client = get_keeper_socket(cluster, node, port)
+        client = get_keeper_socket(cluster, node.name, port)
         client.send(cmd.encode())
         data = client.recv(100_000)
         data = data.decode()
@@ -279,9 +282,17 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
 
-def wait_until_connected(cluster, node, port=9181, timeout=30.0):
+def wait_until_connected(
+    cluster, node, port=9181, timeout=30.0, wait_complete_readiness=True, password=None
+):
     start = time.time()
 
+    logging.debug(
+        "Waiting until keeper will be ready on %s:%d (timeout=%f)",
+        node.name,
+        port,
+        timeout,
+    )
     while send_4lw_cmd(cluster, node, "mntr", port) == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
 
@@ -289,6 +300,41 @@ def wait_until_connected(cluster, node, port=9181, timeout=30.0):
             raise Exception(
                 f"{timeout}s timeout while waiting for {node.name} to start serving requests"
             )
+
+    if wait_complete_readiness:
+        host = cluster.get_instance_ip(node.name)
+        logging.debug(
+            "Waiting until keeper can create sessions on %s:%d (timeout=%f)",
+            host,
+            port,
+            timeout,
+        )
+        while True:
+            zk_cli = None
+            try:
+                time_passed = min(time.time() - start, 5.0)
+                if time_passed >= timeout:
+                    raise Exception(
+                        f"{timeout}s timeout while waiting for {node.name} to start serving requests"
+                    )
+                client_id = None
+                if password is not None:
+                    client_id = (0, password)
+
+                zk_cli = KazooClient(
+                    hosts=f"{host}:9181",
+                    timeout=timeout - time_passed,
+                    client_id=client_id,
+                )
+                zk_cli.start()
+                zk_cli.get("/keeper/api_version")
+                break
+            except (ConnectionLoss, OperationTimeoutError, KazooTimeoutError):
+                pass
+            finally:
+                if zk_cli:
+                    zk_cli.stop()
+                    zk_cli.close()
 
 
 def wait_until_quorum_lost(cluster, node, port=9181):
@@ -325,9 +371,23 @@ def get_any_follower(cluster, nodes):
     raise Exception("No followers in Keeper cluster.")
 
 
-def get_fake_zk(cluster, node, timeout: float = 30.0) -> KazooClient:
+def get_fake_zk(
+    cluster, nodename, timeout: float = 30.0, password=None, retries=10
+) -> KazooClient:
+    kazoo_retry = {
+        "max_tries": retries,
+    }
+
+    client_id = None
+    if password is not None:
+        client_id = (0, password)
+
     _fake = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        client_id=client_id,
+        timeout=timeout,
+        connection_retry=kazoo_retry,
+        command_retry=kazoo_retry,
     )
     _fake.start()
     return _fake
