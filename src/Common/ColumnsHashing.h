@@ -3,6 +3,7 @@
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
@@ -95,6 +96,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
+    static constexpr bool has_pre_computed_hashes = Base::has_pre_computed_hashes;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -345,6 +347,7 @@ struct HashMethodSerialized
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
@@ -355,6 +358,9 @@ struct HashMethodSerialized
     size_t total_size = 0;
     PODArray<char> serialized_buffer;
     std::vector<StringRef> serialized_keys;
+    WeakHash32 hashes{0};
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size())
@@ -405,6 +411,16 @@ struct HashMethodSerialized
                 else
                     key_columns[i]->batchSerializeValueIntoMemory(memories);
             }
+        }
+
+        /// TODO(ab): We can compute hash when doing batch serialization
+        if constexpr (has_pre_computed_hashes)
+        {
+            hashes.reset(key_columns[0]->size());
+            for (size_t i = 0; i < keys_size; ++i)
+                hashes.update(key_columns[i]->getWeakHash32());
+
+            prefetching = std::make_unique<PrefetchingHelper>();
         }
     }
 
