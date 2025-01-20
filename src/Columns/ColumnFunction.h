@@ -60,15 +60,9 @@ public:
     void appendArguments(const ColumnsWithTypeAndName & columns);
     ColumnWithTypeAndName reduce() const;
 
-    Field operator[](size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
+    Field operator[](size_t n) const override;
 
-    void get(size_t, Field &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
+    void get(size_t n, Field & res) const override;
 
     StringRef getDataAt(size_t) const override
     {
