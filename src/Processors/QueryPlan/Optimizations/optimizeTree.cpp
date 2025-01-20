@@ -20,9 +20,9 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    if (!settings.optimize_plan)
+    if (!optimization_settings.optimize_plan)
         return;
 
     const auto & optimizations = getOptimizations();
@@ -42,7 +42,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -72,7 +72,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
         /// Apply all optimizations.
         for (const auto & optimization : optimizations)
         {
-            if (!(settings.*(optimization.is_enabled)))
+            if (!(optimization_settings.*(optimization.is_enabled)))
                 continue;
 
             /// Just in case, skip optimization if it is not initialized.
@@ -85,7 +85,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
                                 max_optimizations_to_apply);
 
             /// Try to apply optimization.
-            auto update_depth = optimization.apply(frame.node, nodes);
+            Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
+            auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
             if (update_depth)
                 ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);

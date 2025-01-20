@@ -634,6 +634,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
         return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
+    factory.markOutputFormatNotTTYFriendly("Avro");
 }
 
 }

@@ -99,6 +99,8 @@ public:
                 alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
                 table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
+            else
+                table_expression_data.markSelectedColumn(column_node->getColumn().name);
 
             return;
         }

@@ -3388,7 +3388,7 @@ static MutableColumnPtr deserializeConstant(
             std::make_shared<LambdaCapture>(std::move(capture)),
             std::make_shared<ExpressionActions>(
                 std::move(capture_dag),
-                ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+                ExpressionActionsSettings(context, CompileExpressions::yes)));
 
         return ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
     }
@@ -3567,7 +3567,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
                         std::move(capture_dag),
-                        ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)),
+                        ExpressionActionsSettings(context, CompileExpressions::yes)),
                     std::make_shared<LambdaCapture>(std::move(capture)),
                     node.result_type,
                     function_name);

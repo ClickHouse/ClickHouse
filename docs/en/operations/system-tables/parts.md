@@ -29,6 +29,8 @@ Columns:
      - `level` - incremented by one with each additional merge on the part. A level of 0 indicates this is a new part that has not been merged. It is important to remember that all parts in ClickHouse are always immutable
      - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
 
+- `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) -  The UUID of data part.
+
 - `part_type` ([String](../../sql-reference/data-types/string.md)) — The data part storing format.
 
     Possible Values:
@@ -76,9 +78,9 @@ Columns:
 
 - `partition_id` ([String](../../sql-reference/data-types/string.md)) – ID of the partition.
 
-- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The minimum number of data parts that make up the current part after merging.
+- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The minimum data block number that makes up the current part after merging.
 
-- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The maximum number of data parts that make up the current part after merging.
+- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The maximum data block number that makes up the current part after merging.
 
 - `level` ([UInt32](../../sql-reference/data-types/int-uint.md)) – Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
 

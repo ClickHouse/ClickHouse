@@ -4,6 +4,9 @@ sidebar_position: 80
 sidebar_label: hdfs
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # hdfs
 
 Creates a table from files in HDFS. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) ones.
@@ -109,7 +112,6 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
-SET use_hive_partitioning = 1;
 SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

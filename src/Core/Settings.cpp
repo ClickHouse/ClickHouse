@@ -894,6 +894,12 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
+    DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
+Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in ORDER BY keys.
+)", 0) \
+    DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
+Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
+)", 0) \
     DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
@@ -1384,10 +1390,10 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If true skip indexes are calculated on inserts, otherwise skip indexes will be calculated only during merges
+If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
-If true statistics are calculated on inserts, otherwise statistics will be calculated only during merges
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
@@ -2407,6 +2413,9 @@ What to do when the limit is exceeded.
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
 )", 0) \
+    DECLARE(UInt64, min_external_sort_block_bytes, "100Mi", R"(
+Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.
+)", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
@@ -2911,6 +2920,9 @@ Allow push predicate to final subquery.
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
 )", 0) \
+    DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
+Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+)", 0) \
     \
     DECLARE(UInt64, low_cardinality_max_dictionary_size, 8192, R"(
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
@@ -3160,6 +3172,9 @@ Allow execute multiIf function columnar
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
+    DECLARE(Bool, formatdatetime_f_prints_scale_number_of_digits, false, R"(
+Formatter '%f' in function 'formatDateTime' prints only the scale amount of digits for a DateTime64 instead of fixed 6 digits.
+)", 0) \
     DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
 Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 )", 0) \
@@ -3172,7 +3187,9 @@ Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hou
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
-    \
+    DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
+Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
+)", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limit maximum number of partitions in the single INSERTed block. Zero means unlimited. Throw an exception if the block contains too many partitions. This setting is a safety threshold because using a large number of partitions is a common misconception.
 )", 0) \
@@ -4125,7 +4142,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) behaviour.
 )", 0) \
     DECLARE(Bool, optimize_use_projections, true, R"(
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
@@ -4537,10 +4554,10 @@ Compatibility version of distributed DDL (ON CLUSTER) queries
 )", 0) \
     \
     DECLARE(UInt64, external_storage_max_read_rows, 0, R"(
-Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 )", 0) \
     DECLARE(UInt64, external_storage_max_read_bytes, 0, R"(
-Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 )", 0)  \
     DECLARE(UInt64, external_storage_connect_timeout_sec, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, R"(
 Connect timeout in seconds. Now supported only for MySQL
@@ -4597,7 +4614,7 @@ Possible values:
 - 0 - Disable all optimizations at the query plan level
 - 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
 )", 0) \
-    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10000, R"(
+    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
 If the actual number of optimizations exceeds this setting, an exception is thrown.
@@ -4760,6 +4777,19 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_try_use_vector_search, true, R"(
+Toggles a query-plan-level optimization which tries to use the vector similarity index.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 :::note
@@ -5609,12 +5639,12 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.
+Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
 )", 0) \
     DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
-Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
+Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
 Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
@@ -5624,10 +5654,13 @@ Ratio threshold of NULL values to execute functions with Nullable arguments only
 When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
 )", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
-Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
+Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
+)", 0) \
+    DECLARE(Bool, use_iceberg_partition_pruning, false, R"(
+Use Iceberg partition pruning for Iceberg tables
 )", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
 Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
@@ -5847,7 +5880,22 @@ Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
+    DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
+When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
+If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
+)", 0) \
+    DECLARE(Bool, validate_enum_literals_in_operators, false, R"(
+If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
+)", 0) \
     \
+    DECLARE(UInt64, max_autoincrement_series, 1000, R"(
+The limit on the number of series created by the `generateSeriesID` function.
+
+As each series represents a node in Keeper, it is recommended to have no more than a couple of millions of them.
+)", 0) \
+    DECLARE(Bool, use_hive_partitioning, true, R"(
+When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -5887,7 +5935,7 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use vector similarity indexes. Helps to prevent memory overflows in vector similarity indexes.
+SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
@@ -5916,9 +5964,6 @@ The maximum number of rows in the right table to determine whether to rerange th
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, use_hive_partitioning, false, R"(
-When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
-)", EXPERIMENTAL)\
     \
     DECLARE(Bool, allow_statistics_optimize, false, R"(
 Allows using statistics to optimize queries
@@ -5974,9 +6019,6 @@ Timeout for waiting for window view fire signal in event time processing
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with SYSTEM START VIEWS or SYSTEM START VIEW \\<name\\> afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_mysql, false, R"(
-Allow to create database with Engine=MaterializedMySQL(...).
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
@@ -5987,6 +6029,12 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine Iceberg
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+Enable Kusto Query Language (KQL) - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
@@ -6074,7 +6122,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
-
+    MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

@@ -149,6 +149,9 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
+    STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
+        "Stateless tests (release, ParallelReplicas, s3 storage)"
+    )
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
@@ -201,6 +204,12 @@ class JobNames(metaclass=WithIter):
     AST_FUZZER_TEST_MSAN = "AST fuzzer (msan)"
     AST_FUZZER_TEST_TSAN = "AST fuzzer (tsan)"
     AST_FUZZER_TEST_UBSAN = "AST fuzzer (ubsan)"
+
+    BUZZHOUSE_TEST_DEBUG = "BuzzHouse (debug)"
+    BUZZHOUSE_TEST_ASAN = "BuzzHouse (asan)"
+    BUZZHOUSE_TEST_MSAN = "BuzzHouse (msan)"
+    BUZZHOUSE_TEST_TSAN = "BuzzHouse (tsan)"
+    BUZZHOUSE_TEST_UBSAN = "BuzzHouse (ubsan)"
 
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
@@ -492,11 +501,23 @@ class CommonJobConfigs:
         job_name_keyword="ast",
         digest=DigestConfig(
             include_paths=[
-                "./tests/ci/ast_fuzzer_check.py",
+                "./tests/ci/ci_fuzzer_check.py",
             ],
             docker=["clickhouse/fuzzer"],
         ),
-        run_command="ast_fuzzer_check.py",
+        run_command="ci_fuzzer_check.py",
+        run_always=True,
+        runner_type=Runners.FUZZER_UNIT_TESTER,
+    )
+    BUZZHOUSE_TEST = JobConfig(
+        job_name_keyword="buzzhouse",
+        digest=DigestConfig(
+            include_paths=[
+                "./tests/ci/ci_fuzzer_check.py",
+            ],
+            docker=["clickhouse/fuzzer"],
+        ),
+        run_command="ci_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
@@ -648,7 +669,11 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+    JobNames.INTEGRATION_TEST_FLAKY,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
+    JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
+    JobNames.INSTALL_TEST_AMD,
+    JobNames.INSTALL_TEST_AARCH64,
 ]
 
 # Jobs that run in Merge Queue if it's enabled

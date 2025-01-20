@@ -1083,7 +1083,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
         interpreter.buildQueryPlan(plan);
     }
 
-    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+    plan.optimize(QueryPlanOptimizationSettings(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());

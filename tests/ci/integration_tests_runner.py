@@ -14,7 +14,7 @@ import string
 import subprocess
 import sys
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from itertools import chain
 from typing import Any, Dict, List, Optional
 
@@ -474,7 +474,7 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def group_test_by_file(tests):
-        result = {}  # type: Dict
+        result = OrderedDict()  # type: OrderedDict
         for test in tests:
             test_file = test.split("::")[0]
             if test_file not in result:
