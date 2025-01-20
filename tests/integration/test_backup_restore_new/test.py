@@ -5,6 +5,7 @@ import re
 import sys
 import uuid
 from collections import namedtuple
+from typing import Dict
 
 import pytest
 
@@ -94,6 +95,27 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
             f"data/{database}/{table}/mutations/{mutation_id}.txt",
         )
     )
+
+
+def get_events_for_query(query_id: str) -> Dict[str, int]:
+    events = TSV(
+        instance.query(
+            f"""
+            SYSTEM FLUSH LOGS;
+
+            WITH arrayJoin(ProfileEvents) as pe
+            SELECT pe.1, pe.2
+            FROM system.query_log
+            WHERE query_id = '{query_id}'
+            """
+        )
+    )
+    result = {
+        event: int(value)
+        for event, value in [line.split("\t") for line in events.lines]
+    }
+    result["query_id"] = query_id
+    return result
 
 
 BackupInfo = namedtuple(
@@ -323,8 +345,10 @@ def test_increment_backup_without_changes():
 
     # restore the second backup
     # we expect to see all files in the meta info of the restore and a sum of uncompressed and compressed sizes
+    restore_query_id = uuid.uuid4().hex
     id_restore = instance.query(
-        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}",
+        query_id=restore_query_id,
     ).split("\t")[0]
 
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == TSV(
@@ -332,6 +356,7 @@ def test_increment_backup_without_changes():
     )
 
     restore_info = get_backup_info_from_system_backups(by_id=id_restore)
+    restore_events = get_events_for_query(restore_query_id)
 
     assert restore_info.status == "RESTORED"
     assert restore_info.error == ""
@@ -340,8 +365,14 @@ def test_increment_backup_without_changes():
     assert restore_info.num_entries == backup2_info.num_entries
     assert restore_info.uncompressed_size == backup2_info.uncompressed_size
     assert restore_info.compressed_size == backup2_info.compressed_size
-    assert restore_info.files_read == backup2_info.num_files
-    assert restore_info.bytes_read == backup2_info.total_size
+    assert (
+        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
+        == backup2_info.num_files
+    )
+    assert (
+        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
+        == backup2_info.total_size
+    )
 
 
 def test_incremental_backup_overflow():
@@ -1678,8 +1709,12 @@ def test_system_backups():
     instance.query("DROP TABLE test.table")
 
     # Restore
-    id = instance.query(f"RESTORE TABLE test.table FROM {backup_name}").split("\t")[0]
+    restore_query_id = uuid.uuid4().hex
+    id = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name}", query_id=restore_query_id
+    ).split("\t")[0]
     restore_info = get_backup_info_from_system_backups(by_id=id)
+    restore_events = get_events_for_query(restore_query_id)
 
     assert restore_info.name == escaped_backup_name
     assert restore_info.status == "RESTORED"
@@ -1689,8 +1724,14 @@ def test_system_backups():
     assert restore_info.num_entries == info.num_entries
     assert restore_info.uncompressed_size == info.uncompressed_size
     assert restore_info.compressed_size == info.compressed_size
-    assert restore_info.files_read == restore_info.num_files
-    assert restore_info.bytes_read == restore_info.total_size
+    assert (
+        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
+        == restore_info.num_files
+    )
+    assert (
+        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
+        == restore_info.total_size
+    )
 
     # Failed backup.
     backup_name = new_backup_name()

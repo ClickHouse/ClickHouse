@@ -21,6 +21,7 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
 
     CompressionMethod compression = CompressionMethod::Lz4;
+    int compression_level = 3;
 
     size_t data_page_size = 1024 * 1024;
     size_t write_batch_size = 1024;
@@ -45,6 +46,7 @@ struct ColumnChunkWriteState
 
     ColumnPtr primitive_column;
     CompressionMethod compression; // must match what's inside column_chunk
+    int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
 

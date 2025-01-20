@@ -9,7 +9,7 @@ sidebar_position: 200
 
 Функция использует алгоритм [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) с размером резервуара до 8192 и случайным генератором чисел для для сэмплирования. Результат не детерминирован. Чтобы получить точную квантиль используйте функцию [quantileExact](/docs/ru/sql-reference/aggregate-functions/reference/quantileexact).
 
-Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/docs/ru//sql-reference/aggregate-functions/reference/quantileexact), это повысит эффективность запроса.
+Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantileexact), это повысит эффективность запроса.
 
 **Синтаксис**
 

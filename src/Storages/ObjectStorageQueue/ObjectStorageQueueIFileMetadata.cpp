@@ -121,11 +121,13 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & failed_node_path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<size_t> & metadata_ref_count_,
     LoggerPtr log_)
     : path(path_)
     , node_name(getNodeName(path_))
     , file_status(file_status_)
     , max_loading_retries(max_loading_retries_)
+    , metadata_ref_count(metadata_ref_count_)
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -257,6 +259,46 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
              processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
 
     return success;
+}
+
+std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
+ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
+{
+    if (metadata_ref_count.load() > 1)
+    {
+        std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+        if (!processing_lock.try_lock())
+        {
+            /// This is possible in case on the same server
+            /// there are more than one S3(Azure)Queue table processing the same keeper path.
+            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+            return std::nullopt;
+        }
+
+        auto state = file_status->state.load();
+        if (state == FileStatus::State::Processing
+            || state == FileStatus::State::Processed
+            || (state == FileStatus::State::Failed
+                && file_status->retries
+                && file_status->retries >= max_loading_retries))
+        {
+            LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                    path, state, file_status->retries, max_loading_retries);
+
+            /// This is possible in case on the same server
+            /// there are more than one S3(Azure)Queue table processing the same keeper path.
+            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+            return std::nullopt;
+        }
+    }
+
+    return prepareProcessingRequestsImpl(requests);
+}
+
+void ObjectStorageQueueIFileMetadata::finalizeProcessing(int processing_id_version_)
+{
+    processing_id_version = processing_id_version_;
+    file_status->onProcessing();
 }
 
 void ObjectStorageQueueIFileMetadata::resetProcessing()
@@ -401,7 +443,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 {
     if (!processing_id_version.has_value())
     {
-        /// Processing was not started.
+        chassert(false);
         return;
     }
 
