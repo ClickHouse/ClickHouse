@@ -994,24 +994,31 @@ public:
 
 class CopyOutResponse : public BackendMessage
 {
+    int num_columns;
 public:
+    explicit CopyOutResponse(int num_columns_ = 1)
+        : num_columns(num_columns_)
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('H');
         writeBinaryBigEndian(size(), out);
-        writeBinaryBigEndian(static_cast<Int8>(0), out);
-        writeBinaryBigEndian(static_cast<Int16>(1), out);
-        writeBinaryBigEndian(static_cast<Int16>(0), out);
+        writeBinaryBigEndian(static_cast<Int8>(FormatCode::TEXT), out);
+        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
+        for (int i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
     }
 
     Int32 size() const override
     {
-        return 4 + 1 + 2 + 2;
+        return 4 + 1 + 2 + 2 * num_columns;
     }
 
     MessageType getMessageType() const override
     {
-        return MessageType::COPY_IN_RESPONSE;
+        return MessageType::COPY_OUT_RESPONSE;
     }
 };
 
