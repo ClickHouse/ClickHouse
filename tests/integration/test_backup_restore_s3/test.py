@@ -334,6 +334,9 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
     assert backup_events["S3CopyObject"] > 0
     assert restore_events["S3CopyObject"] > 0
 
+    # BACKUP shouldn't download any files from S3 except ".lock" file.
+    assert backup_events["S3GetObject"] == backup_events["BackupLockFileReads"]
+
 
 def test_backup_to_s3():
     storage_policy = "default"
