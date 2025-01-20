@@ -101,6 +101,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
+            {"allow_attach_broken_part", false, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

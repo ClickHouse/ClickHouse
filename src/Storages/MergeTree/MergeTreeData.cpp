@@ -182,6 +182,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsUInt64 parts_to_throw_insert;
+    extern const SettingsBool allow_attach_broken_part;
 }
 
 namespace MergeTreeSetting
@@ -5292,12 +5293,20 @@ void MergeTreeData::checkAlterPartitionIsPossible(
             if (command.part)
             {
                 auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
-                /// We are able to parse it
-                MergeTreePartInfo::fromPartName(part_name, format_version);
+
+                if (local_context->getSettingsRef()[Setting::allow_attach_broken_part])
+                {
+                    auto detached_info = DetachedPartInfo::parseDetachedPartName(part_name, format_version);
+                    detached_info.assertValidPartName();
+                }
+                else
+                {
+                    /// Check if we are able to parse it
+                    MergeTreePartInfo::fromPartName(part_name, format_version);
+                }
             }
             else
             {
-                /// We are able to parse it
                 const auto * partition_ast = command.partition->as<ASTPartition>();
                 if (partition_ast && partition_ast->all)
                 {
@@ -6610,21 +6619,35 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 {
     const fs::path source_dir = DETACHED_DIR_NAME;
 
+    auto get_name_of_detached_part = [this](const auto & part_name)
+    {
+        auto detached_info = DetachedPartInfo::parseDetachedPartName(part_name, format_version);
+        detached_info.assertValidPartName();
+        return detached_info.getPartNameAndCheckFormat(format_version);
+    };
+
     /// Let's compose a list of parts that should be added.
     if (attach_part)
     {
-        const String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-        validateDetachedPartName(part_id);
-        if (temporary_parts.contains(source_dir / part_id))
+        const String old_part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        validateDetachedPartName(old_part_name);
+
+        if (temporary_parts.contains(source_dir / old_part_name))
         {
             LOG_WARNING(log, "Will not try to attach part {} because its directory is temporary, "
-                             "probably it's being detached right now", part_id);
+                             "probably it's being detached right now", old_part_name);
+            return {};
         }
+
+        auto disk = getDiskForDetachedPart(old_part_name);
+        String new_part_name;
+
+        if (local_context->getSettingsRef()[Setting::allow_attach_broken_part])
+            new_part_name = get_name_of_detached_part(old_part_name);
         else
-        {
-            auto disk = getDiskForDetachedPart(part_id);
-            renamed_parts.addPart(part_id, "attaching_" + part_id, disk);
-        }
+            new_part_name = old_part_name;
+
+        renamed_parts.addPart(old_part_name, "attaching_" + new_part_name, disk);
     }
     else
     {
@@ -6687,10 +6710,11 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
 
-    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    for (const auto & [old_name_detached, new_name, disk] : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", new_name);
 
+        auto old_name = get_name_of_detached_part(old_name_detached);
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, disk);
         auto part = getDataPartBuilder(old_name, single_disk_volume, source_dir / new_name, getReadSettings())
             .withPartFormatFromDisk()
