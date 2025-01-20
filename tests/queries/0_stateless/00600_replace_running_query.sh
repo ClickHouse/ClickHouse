@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+#CLICKHOUSE_CLIENT_BINARY="/mnt/ch/official_binaries/clickhouse-common-static-24.12.2.29/usr/bin/clickhouse client"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,7 +39,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=${CLICKHOUSE_DATABASE}hello&repla
 wait
 wait_for_queries_to_finish
 
-${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id="${CLICKHOUSE_DATABASE}42" --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'QUERY_WAS_CANCELLED' &
+${CLICKHOUSE_CLIENT_BINARY} --port "${CLICKHOUSE_PORT_TCP}" --host "${CLICKHOUSE_HOST}" --user=u_00600${TEST_PREFIX} --query_id="${CLICKHOUSE_DATABASE}42" --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'QUERY_WAS_CANCELLED' &
 wait_for_query_to_start "${CLICKHOUSE_DATABASE}42"
 
 # Trying to run another query with the same query_id
