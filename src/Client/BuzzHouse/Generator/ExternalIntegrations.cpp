@@ -25,12 +25,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 {
     const String str_tname = getTableName(db, tname);
 
-    buf.resize(0);
-    buf += "DROP TABLE IF EXISTS ";
-    buf += str_tname;
-    buf += ";";
-
-    if (performQuery(buf))
+    if (performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
         bool first = true;
 
@@ -69,11 +64,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 {
     assert(t.hasDatabasePeer());
-    buf.resize(0);
-    buf += "DROP TABLE IF EXISTS ";
-    buf += getTableName(t.db, t.tname);
-    buf += ";";
-    return performQuery(buf);
+    return performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performCreatePeerTable(
@@ -135,12 +126,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     assert(t.hasDatabasePeer());
-    buf.resize(0);
-    truncateStatement(buf);
-    buf += " ";
-    buf += getTableName(t.db, t.tname);
-    buf += ";";
-    (void)performQuery(buf);
+    (void)performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 void ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -159,7 +145,7 @@ void ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
 }
 
 #if defined USE_MYSQL && USE_MYSQL
-MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
+std::unique_ptr<MySQLIntegration> MySQLIntegration::testAndAddMySQLConnection(
     const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
 {
     MYSQL * mcon = nullptr;
@@ -183,7 +169,8 @@ MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
     }
     else
     {
-        MySQLIntegration * mysql = new MySQLIntegration(fcc, scc, server == "ClickHouse", mcon);
+        std::unique_ptr<MySQLIntegration> mysql
+            = std::make_unique<MySQLIntegration>(fcc, scc, server == "ClickHouse", std::make_unique<MYSQL *>(mcon));
 
         if (read_log
             || (mysql->performQuery("DROP DATABASE IF EXISTS " + scc.database + ";")
@@ -191,10 +178,6 @@ MySQLIntegration * MySQLIntegration::testAndAddMySQLConnection(
         {
             LOG_INFO(fcc.log, "Connected to {}", server);
             return mysql;
-        }
-        else
-        {
-            delete mysql;
         }
     }
     return nullptr;
@@ -219,13 +202,9 @@ String MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uin
     return fmt::format("{}t{}", prefix, tname);
 }
 
-void MySQLIntegration::truncateStatement(String & outbuf)
+String MySQLIntegration::truncateStatement()
 {
-    outbuf += "TRUNCATE";
-    if (is_clickhouse)
-    {
-        outbuf += " TABLE";
-    }
+    return fmt::format("TRUNCATE{}", is_clickhouse ? " TABLE" : "");
 }
 
 void MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
@@ -233,40 +212,28 @@ void MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     assert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
-        buf.resize(0);
-        buf += "ALTER TABLE ";
-        buf += getTableName(t.db, t.tname);
-        buf += " APPLY DELETED MASK;";
-        performQueryOnServerOrRemote(pt, buf);
-
-        buf.resize(0);
-        buf += "OPTIMIZE TABLE ";
-        buf += getTableName(t.db, t.tname);
-        if (t.supportsFinal())
-        {
-            buf += " FINAL";
-        }
-        buf += ";";
-        performQueryOnServerOrRemote(pt, buf);
+        performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        performQueryOnServerOrRemote(
+            pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
     }
 }
 
 bool MySQLIntegration::performQuery(const String & query)
 {
-    if (!mysql_connection)
+    if (!mysql_connection || !*mysql_connection)
     {
         LOG_ERROR(fc.log, "Not connected to MySQL");
         return false;
     }
     out_file << query << std::endl;
-    if (mysql_query(mysql_connection, query.c_str()))
+    if (mysql_query(*mysql_connection, query.c_str()))
     {
-        LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(mysql_connection));
+        LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(*mysql_connection));
         return false;
     }
     else
     {
-        MYSQL_RES * result = mysql_store_result(mysql_connection);
+        MYSQL_RES * result = mysql_store_result(*mysql_connection);
 
         while (mysql_fetch_row(result))
             ;
@@ -281,7 +248,7 @@ void MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, St
 }
 
 #else
-MySQLIntegration *
+std::unique_ptr<MySQLIntegration>
 MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MySQL connector, skipping MySQL integration");
@@ -290,13 +257,13 @@ MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const Server
 #endif
 
 #if defined USE_LIBPQXX && USE_LIBPQXX
-PostgreSQLIntegration *
+std::unique_ptr<PostgreSQLIntegration>
 PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
     bool has_something = false;
     String connection_str;
-    pqxx::connection * pcon = nullptr;
-    PostgreSQLIntegration * psql = nullptr;
+    std::unique_ptr<pqxx::connection> pcon = nullptr;
+    std::unique_ptr<PostgreSQLIntegration> psql = nullptr;
 
     if (!scc.unix_socket.empty() || !scc.hostname.empty())
     {
@@ -349,26 +316,17 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
     }
     try
     {
-        if (!(pcon = new pqxx::connection(connection_str)))
+        psql = std::make_unique<PostgreSQLIntegration>(fcc, scc, std::make_unique<pqxx::connection>(connection_str));
+        if (read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
         {
-            LOG_ERROR(fcc.log, "Could not initialize PostgreSQL handle");
-        }
-        else
-        {
-            psql = new PostgreSQLIntegration(fcc, scc, pcon);
-            if (read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
-            {
-                LOG_INFO(fcc.log, "Connected to PostgreSQL");
-                return psql;
-            }
+            LOG_INFO(fcc.log, "Connected to PostgreSQL");
+            return psql;
         }
     }
     catch (std::exception const & e)
     {
         LOG_ERROR(fcc.log, "PostgreSQL connection error: {}", e.what());
     }
-    delete psql;
-    delete pcon;
     return nullptr;
 }
 
@@ -391,9 +349,9 @@ String PostgreSQLIntegration::getTableName(std::shared_ptr<SQLDatabase>, const u
     return "test.t" + std::to_string(tname);
 }
 
-void PostgreSQLIntegration::truncateStatement(String & outbuf)
+String PostgreSQLIntegration::truncateStatement()
 {
-    outbuf += "TRUNCATE";
+    return "TRUNCATE";
 }
 
 bool PostgreSQLIntegration::performQuery(const String & query)
@@ -425,7 +383,7 @@ void PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * t
 }
 
 #else
-PostgreSQLIntegration *
+std::unique_ptr<PostgreSQLIntegration>
 PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, const bool)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration");
@@ -434,7 +392,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
 #endif
 
 #if defined USE_SQLITE && USE_SQLITE
-SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
 {
     sqlite3 * scon = nullptr;
     const std::filesystem::path spath = fcc.db_file_path / "sqlite.db";
@@ -455,7 +413,7 @@ SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzCon
     else
     {
         LOG_INFO(fcc.log, "Connected to SQLite");
-        return new SQLiteIntegration(fcc, scc, scon, spath);
+        return std::make_unique<SQLiteIntegration>(fcc, scc, std::make_unique<sqlite3 *>(scon), spath);
     }
 }
 
@@ -470,22 +428,22 @@ String SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint3
     return "t" + std::to_string(tname);
 }
 
-void SQLiteIntegration::truncateStatement(String & outbuf)
+String SQLiteIntegration::truncateStatement()
 {
-    outbuf += "DELETE FROM";
+    return "DELETE FROM";
 }
 
 bool SQLiteIntegration::performQuery(const String & query)
 {
     char * err_msg = nullptr;
 
-    if (!sqlite_connection)
+    if (!sqlite_connection || !*sqlite_connection)
     {
         LOG_ERROR(fc.log, "Not connected to SQLite");
         return false;
     }
     out_file << query << std::endl;
-    if (sqlite3_exec(sqlite_connection, query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
+    if (sqlite3_exec(*sqlite_connection, query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
     {
         LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
         sqlite3_free(err_msg);
@@ -500,7 +458,7 @@ void SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, S
 }
 
 #else
-SQLiteIntegration * SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with SQLite connector, skipping SQLite integration");
     return nullptr;
@@ -522,7 +480,7 @@ bool RedisIntegration::performIntegration(
 }
 
 #if defined USE_MONGODB && USE_MONGODB
-MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
+std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
 {
     String connection_str = "mongodb://";
 
@@ -564,7 +522,7 @@ MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const Fuzz
         db.create_collection("test");
 
         LOG_INFO(fcc.log, "Connected to MongoDB");
-        return new MongoDBIntegration(fcc, scc, client, db);
+        return std::make_unique<MongoDBIntegration>(fcc, scc, client, db);
     }
     catch (const std::exception & e)
     {
@@ -1064,7 +1022,7 @@ bool MongoDBIntegration::performIntegration(
     return true;
 }
 #else
-MongoDBIntegration * MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &)
+std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &)
 {
     LOG_INFO(fcc.log, "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration");
     return nullptr;
@@ -1217,11 +1175,11 @@ ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fcc) : fc(fcc)
     }
     if (fc.redis_server.has_value())
     {
-        redis = new RedisIntegration(fc, fc.redis_server.value());
+        redis = std::make_unique<RedisIntegration>(fc, fc.redis_server.value());
     }
     if (fc.minio_server.has_value())
     {
-        minio = new MinIOIntegration(fc, fc.minio_server.value());
+        minio = std::make_unique<MinIOIntegration>(fc, fc.minio_server.value());
     }
     if (fc.clickhouse_server.has_value())
     {
@@ -1365,11 +1323,12 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
 void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
-    buf.resize(0);
-    buf += "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '";
-    buf += fc.fuzz_out.generic_string();
-    buf += "' TRUNCATE FORMAT TabSeparated;";
-    clickhouse->performQueryOnServerOrRemote(pt, buf);
+    clickhouse->performQueryOnServerOrRemote(
+        pt,
+        fmt::format(
+            "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '{}' "
+            "TRUNCATE FORMAT TabSeparated;",
+            fc.fuzz_out.generic_string()));
 
     std::ifstream infile(fc.fuzz_out);
     buf.resize(0);
@@ -1386,46 +1345,36 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
 {
     for (const auto & entry : settings)
     {
-        buf.resize(0);
-        buf += "SET ";
-        buf += entry;
-        buf += " = 1;";
-        clickhouse->performQueryOnServerOrRemote(pt, buf);
+        clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
     }
 }
 
 void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
-    buf.resize(0);
-    buf += "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '";
-    buf += fc.fuzz_out.generic_string();
-    buf += "' TRUNCATE FORMAT TabSeparated;";
-    fc.processServerQuery(buf);
+    String replaced;
+    fc.processServerQuery(fmt::format(
+        "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+        fc.fuzz_out.generic_string()));
 
     std::ifstream infile(fc.fuzz_out);
     buf.resize(0);
-    buf2.resize(0);
     while (std::getline(infile, buf))
     {
         const auto tabchar = buf.find('\t');
         const auto nname = buf.substr(0, tabchar);
         const auto nvalue = buf.substr(tabchar + 1);
 
-        buf2 += "SET ";
-        buf2 += nname;
-        buf2 += " = '";
+        replaced.resize(0);
         for (const auto & c : nvalue)
         {
             if (c == '\'')
             {
-                buf2 += '\\';
+                replaced += '\\';
             }
-            buf2 += c;
+            replaced += c;
         }
-        buf2 += "';";
-        clickhouse->performQueryOnServerOrRemote(pt, buf2);
+        clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
         buf.resize(0);
-        buf2.resize(0);
     }
 }
 

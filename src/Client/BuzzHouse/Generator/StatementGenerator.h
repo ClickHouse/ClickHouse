@@ -128,7 +128,7 @@ private:
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
 
     template <typename T>
-    void setMergeTableParamter(RandomGenerator & rg, char initial);
+    void setMergeTableParameter(RandomGenerator & rg, char initial);
 
     template <typename T>
     const std::unordered_map<uint32_t, T> & getNextCollection() const

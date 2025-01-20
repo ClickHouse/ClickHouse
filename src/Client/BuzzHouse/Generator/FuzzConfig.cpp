@@ -190,15 +190,8 @@ void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & ta
 {
     uint64_t found = 0;
 
-    buf.resize(0);
-    buf += "SELECT \"";
-    buf += col;
-    buf += R"(" FROM "system".")";
-    buf += table;
-    buf += "\" INTO OUTFILE '";
-    buf += fuzz_out.generic_string();
-    buf += "' TRUNCATE FORMAT TabSeparated;";
-    this->processServerQuery(buf);
+    processServerQuery(fmt::format(
+        "SELECT \"{}\" FROM \"system\".\"{}\" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", col, table, fuzz_out.generic_string()));
 
     std::ifstream infile(fuzz_out);
     buf.resize(0);

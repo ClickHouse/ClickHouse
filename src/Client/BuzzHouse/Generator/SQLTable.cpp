@@ -557,7 +557,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
 }
 
 template <typename T>
-void StatementGenerator::setMergeTableParamter(RandomGenerator & rg, const char initial)
+void StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char initial)
 {
     const uint32_t noption = rg.nextSmallNumber();
 
@@ -897,10 +897,10 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isMergeEngine())
     {
-        setMergeTableParamter<std::shared_ptr<SQLDatabase>>(rg, 'd');
+        setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd');
         te->add_params()->set_regexp(buf);
 
-        setMergeTableParamter<SQLTable>(rg, 't');
+        setMergeTableParameter<SQLTable>(rg, 't');
         te->add_params()->set_svalue(buf);
     }
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())

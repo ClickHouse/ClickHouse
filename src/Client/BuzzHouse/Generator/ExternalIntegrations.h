@@ -97,7 +97,7 @@ public:
         const CreateTable * ct,
         std::vector<ColumnPathChain> & entries);
 
-    void virtual truncateStatement(String &) { }
+    virtual String truncateStatement() { return ""; }
 
     void truncatePeerTableOnRemote(const SQLTable & t);
 
@@ -111,22 +111,22 @@ class MySQLIntegration : public ClickHouseIntegratedDatabase
 #if defined USE_MYSQL && USE_MYSQL
 private:
     const bool is_clickhouse;
-    MYSQL * mysql_connection = nullptr;
+    std::unique_ptr<MYSQL *> mysql_connection = nullptr;
 
 public:
-    MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool is_click, MYSQL * mcon)
-        : ClickHouseIntegratedDatabase(fcc, scc), is_clickhouse(is_click), mysql_connection(mcon)
+    MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool is_click, std::unique_ptr<MYSQL *> mcon)
+        : ClickHouseIntegratedDatabase(fcc, scc), is_clickhouse(is_click), mysql_connection(std::move(mcon))
     {
     }
 
-    static MySQLIntegration *
+    static std::unique_ptr<MySQLIntegration>
     testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials & scc, bool read_log, const String & server);
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
 
-    void truncateStatement(String & outbuf) override;
+    String truncateStatement() override;
 
     void optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 
@@ -136,16 +136,17 @@ public:
 
     ~MySQLIntegration() override
     {
-        if (mysql_connection)
+        if (mysql_connection && *mysql_connection)
         {
-            mysql_close(mysql_connection);
+            mysql_close(*mysql_connection);
         }
     }
 #else
 public:
     MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static MySQLIntegration * testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, bool, const String &);
+    static std::unique_ptr<MySQLIntegration>
+    testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, bool, const String &);
 
     ~MySQLIntegration() override = default;
 #endif
@@ -155,32 +156,31 @@ class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_LIBPQXX && USE_LIBPQXX
 private:
-    pqxx::connection * postgres_connection = nullptr;
+    std::unique_ptr<pqxx::connection> postgres_connection = nullptr;
 
 public:
-    PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, pqxx::connection * pcon)
-        : ClickHouseIntegratedDatabase(fcc, scc), postgres_connection(pcon)
+    PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<pqxx::connection> pcon)
+        : ClickHouseIntegratedDatabase(fcc, scc), postgres_connection(std::move(pcon))
     {
     }
 
-    static PostgreSQLIntegration * testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
+    static std::unique_ptr<PostgreSQLIntegration>
+    testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
 
     void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
-    void truncateStatement(String & outbuf) override;
+    String truncateStatement() override;
 
     void columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const override;
 
     bool performQuery(const String & query) override;
-
-    ~PostgreSQLIntegration() override { delete postgres_connection; }
 #else
 public:
     PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static PostgreSQLIntegration * testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, bool);
+    static std::unique_ptr<PostgreSQLIntegration> testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, bool);
 
     ~PostgreSQLIntegration() override = default;
 #endif
@@ -190,23 +190,24 @@ class SQLiteIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_SQLITE && USE_SQLITE
 private:
-    sqlite3 * sqlite_connection = nullptr;
+    std::unique_ptr<sqlite3 *> sqlite_connection = nullptr;
 
 public:
     const std::filesystem::path sqlite_path;
 
-    SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, sqlite3 * scon, const std::filesystem::path & spath)
-        : ClickHouseIntegratedDatabase(fcc, scc), sqlite_connection(scon), sqlite_path(spath)
+    SQLiteIntegration(
+        const FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<sqlite3 *> scon, const std::filesystem::path & spath)
+        : ClickHouseIntegratedDatabase(fcc, scc), sqlite_connection(std::move(scon)), sqlite_path(spath)
     {
     }
 
-    static SQLiteIntegration * testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc);
+    static std::unique_ptr<SQLiteIntegration> testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc);
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
-    void truncateStatement(String & outbuf) override;
+    String truncateStatement() override;
 
     void columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const override;
 
@@ -214,9 +215,9 @@ public:
 
     ~SQLiteIntegration() override
     {
-        if (sqlite_connection)
+        if (sqlite_connection && *sqlite_connection)
         {
-            sqlite3_close(sqlite_connection);
+            sqlite3_close(*sqlite_connection);
         }
     }
 #else
@@ -225,7 +226,7 @@ public:
 
     SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static SQLiteIntegration * testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &);
+    static std::unique_ptr<SQLiteIntegration> testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &);
 
     ~SQLiteIntegration() override = default;
 #endif
@@ -268,7 +269,7 @@ public:
     {
     }
 
-    static MongoDBIntegration * testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc);
+    static std::unique_ptr<MongoDBIntegration> testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc);
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 
@@ -284,7 +285,7 @@ public:
 public:
     MongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegration(fcc, scc) { }
 
-    static MongoDBIntegration * testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &);
+    static std::unique_ptr<MongoDBIntegration> testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &);
 
     ~MongoDBIntegration() override = default;
 #endif
@@ -309,14 +310,14 @@ class ExternalIntegrations
 {
 private:
     const FuzzConfig & fc;
-    String buf, buf2;
-    MySQLIntegration * mysql = nullptr;
-    PostgreSQLIntegration * postresql = nullptr;
-    SQLiteIntegration * sqlite = nullptr;
-    RedisIntegration * redis = nullptr;
-    MongoDBIntegration * mongodb = nullptr;
-    MinIOIntegration * minio = nullptr;
-    MySQLIntegration * clickhouse = nullptr;
+    String buf;
+    std::unique_ptr<MySQLIntegration> mysql = nullptr;
+    std::unique_ptr<PostgreSQLIntegration> postresql = nullptr;
+    std::unique_ptr<SQLiteIntegration> sqlite = nullptr;
+    std::unique_ptr<RedisIntegration> redis = nullptr;
+    std::unique_ptr<MongoDBIntegration> mongodb = nullptr;
+    std::unique_ptr<MinIOIntegration> minio = nullptr;
+    std::unique_ptr<MySQLIntegration> clickhouse = nullptr;
 
     std::filesystem::path default_sqlite_path;
     size_t requires_external_call_check = 0;
@@ -374,17 +375,6 @@ public:
     void setDefaultSettings(PeerTableDatabase pt, const std::vector<String> & settings);
 
     void replicateSettings(PeerTableDatabase pt);
-
-    ~ExternalIntegrations()
-    {
-        delete mysql;
-        delete postresql;
-        delete sqlite;
-        delete mongodb;
-        delete redis;
-        delete minio;
-        delete clickhouse;
-    }
 };
 
 }
