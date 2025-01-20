@@ -717,9 +717,7 @@ def test_s3_enum_glob_should_not_list(started_cluster):
         table_format,
     )
     query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
-    assert run_query(instance, query, query_id=query_id).splitlines() == [
-        "4\t4\t4\t4"
-    ]
+    assert run_query(instance, query, query_id=query_id).splitlines() == ["4\t4\t4\t4"]
 
     instance.query("SYSTEM FLUSH LOGS")
     list_request_count = instance.query(
