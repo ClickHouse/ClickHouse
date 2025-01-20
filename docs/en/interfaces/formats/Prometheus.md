@@ -2,24 +2,31 @@
 title : Prometheus
 slug : /en/interfaces/formats/Prometheus
 keywords : [Prometheus]
+input_format: false
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
 ## Description
 
-Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+Exposes metrics in the [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
 
-The output table should have a proper structure.
-Columns `name` ([String](/docs/en/sql-reference/data-types/string.md)) and `value` (number) are required.
-Rows may optionally contain `help` ([String](/docs/en/sql-reference/data-types/string.md)) and `timestamp` (number).
-Column `type` ([String](/docs/en/sql-reference/data-types/string.md)) is either `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
-Each metric value may also have some `labels` ([Map(String, String)](/docs/en/sql-reference/data-types/map.md)).
-Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+For this format, it is a requirement for the output table to be structured correctly, by the following rules:
 
-There are special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
+- Columns `name` ([String](/docs/en/sql-reference/data-types/string.md)) and `value` (number) are required.
+- Rows may optionally contain `help` ([String](/docs/en/sql-reference/data-types/string.md)) and `timestamp` (number).
+- Column `type` ([String](/docs/en/sql-reference/data-types/string.md)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+- Each metric value may also have some `labels` ([Map(String, String)](/docs/en/sql-reference/data-types/map.md)).
+- Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+
+There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 
+Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, which are converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
 
 ## Example Usage
-
-**Example:**
 
 ```
 ┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐

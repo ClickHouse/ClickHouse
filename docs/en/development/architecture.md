@@ -1,7 +1,7 @@
 ---
 slug: /en/development/architecture
 sidebar_label: Architecture Overview
-sidebar_position: 62
+sidebar_position: 50
 ---
 
 # Overview of ClickHouse Architecture
