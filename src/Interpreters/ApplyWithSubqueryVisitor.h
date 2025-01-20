@@ -16,7 +16,6 @@ struct ASTTableExpression;
 class ApplyWithSubqueryVisitor
 {
 public:
-    ApplyWithSubqueryVisitor() = delete;
     explicit ApplyWithSubqueryVisitor(ContextPtr context_);
 
     struct Data
