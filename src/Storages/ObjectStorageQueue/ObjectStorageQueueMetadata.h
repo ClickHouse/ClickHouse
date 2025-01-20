@@ -141,6 +141,9 @@ public:
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
     tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
+    /// Set local ref count for metadata.
+    void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
@@ -186,6 +189,10 @@ private:
     std::shared_ptr<ServersHashRing> active_servers_hash_ring;
     /// Guards `active_servers` and `active_servers_hash_ring`.
     mutable SharedMutex active_servers_mutex;
+
+    /// Number of S3(Azure)Queue tables on the same
+    /// clickhouse server instance referencing the same metadata object.
+    std::atomic<size_t> * metadata_ref_count = nullptr;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

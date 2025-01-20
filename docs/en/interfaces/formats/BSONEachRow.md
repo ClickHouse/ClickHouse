@@ -2,12 +2,19 @@
 title : BSONEachRow
 slug : /en/interfaces/formats/BSONEachRow
 keywords : [BSONEachRow]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-In this format, ClickHouse formats/parses data as a sequence of BSON documents without any separator between them.
-Each row is formatted as a single document and each column is formatted as a single BSON document field with column name as a key.
+The `BSONEachRow` format parses data as a sequence of Binary JSON (BSON) documents without any separator between them.
+Each row is formatted as a single document and each column is formatted as a single BSON document field with the column name as a key.
 
 ## Data Types Matching
 
@@ -61,8 +68,11 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x10` int32                             | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal32](/docs/en/sql-reference/data-types/decimal.md)/[IPv4](/docs/en/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/docs/en/sql-reference/data-types/enum.md) |
 | `\x12` int64                             | [Int64/UInt64](/docs/en/sql-reference/data-types/int-uint.md)/[Decimal64](/docs/en/sql-reference/data-types/decimal.md)/[DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                       |
 
-Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8).
-Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) can be parsed from BSON Binary value with `\x00` binary subtype. In this case this format will validate that the size of binary data equals the size of expected value.
+Other BSON types are not supported. Additionally, it performs conversion between different integer types. 
+For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](../../sql-reference/data-types/int-uint.md).
+
+Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
+In this case, the format will validate that the size of the binary data equals the size of the expected value.
 
 :::note
 This format does not work properly on Big-Endian platforms.
@@ -72,5 +82,7 @@ This format does not work properly on Big-Endian platforms.
 
 ## Format Settings
 
-- [output_format_bson_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_bson_string_as_string) - use BSON String type instead of Binary for String columns. Default value - `false`.
-- [input_format_bson_skip_fields_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for format BSONEachRow. Default value - `false`.
+| Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|
+| [`output_format_bson_string_as_string`](../../operations/settings/settings-formats.md/#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](../../operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
