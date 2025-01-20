@@ -138,7 +138,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     if (configuration->isPathWithGlobs())
     {
         auto path = configuration->getPath();
-        if (containsOnlyEnumGlobs(path))
+        if (hasExactlyOneBracketsExpansion(path))
         {
             auto paths = expandSelectionGlob(configuration->getPath());
 

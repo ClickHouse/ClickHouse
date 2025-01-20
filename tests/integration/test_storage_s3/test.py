@@ -710,7 +710,7 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     for job in jobs:
         job.join()
 
-    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_{{2,3,4,5}}/night_{{32,48,97,11}}/tale.csv', 'CSV', '{}')".format(
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_2/night_{{32,48,97,11}}/tale.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
         bucket,
@@ -718,7 +718,7 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     )
     query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
     assert run_query(instance, query, query_id=query_id).splitlines() == [
-        "16\t16\t16\t16"
+        "4\t4\t4\t4"
     ]
 
     instance.query("SYSTEM FLUSH LOGS")

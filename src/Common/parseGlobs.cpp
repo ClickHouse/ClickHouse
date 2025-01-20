@@ -28,6 +28,11 @@ bool containsOnlyEnumGlobs(const std::string & input)
     return input.find_first_of("*?") == String::npos && !containsRangeGlob(input);
 }
 
+bool hasExactlyOneBracketsExpansion(const std::string & input)
+{
+    return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
+}
+
 
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
  * with such steps:
