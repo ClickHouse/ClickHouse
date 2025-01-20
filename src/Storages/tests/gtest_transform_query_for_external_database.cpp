@@ -299,8 +299,9 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
     const State & state = State::instance();
 
     check(state, 1, {"apply_id", "apply_type", "apply_status", "create_time"},
-          "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) AND apply_status IN (3,4)",
-          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))");
+          "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03', 'UTC'),-7) AND apply_status IN (3,4)",
+          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))",
+          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > 1545699723) AND ("apply_status" IN (3, 4)))");
 }
 
 TEST(TransformQueryForExternalDatabase, Aliases)
@@ -393,8 +394,9 @@ TEST(TransformQueryForExternalDatabase, ToDate)
     const State & state = State::instance();
 
     check(state, 1, {"a", "b", "foo"},
-        "SELECT foo FROM table WHERE a=10 AND b=toDate('2019-10-05')",
-        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = '2019-10-05'))");
+        "SELECT foo FROM table WHERE a=10 AND b=toDate('2019-10-05', 'UTC')",
+        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = '2019-10-05'))",
+        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = 18174))");
 }
 
 TEST(TransformQueryForExternalDatabase, Analyzer)
@@ -419,7 +421,8 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
 
     check(state, 1, {"is_value"},
         "SELECT is_value FROM table WHERE is_value = true",
-        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)");
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
 
     check(state, 1, {"is_value"},
         "SELECT is_value FROM table WHERE is_value = 1",
