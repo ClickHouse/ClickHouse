@@ -26,6 +26,7 @@ namespace DB
 {
 
 struct Settings;
+struct TimeoutSetter;
 
 class Connection;
 struct ConnectionParameters;
@@ -277,13 +278,13 @@ private:
     AsyncCallback async_callback = {};
 
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello();
+    void sendHello(const Poco::Timespan & handshake_timeout);
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth();
+    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
 #endif
 
     void sendAddendum();
@@ -311,7 +312,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected);
+    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
 };
 
 template <typename Conn>
