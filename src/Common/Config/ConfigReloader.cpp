@@ -1,6 +1,7 @@
 #include "ConfigReloader.h"
 
 #include <filesystem>
+#include <memory>
 #include "ConfigProcessor.h"
 #include <Common/Exception.h>
 #include <Common/filesystemHelpers.h>
@@ -138,7 +139,8 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (Coordination::isHardwareError(e.code))
                 need_reload_from_zk = true;
 
-            const auto *exc = new Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "{}", getCurrentExceptionMessage(/*with_stacktrace=*/true));
+            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
+            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
 
             if (throw_on_error)
                 exc->rethrow();
@@ -148,7 +150,8 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         catch (...)
         {
-            const auto *exc = new Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "{}", getCurrentExceptionMessage(/*with_stacktrace=*/true));
+            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
+            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
 
             if (throw_on_error)
                 exc->rethrow();
@@ -177,7 +180,8 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         catch (...)
         {
-            const auto *exc = new Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "{}", getCurrentExceptionMessage(/*with_stacktrace=*/true));
+            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
+            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
 
             if (throw_on_error)
                 exc->rethrow();
