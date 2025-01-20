@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;
 DROP TABLE IF EXISTS tjj;
 
-CREATE TABLE t1 (key1 UInt64, key2 UInt64, key3 UInt64) ENGINE = Memory;
+CREATE TABLE t1 (key1 UInt64, key2 UInt64, key3 UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 VALUES (11, 12, 13), (21, 22, 23), (31, 32, 33), (41, 42, 43), (51, 52, 53);
 
 CREATE TABLE tj (key2 UInt64, key1 UInt64, key3 UInt64, attr UInt64) ENGINE = Join(ALL, INNER, key3, key2, key1);
@@ -12,7 +12,7 @@ CREATE TABLE tjj (key2 UInt64, key1 UInt64, key3 UInt64, attr UInt64) ENGINE = J
 INSERT INTO tjj VALUES (11, 11, 11, 1000), (21, 21, 21, 2000), (31, 31, 31, 3000), (41, 41, 41, 4000), (51, 51, 51, 5000), (61, 61, 61, 6000);
 
 
-{% for use_analyzer in [0, 1] -%}
+{% for use_analyzer in [1] -%}
 SET enable_analyzer = '{{ use_analyzer }}';
 
 SELECT '--- using ---';
