@@ -759,9 +759,7 @@ namespace
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
                     outcome.GetError().GetExceptionName() == "InvalidArgument" ||
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
-                    (outcome.GetError().GetExceptionName() == "InternalError" &&
-                        outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT &&
-                        outcome.GetError().GetMessage().contains("use the Rewrite method in the JSON API")))
+                    S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
                     if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {

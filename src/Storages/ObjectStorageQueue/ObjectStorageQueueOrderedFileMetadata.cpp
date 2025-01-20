@@ -545,8 +545,8 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
     throw zkutil::KeeperMultiException(code, requests, responses);
 }
 
-std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
-    const std::vector<std::string> & paths,
+void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
+    std::vector<std::string> & paths,
     const std::filesystem::path & zk_path_,
     size_t buckets_num,
     LoggerPtr log_)
@@ -584,9 +584,9 @@ std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAnd
         check_paths_indexes.push_back(i);
     }
 
-    std::vector<size_t> result;
+    std::vector<std::string> result;
     if (failed_paths.empty())
-        return result; /// All files are already processed.
+        return; /// All files are already processed.
 
     auto check_code = [&](auto code, const std::string & path)
     {
@@ -597,11 +597,11 @@ std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAnd
     auto responses = zk_client->tryGet(failed_paths);
     for (size_t i = 0; i < responses.size(); ++i)
     {
-        const auto & filename = paths[check_paths_indexes[i]];
+        const auto filename = std::move(paths[check_paths_indexes[i]]);
         check_code(responses[i].error, filename);
         if (responses[i].error == Coordination::Error::ZNONODE)
         {
-            result.push_back(check_paths_indexes[i]);
+            result.push_back(filename);
         }
         else
         {
@@ -609,7 +609,7 @@ std::vector<size_t> ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAnd
         }
 
     }
-    return result;
+    paths = std::move(result);
 }
 
 }
