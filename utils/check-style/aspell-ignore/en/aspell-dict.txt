@@ -48,9 +48,9 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AvroFormatSettings
 AzureQueue
 Azurite
-arrayNormalizedGini
 BFloat
 BIGINT
 BIGSERIAL
@@ -207,6 +207,9 @@ Crowdsourced
 Ctrl
 CurrentMetrics
 CustomSeparated
+CustomSeparatedIgnoreSpaces
+CustomSeparatedIgnoreSpacesWithNames
+CustomSeparatedIgnoreSpacesWithNamesAndTypes
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBAs
@@ -229,6 +232,7 @@ DataLens
 DataPacket
 DataTime
 DataTypes
+DataTypesMatching
 DatabaseCatalog
 DatabaseCatalogThreads
 DatabaseCatalogThreadsActive
@@ -380,6 +384,7 @@ Heredoc
 HexAreaKm
 HexAreaM
 HexRing
+HiveText
 Holistics
 Homebrew
 Homebrew's
@@ -481,6 +486,7 @@ JSONExtractString
 JSONExtractUInt
 JSONHas
 JSONLength
+JSONLines
 JSONObjectEachRow
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
@@ -541,6 +547,8 @@ Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineAsStringWithNames
+LineAsStringWithNamesAndTypes
 LineString
 Linf
 LinfDistance
@@ -650,6 +658,7 @@ MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
 MySQLThreads
+MySQLWire
 NATS
 NCHAR
 NDJSON
@@ -693,6 +702,7 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+ODBCDriver
 OFNS
 OLAP
 OLTP
@@ -811,6 +821,7 @@ PostLink
 PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
+PostgreSQLWire
 Postgres
 PostgresSQL
 Precompiled
@@ -820,13 +831,16 @@ PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyJSONEachRow
+PrettyJSONLines
 PrettyMonoBlock
+PrettyNDJSON
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
 PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyFormatSettings
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
@@ -873,6 +887,8 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
+RawWithNames
+RawWithNamesAndTypes
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -923,6 +939,7 @@ RowBinary
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryFormatSettings
 Runtime
 SATA
 SELECTs
@@ -1028,7 +1045,10 @@ TMIN
 TPCH
 TSDB
 TSVRaw
+TSVRawWithNames
+TSVRawWithNamesAndTypes
 TSVWithNames
+TSVWithNamesAndTypes
 TSVs
 TSan
 TThe
@@ -1274,6 +1294,7 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
+arrayNormalizedGini
 arrayPartialReverseSort
 arrayPartialShuffle
 arrayPartialSort
@@ -2893,8 +2914,8 @@ timeZoneOffset
 timezones
 tinylog
 tmp
-toBool
 toBFloat
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -3107,6 +3128,7 @@ userspace
 userver
 utils
 uuid
+uuids
 uuidv
 vCPU
 varPop

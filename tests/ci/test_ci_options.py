@@ -76,7 +76,7 @@ _TEST_JOB_LIST = [
     "Stateless tests (tsan)",
     "Stateless tests (msan)",
     "Stateless tests (ubsan)",
-    "Stateless tests (release, old analyzer, s3 storage, DatabaseReplicated)",
+    "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
     "Stateless tests (release, ParallelReplicas, s3 storage)"
     "Stateless tests (debug, s3 storage)",
     "Stateless tests (tsan, s3 storage)",
@@ -335,7 +335,7 @@ class TestCIOptions(unittest.TestCase):
                 "Style check",
                 "Integration tests (asan, old analyzer)",
                 "package_release",
-                "Stateless tests (release, old analyzer, s3 storage, DatabaseReplicated)",
+                "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
                 "package_asan",
                 "fuzzers",
                 "package_aarch64",

@@ -411,7 +411,7 @@ struct ConverterDecimal
 };
 
 /// Returns either `source` or `scratch`.
-PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, CompressionMethod method)
+PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, CompressionMethod method, int level)
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
@@ -468,7 +468,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             auto compressed_buf = wrapWriteBufferWithCompressionMethod(
                 std::move(dest_buf),
                 method,
-                /*level*/ 3,
+                level,
                 /*zstd_window_log*/ 0,
                 source.size(),
                 /*existing_memory*/ source.data());
@@ -597,7 +597,7 @@ void writeColumnImpl(
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
 
         size_t uncompressed_size = encoded.size();
-        auto & compressed = compress(encoded, compressed_maybe, s.compression);
+        auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
 
         if (compressed.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed page is too big: {}", compressed.size());
@@ -675,7 +675,7 @@ void writeColumnImpl(
         encoded.resize(static_cast<size_t>(dict_size));
         dict_encoder->WriteDict(reinterpret_cast<uint8_t *>(encoded.data()));
 
-        auto & compressed = compress(encoded, compressed_maybe, s.compression);
+        auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
 
         if (compressed.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed dictionary page is too big: {}", compressed.size());

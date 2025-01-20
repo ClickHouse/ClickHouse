@@ -1,6 +1,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/GWPAsan.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Daemon/BaseDaemon.h>
