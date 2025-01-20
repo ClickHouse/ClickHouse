@@ -260,7 +260,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             }
 
             /// After we detached the table from the database we can safely shut it down.
-            /// We don't need a lock for this, because this table it no longer visible from the outside.
+            /// We don't need a lock for this, because this table is no longer visible from the outside.
             table->flushAndShutdown();
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
