@@ -20,6 +20,9 @@ protected:
     /// Whether it is allowed to calculate a checksum of a part of the file from its beginning up to some point.
     virtual bool isPartialChecksumAllowed() const { return true; }
 
+    /// Whether it is allowed to calculate a checksum from the paths to blobs on a remote disk.
+    virtual bool isChecksumFromRemotePathAllowed() const { return true; }
+
     mutable std::mutex mutex;
 
 private:
@@ -46,12 +49,21 @@ private:
         /// Reads a file and calculates a checksum from its contents.
         /// That can be slow for big files and remote disks.
         FromReading,
+
+        /// Calculates a checksum of a remote path or paths. It's fast however there are some disadvantages:
+        /// 1) it can be used only for remote disks which create a random blob for every new file and never
+        /// rewrite the same blob. For example, it can be used for "s3" disks and can't be used for "s3_plain";
+        /// 2) it calculates different checksums for the same file stored in different places,
+        /// so multiple files with the same actual contents can be stored multiple times in a backup.
+        /// For example, the same "columns.txt" file from multiple parts will be stored multiple times in a backup.
+        FromRemotePath,
     };
 
     /// Chooses an appropriate checksum calculation method based on the disk settings and the file size.
     ChecksumCalculationMethod chooseChecksumCalculationMethod() const;
 
     bool hasPrecalculatedChecksum() const;
+    bool canCalculateChecksumFromRemotePath() const;
 
     /// Calculates one or two checksums for method Precalculated.
     std::pair<std::optional<UInt128>, std::optional<UInt128>> getPrecalculatedChecksumIfFull(
@@ -64,6 +76,10 @@ private:
     /// Calculates one or two checksums for method FromReading.
     std::pair<std::optional<UInt128>, std::optional<UInt128>> calculateChecksumFromReading(
         UInt64 limit, std::optional<UInt64> second_limit, const ReadSettings & read_settings) const;
+
+    /// Calculates one or two checksums for method FromRemotePath.
+    std::pair<std::optional<UInt128>, std::optional<UInt128>> calculateChecksumFromRemotePath(
+        UInt64 limit, std::optional<UInt64> second_limit) const;
 
     mutable std::optional<UInt128> calculated_checksum TSA_GUARDED_BY(mutex);
 };

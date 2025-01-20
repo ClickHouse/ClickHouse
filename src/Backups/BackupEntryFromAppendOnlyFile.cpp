@@ -26,12 +26,14 @@ BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(
     const DiskPtr & disk_,
     const String & file_path_,
     bool copy_encrypted_,
-    const std::optional<UInt64> & file_size_)
+    const std::optional<UInt64> & file_size_,
+    bool allow_checksum_from_remote_path_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk->getDataSourceDescription())
     , copy_encrypted(copy_encrypted_ && data_source_description.is_encrypted)
     , size(calculateSize(disk_, file_path_, copy_encrypted, file_size_))
+    , allow_checksum_from_remote_path(allow_checksum_from_remote_path_)
 {
 }
 

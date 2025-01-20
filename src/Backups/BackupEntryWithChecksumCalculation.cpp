@@ -98,6 +98,10 @@ BackupEntryWithChecksumCalculation::ChecksumCalculationMethod BackupEntryWithChe
     {
         method = ChecksumCalculationMethod::Precalculated;
     }
+    else if (canCalculateChecksumFromRemotePath())
+    {
+        method = ChecksumCalculationMethod::FromRemotePath;
+    }
     else if (hasPrecalculatedChecksum() && isEncryptedByDisk())
     {
         method = ChecksumCalculationMethod::PrecalculatedCombinedWithEncryptionIV;
@@ -117,6 +121,12 @@ bool BackupEntryWithChecksumCalculation::hasPrecalculatedChecksum() const
 }
 
 
+bool BackupEntryWithChecksumCalculation::canCalculateChecksumFromRemotePath() const
+{
+    return isChecksumFromRemotePathAllowed() && !getFilePath().empty() && getDisk() && getDisk()->areBlobPathsRandom();
+}
+
+
 std::pair<std::optional<UInt128>, std::optional<UInt128>> BackupEntryWithChecksumCalculation::calculateChecksum(
     UInt64 limit, std::optional<UInt64> second_limit, const ReadSettings & read_settings) const
 {
@@ -133,6 +143,9 @@ std::pair<std::optional<UInt128>, std::optional<UInt128>> BackupEntryWithChecksu
 
         case ChecksumCalculationMethod::FromReading:
             return calculateChecksumFromReading(limit, second_limit, read_settings);
+
+        case ChecksumCalculationMethod::FromRemotePath:
+            return calculateChecksumFromRemotePath(limit, second_limit);
     }
     UNREACHABLE();
 }
@@ -229,6 +242,66 @@ std::pair<std::optional<UInt128>, std::optional<UInt128>> BackupEntryWithChecksu
                             getFilePath());
         }
         return hashing_read_buffer->getHash();
+    };
+
+    std::optional<UInt128> checksum = calculate_hash(limit, 0);
+
+    std::optional<UInt128> second_checksum;
+    if (second_limit)
+        second_checksum = calculate_hash(*second_limit, checksum);
+
+    return {checksum, second_checksum};
+}
+
+
+std::pair<std::optional<UInt128>, std::optional<UInt128>> BackupEntryWithChecksumCalculation::calculateChecksumFromRemotePath(
+    UInt64 limit, std::optional<UInt64> second_limit) const
+{
+    UInt64 size = getSize();
+    limit = std::min(limit, size);
+    if (second_limit)
+        second_limit = std::min(*second_limit, size);
+
+    std::optional<StoredObjects> stored_objects;
+    UInt64 offset = 0;
+
+    auto calculate_hash = [&](UInt64 limit_, std::optional<UInt128> previous_hash) -> std::optional<UInt128>
+    {
+        if ((limit_ != size) && !isPartialChecksumAllowed())
+            return {};
+        if (limit_ == offset)
+            return previous_hash;
+        if (!stored_objects)
+            stored_objects = getDisk()->getStorageObjects(getFilePath());
+        offset = 0;
+        UInt128 hash = 0;
+        size_t index = 0;
+        while (offset != limit_)
+        {
+            if (index == stored_objects->size())
+            {
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
+                                "Size of file {} decreased ({} -> {}) unexpectedly while calculating its checksum",
+                                getFilePath(), size, getTotalSize(*stored_objects));
+            }
+            const auto & object = (*stored_objects)[index];
+            UInt64 next_offset = std::min(offset + object.bytes_size, limit_);
+            UInt64 bytes_count = next_offset - offset;
+            if (bytes_count)
+            {
+                hash = CityHash_v1_0_2::CityHash128WithSeed(object.remote_path.data(), object.remote_path.length(), {hash.items[0], hash.items[1]});
+                hash = CityHash_v1_0_2::CityHash128WithSeed(reinterpret_cast<const char *>(&bytes_count), sizeof(bytes_count), {hash.items[0], hash.items[1]});
+            }
+            offset = next_offset;
+            ++index;
+        }
+        if ((offset == size) && !isPartialChecksumAllowed() && (index != stored_objects->size()))
+        {
+            throw Exception(ErrorCodes::EXPECTED_END_OF_FILE,
+                            "Size of immutable file {} increased unexpectedly while calculating its checksum",
+                            getFilePath());
+        }
+        return hash;
     };
 
     std::optional<UInt128> checksum = calculate_hash(limit, 0);

@@ -11,13 +11,15 @@ BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const String & file_path_,
     bool copy_encrypted_,
     const std::optional<UInt64> & file_size_,
-    const std::optional<UInt128> & checksum_)
+    const std::optional<UInt128> & checksum_,
+    bool allow_checksum_from_remote_path_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk->getDataSourceDescription())
     , copy_encrypted(copy_encrypted_ && data_source_description.is_encrypted)
     , passed_file_size(file_size_)
     , passed_checksum(checksum_)
+    , allow_checksum_from_remote_path(allow_checksum_from_remote_path_)
 {
 }
 

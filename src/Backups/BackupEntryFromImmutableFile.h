@@ -20,7 +20,8 @@ public:
         const String & file_path_,
         bool copy_encrypted_ = false,
         const std::optional<UInt64> & file_size_ = {},
-        const std::optional<UInt128> & checksum_ = {});
+        const std::optional<UInt128> & checksum_ = {},
+        bool allow_checksum_from_remote_path_ = true);
 
     ~BackupEntryFromImmutableFile() override;
 
@@ -37,6 +38,7 @@ public:
 protected:
     std::optional<UInt128> getPrecalculatedChecksum() const override { return passed_checksum; }
     bool isPartialChecksumAllowed() const override { return false; }
+    bool isChecksumFromRemotePathAllowed() const override { return allow_checksum_from_remote_path; }
 
 private:
     UInt64 calculateSize() const;
@@ -47,6 +49,7 @@ private:
     const bool copy_encrypted;
     const std::optional<UInt64> passed_file_size;
     const std::optional<UInt128> passed_checksum;
+    const bool allow_checksum_from_remote_path;
     mutable std::optional<UInt64> calculated_size TSA_GUARDED_BY(mutex);
 };
 

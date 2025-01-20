@@ -414,6 +414,7 @@ void DataPartStorageOnDiskBase::backup(
     files_to_backup = getActualFileNamesOnDisk(files_to_backup);
 
     bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     auto backup_file = [&](const String & filepath)
     {
@@ -441,7 +442,7 @@ void DataPartStorageOnDiskBase::backup(
         }
 
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(
-            disk, filepath_on_disk, copy_encrypted, file_size, file_hash);
+            disk, filepath_on_disk, copy_encrypted, file_size, file_hash, allow_checksums_from_remote_paths);
 
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
