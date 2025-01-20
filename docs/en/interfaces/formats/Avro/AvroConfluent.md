@@ -7,7 +7,6 @@ output_format: false
 alias: []
 ---
 
-import AvroFormatSettings from './_snippets/common-format-settings-avro.md'
 import DataTypesMatching from './_snippets/data-types-matching.md'
 
 | Input | Output | Alias |
@@ -65,4 +64,8 @@ The Schema Registry URL is configured with [`format_avro_schema_registry_url`](/
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
 
-<AvroFormatSettings/>
+| Setting                                     | Description                                                                                         | Default |
+|---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
+| `input_format_avro_allow_missing_fields`    | For Avro/AvroConfluent format: when field is not found in schema use default value instead of error | `0`     |
+| `input_format_avro_null_as_default`         | For Avro/AvroConfluent format: insert default in case of null and non Nullable column	              |   `0`   |
+| `format_avro_schema_registry_url`           | For AvroConfluent format: Confluent Schema Registry URL.                                            |         |
