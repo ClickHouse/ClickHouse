@@ -2,6 +2,15 @@
 #include <IO/HashingReadBuffer.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event BackupReadLocalFilesToCalculateChecksums;
+    extern const Event BackupReadLocalBytesToCalculateChecksums;
+    extern const Event BackupReadRemoteFilesToCalculateChecksums;
+    extern const Event BackupReadRemoteBytesToCalculateChecksums;
+}
+
+
 namespace DB
 {
 
@@ -177,6 +186,18 @@ std::pair<std::optional<UInt128>, std::optional<UInt128>> BackupEntryWithChecksu
         second_limit = std::min(*second_limit, size);
 
     UInt64 read_size = second_limit.value_or(limit);
+
+    bool is_remote_file = getDisk() && getDisk()->isRemote();
+    if (is_remote_file)
+    {
+        ProfileEvents::increment(ProfileEvents::BackupReadRemoteFilesToCalculateChecksums);
+        ProfileEvents::increment(ProfileEvents::BackupReadRemoteBytesToCalculateChecksums, read_size);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::BackupReadLocalFilesToCalculateChecksums);
+        ProfileEvents::increment(ProfileEvents::BackupReadLocalBytesToCalculateChecksums, read_size);
+    }
 
     std::unique_ptr<ReadBuffer> read_buffer;
     std::unique_ptr<HashingReadBuffer> hashing_read_buffer;

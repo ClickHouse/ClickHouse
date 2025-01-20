@@ -12,6 +12,12 @@
 #include <base/hex.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event BackupPreparingFileInfosMicroseconds;
+}
+
+
 namespace DB
 {
 
@@ -209,6 +215,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 {
     LoggerPtr log = getLogger("FileInfosFromBackupEntries");
     LOG_TRACE(log, "Building file infos for backup entries");
+    auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
 
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
