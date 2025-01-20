@@ -3,6 +3,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <IO/EmptyReadBuffer.h>
+#include <Interpreters/Squashing.h>
 
 namespace DB
 {
@@ -55,7 +56,7 @@ public:
     //     size_t max_rows = std::numeric_limits<uint64_t>::max());
 
 private:
-    void reserveResultColumns(size_t num_bytes);
+    // void reserveResultColumns(size_t num_bytes);
 
     const Block header;
     const InputFormatPtr format;
@@ -66,8 +67,7 @@ private:
     MutableColumns result_columns;
     ColumnCheckpoints checkpoints;
 
-    size_t total_bytes;
-    bool try_reserve = true;
+    Squashing squashing;
 };
 
 }

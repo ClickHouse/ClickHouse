@@ -23,7 +23,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     const Block & header_,
     InputFormatPtr format_,
     ErrorCallback on_error_,
-    size_t total_bytes_,
+    size_t /* total_bytes_ */,
     SimpleTransformPtr adding_defaults_transform_)
     : header(header_)
     , format(std::move(format_))
@@ -32,11 +32,12 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
-    , total_bytes(total_bytes_)
+    // , total_bytes(total_bytes_)
+    , squashing(header_, std::numeric_limits<uint64_t>::max(), 0)
 {
-    LOG_WARNING(
-        &Poco::Logger::get("StreamingFormatExecutor"),
-        "ctor");
+    // LOG_WARNING(
+    //     &Poco::Logger::get("StreamingFormatExecutor"),
+    //     "ctor");
 
     connect(format->getPort(), port);
 
@@ -69,9 +70,15 @@ StreamingFormatExecutor::StreamingFormatExecutor(
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
 {
-    auto ret_columns = header.cloneEmptyColumns();
-    std::swap(ret_columns, result_columns);
-    return ret_columns;
+    // auto ret_columns = header.cloneEmptyColumns();
+    // std::swap(ret_columns, result_columns);
+    // return ret_columns;
+
+    // return squashing.flush().mutateColumns();
+
+    ///// Chunk result_chunk = Squashing::squash(squashing.flush());
+    return Squashing::squash(squashing.flush()).mutateColumns();
+
 }
 
 void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameters)
@@ -81,27 +88,27 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
         values_format->setQueryParameters(parameters);
 }
 
-void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes)
-{
-    if (!try_reserve)
-        return;
+// void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes)
+// {
+//     if (!try_reserve)
+//         return;
 
-    try_reserve = false;
+//     try_reserve = false;
 
-    if (total_bytes && num_bytes)
-    {
-        size_t ratio = total_bytes / num_bytes;
-        if (ratio > 4)
-        {
-            for (size_t i = 0; i < result_columns.size(); ++i)
-            {
-                result_columns[i]->reserve(result_columns[i]->capacity() * ratio);
-            }
-        }
-    }
-}
+//     if (total_bytes && num_bytes)
+//     {
+//         size_t ratio = total_bytes / num_bytes;
+//         if (ratio > 4)
+//         {
+//             for (size_t i = 0; i < result_columns.size(); ++i)
+//             {
+//                 result_columns[i]->reserve(result_columns[i]->capacity() * ratio);
+//             }
+//         }
+//     }
+// }
 
-size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
+size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t /* num_bytes */)
 {
     format->setReadBuffer(buffer);
 
@@ -110,7 +117,7 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
     /// we call format->resetReadBuffer() method that resets all buffers inside format.
     SCOPE_EXIT(format->resetReadBuffer());
     auto new_rows = execute();
-    reserveResultColumns(num_bytes);
+    // reserveResultColumns(num_bytes);
     return new_rows;
 }
 
@@ -119,9 +126,9 @@ size_t StreamingFormatExecutor::execute()
     for (size_t i = 0; i < result_columns.size(); ++i)
         result_columns[i]->updateCheckpoint(*checkpoints[i]);
 
-    LOG_WARNING(
-        &Poco::Logger::get("StreamingFormatExecutor"),
-        "execute");
+    // LOG_WARNING(
+    //     &Poco::Logger::get("StreamingFormatExecutor"),
+    //     "execute");
 
     try
     {
@@ -134,24 +141,38 @@ size_t StreamingFormatExecutor::execute()
             switch (status)
             {
                 case IProcessor::Status::Ready:
-                    LOG_WARNING(
-                        &Poco::Logger::get("StreamingFormatExecutor"),
-                        "format->work()");
+                    // LOG_WARNING(
+                    //     &Poco::Logger::get("StreamingFormatExecutor"),
+                    //     "format->work()");
                     format->work();
                     break;
 
                 case IProcessor::Status::Finished:
-                    LOG_WARNING(
-                        &Poco::Logger::get("StreamingFormatExecutor"),
-                        "resetParser");
+                    // LOG_WARNING(
+                    //     &Poco::Logger::get("StreamingFormatExecutor"),
+                    //     "resetParser");
                     format->resetParser();
                     return new_rows;
 
                 case IProcessor::Status::PortFull:
-                    LOG_WARNING(
-                        &Poco::Logger::get("StreamingFormatExecutor"),
-                        "insertChunk");
-                    new_rows += insertChunk(port.pull());
+                    {
+                        // LOG_WARNING(
+                        //     &Poco::Logger::get("StreamingFormatExecutor"),
+                        //     "insertChunk");
+
+
+
+
+                        // new_rows += insertChunk(port.pull());
+
+
+
+                        auto chunk = port.pull();
+                        new_rows += chunk.getNumRows();
+
+                        squashing.add(std::move(chunk));
+                    }
+
                     break;
 
                 case IProcessor::Status::NeedData:
