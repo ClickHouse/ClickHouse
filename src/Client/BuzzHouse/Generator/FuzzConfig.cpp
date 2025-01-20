@@ -213,4 +213,50 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->timezones, "time_zones", "time_zone");
 }
 
+bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table)
+{
+    const String &detached_tbl = detached ? "detached_parts" : "parts",
+                 &db_clause = database.empty() ? "" : ("\"database\" = '" + database + "' AND ");
+
+    processServerQuery(fmt::format(
+        "SELECT count() FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND \"partition_id\" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT "
+        "CSV;",
+        detached_tbl,
+        db_clause,
+        table,
+        fuzz_out.generic_string()));
+
+    std::ifstream infile(fuzz_out);
+    buf.resize(0);
+    if (std::getline(infile, buf))
+    {
+        return !buf.empty() && buf[0] != '0';
+    }
+    return false;
+}
+
+void FuzzConfig::tableGetRandomPartitionOrPart(
+    const bool detached, const bool partition, const String & database, const String & table, String & res)
+{
+    const String &detached_tbl = detached ? "detached_parts" : "parts",
+                 &db_clause = database.empty() ? "" : ("\"database\" = '" + database + "' AND ");
+
+    //system.parts doesn't support sampling, so pick up a random part with a window function
+    processServerQuery(fmt::format(
+        "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
+        "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE {}\"table\" = "
+        "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+        partition ? "partition_id" : "name",
+        detached_tbl,
+        db_clause,
+        table,
+        detached_tbl,
+        db_clause,
+        table,
+        fuzz_out.generic_string()));
+    res.resize(0);
+    std::ifstream infile(fuzz_out, std::ios::in);
+    std::getline(infile, res);
+}
+
 }

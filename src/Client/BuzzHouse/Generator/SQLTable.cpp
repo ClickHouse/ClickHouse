@@ -516,7 +516,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                     const ColumnPathChain & entry = this->entries[i];
                     SQLType * tp = entry.getBottomType();
 
-                    if ((hasType<DateType, false, true, false>(tp) || hasType<DateTimeType, false, true, false>(tp)) && rg.nextBool())
+                    if ((hasType<DateType>(false, true, false, tp) || hasType<DateTimeType>(false, true, false, tp)) && rg.nextBool())
                     {
                         //Use date functions for partitioning/keys
                         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
@@ -524,7 +524,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                         func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(dates_hash));
                         columnPathRef(entry, func_call->add_args()->mutable_expr());
                     }
-                    else if (hasType<IntType, true, true, false>(tp) && rg.nextBool())
+                    else if (hasType<IntType>(true, true, false, tp) && rg.nextBool())
                     {
                         //Use modulo function for partitioning/keys
                         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
@@ -1146,7 +1146,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         flatTableColumnPath(
             flat_tuple | flat_nested | flat_json | skip_nested_node,
             t,
-            [&itpe](const SQLColumn & c) { return itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true, true, true>(c.tp); });
+            [&itpe](const SQLColumn & c) { return itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType>(true, true, true, c.tp); });
     }
     if (!entries.empty())
     {

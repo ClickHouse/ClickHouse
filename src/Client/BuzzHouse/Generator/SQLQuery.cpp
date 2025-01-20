@@ -106,6 +106,94 @@ void StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation 
     }
 }
 
+void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_engine, const SQLTable & t, TableFunction * tfunc)
+{
+    if (!table_engine && t.hasClickHousePeer())
+    {
+        const ServerCredentials & sc = fc.clickhouse_server.value();
+        RemoteFunc * rfunc = tfunc->mutable_remote();
+
+        rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        rfunc->set_rdatabase(t.db ? ("d" + std::to_string(t.db->dname)) : "default");
+        rfunc->set_rtable("t" + std::to_string(t.tname));
+        rfunc->set_user(sc.user);
+        rfunc->set_password(sc.password);
+    }
+    else if ((table_engine && t.isMySQLEngine()) || (!table_engine && t.hasMySQLPeer()))
+    {
+        const ServerCredentials & sc = fc.mysql_server.value();
+        MySQLFunc * mfunc = tfunc->mutable_mysql();
+
+        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+        mfunc->set_rdatabase(sc.database);
+        mfunc->set_rtable("t" + std::to_string(t.tname));
+        mfunc->set_user(sc.user);
+        mfunc->set_password(sc.password);
+    }
+    else if ((table_engine && t.isPostgreSQLEngine()) || (!table_engine && t.hasPostgreSQLPeer()))
+    {
+        const ServerCredentials & sc = fc.postgresql_server.value();
+        PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
+
+        pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+        pfunc->set_rdatabase(sc.database);
+        pfunc->set_rtable("t" + std::to_string(t.tname));
+        pfunc->set_user(sc.user);
+        pfunc->set_password(sc.password);
+        pfunc->set_rschema("test");
+    }
+    else if ((table_engine && t.isSQLiteEngine()) || (!table_engine && t.hasSQLitePeer()))
+    {
+        SQLiteFunc * sfunc = tfunc->mutable_sqite();
+
+        sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
+        sfunc->set_rtable("t" + std::to_string(t.tname));
+    }
+    else if (table_engine && t.isS3Engine())
+    {
+        bool first = true;
+        const ServerCredentials & sc = fc.minio_server.value();
+        S3Func * sfunc = tfunc->mutable_s3();
+
+        sfunc->set_resource(
+            "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
+            + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
+        sfunc->set_user(sc.user);
+        sfunc->set_password(sc.password);
+        sfunc->set_format(t.file_format);
+        buf.resize(0);
+        flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+        for (const auto & entry : remote_entries)
+        {
+            SQLType * tp = entry.getBottomType();
+
+            if (!first)
+            {
+                buf += ", ";
+            }
+            buf += entry.getBottomName();
+            buf += " ";
+            tp->typeName(buf, true);
+            if (entry.nullable.has_value())
+            {
+                buf += entry.nullable.value() ? "" : " NOT";
+                buf += " NULL";
+            }
+            first = false;
+        }
+        remote_entries.clear();
+        sfunc->set_structure(buf);
+        if (!t.file_comp.empty())
+        {
+            sfunc->set_fcomp(t.file_comp);
+        }
+    }
+    else
+    {
+        assert(0);
+    }
+}
+
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
@@ -220,7 +308,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
             [&](const SQLTable & tt)
             { return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine(); }));
 
-        setTableRemote<true>(rg, t, jtf->mutable_tfunc());
+        setTableRemote(rg, true, t, jtf->mutable_tfunc());
         addTableRelation(rg, true, name, t);
         jtf->mutable_table_alias()->set_table(name);
     }

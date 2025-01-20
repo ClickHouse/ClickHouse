@@ -365,6 +365,37 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     }
 }
 
+void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const bool allow_parts, const SQLTable & t, PartitionExpr * pexpr)
+{
+    bool set_part = false;
+
+    if (t.isMergeTreeFamily())
+    {
+        const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
+        const String tname = "t" + std::to_string(t.tname);
+        const bool table_has_partitions = rg.nextSmallNumber() < 9 && fc.tableHasPartitions(false, dname, tname);
+
+        if (table_has_partitions)
+        {
+            if (allow_parts && rg.nextBool())
+            {
+                fc.tableGetRandomPartitionOrPart(false, false, dname, tname, buf);
+                pexpr->set_part(buf);
+            }
+            else
+            {
+                fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
+                pexpr->set_partition_id(buf);
+            }
+            set_part = true;
+        }
+    }
+    if (!set_part)
+    {
+        pexpr->set_tuple(true);
+    }
+}
+
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
 {
     ExprSchemaTable * est = ot->mutable_est();
@@ -383,7 +414,7 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
     {
         if (rg.nextBool())
         {
-            generateNextTablePartition<false>(rg, t, ot->mutable_partition());
+            generateNextTablePartition(rg, false, t, ot->mutable_partition());
         }
         ot->set_cleanup(rg.nextSmallNumber() < 3);
     }
@@ -431,7 +462,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     if (t.isMergeTreeFamily() && rg.nextBool())
     {
-        generateNextTablePartition<true>(rg, t, ct->mutable_partition());
+        generateNextTablePartition(rg, true, t, ct->mutable_partition());
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -670,7 +701,7 @@ void StatementGenerator::generateNextDelete(RandomGenerator & rg, LightDelete * 
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     if (t.isMergeTreeFamily() && rg.nextBool())
     {
-        generateNextTablePartition<false>(rg, t, del->mutable_partition());
+        generateNextTablePartition(rg, false, t, del->mutable_partition());
     }
     generateUptDelWhere(rg, t, del->mutable_where()->mutable_expr()->mutable_expr());
     if (rg.nextSmallNumber() < 3)
@@ -828,7 +859,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                                                   .get());
         const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
         const String tname = "t" + std::to_string(t.tname);
-        const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions<false>(dname, tname);
+        const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
         at->set_is_temp(t.is_temp);
         if (t.db)
@@ -913,7 +944,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, hdel->mutable_partition());
+                    generateNextTablePartition(rg, false, t, hdel->mutable_partition());
                 }
                 generateUptDelWhere(rg, t, hdel->mutable_del()->mutable_expr()->mutable_expr());
             }
@@ -944,7 +975,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 this->entries.clear();
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, mcol->mutable_partition());
+                    generateNextTablePartition(rg, false, t, mcol->mutable_partition());
                 }
             }
             else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
@@ -980,7 +1011,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 this->entries.clear();
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, ccol->mutable_partition());
+                    generateNextTablePartition(rg, false, t, ccol->mutable_partition());
                 }
             }
             else if (
@@ -1037,7 +1068,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, adm->mutable_partition());
+                    generateNextTablePartition(rg, false, t, adm->mutable_partition());
                 }
             }
             else if (
@@ -1050,7 +1081,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, upt->mutable_partition());
+                    generateNextTablePartition(rg, false, t, upt->mutable_partition());
                 }
                 flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
                 if (this->entries.empty())
@@ -1199,7 +1230,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 iip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, iip->mutable_partition());
+                    generateNextTablePartition(rg, false, t, iip->mutable_partition());
                 }
             }
             else if (
@@ -1214,7 +1245,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 iip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, iip->mutable_partition());
+                    generateNextTablePartition(rg, false, t, iip->mutable_partition());
                 }
             }
             else if (
@@ -1330,7 +1361,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, pip->mutable_partition());
+                    generateNextTablePartition(rg, false, t, pip->mutable_partition());
                 }
             }
             else if (
@@ -1347,7 +1378,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 pip->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomlyFromSet(t.projs)));
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
-                    generateNextTablePartition<false>(rg, t, pip->mutable_partition());
+                    generateNextTablePartition(rg, false, t, pip->mutable_partition());
                 }
             }
             else if (
@@ -1386,12 +1417,12 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (table_has_partitions && nopt2 < 5)
                 {
-                    fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                     pexpr->set_partition_id(buf);
                 }
                 else if (table_has_partitions && nopt2 < 9)
                 {
-                    fc.tableGetRandomPartitionOrPart<false, false>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(false, false, dname, tname, buf);
                     pexpr->set_part(buf);
                 }
                 else
@@ -1414,12 +1445,12 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (table_has_partitions && nopt2 < 5)
                 {
-                    fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                     pexpr->set_partition_id(buf);
                 }
                 else if (table_has_partitions && nopt2 < 9)
                 {
-                    fc.tableGetRandomPartitionOrPart<false, false>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(false, false, dname, tname, buf);
                     pexpr->set_part(buf);
                 }
                 else
@@ -1439,16 +1470,16 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_drop_detached_partition();
-                const bool table_has_detached_partitions = fc.tableHasPartitions<true>(dname, tname);
+                const bool table_has_detached_partitions = fc.tableHasPartitions(true, dname, tname);
 
                 if (table_has_detached_partitions && nopt2 < 5)
                 {
-                    fc.tableGetRandomPartitionOrPart<true, true>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(true, true, dname, tname, buf);
                     pexpr->set_partition_id(buf);
                 }
                 else if (table_has_detached_partitions && nopt2 < 9)
                 {
-                    fc.tableGetRandomPartitionOrPart<true, false>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(true, false, dname, tname, buf);
                     pexpr->set_part(buf);
                 }
                 else
@@ -1468,7 +1499,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 PartitionExpr * pexpr = ati->mutable_forget_partition();
 
-                fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                 pexpr->set_partition_id(buf);
             }
             else if (
@@ -1483,16 +1514,16 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             {
                 const uint32_t nopt2 = rg.nextSmallNumber();
                 PartitionExpr * pexpr = ati->mutable_attach_partition();
-                const bool table_has_detached_partitions = fc.tableHasPartitions<true>(dname, tname);
+                const bool table_has_detached_partitions = fc.tableHasPartitions(true, dname, tname);
 
                 if (table_has_detached_partitions && nopt2 < 5)
                 {
-                    fc.tableGetRandomPartitionOrPart<true, true>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(true, true, dname, tname, buf);
                     pexpr->set_partition_id(buf);
                 }
                 else if (table_has_detached_partitions && nopt2 < 9)
                 {
-                    fc.tableGetRandomPartitionOrPart<true, false>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(true, false, dname, tname, buf);
                     pexpr->set_part(buf);
                 }
                 else
@@ -1515,7 +1546,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 ExprSchemaTable * est2 = apf->mutable_est();
                 const SQLTable & t2 = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
-                fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                 pexpr->set_partition_id(buf);
                 if (t2.db)
                 {
@@ -1536,7 +1567,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
                 PartitionExpr * pexpr = ccip->mutable_partition();
 
-                fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                 pexpr->set_partition_id(buf);
                 flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomlyFromVector(this->entries), ccip->mutable_col());
@@ -1557,7 +1588,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                 if (table_has_partitions && rg.nextSmallNumber() < 9)
                 {
-                    fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                    fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                     fp->mutable_partition()->set_partition_id(buf);
                 }
                 fp->set_fname(t.freeze_counter++);
@@ -1597,7 +1628,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
                 PartitionExpr * pexpr = ccip->mutable_partition();
 
-                fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                 pexpr->set_partition_id(buf);
                 ccip->mutable_idx()->set_index("i" + std::to_string(rg.pickKeyRandomlyFromMap(t.idxs)));
             }
@@ -1615,7 +1646,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 MovePartition * mp = ati->mutable_move_partition();
                 PartitionExpr * pexpr = mp->mutable_partition();
 
-                fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
+                fc.tableGetRandomPartitionOrPart(false, true, dname, tname, buf);
                 pexpr->set_partition_id(buf);
                 generateStorage(rg, mp->mutable_storage());
             }

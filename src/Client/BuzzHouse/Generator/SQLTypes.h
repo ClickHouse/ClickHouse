@@ -383,8 +383,8 @@ public:
     }
 };
 
-template <typename T, bool SArray, bool SNullable, bool SNested>
-bool hasType(SQLType * tp)
+template <typename T>
+bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
     LowCardinality * lc;
 
@@ -392,29 +392,29 @@ bool hasType(SQLType * tp)
     {
         return true;
     }
-    if constexpr (SNullable)
+    if (inside_nullable)
     {
         Nullable * nl;
 
         if ((nl = dynamic_cast<Nullable *>(tp)))
         {
-            return hasType<T, SArray, SNullable, SNested>(nl->subtype);
+            return hasType<T>(inside_array, inside_nullable, inside_nested, nl->subtype);
         }
     }
     if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
-        return hasType<T, SArray, SNullable, SNested>(lc->subtype);
+        return hasType<T>(inside_array, inside_nullable, inside_nested, lc->subtype);
     }
-    if constexpr (SArray)
+    if (inside_array)
     {
         ArrayType * at;
 
         if ((at = dynamic_cast<ArrayType *>(tp)))
         {
-            return hasType<T, SArray, SNullable, SNested>(at->subtype);
+            return hasType<T>(inside_array, inside_nullable, inside_nested, at->subtype);
         }
     }
-    if constexpr (SNested)
+    if (inside_nested)
     {
         TupleType * ttp;
         NestedType * ntp;
@@ -423,7 +423,7 @@ bool hasType(SQLType * tp)
         {
             for (const auto & entry : ttp->subtypes)
             {
-                if (hasType<T, SArray, SNullable, SNested>(entry.subtype))
+                if (hasType<T>(inside_array, inside_nullable, inside_nested, entry.subtype))
                 {
                     return true;
                 }
@@ -433,7 +433,7 @@ bool hasType(SQLType * tp)
         {
             for (const auto & entry : ntp->subtypes)
             {
-                if (hasType<T, SArray, SNullable, SNested>(entry.subtype))
+                if (hasType<T>(inside_array, inside_nullable, inside_nested, entry.subtype))
                 {
                     return true;
                 }

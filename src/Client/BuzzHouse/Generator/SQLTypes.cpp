@@ -1464,12 +1464,11 @@ void appendDecimal(RandomGenerator & rg, String & ret, const uint32_t left, cons
     }
 }
 
-template <bool Extremes>
-static inline void nextFloatingPoint(RandomGenerator & rg, String & ret)
+static inline void nextFloatingPoint(RandomGenerator & rg, const bool extremes, String & ret)
 {
     const uint32_t next_option = rg.nextLargeNumber();
 
-    if (Extremes && next_option < 25)
+    if (extremes && next_option < 25)
     {
         if (next_option < 17)
         {
@@ -1477,7 +1476,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, String & ret)
         }
         ret += "nan";
     }
-    else if (Extremes && next_option < 49)
+    else if (extremes && next_option < 49)
     {
         if (next_option < 41)
         {
@@ -1485,7 +1484,7 @@ static inline void nextFloatingPoint(RandomGenerator & rg, String & ret)
         }
         ret += "inf";
     }
-    else if (Extremes && next_option < 73)
+    else if (extremes && next_option < 73)
     {
         if (next_option < 65)
         {
@@ -1519,9 +1518,9 @@ void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_
     {
         case GeoTypes::Point:
             ret += "(";
-            nextFloatingPoint<false>(rg, ret);
+            nextFloatingPoint(rg, false, ret);
             ret += ",";
-            nextFloatingPoint<false>(rg, ret);
+            nextFloatingPoint(rg, false, ret);
             ret += ")";
             break;
         case GeoTypes::Ring:
@@ -1534,9 +1533,9 @@ void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_
                     ret += ", ";
                 }
                 ret += "(";
-                nextFloatingPoint<false>(rg, ret);
+                nextFloatingPoint(rg, false, ret);
                 ret += ",";
-                nextFloatingPoint<false>(rg, ret);
+                nextFloatingPoint(rg, false, ret);
                 ret += ")";
             }
             ret += "]";
@@ -1560,9 +1559,9 @@ void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_
                         ret += ", ";
                     }
                     ret += "(";
-                    nextFloatingPoint<false>(rg, ret);
+                    nextFloatingPoint(rg, false, ret);
                     ret += ",";
-                    nextFloatingPoint<false>(rg, ret);
+                    nextFloatingPoint(rg, false, ret);
                     ret += ")";
                 }
                 ret += "]";
@@ -1596,9 +1595,9 @@ void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_
                             ret += ", ";
                         }
                         ret += "(";
-                        nextFloatingPoint<false>(rg, ret);
+                        nextFloatingPoint(rg, false, ret);
                         ret += ",";
-                        nextFloatingPoint<false>(rg, ret);
+                        nextFloatingPoint(rg, false, ret);
                         ret += ")";
                     }
                     ret += "]";
@@ -1668,7 +1667,7 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, String & ret
     }
     else if (dynamic_cast<FloatType *>(tp))
     {
-        nextFloatingPoint<true>(rg, ret);
+        nextFloatingPoint(rg, true, ret);
     }
     else if ((dtp = dynamic_cast<DateType *>(tp)))
     {

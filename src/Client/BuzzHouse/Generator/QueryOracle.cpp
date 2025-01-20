@@ -485,7 +485,7 @@ void QueryOracle::findTablesWithPeersAndReplace(
                             buf += tos.joined_table().table_alias().table();
                             tos.clear_joined_table();
                             JoinedTableFunction * jtf = tos.mutable_joined_table_function();
-                            gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
+                            gen.setTableRemote(rg, false, t, jtf->mutable_tfunc());
                             jtf->mutable_table_alias()->set_table(buf);
                         }
                         found_tables.insert(tname);
@@ -559,7 +559,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
 
         //then insert
-        gen.setTableRemote<false>(rg, t, ins->mutable_tfunction());
+        gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
         JoinedTable * jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
         if (t.db)

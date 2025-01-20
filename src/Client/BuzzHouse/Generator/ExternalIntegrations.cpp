@@ -50,7 +50,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
             buf += " ";
             columnTypeAsString(rg, tp, buf);
             buf += " ";
-            buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable, false, false, false>(tp)) ? "" : "NOT ";
+            buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ";
             buf += "NULL";
             assert(entry.path.size() == 1);
             first = false;

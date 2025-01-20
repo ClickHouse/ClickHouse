@@ -203,6 +203,17 @@ private:
         }
     }
 
+    template <typename T>
+    void setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
+    {
+        const T & t = rg.pickRandomlyFromVector(filterCollection<T>(f));
+
+        if (t.db)
+        {
+            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+        }
+        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    }
 public:
     template <typename T>
     std::vector<std::reference_wrapper<const T>> & filterCollection(const std::function<bool(const T &)> func)
@@ -310,6 +321,7 @@ private:
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
+    void setTableRemote(RandomGenerator & rg, bool table_engine, const SQLTable & t, TableFunction * tfunc);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
     void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, Select * sel);
@@ -331,138 +343,7 @@ private:
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname);
 
-    template <bool AllowParts>
-    void generateNextTablePartition(RandomGenerator & rg, const SQLTable & t, PartitionExpr * pexpr)
-    {
-        bool set_part = false;
-
-        if (t.isMergeTreeFamily())
-        {
-            const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
-            const String tname = "t" + std::to_string(t.tname);
-            const bool table_has_partitions = rg.nextSmallNumber() < 9 && fc.tableHasPartitions<false>(dname, tname);
-
-            if (table_has_partitions)
-            {
-                if (AllowParts && rg.nextBool())
-                {
-                    fc.tableGetRandomPartitionOrPart<false, false>(dname, tname, buf);
-                    pexpr->set_part(buf);
-                }
-                else
-                {
-                    fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
-                    pexpr->set_partition_id(buf);
-                }
-                set_part = true;
-            }
-        }
-        if (!set_part)
-        {
-            pexpr->set_tuple(true);
-        }
-    }
-
-    template <typename T>
-    void setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
-    {
-        const T & t = rg.pickRandomlyFromVector(filterCollection<T>(f));
-
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    }
-
-    template <bool TEngine>
-    void setTableRemote(RandomGenerator & rg, const SQLTable & t, TableFunction * tfunc)
-    {
-        if (!TEngine && t.hasClickHousePeer())
-        {
-            const ServerCredentials & sc = fc.clickhouse_server.value();
-            RemoteFunc * rfunc = tfunc->mutable_remote();
-
-            rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-            rfunc->set_rdatabase(t.db ? ("d" + std::to_string(t.db->dname)) : "default");
-            rfunc->set_rtable("t" + std::to_string(t.tname));
-            rfunc->set_user(sc.user);
-            rfunc->set_password(sc.password);
-        }
-        else if ((TEngine && t.isMySQLEngine()) || (!TEngine && t.hasMySQLPeer()))
-        {
-            const ServerCredentials & sc = fc.mysql_server.value();
-            MySQLFunc * mfunc = tfunc->mutable_mysql();
-
-            mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-            mfunc->set_rdatabase(sc.database);
-            mfunc->set_rtable("t" + std::to_string(t.tname));
-            mfunc->set_user(sc.user);
-            mfunc->set_password(sc.password);
-        }
-        else if ((TEngine && t.isPostgreSQLEngine()) || (!TEngine && t.hasPostgreSQLPeer()))
-        {
-            const ServerCredentials & sc = fc.postgresql_server.value();
-            PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
-
-            pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-            pfunc->set_rdatabase(sc.database);
-            pfunc->set_rtable("t" + std::to_string(t.tname));
-            pfunc->set_user(sc.user);
-            pfunc->set_password(sc.password);
-            pfunc->set_rschema("test");
-        }
-        else if ((TEngine && t.isSQLiteEngine()) || (!TEngine && t.hasSQLitePeer()))
-        {
-            SQLiteFunc * sfunc = tfunc->mutable_sqite();
-
-            sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
-            sfunc->set_rtable("t" + std::to_string(t.tname));
-        }
-        else if (TEngine && t.isS3Engine())
-        {
-            bool first = true;
-            const ServerCredentials & sc = fc.minio_server.value();
-            S3Func * sfunc = tfunc->mutable_s3();
-
-            sfunc->set_resource(
-                "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
-                + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
-            sfunc->set_user(sc.user);
-            sfunc->set_password(sc.password);
-            sfunc->set_format(t.file_format);
-            buf.resize(0);
-            flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
-            for (const auto & entry : remote_entries)
-            {
-                SQLType * tp = entry.getBottomType();
-
-                if (!first)
-                {
-                    buf += ", ";
-                }
-                buf += entry.getBottomName();
-                buf += " ";
-                tp->typeName(buf, true);
-                if (entry.nullable.has_value())
-                {
-                    buf += entry.nullable.value() ? "" : " NOT";
-                    buf += " NULL";
-                }
-                first = false;
-            }
-            remote_entries.clear();
-            sfunc->set_structure(buf);
-            if (!t.file_comp.empty())
-            {
-                sfunc->set_fcomp(t.file_comp);
-            }
-        }
-        else
-        {
-            assert(0);
-        }
-    }
+    void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
 
 public:
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
