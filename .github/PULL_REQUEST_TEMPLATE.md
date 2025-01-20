@@ -54,7 +54,7 @@ All builds in Builds_1 and Builds_2 stages are always mandatory and will run ind
 - [ ] <!---ci_exclude_style--> Skip: Style check
 - [ ] <!---ci_exclude_fast--> Skip: Fast test
 ---
-- [ ] <!---woolen_wolfdog--> Non-blocking CI mode (Resource-intensive. All test jobs execute in parallel).
+- [ ] <!---woolen_wolfdog--> Run all checks ignoring all possible failures (Resource-intensive. All test jobs execute in parallel).
 - [ ] <!---no_ci_cache--> Disable CI cache
 
 <!--
