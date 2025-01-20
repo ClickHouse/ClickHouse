@@ -178,6 +178,8 @@ namespace Setting
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
+
 }
 
 namespace MergeTreeSetting
@@ -207,7 +209,8 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
             && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1),
         .enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps],
-        .force_short_circuit_execution = settings[Setting::query_plan_merge_filters]
+        .force_short_circuit_execution = settings[Setting::query_plan_merge_filters],
+        .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
     };
 }
 

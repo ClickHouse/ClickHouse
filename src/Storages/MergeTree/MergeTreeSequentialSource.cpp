@@ -179,10 +179,12 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/ {},
         mark_cache.get(),
+        nullptr,
         alter_conversions,
         reader_settings,
         /*avg_value_size_hints=*/ {},
-        /*profile_callback=*/ {});
+        /*profile_callback=*/ {},
+        nullptr);
 
     if (prefetch && !data_part->isEmpty())
         reader->prefetchBeginOfRange(Priority{});

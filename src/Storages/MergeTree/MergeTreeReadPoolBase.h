@@ -70,6 +70,14 @@ protected:
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
+
+private:
+    void initializePrefixesReadingThreadPool();
+
+    /// Thread pool for reading prefixes. Used to parallelize reading
+    /// of subcolumn prefixes in Wide parts.
+    std::unique_ptr<ThreadPool> prefixes_deserialization_thread_pool;
+
 };
 
 }

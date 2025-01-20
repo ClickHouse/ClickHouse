@@ -25,11 +25,13 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
+        DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_,
         ValueSizeMap avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_);
+        clockid_t clock_type_,
+        ThreadPool * prefixes_deserialization_thread_pool);
 
     bool canReadIncompleteGranules() const final { return false; }
 

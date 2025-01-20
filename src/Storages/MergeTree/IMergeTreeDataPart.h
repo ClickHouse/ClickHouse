@@ -27,6 +27,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 
 
 namespace zkutil
@@ -102,10 +103,12 @@ public:
         const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        DeserializationPrefixesCache * deserialization_prefixes_cache,
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+        ThreadPool * prefixes_deserialization_thread_pool) const = 0;
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;

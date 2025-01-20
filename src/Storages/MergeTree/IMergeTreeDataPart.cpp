@@ -1501,10 +1501,12 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
+        nullptr,
         std::make_shared<AlterConversions>(),
         MergeTreeReaderSettings{},
         ValueSizeMap{},
-        ReadBufferFromFileBase::ProfileCallback{});
+        ReadBufferFromFileBase::ProfileCallback{},
+        nullptr);
 
     if (!reader)
     {
@@ -2518,10 +2520,12 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
+        nullptr,
         std::make_shared<AlterConversions>(),
         settings,
         ValueSizeMap{},
-        ReadBufferFromFileBase::ProfileCallback{});
+        ReadBufferFromFileBase::ProfileCallback{},
+        nullptr);
 
     Columns result;
     result.resize(1);

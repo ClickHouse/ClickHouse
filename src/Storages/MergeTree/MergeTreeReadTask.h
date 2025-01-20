@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 
 namespace DB
 {
@@ -71,6 +72,8 @@ struct MergeTreeReadTaskInfo
     /// The amount of data to read per task based on size of the queried columns.
     size_t min_marks_per_task = 0;
     size_t approx_size_of_mark = 0;
+    /// Cache of the columns prefixes for this part.
+    DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -88,6 +91,7 @@ public:
         StorageSnapshotPtr storage_snapshot{};
         IMergeTreeReader::ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
+        ThreadPool * prefixes_deserialization_thread_pool = nullptr;
     };
 
     struct Readers

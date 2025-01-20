@@ -50,10 +50,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
             extras.mark_cache,
+            read_info->deserialization_prefixes_cache.get(),
             read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
-            extras.profile_callback);
+            extras.profile_callback,
+            extras.prefixes_deserialization_thread_pool);
     };
 
     new_readers.main = create_reader(read_info->task_columns.columns);

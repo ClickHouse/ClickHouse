@@ -49,6 +49,14 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     SerializationPtr variant_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr variant_state;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamic>(*this);
+        new_state->variant_state = variant_state->clone();
+        new_state->structure_state = structure_state->clone();
+        return new_state;
+    }
 };
 
 void SerializationDynamic::enumerateStreams(

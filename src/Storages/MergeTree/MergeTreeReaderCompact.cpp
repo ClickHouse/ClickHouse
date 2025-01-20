@@ -19,11 +19,13 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
+    DeserializationPrefixesCache *,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_)
+    clockid_t clock_type_,
+    ThreadPool *)
     : IMergeTreeReader(
         data_part_info_for_read_,
         columns_,

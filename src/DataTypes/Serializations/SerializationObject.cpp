@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/DeserializationTask.h>
 
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeObject.h>
@@ -8,6 +9,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -91,6 +93,24 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> dynamic_path_states;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateObject>();
+
+        new_state->typed_path_states.reserve(typed_path_states.size());
+        for (const auto & [path, path_state] : typed_path_states)
+            new_state->typed_path_states[path] = path_state->clone();
+
+        new_state->dynamic_path_states.reserve(dynamic_path_states.size());
+        for (const auto & [path, path_state] : dynamic_path_states)
+            new_state->dynamic_path_states[path] = path_state->clone();
+
+        new_state->shared_data_state = shared_data_state->clone();
+        new_state->structure_state = structure_state->clone();
+
+        return new_state;
+    }
 };
 
 void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
@@ -326,6 +346,34 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
 
     settings.path.push_back(Substream::ObjectData);
 
+    /// Check if we need to start prefetches of streams containing prefixes before deserializing.
+    if (settings.prefixes_prefetch_callback)
+    {
+        EnumerateStreamsSettings enumerate_settings;
+        enumerate_settings.path = settings.path;
+        auto enumerate_callback = [&](const SubstreamPath & path)
+        {
+            if (hasPrefix(path))
+                settings.prefixes_prefetch_callback(path);
+        };
+
+        for (const auto & path : sorted_typed_paths)
+        {
+            settings.path.push_back(Substream::ObjectTypedPath);
+            settings.path.back().object_path_name = path;
+            typed_path_serializations.at(path)->enumerateStreams(enumerate_settings, enumerate_callback, SubstreamData(typed_path_serializations.at(path)));
+            settings.path.pop_back();
+        }
+
+        for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
+        {
+            enumerate_settings.path.push_back(Substream::ObjectDynamicPath);
+            enumerate_settings.path.back().object_path_name = path;
+            dynamic_serialization->enumerateStreams(enumerate_settings, enumerate_callback, SubstreamData(dynamic_serialization));
+            enumerate_settings.path.pop_back();
+        }
+    }
+
     for (const auto & path : sorted_typed_paths)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
@@ -334,12 +382,79 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         settings.path.pop_back();
     }
 
-    for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
+    if (settings.prefixes_deserialization_thread_pool)
     {
-        settings.path.push_back(Substream::ObjectDynamicPath);
-        settings.path.back().object_path_name = path;
-        dynamic_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->dynamic_path_states[path], cache);
-        settings.path.pop_back();
+        /// Split deserialization of prefixes into several tasks and execute them in parallel inside thread pool.
+        size_t num_tasks = settings.prefixes_deserialization_thread_pool->getMaxThreads();
+        std::vector<std::shared_ptr<DeserializationTask>> tasks;
+        tasks.reserve(num_tasks);
+        /// We need to create a copy of states cache for each task, because it's not thread-safe.
+        /// We will merge them together with the original cache later.
+        std::vector<std::unique_ptr<SubstreamsDeserializeStatesCache>> caches;
+        caches.reserve(num_tasks);
+
+        /// Create an entry for each dynamic path state beforehand.
+        for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
+            object_state->dynamic_path_states[path] = nullptr;
+
+        /// All threads will use the same stream getter that is not thread safe.
+        std::mutex getter_mutex;
+        auto safe_getter = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(getter_mutex);
+            return settings.getter(path);
+        };
+
+        size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths.size() / num_tasks, 1ul);
+        for (size_t i = 0; i != num_tasks; ++i)
+        {
+            auto cache_copy = cache ? std::make_unique<SubstreamsDeserializeStatesCache>(*cache) : nullptr;
+            size_t batch_start = i * task_size;
+            size_t batch_end = (i + 1) == num_tasks ? structure_state_concrete->sorted_dynamic_paths.size() : (i + 1) * task_size;
+            auto deserialize = [&, batch_start, batch_end, cache_ptr = cache_copy.get()]()
+            {
+                auto settings_copy = settings;
+                settings_copy.getter = safe_getter;
+                for (size_t j = batch_start; j != batch_end; ++j)
+                {
+                    settings_copy.path.push_back(Substream::ObjectDynamicPath);
+                    settings_copy.path.back().object_path_name = structure_state_concrete->sorted_dynamic_paths[j];
+                    dynamic_serialization->deserializeBinaryBulkStatePrefix(settings_copy, object_state->dynamic_path_states.at(structure_state_concrete->sorted_dynamic_paths[j]), cache_ptr);
+                    settings_copy.path.pop_back();
+                }
+            };
+
+            auto task = std::make_shared<DeserializationTask>(deserialize);
+            settings.prefixes_deserialization_thread_pool->scheduleOrThrow([task_ptr = task](){ task_ptr->tryExecute(); });
+            tasks.push_back(task);
+            caches.push_back(std::move(cache_copy));
+        }
+
+        /// Now when all tasks were put into thread pool, we can try to steal and execute some tasks.
+        for (const auto & task : tasks)
+            task->tryExecute();
+
+        /// Now all tasks are either executing by thread pool or were already executed by this thread.
+        /// Wait for all tasks to be executed.
+        for (const auto & task : tasks)
+            task->wait();
+
+        /// If we have states cache, merge all copied caches from tasks into the original cache.
+        if (cache)
+        {
+            for (const auto & cache_copy : caches)
+                cache->merge(*cache_copy);
+        }
+    }
+    else
+    {
+        for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
+        {
+            settings.path.push_back(Substream::ObjectDynamicPath);
+            settings.path.back().object_path_name = path;
+            dynamic_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->dynamic_path_states[path], cache);
+            settings.path.pop_back();
+        }
     }
 
     settings.path.push_back(Substream::ObjectSharedData);

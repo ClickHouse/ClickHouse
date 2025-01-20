@@ -98,6 +98,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
+            {"merge_tree_prefixes_deserialization_thread_pool_size", "auto", "auto", "A new setting controlling the size of the thread pool used in prefixes deserialization in MergeTree"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
