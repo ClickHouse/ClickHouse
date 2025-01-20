@@ -8,8 +8,6 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
-    extern const Event OverflowBreak;
-    extern const Event OverflowThrow;
 }
 
 
