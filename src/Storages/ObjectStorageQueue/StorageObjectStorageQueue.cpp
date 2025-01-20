@@ -170,11 +170,11 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , engine_name(engine_args->engine->name)
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
-    , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
-    , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
+    , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
+    , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
     , commit_settings(CommitSettings{
         .max_processed_files_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_files_before_commit],
         .max_processed_rows_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_rows_before_commit],
@@ -665,6 +665,8 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "max_processed_rows_before_commit",
     "max_processed_bytes_before_commit",
     "max_processing_time_sec_before_commit",
+    "enable_hash_ring_filtering",
+    "list_objects_batch_size",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -679,6 +681,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processed_bytes_before_commit",
     "max_processing_time_sec_before_commit",
     "buckets",
+    "list_objects_batch_size",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -937,6 +940,11 @@ void StorageObjectStorageQueue::alter(
                 commit_settings.max_processed_bytes_before_commit = change.value.safeGet<UInt64>();
             if (change.name == "max_processing_time_sec_before_commit")
                 commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
+
+            if (change.name == "list_objects_batch_size")
+                list_objects_batch_size = change.value.safeGet<UInt64>();
+            if (change.name == "enable_hash_ring_filtering")
+                enable_hash_ring_filtering = change.value.safeGet<bool>();
         }
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
@@ -956,17 +964,25 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
+    size_t list_objects_batch_size_copy;
+    bool enable_hash_ring_filtering_copy;
+    {
+        std::lock_guard lock(mutex);
+        list_objects_batch_size_copy = list_objects_batch_size;
+        enable_hash_ring_filtering_copy = enable_hash_ring_filtering;
+    }
+
     return std::make_shared<FileIterator>(
         files_metadata,
         object_storage,
         configuration,
         getStorageID(),
-        list_objects_batch_size,
+        list_objects_batch_size_copy,
         predicate,
         getVirtualsList(),
         local_context,
         log,
-        enable_hash_ring_filtering,
+        enable_hash_ring_filtering_copy,
         file_deletion_enabled,
         shutdown_called);
 }
@@ -1000,6 +1016,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
         settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
+        settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
+        settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
     }
 
     return settings;
