@@ -3,6 +3,8 @@
 namespace BuzzHouse
 {
 
+using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
+
 static std::optional<ServerCredentials> loadServerCredentials(
     const JSONParserImpl::Element & jobj, const String & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
@@ -15,7 +17,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
-    std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries
+    static const SettingEntries config_entries
         = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -62,7 +64,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
         throw std::runtime_error("Parsed JSON value is not an object");
     }
 
-    static const std::unordered_map<String, std::function<void(const JSONObjectType &)>> config_entries = {
+    static const SettingEntries config_entries = {
         {"db_file_path",
          [&](const JSONObjectType & value)
          {

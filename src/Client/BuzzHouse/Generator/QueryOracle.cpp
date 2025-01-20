@@ -184,7 +184,8 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 
     if (std::filesystem::exists(nfile))
     {
-        (void)std::remove(nfile.generic_string().c_str()); //remove the file
+        auto u = std::remove(nfile.generic_string().c_str()); //remove the file
+        UNUSED(u);
     }
     ff->set_path(nfile.generic_string());
 
@@ -367,7 +368,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
         if (std::filesystem::exists(qfile))
         {
-            (void)std::remove(qfile.generic_string().c_str()); //remove the file
+            auto u = std::remove(qfile.generic_string().c_str()); //remove the file
+            UNUSED(u);
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
@@ -547,7 +549,8 @@ void QueryOracle::replaceQueryWithTablePeers(
 
         if (std::filesystem::exists(qfile_peer))
         {
-            (void)std::remove(qfile_peer.generic_string().c_str()); //remove the file
+            auto u = std::remove(qfile_peer.generic_string().c_str()); //remove the file
+            UNUSED(u);
         }
         ff.set_path(qfile_peer.generic_string());
     }

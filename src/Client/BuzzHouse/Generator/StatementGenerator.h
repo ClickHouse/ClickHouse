@@ -214,6 +214,7 @@ private:
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
+
 public:
     template <typename T>
     std::vector<std::reference_wrapper<const T>> & filterCollection(const std::function<bool(const T &)> func)

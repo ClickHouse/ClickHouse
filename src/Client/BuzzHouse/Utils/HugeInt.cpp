@@ -1,5 +1,6 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
+#include <base/defines.h>
 
 #include <cassert>
 #include <cmath>
@@ -216,7 +217,8 @@ static HugeInt divide(HugeInt lhs, HugeInt rhs)
 static HugeInt modulo(HugeInt lhs, HugeInt rhs)
 {
     HugeInt remainder;
-    (void)divMod(lhs, rhs, remainder);
+    auto u = divMod(lhs, rhs, remainder);
+    UNUSED(u);
     return remainder;
 }
 

@@ -126,7 +126,8 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     assert(t.hasDatabasePeer());
-    (void)performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    auto u = performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    UNUSED(u);
 }
 
 void ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -136,11 +137,15 @@ void ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::ClickHouse:
         case PeerTableDatabase::MySQL:
         case PeerTableDatabase::PostgreSQL:
-        case PeerTableDatabase::SQLite:
-            (void)performQuery(query);
-            break;
-        case PeerTableDatabase::None:
-            (void)fc.processServerQuery(query);
+        case PeerTableDatabase::SQLite: {
+            auto u = performQuery(query);
+            UNUSED(u);
+        }
+        break;
+        case PeerTableDatabase::None: {
+            auto u = fc.processServerQuery(query);
+            UNUSED(u);
+        }
     }
 }
 
@@ -366,7 +371,8 @@ bool PostgreSQLIntegration::performQuery(const String & query)
         pqxx::work w(*postgres_connection);
 
         out_file << query << std::endl;
-        (void)w.exec(query);
+        auto u = w.exec(query);
+        UNUSED(u);
         w.commit();
         return true;
     }
@@ -1050,7 +1056,8 @@ bool MinIOIntegration::sendRequest(const String & resource)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    (void)std::sprintf(buffer, "%" PRIu32 "", sc.port);
+    auto u = std::sprintf(buffer, "%" PRIu32 "", sc.port);
+    UNUSED(u);
     if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
     {
         if (error == EAI_SYSTEM)
@@ -1100,8 +1107,10 @@ bool MinIOIntegration::sendRequest(const String & resource)
         LOG_ERROR(fc.log, "Could not connect: {}", buffer);
         return false;
     }
-    (void)gmtime_r(&time, &ttm);
-    (void)std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
+    auto v = gmtime_r(&time, &ttm);
+    auto w = std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
+    UNUSED(v);
+    UNUSED(w);
     sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
              << resource << "\""
              << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
