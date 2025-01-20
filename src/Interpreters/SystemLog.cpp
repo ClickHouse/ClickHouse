@@ -333,7 +333,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("latency_log.collect_interval_milliseconds",
                                                                 DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        latency_log->startCollect(collect_interval_milliseconds);
+        latency_log->startCollect("LatencyLog", collect_interval_milliseconds);
     }
 
     if (error_log)

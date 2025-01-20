@@ -59,9 +59,11 @@ void LatencyLog::stepFunction(const std::chrono::system_clock::time_point curren
     elem.latency_buckets_values.resize(LatencyBuckets::end());
     for (LatencyBuckets::Event i = LatencyBuckets::Event(0), end = LatencyBuckets::end(); i < end; ++i)
     {
+        LatencyBuckets::Count sum = 0;
         for (auto & bucket : LatencyBuckets::global_bucket_lists[i])
         {
-            elem.latency_buckets_values[i].emplace_back(bucket.load(std::memory_order_relaxed));
+            sum += bucket.load(std::memory_order_relaxed);
+            elem.latency_buckets_values[i].emplace_back(sum);
         }
     }
 

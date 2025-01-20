@@ -1,5 +1,5 @@
 #include <Poco/Timespan.h>
-#include "Common/LatencyBuckets.h"
+#include <Common/LatencyBuckets.h>
 #include <Common/config_version.h>
 #include "config.h"
 
@@ -396,6 +396,19 @@ String getMethod(const Aws::Http::HttpRequest & request)
     }
 }
 
+PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt)
+{
+    S3LatencyType result = S3LatencyType::FirstByteAttempt1;
+    if (sdk_attempt != "1" || ch_attempt != "1")
+    {
+        if ((sdk_attempt == "1" && ch_attempt == "2") || (sdk_attempt == "2" && ch_attempt == "1"))
+            result = S3LatencyType::FirstByteAttempt2;
+        else
+            result = S3LatencyType::FirstByteAttemptN;
+    }
+    return result;
+}
+
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
@@ -451,15 +464,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     UInt64 connect_time = 0;
     UInt64 first_byte_time = 0;
     bool latency_recorded = false;
-    S3LatencyType first_byte_latency_type = S3LatencyType::FirstByteAttempt1;
-
-    if (!first_attempt)
-    {
-        if ((sdk_attempt == "1" && ch_attempt == "2") || (sdk_attempt == "2" && ch_attempt == "1"))
-            first_byte_latency_type = S3LatencyType::FirstByteAttempt2;
-        else
-            first_byte_latency_type = S3LatencyType::FirstByteAttemptN;
-    }
+    S3LatencyType first_byte_latency_type = getFirstByteLatencyType(sdk_attempt, ch_attempt);
 
     try
     {

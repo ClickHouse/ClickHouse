@@ -182,6 +182,8 @@ private:
 
     ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 
+    static S3LatencyType getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt);
+
 protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;

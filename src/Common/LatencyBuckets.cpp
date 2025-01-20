@@ -97,9 +97,8 @@ void BucketLists::increment(Event event, Count amount)
 {
     auto & bucket_bounds = getBucketBounds(event);
     auto & bucket_list = this->bucket_lists[event];
-
-    for (ssize_t i = bucket_list.size() - 1; i > -1 && bucket_bounds[i] >= amount; --i)
-        bucket_list[i].fetch_add(1, std::memory_order_relaxed);
+    auto ind = std::lower_bound(bucket_bounds.begin(), bucket_bounds.end(), amount) - bucket_bounds.begin();
+    bucket_list[ind].fetch_add(1, std::memory_order_relaxed);
 }
 
 }

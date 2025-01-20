@@ -5,7 +5,7 @@
 
 namespace LatencyBuckets
 {
-    using Event = StrongTypedef<size_t, struct EventTag>;
+    using Event = StrongTypedef<size_t, struct LatencyEventTag>;
     using Count = UInt64;
     using BucketList = std::vector<std::atomic<Count>>;
     class BucketLists;
