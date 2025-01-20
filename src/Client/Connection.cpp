@@ -827,7 +827,7 @@ void Connection::sendQuery(
     /// Avoid reusing connections that had been left in the intermediate state
     /// (i.e. not all packets had been sent).
     bool completed = false;
-    SCOPE_EXIT_MEMORY_SAFE({
+    SCOPE_EXIT({
         if (!completed)
             disconnect();
     });
