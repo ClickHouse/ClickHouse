@@ -329,7 +329,10 @@ void BaseSettings<TTraits>::resetToDefault()
     for (size_t i : collections::range(accessor.size()))
     {
         if (auto * setting_field = accessor.getSettingFieldPtr(i, *this); setting_field->changed)
+        {
             *setting_field = accessor.getDefault(i)->operator Field();
+            setting_field->changed = false;
+        }
     }
 
     if constexpr (Traits::allow_custom_settings)
@@ -343,7 +346,9 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
-        *accessor.getSettingFieldPtr(index, *this) = accessor.getDefault(index)->operator Field();
+        auto * setting_field = accessor.getSettingFieldPtr(index, *this);
+        *setting_field = accessor.getDefault(index)->operator Field();
+        setting_field->changed = false;
         return;
     }
 
@@ -954,7 +959,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const char * type; \
                 const char * description; \
                 UInt64 flags; \
-                std::unique_ptr<SettingFieldBase> default_value; \
+                std::unique_ptr<const SettingFieldBase> default_value; \
                 uintptr_t offset_in_Data; \
             }; \
             std::vector<FieldInfo> field_infos; \
@@ -1086,7 +1091,7 @@ struct DefineAliases
         #TYPE, \
         DESCRIPTION, \
         static_cast<UInt64>(FLAGS), \
-        std::make_unique<SettingField##TYPE>(DEFAULT), \
+        std::make_unique<const SettingField##TYPE>(DEFAULT), \
         reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->NAME) \
             - reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->BLOCK_START), \
     });
