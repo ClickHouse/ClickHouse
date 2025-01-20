@@ -302,8 +302,8 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
-    if [[ "$USE_PARALLEL_REPLICAS_STATELESS" -eq 1 ]]; then
-        ADDITIONAL_OPTIONS+=('--parallel-replicas')
+    if [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--no-parallel-replicas')
         ADDITIONAL_OPTIONS+=('--no-zookeeper')
         ADDITIONAL_OPTIONS+=('--no-shard')
     else
