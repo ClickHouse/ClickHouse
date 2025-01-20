@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -91,7 +93,9 @@ size_t MergeTreeIndexGranularityAdaptive::getRowsCountInRange(size_t begin, size
     if (begin != 0)
         subtrahend = marks_rows_partial_sums[begin - 1];
 
-    return marks_rows_partial_sums[end - 1] - subtrahend;
+    size_t res = marks_rows_partial_sums[end - 1] - subtrahend;
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "begin={} end={} rows_count={}", begin, end, res);
+    return res;
 }
 
 size_t MergeTreeIndexGranularityAdaptive::countMarksForRows(size_t from_mark, size_t number_of_rows) const
