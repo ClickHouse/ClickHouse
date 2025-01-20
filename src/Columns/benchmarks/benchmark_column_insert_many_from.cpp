@@ -10,7 +10,7 @@
 
 using namespace DB;
 
-static constexpr size_t ROWS = 65536;
+static constexpr size_t ROWS = 655360;
 
 static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
 {
@@ -81,26 +81,71 @@ static void BM_insertManyFrom(benchmark::State & state)
     }
 }
 
+template <const std::string & str_type, size_t num_columns, size_t steps, bool preallocate = false>
+static void BM_insertManyFromMany(benchmark::State & state)
+{
+    auto type = DataTypeFactory::instance().get(str_type);
+
+
+    for (auto _ : state)
+    {
+        state.PauseTiming();
+        MutableColumns result_columns;
+        result_columns.resize(num_columns);
+
+        Columns columns;
+        columns.resize(num_columns);
+        for (size_t i = 0; i< result_columns.size(); ++i)
+        {
+            // columns[i] = std::move(mockColumn(type, ROWS));
+            columns[i] = mockColumn(type, ROWS);
+            result_columns[i] = type->createColumn();
+            if constexpr (preallocate)
+            {
+                result_columns[i]->reserve(steps * ROWS);
+            }
+
+        }
+        state.ResumeTiming();
+        for (size_t step = 0; step < steps; step++)
+        {
+            for (size_t i = 0; i< result_columns.size(); ++i)
+            {
+                result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+            }
+        }
+
+        benchmark::DoNotOptimize(result_columns);
+    }
+
+}
+
 static const String type_int64 = "Int64";
-static const String type_nullable_int64 = "Nullable(Int64)";
+// static const String type_nullable_int64 = "Nullable(Int64)";
 static const String type_string = "String";
-static const String type_nullable_string = "Nullable(String)";
-static const String type_decimal = "Decimal128(3)";
-static const String type_nullable_decimal = "Nullable(Decimal128(3))";
+// static const String type_nullable_string = "Nullable(String)";
+// static const String type_decimal = "Decimal128(3)";
+// static const String type_nullable_decimal = "Nullable(Decimal128(3))";
 
-static const String type_array_int64 = "Array(Int64)";
-static const String type_array_nullable_int64 = "Array(Nullable(Int64))";
-static const String type_array_string = "Array(String)";
-static const String type_array_nullable_string = "Array(Nullable(String))";
+// static const String type_array_int64 = "Array(Int64)";
+// static const String type_array_nullable_int64 = "Array(Nullable(Int64))";
+// static const String type_array_string = "Array(String)";
+// static const String type_array_nullable_string = "Array(Nullable(String))";
 
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_int64);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_nullable_int64);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_string);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_nullable_string);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_decimal);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_nullable_decimal);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_int64);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_nullable_int64);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_string);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_nullable_string);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_decimal);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_nullable_decimal);
 
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_int64);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_int64);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_string);
-BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_string);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_int64);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_int64);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_string);
+// BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_string);
+
+BENCHMARK_TEMPLATE(BM_insertManyFromMany, type_int64, 30, 100)->Iterations(5);
+// BENCHMARK_TEMPLATE(BM_insertManyFromMany, type_int64, 30, 100, true)->Iterations(5);
+
+BENCHMARK_TEMPLATE(BM_insertManyFromMany, type_string, 30, 100)->Iterations(5);
+// BENCHMARK_TEMPLATE(BM_insertManyFromMany, type_string, 30, 100, true)->Iterations(5);

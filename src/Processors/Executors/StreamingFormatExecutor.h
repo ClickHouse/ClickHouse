@@ -25,14 +25,14 @@ public:
         const Block & header_,
         InputFormatPtr format_,
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
-        size_t estimated_rows_ = 0,
+        size_t total_bytes_ = 0,
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
     size_t execute();
 
     /// Execute with provided read buffer.
-    size_t execute(ReadBuffer & buffer);
+    size_t execute(ReadBuffer & buffer, size_t num_bytes = 0);
 
     /// Inserts into result columns already preprocessed chunk.
     size_t insertChunk(Chunk chunk);
@@ -43,18 +43,20 @@ public:
     /// Sets query parameters for input format if applicable.
     void setQueryParameters(const NameToNameMap & parameters);
 
-    /// Determines a conservative estimate of the average row size (64 bytes)
-    /// assuming rows are generally larger than this value.
-    static const size_t AVG_ROW_SIZE_FOR_PREALLOCATE_PREDICTION = 64;
+    /// Determines a conservative estimate of the average field size (8 bytes)
+    /// assuming fields are generally larger than this value.
+    static const size_t AVG_FIELD_SIZE_FOR_PREALLOCATE_PREDICTION = 8;
 
-    /// Vague estimate number of rows based on buffer size.
-    /// Helps guide preallocation to minimize reallocations
-    static size_t conjectureRows(
-        size_t buffer_size,
-        size_t max_rows = std::numeric_limits<uint64_t>::max(),
-        size_t row_size = AVG_ROW_SIZE_FOR_PREALLOCATE_PREDICTION);
+    // /// Vague estimate number of rows based on buffer size.
+    // /// Helps guide preallocation to minimize reallocations
+    // static size_t predictNumRows(
+    //     size_t buffer_size,
+    //     const Block & header,
+    //     size_t max_rows = std::numeric_limits<uint64_t>::max());
 
 private:
+    void reserveResultColumns(size_t num_bytes);
+
     const Block header;
     const InputFormatPtr format;
     const ErrorCallback on_error;
@@ -63,6 +65,9 @@ private:
     InputPort port;
     MutableColumns result_columns;
     ColumnCheckpoints checkpoints;
+
+    size_t total_bytes;
+    bool try_reserve = true;
 };
 
 }

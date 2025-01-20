@@ -206,6 +206,10 @@ namespace DB
     DECLARE(UInt64, threadpool_writer_pool_size, 100, "Size of background pool for write requests to object storages", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, "Number of tasks which is possible to push into background pool for write requests to object storages", 0) \
     DECLARE(UInt32, allowed_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
+    DECLARE(UInt64, avg_field_size_for_preallocate_prediction, 8, R"(
+Determines a conservative estimate of the average unparsed field size (8 bytes)
+assuming that in real life they are generally larger.
+)", 0) \
 
 
 // clang-format on
