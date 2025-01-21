@@ -70,7 +70,6 @@ target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io clickhous
 clickhouse_add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
 target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io clickhouse_common_config)
 
-# TODO: PMO remove this along with the azure_key_vault.cpp example before merging
 if (CLICKHOUSE_CLOUD)
     clickhouse_add_executable (azure_key_vault azure_key_vault.cpp)
     target_link_libraries (azure_key_vault PRIVATE clickhouse_common_io clickhouse_common_config)
