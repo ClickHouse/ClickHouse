@@ -10,11 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+value_before=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveMetadataMutations'"`
+
 function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
         res=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveMetadataMutations'"`
-        if [[ $res == "0" ]]; then
+        if [[ $res == $value_before ]]; then
             break
         fi
         sleep 0.5
@@ -34,7 +36,9 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM STOP MERGES t_mutations_counters_rename;
     ALTER TABLE t_mutations_counters_rename RENAME COLUMN b TO c;
 
-    SELECT metric, value FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
+    SYSTEM SYNC REPLICA t_mutations_counters_rename LIGHTWEIGHT;
+
+    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
     SYSTEM START MERGES t_mutations_counters_rename;
 "
 
@@ -42,7 +46,7 @@ wait_for_mutation "t_mutations_counters_rename" "0000000000"
 wait_for_mutation_cleanup
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT metric, value FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
+    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
     SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters_rename' AND NOT is_done;
     DROP TABLE t_mutations_counters_rename;
 "
