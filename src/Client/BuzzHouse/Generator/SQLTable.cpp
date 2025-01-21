@@ -557,11 +557,11 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
 }
 
 template <typename T>
-void StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char initial)
+String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char initial)
 {
+    String res;
     const uint32_t noption = rg.nextSmallNumber();
 
-    buf.resize(0);
     if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
     {
         if (collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && noption < 4)
@@ -569,9 +569,9 @@ void StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char
             const std::shared_ptr<SQLDatabase> & d
                 = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
-            buf += initial;
-            buf += std::to_string(d->dname);
-            return;
+            res += initial;
+            res += std::to_string(d->dname);
+            return res;
         }
     }
     else
@@ -580,40 +580,41 @@ void StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
-            buf += initial;
-            buf += std::to_string(t.tname);
-            return;
+            res += initial;
+            res += std::to_string(t.tname);
+            return res;
         }
     }
     if (noption < 7)
     {
-        buf += initial;
-        buf += std::to_string(rg.nextSmallNumber() - 1);
-        buf += ".*";
+        res += initial;
+        res += std::to_string(rg.nextSmallNumber() - 1);
+        res += ".*";
     }
     else if (noption < 10)
     {
         const uint32_t first = rg.nextSmallNumber() - 1;
         const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-        buf += initial;
-        buf += "[";
-        buf += std::to_string(first);
-        buf += "-";
-        buf += std::to_string(second);
-        buf += "].*";
+        res += initial;
+        res += "[";
+        res += std::to_string(first);
+        res += "-";
+        res += std::to_string(second);
+        res += "].*";
     }
     else
     {
         if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
         {
-            buf += "default";
+            res += "default";
         }
         else
         {
-            buf += "t0";
+            res += "t0";
         }
     }
+    return res;
 }
 
 void StatementGenerator::generateMergeTreeEngineDetails(
@@ -897,11 +898,8 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isMergeEngine())
     {
-        setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd');
-        te->add_params()->set_regexp(buf);
-
-        setMergeTableParameter<SQLTable>(rg, 't');
-        te->add_params()->set_svalue(buf);
+        te->add_params()->set_regexp(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd'));
+        te->add_params()->set_svalue(setMergeTableParameter<SQLTable>(rg, 't'));
     }
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {

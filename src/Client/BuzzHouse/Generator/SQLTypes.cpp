@@ -8,7 +8,7 @@
 namespace BuzzHouse
 {
 
-SQLType * TypeDeepCopy(SQLType * tp)
+SQLType * typeDeepCopy(SQLType * tp)
 {
     IntType * it;
     FloatType * ft;
@@ -83,17 +83,17 @@ SQLType * TypeDeepCopy(SQLType * tp)
         jsubcols.reserve(jt->subcols.size());
         for (const auto & entry : jt->subcols)
         {
-            jsubcols.push_back(JSubType(entry.cname, TypeDeepCopy(entry.subtype)));
+            jsubcols.push_back(JSubType(entry.cname, typeDeepCopy(entry.subtype)));
         }
         return new JSONType(jt->desc, std::move(jsubcols));
     }
     else if ((nl = dynamic_cast<Nullable *>(tp)))
     {
-        return new Nullable(TypeDeepCopy(nl->subtype));
+        return new Nullable(typeDeepCopy(nl->subtype));
     }
     else if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
-        return new LowCardinality(TypeDeepCopy(lc->subtype));
+        return new LowCardinality(typeDeepCopy(lc->subtype));
     }
     else if ((gt = dynamic_cast<GeoType *>(tp)))
     {
@@ -101,11 +101,11 @@ SQLType * TypeDeepCopy(SQLType * tp)
     }
     else if ((at = dynamic_cast<ArrayType *>(tp)))
     {
-        return new ArrayType(TypeDeepCopy(at->subtype));
+        return new ArrayType(typeDeepCopy(at->subtype));
     }
     else if ((mt = dynamic_cast<MapType *>(tp)))
     {
-        return new MapType(TypeDeepCopy(mt->key), TypeDeepCopy(mt->value));
+        return new MapType(typeDeepCopy(mt->key), typeDeepCopy(mt->value));
     }
     else if ((ttp = dynamic_cast<TupleType *>(tp)))
     {
@@ -114,7 +114,7 @@ SQLType * TypeDeepCopy(SQLType * tp)
         subtypes.reserve(ttp->subtypes.size());
         for (const auto & entry : ttp->subtypes)
         {
-            subtypes.push_back(SubType(entry.cname, TypeDeepCopy(entry.subtype)));
+            subtypes.push_back(SubType(entry.cname, typeDeepCopy(entry.subtype)));
         }
         return new TupleType(std::move(subtypes));
     }
@@ -125,7 +125,7 @@ SQLType * TypeDeepCopy(SQLType * tp)
         subtypes.reserve(vtp->subtypes.size());
         for (const auto & entry : vtp->subtypes)
         {
-            subtypes.push_back(TypeDeepCopy(entry));
+            subtypes.push_back(typeDeepCopy(entry));
         }
         return new VariantType(std::move(subtypes));
     }
@@ -136,7 +136,7 @@ SQLType * TypeDeepCopy(SQLType * tp)
         subtypes.reserve(ntp->subtypes.size());
         for (const auto & entry : ntp->subtypes)
         {
-            subtypes.push_back(NestedSubType(entry.cname, TypeDeepCopy(entry.subtype)));
+            subtypes.push_back(NestedSubType(entry.cname, typeDeepCopy(entry.subtype)));
         }
         return new NestedType(std::move(subtypes));
     }
@@ -1646,8 +1646,8 @@ String StatementGenerator::strAppendBottomValue(RandomGenerator & rg, SQLType * 
                     ret = std::to_string(rg.nextRandomUInt64());
                     break;
                 default: {
-                    UHugeInt val(rg.nextRandomUInt64(), rg.nextRandomUInt64());
-                    val.toString(ret);
+                    const UHugeInt val(rg.nextRandomUInt64(), rg.nextRandomUInt64());
+                    ret = val.toString();
                 }
             }
         }
@@ -1668,8 +1668,8 @@ String StatementGenerator::strAppendBottomValue(RandomGenerator & rg, SQLType * 
                     ret = std::to_string(rg.nextRandomInt64());
                     break;
                 default: {
-                    HugeInt val(rg.nextRandomInt64(), rg.nextRandomUInt64());
-                    val.toString(ret);
+                    const HugeInt val(rg.nextRandomInt64(), rg.nextRandomUInt64());
+                    ret = val.toString();
                 }
             }
         }

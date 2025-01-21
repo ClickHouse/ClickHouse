@@ -396,9 +396,9 @@ UHugeInt::operator bool() const
     return *this != UHugeInt(0);
 }
 
-void UHugeInt::toString(String & res) const
+String UHugeInt::toString() const
 {
-    String in;
+    String res;
     UHugeInt input = *this;
     UHugeInt remainder;
 
@@ -409,17 +409,10 @@ void UHugeInt::toString(String & res) const
             break;
         }
         input = divMod(input, UHugeInt(10), remainder);
-        in.insert(0, String(1, static_cast<char>('0' + remainder.lower)));
+        res.insert(0, String(1, static_cast<char>('0' + remainder.lower)));
     }
-    if (in.empty())
-    {
-        // value is zero
-        res += "0";
-    }
-    else
-    {
-        res += in;
-    }
+    // if empty then value is zero
+    return res.empty() ? "0" : res;
 }
 
 }

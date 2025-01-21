@@ -25,7 +25,7 @@ public:
     UHugeInt & operator=(const UHugeInt & rhs) = default;
     UHugeInt & operator=(UHugeInt && rhs) = default;
 
-    void toString(String & res) const;
+    String toString() const;
 
     // comparison operators
     bool operator==(const UHugeInt & rhs) const;

@@ -76,7 +76,6 @@ public:
 class FuzzConfig
 {
 private:
-    String buf;
     DB::ClientBase * cb = nullptr;
 
 public:
@@ -94,7 +93,7 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
-    FuzzConfig() : cb(nullptr), log(getLogger("BuzzHouse")) { buf.reserve(512); }
+    FuzzConfig() : cb(nullptr), log(getLogger("BuzzHouse")) { }
 
     FuzzConfig(DB::ClientBase * c, const String & path);
 
@@ -106,9 +105,9 @@ private:
 public:
     void loadServerConfigurations();
 
-    bool tableHasPartitions(bool detached, const String & database, const String & table);
+    bool tableHasPartitions(bool detached, const String & database, const String & table) const;
 
-    void tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table, String & res);
+    String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
 };
 
 }

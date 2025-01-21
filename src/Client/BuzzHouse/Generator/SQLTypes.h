@@ -19,7 +19,7 @@ public:
     virtual ~SQLType() = default;
 };
 
-SQLType * TypeDeepCopy(SQLType * tp);
+SQLType * typeDeepCopy(SQLType * tp);
 
 class BoolType : public SQLType
 {
@@ -359,7 +359,7 @@ public:
     SQLType * subtype;
     ArrayType * array_subtype;
 
-    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(TypeDeepCopy(s))) { }
+    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(typeDeepCopy(s))) { }
 };
 
 class NestedType : public SQLType

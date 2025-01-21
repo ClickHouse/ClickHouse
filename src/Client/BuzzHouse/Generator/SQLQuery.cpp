@@ -151,6 +151,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     }
     else if (table_engine && t.isS3Engine())
     {
+        String buf;
         bool first = true;
         const ServerCredentials & sc = fc.minio_server.value();
         S3Func * sfunc = tfunc->mutable_s3();
@@ -161,7 +162,6 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         sfunc->set_user(sc.user);
         sfunc->set_password(sc.password);
         sfunc->set_format(t.file_format);
-        buf.resize(0);
         flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
         for (const auto & entry : remote_entries)
         {

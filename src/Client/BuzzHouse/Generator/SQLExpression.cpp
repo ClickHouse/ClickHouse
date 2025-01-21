@@ -200,29 +200,28 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     }
     else if (noption < 401)
     {
-        buf.resize(0);
-        buf += "'";
+        String ret = "'";
         if (noption < 251)
         {
-            buf += rg.nextDate();
-            buf += "'::Date";
+            ret += rg.nextDate();
+            ret += "'::Date";
         }
         else if (noption < 301)
         {
-            buf += rg.nextDate32();
-            buf += "'::Date32";
+            ret += rg.nextDate32();
+            ret += "'::Date32";
         }
         else if (noption < 351)
         {
-            buf += rg.nextDateTime();
-            buf += "'::DateTime";
+            ret += rg.nextDateTime();
+            ret += "'::DateTime";
         }
         else
         {
-            buf += rg.nextDateTime64();
-            buf += "'::DateTime64";
+            ret += rg.nextDateTime64();
+            ret += "'::DateTime64";
         }
-        lv->set_no_quote_str(buf);
+        lv->set_no_quote_str(ret);
     }
     else if (noption < 501)
     {
@@ -234,68 +233,59 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     }
     else if (this->allow_not_deterministic && noption < 551)
     {
+        String ret;
         const uint32_t nlen = rg.nextLargeNumber();
         const uint32_t noption2 = rg.nextSmallNumber();
 
-        buf.resize(0);
         if (noption2 < 3)
         {
-            buf += "randomString";
+            ret = "randomString";
         }
         else if (noption2 < 5)
         {
-            buf += "randomFixedString";
+            ret = "randomFixedString";
         }
         else if (noption2 < 7)
         {
-            buf += "randomPrintableASCII";
+            ret = "randomPrintableASCII";
         }
         else
         {
-            buf += "randomStringUTF8";
+            ret = "randomStringUTF8";
         }
-        buf += "(";
-        buf += std::to_string(nlen);
-        buf += ")";
-        lv->set_no_quote_str(buf);
+        ret += "(";
+        ret += std::to_string(nlen);
+        ret += ")";
+        lv->set_no_quote_str(ret);
     }
     else if (noption < 601)
     {
+        String ret;
         const uint32_t nopt = rg.nextLargeNumber();
 
-        buf.resize(0);
         if (nopt < 31)
         {
-            buf += "'";
-            buf += rg.nextUUID();
-            buf += "'::UUID";
+            ret = "'" + rg.nextUUID() + "'::UUID";
         }
         else if (nopt < 51)
         {
-            buf += "'";
-            buf += rg.nextIPv4();
-            buf += "'::IPv4";
+            ret = "'" + rg.nextIPv4() + "'::IPv4";
         }
         else if (nopt < 71)
         {
-            buf += "'";
-            buf += rg.nextIPv6();
-            buf += "'::IPv6";
+            ret = "'" + rg.nextIPv6() + "'::IPv6";
         }
         else if (nopt < 101)
         {
             const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
 
-            buf += "'";
-            buf += strAppendGeoValue(rg, gt);
-            buf += "'::";
-            buf += GeoTypes_Name(gt);
+            ret = "'" + strAppendGeoValue(rg, gt) + "'::" + GeoTypes_Name(gt);
         }
         else
         {
-            buf += rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
+            ret = rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
         }
-        lv->set_no_quote_str(buf);
+        lv->set_no_quote_str(ret);
     }
     else if (noption < 701)
     {
@@ -543,10 +533,9 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
     for (uint32_t i = 0; i < nparams; i++)
     {
-        buf.resize(0);
-        buf += String(1, 'x' + i);
+        const String buf = String(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
-        rel.cols.push_back(SQLRelationCol("", {buf}));
+        rel.cols.push_back(SQLRelationCol("", {std::move(buf)}));
     }
     this->levels[this->current_level].rels.push_back(std::move(rel));
     this->generateExpression(rg, lexpr->mutable_expr());
@@ -857,25 +846,25 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else if (noption < 556)
     {
+        String ret;
         const uint32_t nopt2 = rg.nextSmallNumber();
 
-        buf.resize(0);
         if (nopt2 < 6)
         {
-            buf += std::to_string(rg.nextSmallNumber() - 1);
+            ret = std::to_string(rg.nextSmallNumber() - 1);
         }
         else if (nopt2 < 10)
         {
             const uint32_t first = rg.nextSmallNumber() - 1;
             const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-            buf += "[";
-            buf += std::to_string(first);
-            buf += "-";
-            buf += std::to_string(second);
-            buf += "]";
+            ret += "[";
+            ret += std::to_string(first);
+            ret += "-";
+            ret += std::to_string(second);
+            ret += "]";
         }
-        expr->mutable_comp_expr()->set_columns(buf);
+        expr->mutable_comp_expr()->set_columns(ret);
     }
     else if (this->fc.max_width > this->width && noption < 576)
     {

@@ -78,11 +78,9 @@ const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), fl
 class StatementGenerator
 {
 private:
-    FuzzConfig & fc;
+    const FuzzConfig & fc;
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
-
-    String buf;
 
     PeerQuery peer_query = PeerQuery::None;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
@@ -128,7 +126,7 @@ private:
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
 
     template <typename T>
-    void setMergeTableParameter(RandomGenerator & rg, char initial);
+    String setMergeTableParameter(RandomGenerator & rg, char initial);
 
     template <typename T>
     const std::unordered_map<uint32_t, T> & getNextCollection() const
@@ -380,7 +378,6 @@ public:
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
         : fc(fuzzc), connections(conn), supports_cloud_features(scf), replica_setup(hrs)
     {
-        buf.reserve(2048);
         assert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
     }
 

@@ -50,7 +50,7 @@ public:
     SQLColumn(const SQLColumn & c)
     {
         this->cname = c.cname;
-        this->tp = TypeDeepCopy(c.tp);
+        this->tp = typeDeepCopy(c.tp);
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -58,7 +58,7 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = TypeDeepCopy(c.tp);
+        this->tp = typeDeepCopy(c.tp);
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -71,7 +71,7 @@ public:
         }
         this->cname = c.cname;
         delete this->tp;
-        this->tp = TypeDeepCopy(c.tp);
+        this->tp = typeDeepCopy(c.tp);
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);

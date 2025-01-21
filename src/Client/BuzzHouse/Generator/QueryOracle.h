@@ -20,7 +20,6 @@ private:
     PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
 
-    String buf;
     std::unordered_set<uint32_t> found_tables;
     std::vector<String> nsettings;
 
@@ -34,7 +33,6 @@ public:
         , can_test_query_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
-        buf.reserve(4096);
     }
 
     void resetOracleValues();

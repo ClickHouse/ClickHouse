@@ -25,7 +25,7 @@ public:
     HugeInt & operator=(const HugeInt & rhs) = default;
     HugeInt & operator=(HugeInt && rhs) = default;
 
-    void toString(String & res) const;
+    String toString() const;
 
     // comparison operators
     bool operator==(const HugeInt & rhs) const;

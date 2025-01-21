@@ -175,6 +175,7 @@ static const std::unordered_map<OutFormat, InFormat> out_in{
 
 void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
 {
+    String buf;
     bool first = true;
     Insert * ins = sq2.mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
@@ -189,7 +190,6 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     }
     ff->set_path(nfile.generic_string());
 
-    buf.resize(0);
     gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
@@ -483,12 +483,11 @@ void QueryOracle::findTablesWithPeersAndReplace(
                     {
                         if (replace)
                         {
-                            buf.resize(0);
-                            buf += tos.joined_table().table_alias().table();
+                            const String saved = tos.joined_table().table_alias().table();
                             tos.clear_joined_table();
                             JoinedTableFunction * jtf = tos.mutable_joined_table_function();
                             gen.setTableRemote(rg, false, t, jtf->mutable_tfunc());
-                            jtf->mutable_table_alias()->set_table(buf);
+                            jtf->mutable_table_alias()->set_table(saved);
                         }
                         found_tables.insert(tname);
                         can_test_query_success &= t.hasClickHousePeer();

@@ -50,9 +50,8 @@ class ClickHouseIntegration
 public:
     const FuzzConfig & fc;
     const ServerCredentials & sc;
-    String buf;
 
-    ClickHouseIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : fc(fcc), sc(scc) { buf.reserve(4096); }
+    ClickHouseIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : fc(fcc), sc(scc) { }
 
     virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) { }
 
@@ -298,7 +297,6 @@ class ExternalIntegrations
 {
 private:
     const FuzzConfig & fc;
-    String buf;
     std::unique_ptr<MySQLIntegration> mysql = nullptr;
     std::unique_ptr<PostgreSQLIntegration> postresql = nullptr;
     std::unique_ptr<SQLiteIntegration> sqlite = nullptr;

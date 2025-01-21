@@ -563,19 +563,17 @@ HugeInt::operator bool() const
     return *this != HugeInt(0);
 }
 
-void HugeInt::toString(String & res) const
+String HugeInt::toString() const
 {
-    String in;
+    String res;
     uint64_t remainder;
     HugeInt input = *this;
 
     if (input == NumericLimits<HugeInt>::minimum())
     {
-        res += "-170141183460469231731687303715884105728";
-        return;
+        return "-170141183460469231731687303715884105728";
     }
-    bool negative = input.upper < 0;
-    if (negative)
+    if (input.upper < 0)
     {
         res += "-";
         negateInPlace(input);
@@ -587,17 +585,10 @@ void HugeInt::toString(String & res) const
             break;
         }
         input = divModPositive(input, 10, remainder);
-        in.insert(0, String(1, static_cast<char>('0' + remainder)));
+        res.insert(0, String(1, static_cast<char>('0' + remainder)));
     }
-    if (in.empty())
-    {
-        // value is zero
-        res += "0";
-    }
-    else
-    {
-        res += in;
-    }
+    // if empty then value is zero
+    return res.empty() ? "0" : res;
 }
 
 }

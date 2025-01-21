@@ -27,9 +27,9 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 
     if (performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
+        String buf;
         bool first = true;
 
-        buf.resize(0);
         buf += "CREATE TABLE ";
         buf += str_tname;
         buf += "(";
@@ -82,6 +82,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     {
         if (t.db)
         {
+            String buf;
             CreateDatabase newd;
             DatabaseEngine * deng = newd.mutable_dengine();
 
@@ -93,13 +94,13 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             }
             newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
 
-            buf.resize(0);
             CreateDatabaseToString(buf, newd);
             buf += ";";
             res &= performQuery(buf);
         }
         if (res)
         {
+            String buf;
             CreateTable newt;
             newt.CopyFrom(*ct);
 
@@ -110,7 +111,6 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
                 est.mutable_database()->set_database("d" + std::to_string(t.db->dname));
             }
 
-            buf.resize(0);
             CreateTableToString(buf, newt);
             buf += ";";
             res &= performQuery(buf);
@@ -609,24 +609,22 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             default: {
                 HugeInt val(rg.nextRandomInt64(), rg.nextRandomUInt64());
 
-                buf.resize(0);
-                val.toString(buf);
                 if constexpr (is_document<T>)
                 {
-                    output << cname << buf;
+                    output << cname << val.toString();
                 }
                 else
                 {
-                    output << buf;
+                    output << val.toString();
                 }
             }
         }
     }
     else if (dynamic_cast<FloatType *>(tp))
     {
+        String buf;
         const uint32_t next_option = rg.nextLargeNumber();
 
-        buf.resize(0);
         if (next_option < 25)
         {
             buf += "nan";
@@ -672,7 +670,8 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        buf.resize(0);
+        String buf;
+
         if (dttp->extended)
         {
             buf += rg.nextDateTime64();
@@ -692,10 +691,10 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((detp = dynamic_cast<DecimalType *>(tp)))
     {
+        String buf;
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
 
-        buf.resize(0);
         buf += appendDecimal(rg, left, right);
         if (rg.nextBool())
         {
@@ -1332,6 +1331,8 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
 void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
+    String buf;
+
     clickhouse->performQueryOnServerOrRemote(
         pt,
         fmt::format(
@@ -1340,7 +1341,6 @@ void ExternalIntegrations::getPerformanceMetricsForLastQuery(
             fc.fuzz_out.generic_string()));
 
     std::ifstream infile(fc.fuzz_out);
-    buf.resize(0);
     if (std::getline(infile, buf))
     {
         const auto tabchar = buf.find('\t');
@@ -1360,13 +1360,13 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
 
 void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
+    String buf;
     String replaced;
     fc.processServerQuery(fmt::format(
         "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
         fc.fuzz_out.generic_string()));
 
     std::ifstream infile(fc.fuzz_out);
-    buf.resize(0);
     while (std::getline(infile, buf))
     {
         const auto tabchar = buf.find('\t');

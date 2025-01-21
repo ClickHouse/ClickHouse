@@ -351,14 +351,14 @@ CONV_FN(NumericLiteral, nl)
 
 CONV_FN(HugeIntLiteral, huge)
 {
-    HugeInt val(huge.upper(), huge.lower());
-    val.toString(ret);
+    const HugeInt val(huge.upper(), huge.lower());
+    ret += val.toString();
 }
 
 CONV_FN(UHugeIntLiteral, uhuge)
 {
-    UHugeInt val(uhuge.upper(), uhuge.lower());
-    val.toString(ret);
+    const UHugeInt val(uhuge.upper(), uhuge.lower());
+    ret += val.toString();
 }
 
 CONV_FN(IntLiteral, int_val)

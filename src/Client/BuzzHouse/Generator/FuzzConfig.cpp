@@ -44,12 +44,12 @@ static std::optional<ServerCredentials> loadServerCredentials(
 
 FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(getLogger("BuzzHouse"))
 {
+    String buf;
     JSONParserImpl parser;
     JSONObjectType object;
     std::ifstream inputFile(path);
     String fileContent;
 
-    buf.reserve(512);
     while (std::getline(inputFile, buf))
     {
         fileContent += buf;
@@ -190,13 +190,13 @@ bool FuzzConfig::processServerQuery(const String & input) const
 
 void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col)
 {
+    String buf;
     uint64_t found = 0;
 
     processServerQuery(fmt::format(
         "SELECT \"{}\" FROM \"system\".\"{}\" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", col, table, fuzz_out.generic_string()));
 
     std::ifstream infile(fuzz_out);
-    buf.resize(0);
     out.clear();
     while (std::getline(infile, buf))
     {
@@ -215,8 +215,9 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->timezones, "time_zones", "time_zone");
 }
 
-bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table)
+bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table) const
 {
+    String buf;
     const String &detached_tbl = detached ? "detached_parts" : "parts",
                  &db_clause = database.empty() ? "" : ("\"database\" = '" + database + "' AND ");
 
@@ -229,7 +230,6 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
         fuzz_out.generic_string()));
 
     std::ifstream infile(fuzz_out);
-    buf.resize(0);
     if (std::getline(infile, buf))
     {
         return !buf.empty() && buf[0] != '0';
@@ -237,9 +237,10 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     return false;
 }
 
-void FuzzConfig::tableGetRandomPartitionOrPart(
-    const bool detached, const bool partition, const String & database, const String & table, String & res)
+String
+FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table) const
 {
+    String res;
     const String &detached_tbl = detached ? "detached_parts" : "parts",
                  &db_clause = database.empty() ? "" : ("\"database\" = '" + database + "' AND ");
 
@@ -256,9 +257,9 @@ void FuzzConfig::tableGetRandomPartitionOrPart(
         db_clause,
         table,
         fuzz_out.generic_string()));
-    res.resize(0);
     std::ifstream infile(fuzz_out, std::ios::in);
     std::getline(infile, res);
+    return res;
 }
 
 }
