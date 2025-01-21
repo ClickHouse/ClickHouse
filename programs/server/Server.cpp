@@ -309,6 +309,7 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace ProfileEvents
@@ -2526,6 +2527,8 @@ try
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
 
+            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
+
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
@@ -2546,6 +2549,8 @@ try
                 }
             }
 
+            global_context->getRefreshSet().setRefreshesStopped(true);
+
             if (current_connections)
                 LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
@@ -2561,14 +2566,19 @@ try
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries();
 
+            size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
+            auto wait_start = std::chrono::steady_clock::now();
+
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
+                current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
+
+            global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
 
             dns_cache_updater.reset();
 

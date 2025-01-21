@@ -19,8 +19,6 @@ FROM <left_subquery>
 ...
 ```
 
-You can specify only one `ARRAY JOIN` clause in a `SELECT` query.
-
 Supported types of `ARRAY JOIN` are listed below:
 
 - `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
