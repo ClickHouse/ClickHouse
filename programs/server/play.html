@@ -738,6 +738,8 @@ let is_explain_graph = false;
 let explain_graph = '';
 let column_is_number = {};
 
+const default_format = 'JSONStringsEachRowWithProgress';
+
 let controller = null;
 async function postImpl(posted_request_num, query)
 {
@@ -750,7 +752,6 @@ async function postImpl(posted_request_num, query)
         'add_http_cors_header=1';
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
-    const default_format = 'JSONStringsEachRowWithProgress';
     url += '&default_format=' + default_format + '&enable_http_compression=1';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
@@ -768,13 +769,14 @@ async function postImpl(posted_request_num, query)
     let is_chart = false;
     let is_error = false;
 
-    let response, reply;
+    let response, reply, format;
+    reply = '';
     try {
         controller = new AbortController();
         response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
             /*headers: { 'Authorization': 'never' }*/ });
 
-        let format = response.headers.get('X-ClickHouse-Format');
+        format = response.headers.get('X-ClickHouse-Format');
 
         if (!response.ok) {
             is_error = true;
@@ -819,7 +821,7 @@ async function postImpl(posted_request_num, query)
                     const data = JSON.parse(line);
                     cont = update(data, fragment);
                     if (!cont) { break; }
-                };
+                }
 
                 if (fragment.hasChildNodes()) {
                     document.getElementById('tbody').appendChild(fragment);
@@ -896,8 +898,9 @@ async function postImpl(posted_request_num, query)
     if (query != previous_query) {
         const state = {
             query: query,
-            status: response.status,
-            response: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
+            format: format,
+            ok: response.ok,
+            data: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
             elapsed_ns: elapsed_ns,
         };
         const title = "ClickHouse Query: " + query;
@@ -922,18 +925,81 @@ async function postImpl(posted_request_num, query)
     }
 }
 
+async function restoreFromHistory(state) {
+    clear();
+    query_area.value = state.query;
+
+    if (!state.data) return;
+
+    let is_table = false;
+    let is_raw = false;
+    let is_chart = false;
+    let is_error = false;
+
+    let format = state.format;
+
+    if (!state.ok) {
+        is_error = true;
+
+        let has_exception = false;
+        for (line of state.data.split('\n')) {
+            if (line.startsWith(`{"exception":`)) {
+                update(JSON.parse(line));
+                has_exception = true;
+                break;
+            }
+        }
+        if (!has_exception) {
+            renderError(state.data);
+        }
+
+        document.getElementById('hourglass').style.display = 'none';
+        document.documentElement.style.setProperty('--progress', '0');
+        return;
+    } else if (format == default_format) {
+        is_table = true;
+        let lines = state.data.split('\n');
+        let fragment = document.createDocumentFragment();
+
+        for (line of lines) {
+            if (line.length == 0) continue;
+            if (!update(JSON.parse(line), fragment)) { break; }
+        }
+
+        if (fragment.hasChildNodes()) {
+            document.getElementById('tbody').appendChild(fragment);
+        }
+    } else if (format == 'JSONCompactColumns') {
+        is_chart = true;
+        if (posted_request_num != request_num) { return; }
+        renderChart(JSON.parse(state.data));
+    } else {
+        is_raw = true;
+        updateRaw(state.data);
+    }
+
+    if (is_explain_graph) {
+        await renderGraph();
+    } else {
+        if (extremes['min'] && extremes['max']) renderExtremes();
+        if (is_table) transposeTableIfNeeded();
+    }
+
+    document.getElementById('check-mark').style.display = 'inline-block';
+    document.getElementById('hourglass').style.display = 'none';
+
+    if (is_raw) elapsed_ns = state.elapsed_ns;
+
+    updateProgressText();
+    document.documentElement.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
+}
+
 let query_area = document.getElementById('query');
 
 window.onpopstate = function(event) {
-    if (!event.state) {
-        return;
-    }
-    query_area.value = event.state.query;
-    if (!event.state.response) {
-        clear();
-        return;
-    }
-    renderResponse(event.state.status, event.state.response, event.state.elapsed_ns);
+    if (!event.state) return;
+    restoreFromHistory(event.state);
 };
 
 if (window.location.hash) {
