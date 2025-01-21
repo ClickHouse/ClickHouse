@@ -3106,7 +3106,6 @@ CONV_FN(DescTable, dt)
 
 CONV_FN(DeduplicateExpr, de)
 {
-    ret += " DEDUPLICATE";
     if (de.has_col_list())
     {
         ret += " BY ";
@@ -3139,9 +3138,14 @@ CONV_FN(OptimizeTable, ot)
     }
     if (ot.has_dedup())
     {
+        ret += " DEDUPLICATE";
+        if (ot.cleanup())
+        {
+            ret += " CLEANUP";
+        }
         DeduplicateExprToString(ret, ot.dedup());
     }
-    if (ot.cleanup())
+    else if (ot.cleanup())
     {
         ret += " CLEANUP";
     }

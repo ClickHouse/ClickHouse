@@ -252,6 +252,13 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) 
     return tp->MySQLtypeName(rg, false);
 }
 
+MySQLIntegration::~MySQLIntegration()
+{
+    if (mysql_connection && *mysql_connection)
+    {
+        mysql_close(*mysql_connection);
+    }
+}
 #else
 std::unique_ptr<MySQLIntegration>
 MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
@@ -463,6 +470,13 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp)
     return tp->SQLitetypeName(rg, false);
 }
 
+SQLiteIntegration::~SQLiteIntegration()
+{
+    if (sqlite_connection && *sqlite_connection)
+    {
+        sqlite3_close(*sqlite_connection);
+    }
+}
 #else
 std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
 {

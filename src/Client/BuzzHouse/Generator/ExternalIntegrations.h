@@ -134,13 +134,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
 
-    ~MySQLIntegration() override
-    {
-        if (mysql_connection && *mysql_connection)
-        {
-            mysql_close(*mysql_connection);
-        }
-    }
+    ~MySQLIntegration() override;
 #else
 public:
     MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
@@ -213,13 +207,7 @@ public:
 
     bool performQuery(const String & query) override;
 
-    ~SQLiteIntegration() override
-    {
-        if (sqlite_connection && *sqlite_connection)
-        {
-            sqlite3_close(*sqlite_connection);
-        }
-    }
+    ~SQLiteIntegration() override;
 #else
 public:
     const std::filesystem::path sqlite_path;
