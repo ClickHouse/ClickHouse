@@ -565,6 +565,8 @@ public:
             void materializeACL(const ACLMap & current_acl_map);
         };
 
+        /// zxid_to_nodes stores iterators of nodes map
+        /// so we should be careful when removing nodes from it
         mutable std::unordered_map<
             std::string,
             UncommittedNode,
