@@ -334,11 +334,12 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         return;
     }
 
-    if (responses[0]->error == Coordination::Error::ZBADVERSION)
+    if (responses[0]->error == Coordination::Error::ZBADVERSION
+        || responses[0]->error == Coordination::Error::ZNONODE)
     {
         LOG_WARNING(
             log, "Processing node no longer exists ({}) "
-            "while setting file as non-retriable failed. "
+            "while resetting processing state. "
             "This could be as a result of expired keeper session. "
             "Cannot set file as failed, will retry.",
             processing_node_path);
