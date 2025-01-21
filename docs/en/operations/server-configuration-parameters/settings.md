@@ -1375,7 +1375,7 @@ In case of a failed table drop, ClickHouse will wait for this time-out before re
 
 Type: [`UInt64`](../../sql-reference/data-types/int-uint.md)
 
-Default: `0`
+Default: `5`
 
 ## database_catalog_drop_table_concurrency
 
@@ -1383,7 +1383,7 @@ The size of the threadpool used for dropping tables.
 
 Type: [`UInt64`](../../sql-reference/data-types/int-uint.md)
 
-Default: `0`
+Default: `16`
 
 ## database_catalog_unused_dir_cleanup_period_sec
 
