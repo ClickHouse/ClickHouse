@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
+#include <Interpreters/Context.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
@@ -85,18 +86,26 @@ namespace
 
 
 BackupImpl::BackupImpl(
-    BackupFactory::CreateParams params_,
+    const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_)
-    : params(std::move(params_))
-    , backup_info(params.backup_info)
+    const std::optional<BackupInfo> & base_backup_info_,
+    std::shared_ptr<IBackupReader> reader_,
+    const ContextPtr & context_,
+    bool is_internal_backup_,
+    bool use_same_s3_credentials_for_base_backup_,
+    bool use_same_password_for_base_backup_)
+    : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
+    , context(context_)
+    , is_internal_backup(is_internal_backup_)
     , version(INITIAL_BACKUP_VERSION)
-    , base_backup_info(params.base_backup_info)
+    , base_backup_info(base_backup_info_)
+    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
+    , use_same_password_for_base_backup(use_same_password_for_base_backup_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -104,20 +113,32 @@ BackupImpl::BackupImpl(
 
 
 BackupImpl::BackupImpl(
-    BackupFactory::CreateParams params_,
+    const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupWriter> writer_)
-    : params(std::move(params_))
-    , backup_info(params.backup_info)
+    const std::optional<BackupInfo> & base_backup_info_,
+    std::shared_ptr<IBackupWriter> writer_,
+    const ContextPtr & context_,
+    bool is_internal_backup_,
+    const std::shared_ptr<IBackupCoordination> & coordination_,
+    const std::optional<UUID> & backup_uuid_,
+    bool deduplicate_files_,
+    bool use_same_s3_credentials_for_base_backup_,
+    bool use_same_password_for_base_backup_)
+    : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , coordination(params.backup_coordination)
-    , uuid(params.backup_uuid)
+    , context(context_)
+    , is_internal_backup(is_internal_backup_)
+    , coordination(coordination_)
+    , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
-    , base_backup_info(params.base_backup_info)
+    , base_backup_info(base_backup_info_)
+    , deduplicate_files(deduplicate_files_)
+    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
+    , use_same_password_for_base_backup(use_same_password_for_base_backup_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -165,7 +186,7 @@ void BackupImpl::open()
 
         /// Check that we can write a backup there and create the lock file to own this destination.
         checkBackupDoesntExist();
-        if (!params.is_internal_backup)
+        if (!is_internal_backup)
             createLockFile();
         checkLockFile(true);
     }
@@ -233,11 +254,23 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
 {
     if (!base_backup && base_backup_info)
     {
-        if (params.use_same_s3_credentials_for_base_backup)
+        if (use_same_s3_credentials_for_base_backup)
             backup_info.copyS3CredentialsTo(*base_backup_info);
 
-        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(*base_backup_info, archive_params.password);
-        base_backup = BackupFactory::instance().createBackup(base_params);
+        BackupFactory::CreateParams params;
+        params.backup_info = *base_backup_info;
+        params.open_mode = OpenMode::READ;
+        params.context = context;
+        params.is_internal_backup = is_internal_backup;
+        /// use_same_s3_credentials_for_base_backup should be inherited for base backups
+        params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
+        /// use_same_password_for_base_backup should be inherited for base backups
+        params.use_same_password_for_base_backup = use_same_password_for_base_backup;
+
+        if (params.use_same_password_for_base_backup)
+            params.password = archive_params.password;
+
+        base_backup = BackupFactory::instance().createBackup(params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
         {
@@ -308,7 +341,7 @@ void BackupImpl::writeBackupMetadata()
     LOG_TRACE(log, "Backup {}: Writing metadata", backup_name_for_logging);
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupWriteMetadataMicroseconds);
 
-    assert(!params.is_internal_backup);
+    assert(!is_internal_backup);
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
@@ -319,7 +352,7 @@ void BackupImpl::writeBackupMetadata()
 
     *out << "<config>";
     *out << "<version>" << CURRENT_BACKUP_VERSION << "</version>";
-    *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
+    *out << "<deduplicate_files>" << deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
 
@@ -376,7 +409,7 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
         if (has_entry)
         {
             ++num_entries;
@@ -493,7 +526,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
             if (has_entry)
             {
                 ++num_entries;
@@ -522,7 +555,7 @@ void BackupImpl::checkBackupDoesntExist() const
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
 
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
-    if (!params.is_internal_backup)
+    if (!is_internal_backup)
     {
         assert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
@@ -533,7 +566,7 @@ void BackupImpl::checkBackupDoesntExist() const
 void BackupImpl::createLockFile()
 {
     /// Internal backup must not create the lock file (it should be created by the initiator).
-    assert(!params.is_internal_backup);
+    assert(!is_internal_backup);
 
     assert(uuid);
     auto out = writer->writeFile(lock_file_name);
@@ -963,7 +996,7 @@ void BackupImpl::finalizeWriting()
     if (writing_finalized)
         return;
 
-    if (!params.is_internal_backup)
+    if (!is_internal_backup)
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
         writeBackupMetadata();

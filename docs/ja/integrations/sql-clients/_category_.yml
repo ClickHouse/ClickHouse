@@ -1,0 +1,8 @@
+position: 300
+label: 'SQL clients'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: SQL clients
+  slug: /ja/integrations/sql-clients

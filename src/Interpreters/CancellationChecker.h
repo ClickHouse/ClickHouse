@@ -49,8 +49,6 @@ private:
     void cancelTask(QueryToTrack task);
     bool removeQueryFromSet(std::shared_ptr<QueryStatus> query);
 
-    const LoggerPtr log;
-
 public:
     // Singleton instance retrieval
     static CancellationChecker& getInstance();

@@ -464,11 +464,12 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         if (is_killed)
             return CancellationCode::CancelSent;
 
-        LOG_TRACE(getLogger("ProcessList"), "Cancelling the query (reason: {})", reason);
-
         is_killed = true;
+
+        if (!cancellation_exception)
+            cancellation_exception = exception;
+
         cancel_reason = reason;
-        cancellation_exception = exception;
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -497,7 +498,7 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     return CancellationCode::CancelSent;
 }
 
-void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns)
+void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns)
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
@@ -508,7 +509,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
                 additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time / 1000.0);
             throwQueryWasCancelled();
         }
     }
@@ -520,7 +521,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     /// addPipelineExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
-    throwProperExceptionIfNeeded(max_exec_time, 0);
+    throwProperExceptionIfNeeded(max_exec_time);
 
     std::lock_guard lock(executors_mutex);
     assert(!executors.contains(e));

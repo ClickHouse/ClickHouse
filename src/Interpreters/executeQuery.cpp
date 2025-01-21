@@ -104,8 +104,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -223,21 +221,16 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (!comment.empty())
             comment = fmt::format(" (comment: {})", comment);
 
-        String line_info;
-        if (client_info.script_line_number)
-            line_info = fmt::format(" (query {}, line {})", client_info.script_query_number, client_info.script_line_number);
-
         String transaction_info;
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
+        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
-            line_info,
             toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
@@ -283,24 +276,17 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string = elem.exception_format_string;
     message.format_string_args = elem.exception_format_string_args;
 
-    const auto & client_info = context->getClientInfo();
-    String line_info;
-    if (client_info.script_line_number)
-        line_info = fmt::format(" (query {}, line {})", client_info.script_query_number, client_info.script_line_number);
-
     if (elem.stack_trace.empty() || !log_error)
-        message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
+        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
-                        line_info,
                         toOneLineQuery(elem.query));
     else
         message.text = fmt::format(
-            "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
+            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            line_info,
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
@@ -435,10 +421,6 @@ QueryLogElement logQueryStart(
 
     bool log_queries = settings[Setting::log_queries] && !internal;
 
-    auto query_log = context->getQueryLog();
-    if (!query_log)
-        return elem;
-
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
@@ -469,38 +451,9 @@ QueryLogElement logQueryStart(
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
-                    " (the setting was changed for the query).");
-
-            query_log->add(elem);
+            if (auto query_log = context->getQueryLog())
+                query_log->add(elem);
         }
-        else if (elem.type < settings[Setting::log_queries_min_type])
-        {
-            if (settings[Setting::log_queries_min_type].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query start record to 'system.query_log' because the query type is smaller than setting `log_queries_min_type`"
-                    " (the setting was changed for the query).");
-        }
-        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-        {
-            if (settings[Setting::log_queries_min_query_duration_ms].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query start record to 'system.query_log' since setting `log_queries_min_query_duration_ms` > 0"
-                    " (the setting was changed for the query).");
-        }
-    }
-    else if (!internal && !settings[Setting::log_queries])
-    {
-        if (settings[Setting::log_queries].changed)
-            LOG_TRACE(
-                getLogger("executeQuery"),
-                "Not adding query to 'system.query_log' since setting `log_queries` is false"
-                " (the setting was changed for the query).");
     }
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
@@ -781,44 +734,10 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (auto query_log = context->getQueryLog())
-    {
-        if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
-            && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-        {
-            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
-                    " (the setting was changed for the query).");
-
+    if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
+        && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        if (auto query_log = context->getQueryLog())
             query_log->add(elem);
-        }
-        else if (!settings[Setting::log_queries])
-        {
-            if (settings[Setting::log_queries].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query to 'system.query_log' since setting `log_queries` is false"
-                    " (the setting was changed for the query).");
-        }
-        else if (elem.type < settings[Setting::log_queries_min_type])
-        {
-            if (settings[Setting::log_queries_min_type].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query to 'system.query_log' since the query type is smaller than setting `log_queries_min_type`"
-                    " (the setting was changed for the query).");
-        }
-        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-        {
-            if (settings[Setting::log_queries_min_query_duration_ms].changed)
-                LOG_TRACE(
-                    getLogger("executeQuery"),
-                    "Not adding query to 'system.query_log' since setting `log_queries_min_query_duration_ms` > 0 and the query failed before start"
-                    " (the setting was changed for the query).");
-        }
-    }
 
     if (query_span)
     {
@@ -941,16 +860,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
-            if (!settings[Setting::allow_experimental_kusto_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
             ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
-            if (!settings[Setting::allow_experimental_prql_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
@@ -1621,8 +1536,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format_ast
-                ? getIdentifierName(ast_query_with_output->format_ast)
+        String format_name = ast_query_with_output->format
+                ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
         if (boost::iequals(format_name, "Null"))
@@ -1688,8 +1603,8 @@ void executeQuery(
 
     /// Set the result details in case of any exception raised during query execution
     SCOPE_EXIT({
-        /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
-        if (!set_result_details)
+        if (set_result_details == nullptr)
+            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
             return;
 
         try
@@ -1724,10 +1639,9 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
-                    {
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
                         // it will throw std::bad_function_call
-                        set_result_details = {};
+                        set_result_details = nullptr;
                         set_result_details(result_details);
                     });
 
@@ -1735,7 +1649,7 @@ void executeQuery(
                     {
                         /// reset set_result_details func to avoid calling in SCOPE_EXIT()
                         auto set_result_details_copy = set_result_details;
-                        set_result_details = {};
+                        set_result_details = nullptr;
                         set_result_details_copy(result_details);
                     }
                 }
@@ -1833,8 +1747,8 @@ void executeQuery(
                     /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format_ast != nullptr)
-                                    ? getIdentifierName(ast_query_with_output->format_ast)
+            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                                    ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(

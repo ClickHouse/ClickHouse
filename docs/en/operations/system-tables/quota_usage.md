@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/quota_usage
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # quota_usage
-
-<SystemTableCloud/>
 
 Quota usage by the current user: how much is used and how much is left.
 

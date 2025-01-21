@@ -1,8 +1,9 @@
 ---
 slug: /en/development/continuous-integration
-sidebar_position: 55
+sidebar_position: 62
 sidebar_label: Continuous Integration Checks
 title: Continuous Integration Checks
+description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
 ---
 
 When you submit a pull request, some automated checks are ran for your code by

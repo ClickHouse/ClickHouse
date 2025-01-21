@@ -91,7 +91,7 @@ void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
     if (has_brackets)
         ostr << "(";
 
-    if (parameters) parameters->format(ostr, settings, state, frame);
+    if (parameters) parameters->formatImpl(ostr, settings, state, frame);
 
     if (has_brackets)
         ostr << ")";
@@ -160,7 +160,7 @@ void ASTDictionary::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     {
         ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "PRIMARY KEY "
             << (settings.hilite ? hilite_none : "");
-        primary_key->format(ostr, settings, state, frame);
+        primary_key->formatImpl(ostr, settings, state, frame);
     }
 
     if (source)
@@ -168,32 +168,32 @@ void ASTDictionary::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE"
             << (settings.hilite ? hilite_none : "");
         ostr << "(";
-        source->format(ostr, settings, state, frame);
+        source->formatImpl(ostr, settings, state, frame);
         ostr << ")";
     }
 
     if (lifetime)
     {
         ostr << settings.nl_or_ws;
-        lifetime->format(ostr, settings, state, frame);
+        lifetime->formatImpl(ostr, settings, state, frame);
     }
 
     if (layout)
     {
         ostr << settings.nl_or_ws;
-        layout->format(ostr, settings, state, frame);
+        layout->formatImpl(ostr, settings, state, frame);
     }
 
     if (range)
     {
         ostr << settings.nl_or_ws;
-        range->format(ostr, settings, state, frame);
+        range->formatImpl(ostr, settings, state, frame);
     }
 
     if (dict_settings)
     {
         ostr << settings.nl_or_ws;
-        dict_settings->format(ostr, settings, state, frame);
+        dict_settings->formatImpl(ostr, settings, state, frame);
     }
 }
 

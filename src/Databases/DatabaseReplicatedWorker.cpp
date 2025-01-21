@@ -334,11 +334,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
+    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();
     StopCallback cancellation_callback(cancellation, [&] { wait_current_task_change.notify_all(); });
-    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {} (timeout: {}s{})", entry_name, timeout, cancellation.stop_possible() ? ", cancellable" : "");
-
     {
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
@@ -346,16 +345,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             assert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
-            {
-                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
                 throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
-            }
 
             if (cancellation.stop_requested())
-            {
-                LOG_TRACE(log, "DDL query was cancelled");
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DDL query was cancelled");
-            }
 
             return current_task == entry_name;
         });

@@ -206,7 +206,7 @@ bool authenticateUserByHTTP(
     }
     else if (has_config_credentials)
     {
-        current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
+        current_credentials = std::make_unique<BasicCredentials>(*config_credentials);
     }
     else // I.e., now using user name and password strings ("Basic").
     {
@@ -239,11 +239,11 @@ bool authenticateUserByHTTP(
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    auto forwarded_address = session.getClientInfo().getLastForwardedFor();
+    String forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
-            session.authenticate(*current_credentials, *forwarded_address);
+        if (!forwarded_address.empty() && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
+            session.authenticate(*current_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
         else
             session.authenticate(*current_credentials, request.clientAddress());
     }
