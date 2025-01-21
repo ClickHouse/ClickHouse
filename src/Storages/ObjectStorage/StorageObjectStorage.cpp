@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/parseGlobs.h>
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"

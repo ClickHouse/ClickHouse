@@ -46,6 +46,7 @@ class Runner:
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
             PR_BODY="",
+            PR_TITLE="",
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
