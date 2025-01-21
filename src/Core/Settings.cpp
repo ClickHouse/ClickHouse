@@ -2920,6 +2920,9 @@ Allow push predicate to final subquery.
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
 )", 0) \
+    DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
+Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+)", 0) \
     \
     DECLARE(UInt64, low_cardinality_max_dictionary_size, 8192, R"(
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
@@ -4801,6 +4804,7 @@ Possible values:
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
+    DECLARE(Bool, query_plan_use_new_logical_join_step, false, "Use new logical join step in query plan", 0) \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md/#extractallgroups-horizontal) function.
 
@@ -5656,6 +5660,9 @@ Only available in ClickHouse Cloud. If a merged part is less than this many seco
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
+    DECLARE(Bool, use_iceberg_partition_pruning, false, R"(
+Use Iceberg partition pruning for Iceberg tables
+)", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
 Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
 Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
@@ -5943,10 +5950,10 @@ Wait for committed changes to become actually visible in the latest snapshot
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, grace_hash_join_initial_buckets, 1, R"(
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
 Initial number of grace hash join buckets
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, grace_hash_join_max_buckets, 1024, R"(
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(

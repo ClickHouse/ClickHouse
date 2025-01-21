@@ -128,6 +128,8 @@ def main():
                 TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
             )
         else:
+            description = "Docs check failed (htmltest failed)"
+            job_status = FAILURE
             logging.info("Run failed")
             test_results.append(
                 TestResult("htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log])

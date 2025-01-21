@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import datetime
 import json
@@ -200,11 +201,16 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
-    def update_sub_result(self, result: "Result"):
+    def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                self.results[i] = result
+                if drop_nested_results:
+                    res_ = copy.deepcopy(result)
+                    res_.results = []
+                    self.results[i] = res_
+                else:
+                    self.results[i] = result
         self._update_status()
         return self
 
@@ -471,7 +477,7 @@ class _ResultS3:
         )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
         if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path)
+            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
             s3_path=s3_path_versioned,
             local_path=result.file_name(),
@@ -592,7 +598,7 @@ class _ResultS3:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
                 for result_ in new_sub_results:
-                    workflow_result.update_sub_result(result_)
+                    workflow_result.update_sub_result(result_, drop_nested_results=True)
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True

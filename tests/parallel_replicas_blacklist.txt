@@ -56,6 +56,9 @@
 02354_vector_search_detach_attach
 02354_vector_search_different_array_sizes
 
+    https://github.com/ClickHouse/ClickHouse/issues/74711
+03080_incorrect_join_with_merge
+
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
     clickhouse-test --no-shard
