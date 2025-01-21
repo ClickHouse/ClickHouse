@@ -195,6 +195,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         stop_watch = Utils.Stopwatch()
         res, info = CIDB(
             workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
+            workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
             workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD).get_value(),
         ).check()
         return Result(

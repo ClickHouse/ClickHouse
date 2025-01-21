@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Type
 
 from . import Workflow
 from .settings import Settings
-from .utils import MetaClasses, T
+from .utils import MetaClasses, Shell, T
 
 
 @dataclasses.dataclass
@@ -153,19 +153,19 @@ class _Environment(MetaClasses.Serializable):
 
         INSTANCE_TYPE = (
             os.getenv("INSTANCE_TYPE", None)
-            # or Shell.get_output("ec2metadata --instance-type")
+            or Shell.get_output("ec2metadata --instance-type")
             or ""
         )
         INSTANCE_ID = (
             os.getenv("INSTANCE_ID", None)
-            # or Shell.get_output("ec2metadata --instance-id")
+            or Shell.get_output("ec2metadata --instance-id")
             or ""
         )
         INSTANCE_LIFE_CYCLE = (
             os.getenv("INSTANCE_LIFE_CYCLE", None)
-            # or Shell.get_output(
-            #     "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-            # )
+            or Shell.get_output(
+                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+            )
             or ""
         )
 

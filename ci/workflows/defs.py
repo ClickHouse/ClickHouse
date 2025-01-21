@@ -32,6 +32,18 @@ SECRETS = [
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
+    Secret.Config(
+        name="clickhouse-test-stat-url",
+        type=Secret.Type.AWS_SSM_VAR,
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-login",
+        type=Secret.Type.AWS_SSM_VAR,
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-password",
+        type=Secret.Type.AWS_SSM_VAR,
+    ),
     azure_secret,
     # Secret.Config(
     #     name="woolenwolf_gh_app.clickhouse-app-id",
