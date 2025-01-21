@@ -2014,12 +2014,12 @@ class ClickHouseCluster:
     def restart_instance_with_ip_change(self, node, new_ip):
         if "::" in new_ip:
             if node.ipv6_address is None:
-                raise Exception("You should specity ipv6_address in add_node method")
+                raise Exception("You should specify ipv6_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
             node.ipv6_address = new_ip
         else:
             if node.ipv4_address is None:
-                raise Exception("You should specity ipv4_address in add_node method")
+                raise Exception("You should specify ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
         run_and_check(self.base_cmd + ["stop", node.name])
@@ -2086,9 +2086,11 @@ class ClickHouseCluster:
         detach: bool = False,
         nothrow: bool = False,
         use_cli: bool = True,
+        get_exec_id: bool = False,
         **kwargs: Any,
     ) -> str:
         if use_cli:
+            assert not get_exec_id
             logging.debug(
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
             )
@@ -2126,8 +2128,9 @@ class ClickHouseCluster:
                 else:
                     raise Exception(message)
             if not detach:
+                assert not get_exec_id
                 return output.decode()
-            return output
+            return exec_id if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -2699,7 +2702,7 @@ class ClickHouseCluster:
                 logging.info(
                     f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}"
                 )
-                check = self.exec_in_container(
+                self.exec_in_container(
                     self.cassandra_id,
                     [
                         "bash",
@@ -3988,6 +3991,7 @@ class ClickHouseInstance:
             )
         start_time = time.time()
         time_to_sleep = 0.5
+        exec_id = None
 
         while start_time + start_wait_sec >= time.time():
             # sometimes after SIGKILL (hard reset) server may refuse to start for some time
@@ -3995,9 +3999,12 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
-                self.exec_in_container(
-                    ["bash", "-c", self.clickhouse_start_command_in_daemon],
+                exec_id = self.exec_in_container(
+                    ["bash", "-c", self.clickhouse_start_command],
                     user=str(os.getuid()),
+                    detach=True,
+                    use_cli=False,
+                    get_exec_id=True,
                 )
                 if expected_to_fail:
                     self.wait_start_failed(start_wait_sec + start_time - time.time())
@@ -4010,7 +4017,7 @@ class ClickHouseInstance:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
-                    return
+                    return exec_id
                 except Exception as e:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
