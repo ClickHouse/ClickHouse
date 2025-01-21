@@ -646,10 +646,9 @@ if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
-#if (TARGET ch_contrib::delta_kernel_ts)
-#    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
-#endif ()
-dbms_target_link_libraries(PUBLIC ch_contrib::delta_kernel_rs)
+if (TARGET ch_contrib::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+endif ()
 
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

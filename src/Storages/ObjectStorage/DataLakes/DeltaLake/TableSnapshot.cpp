@@ -74,7 +74,7 @@ public:
 
     static void * allocateString(const struct ffi::KernelStringSlice slice)
     {
-        return new std::string(slice.ptr, slice.len);
+        return new std::string(slice.ptr, slice.len); ///TODO: not good
     }
 
     static void scanCallback(
