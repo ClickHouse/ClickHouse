@@ -230,11 +230,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         const uint32_t left = next_dist(rg.generator);
         const uint32_t right = next_dist(rg.generator);
 
-        buf.resize(0);
-        buf += "(";
-        appendDecimal(rg, buf, left, right);
-        buf += ")";
-        lv->set_no_quote_str(buf);
+        lv->set_no_quote_str("(" + appendDecimal(rg, left, right) + ")");
     }
     else if (this->allow_not_deterministic && noption < 551)
     {
@@ -291,7 +287,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
             const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
 
             buf += "'";
-            strAppendGeoValue(rg, buf, gt);
+            buf += strAppendGeoValue(rg, gt);
             buf += "'::";
             buf += GeoTypes_Name(gt);
         }
@@ -315,11 +311,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         std::uniform_int_distribution<int> dopt(1, 3);
         std::uniform_int_distribution<int> wopt(1, 3);
 
-        buf.resize(0);
-        buf += "'";
-        strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), buf);
-        buf += "'::JSON";
-        lv->set_no_quote_str(buf);
+        lv->set_no_quote_str("'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)) + "'::JSON");
     }
     else
     {

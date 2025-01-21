@@ -443,10 +443,10 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     return false;
 }
 
-void appendDecimal(RandomGenerator & rg, String & ret, uint32_t left, uint32_t right);
-void strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth, String & ret);
-void strBuildJSONElement(RandomGenerator & rg, String & ret);
-void strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth, String & ret);
-void strAppendGeoValue(RandomGenerator & rg, String & ret, const GeoTypes & geo_type);
+String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
+String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
+String strBuildJSONElement(RandomGenerator & rg);
+String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
+String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & geo_type);
 
 }

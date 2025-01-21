@@ -238,14 +238,14 @@ private:
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
 
-    void strAppendBottomValue(RandomGenerator & rg, String & ret, SQLType * tp);
-    void strAppendMap(RandomGenerator & rg, String & ret, MapType * mt);
-    void strAppendArray(RandomGenerator & rg, String & ret, ArrayType * at);
-    void strAppendArray(RandomGenerator & rg, String & ret, SQLType * tp, uint64_t limit);
-    void strAppendTuple(RandomGenerator & rg, String & ret, TupleType * at);
-    void strAppendVariant(RandomGenerator & rg, String & ret, VariantType * vtp);
-    void strAppendAnyValueInternal(RandomGenerator & rg, String & ret, SQLType * tp);
-    void strAppendAnyValue(RandomGenerator & rg, String & ret, SQLType * tp);
+    String strAppendBottomValue(RandomGenerator & rg, SQLType * tp);
+    String strAppendMap(RandomGenerator & rg, MapType * mt);
+    String strAppendArray(RandomGenerator & rg, ArrayType * at);
+    String strAppendArray(RandomGenerator & rg, SQLType * tp, uint64_t limit);
+    String strAppendTuple(RandomGenerator & rg, TupleType * at);
+    String strAppendVariant(RandomGenerator & rg, VariantType * vtp);
+    String strAppendAnyValueInternal(RandomGenerator & rg, SQLType * tp);
+    String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
 
     void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
     void generateStorage(RandomGenerator & rg, Storage * store) const;

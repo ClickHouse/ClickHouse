@@ -594,11 +594,11 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 else if (entry.path.size() > 1)
                 {
                     //make sure all nested entries have the same number of rows
-                    strAppendArray(rg, buf, entry.getBottomType(), next_nested_rows);
+                    buf += strAppendArray(rg, entry.getBottomType(), next_nested_rows);
                 }
                 else
                 {
-                    strAppendAnyValue(rg, buf, entry.getBottomType());
+                    buf += strAppendAnyValue(rg, entry.getBottomType());
                 }
                 j++;
             }
@@ -1122,7 +1122,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                             }
                             else
                             {
-                                strAppendAnyValue(rg, buf, entry.getBottomType());
+                                buf += strAppendAnyValue(rg, entry.getBottomType());
                             }
                             lv->set_no_quote_str(buf);
                         }

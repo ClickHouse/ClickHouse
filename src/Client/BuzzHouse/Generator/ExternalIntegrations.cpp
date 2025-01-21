@@ -645,7 +645,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-            appendDecimal(rg, buf, left, right);
+            buf += appendDecimal(rg, left, right);
         }
         if constexpr (is_document<T>)
         {
@@ -696,7 +696,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         const uint32_t left = detp->precision.value_or(10) - right;
 
         buf.resize(0);
-        appendDecimal(rg, buf, left, right);
+        buf += appendDecimal(rg, left, right);
         if (rg.nextBool())
         {
             bsoncxx::types::b_decimal128 decimal_value(buf.c_str());
@@ -817,28 +817,24 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         std::uniform_int_distribution<int> dopt(1, 10);
         std::uniform_int_distribution<int> wopt(1, 10);
 
-        buf.resize(0);
-        strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), buf);
         if constexpr (is_document<T>)
         {
-            output << cname << buf;
+            output << cname << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
         }
         else
         {
-            output << buf;
+            output << strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
         }
     }
     else if ((gtp = dynamic_cast<GeoType *>(tp)))
     {
-        buf.resize(0);
-        strAppendGeoValue(rg, buf, gtp->geo_type);
         if constexpr (is_document<T>)
         {
-            output << cname << buf;
+            output << cname << strAppendGeoValue(rg, gtp->geo_type);
         }
         else
         {
-            output << buf;
+            output << strAppendGeoValue(rg, gtp->geo_type);
         }
     }
     else
