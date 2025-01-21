@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP USER IF EXISTS test_user_01074;
 CREATE USER test_user_01074;
 

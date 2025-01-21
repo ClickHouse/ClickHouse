@@ -97,6 +97,7 @@ struct SystemLogSettings
     SystemLogQueueSettings queue_settings;
 
     String engine;
+    bool symbolize_traces = false;
 };
 
 template <typename LogElement>

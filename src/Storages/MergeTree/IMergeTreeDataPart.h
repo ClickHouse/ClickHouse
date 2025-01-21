@@ -107,7 +107,6 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
-    virtual bool isStoredOnDisk() const = 0;
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
@@ -169,9 +168,6 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
-    /// Throws an exception if part is not stored in on-disk format.
-    void assertOnDisk() const;
-
     void remove();
 
     ColumnsStatistics loadStatistics() const;
@@ -227,7 +223,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getZeroLevelPartBlockID(std::string_view token) const;
+    String getNewPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
 

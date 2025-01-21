@@ -264,14 +264,6 @@ multiIf 関数をカラム形式で実行することを許可します。
 
 これが真に設定されている場合、エクスペリメンタルな圧縮コーデックを指定することを許可します（ただし、現時点ではそれは存在せず、このオプションは何も実行されません）。
 
-## allow_experimental_database_materialized_mysql {#allow_experimental_database_materialized_mysql}
-
-タイプ: Bool
-
-デフォルト値: 0
-
-Engine=MaterializedMySQL(...) を使用してデータベースを作成することを許可します。
-
 ## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
 タイプ: Bool
@@ -2893,7 +2885,7 @@ EXCEPTクエリのデフォルトモードを設定します。可能な値: 空
 
 デフォルト値: 0
 
-外部エンジンを持つテーブルが履歴データをフラッシュする際の最大バイト数を制限します。これは現在、MySQLテーブルエンジン、データベースエンジン、Dictionary、およびMaterializedMySQLにのみサポートされています。0に等しい場合、この設定は無効になります。
+外部エンジンを使用したテーブルが履歴データをフラッシュする最大バイト数を制限します。
 
 ## external_storage_max_read_rows {#external_storage_max_read_rows}
 
@@ -6901,7 +6893,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-この設定は[Materialized view](../../sql-reference/statements/create/view.md/#materialized)や[MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)の動作に影響を与えることに注意してください。
+この設定は[Materialized view](../../sql-reference/statements/create/view.md/#materialized)の動作に影響を与えることに注意してください。
 
 ## optimize_or_like_chain {#optimize_or_like_chain}
 

@@ -341,7 +341,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
     , data(data_)
-    , actions_settings(ExpressionActionsSettings::fromContext(context_))
+    , actions_settings(ExpressionActionsSettings(context_))
     , block_size{
         .max_block_size_rows = max_block_size_,
         .preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes],
@@ -1035,8 +1035,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else
     {
-        std::vector<RangesInDataParts> splitted_parts_and_ranges;
-        splitted_parts_and_ranges.reserve(num_streams);
+        std::vector<RangesInDataParts> split_parts_and_ranges;
+        split_parts_and_ranges.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
         {
@@ -1101,10 +1101,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
             }
 
-            splitted_parts_and_ranges.emplace_back(std::move(new_parts));
+            split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
-        for (auto && item : splitted_parts_and_ranges)
+        for (auto && item : split_parts_and_ranges)
             pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit));
     }
 
@@ -1527,7 +1527,7 @@ static void buildIndexes(
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
+        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
 
         indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);

@@ -1083,7 +1083,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
         interpreter.buildQueryPlan(plan);
     }
 
-    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+    plan.optimize(QueryPlanOptimizationSettings(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());
@@ -1984,6 +1984,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
+        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
 

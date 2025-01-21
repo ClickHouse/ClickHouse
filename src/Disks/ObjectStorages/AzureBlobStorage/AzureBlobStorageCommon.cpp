@@ -21,6 +21,8 @@ namespace ProfileEvents
     extern const Event DiskAzureCreateContainer;
 }
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 namespace Setting
@@ -247,6 +249,12 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
             {
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
+        }
+
+        if (config.has(config_prefix + ".endpoint_subpath"))
+        {
+            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
+            prefix = fs::path(prefix) / endpoint_subpath;
         }
     }
     else if (config.has(config_prefix + ".connection_string"))

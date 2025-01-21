@@ -471,7 +471,7 @@ Keep in mind that HDFS may not work in corner cases.
 
 ### Using Data Encryption {#encrypted-virtual-file-system}
 
-You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#configuring-hdfs) (unsupported) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
+You can encrypt the data stored on [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3), or [HDFS](#using-hdfs-storage-unsupported) (unsupported) external disks, or on a local disk. To turn on the encryption mode, in the configuration file you must define a disk with the type `encrypted` and choose a disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
 Example of disk configuration:
 
@@ -645,7 +645,7 @@ Cache **commands**:
 
 - `SYSTEM DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` is only supported when no `<cache_name>` is provided
 
-- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions <= `22.8` the command is named `SHOW CACHES`)
+- `SHOW FILESYSTEM CACHES` -- show list of filesystem caches which were configured on the server. (For versions &lt;= `22.8` the command is named `SHOW CACHES`)
 
 ```sql
 SHOW FILESYSTEM CACHES
@@ -659,7 +659,7 @@ Result:
 └───────────┘
 ```
 
-- `DESCRIBE FILESYSTEM CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions <= `22.8` the command is named `DESCRIBE CACHE`)
+- `DESCRIBE FILESYSTEM CACHE '<cache_name>'` - show cache configuration and some general statistics for a specific cache. Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions &lt;= `22.8` the command is named `DESCRIBE CACHE`)
 
 ```sql
 DESCRIBE FILESYSTEM CACHE 's3_cache'

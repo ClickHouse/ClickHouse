@@ -133,6 +133,7 @@ def get_run_command(
         # For dmesg and sysctl
         "--privileged "
         f"{ci_logs_args} "
+        "--tmpfs /tmp/clickhouse "
         f"--volume={repo_path}:/repo "
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "

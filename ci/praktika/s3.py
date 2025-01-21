@@ -30,9 +30,11 @@ class S3:
             return True
 
     @classmethod
-    def clean_s3_directory(cls, s3_path):
+    def clean_s3_directory(cls, s3_path, include=""):
         assert len(s3_path.split("/")) > 2, "check to not delete too much"
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
+        if include:
+            cmd += f' --include "{include}" --exclude "*"'
         cls.run_command_with_retries(cmd, retries=1)
         return
 
@@ -132,7 +134,7 @@ class S3:
         if recursive:
             cmd += " --recursive"
         if include_pattern:
-            cmd += f" --include {include_pattern}"
+            cmd += f' --exclude "*" --include "{include_pattern}"'
         res = cls.run_command_with_retries(cmd)
         return res
 
