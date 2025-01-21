@@ -31,9 +31,7 @@
     TODO:
     - JSONCompactEachRowWithProgress
     - save and restore results in the history
-    - transposed tables
     - diagrams
-    - client-side time if there is no server-side time
 
     Nice to have:
     - resizable columns
@@ -318,6 +316,7 @@
         /* Will be displayed when user specified custom format. */
         #data-unparsed
         {
+            width: 100%;
             background-color: var(--element-background-color);
             margin-top: 0rem;
             padding: 0.25rem 0.5rem;
@@ -734,8 +733,10 @@ async function postImpl(posted_request_num, query)
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&default_format=JSONEachRowWithProgress' +
-        '&enable_http_compression=1' +
-        '&extremes=1';
+        '&enable_http_compression=1';
+
+    /// Extremes only if the format is likely to be unchanged. This is imprecise.
+    if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
 
     last_query_start = performance.now();
 
@@ -743,6 +744,11 @@ async function postImpl(posted_request_num, query)
     document.getElementById('hourglass').style.display = 'inline-block';
 
     clear();
+
+    let is_table = false;
+    let is_raw = false;
+    let is_graph = false;
+    let is_error = false;
 
     let response, reply;
     try {
@@ -753,6 +759,7 @@ async function postImpl(posted_request_num, query)
         let format = response.headers.get('X-ClickHouse-Format');
 
         if (!response.ok) {
+            is_error = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return; }
 
@@ -772,6 +779,7 @@ async function postImpl(posted_request_num, query)
             document.documentElement.style.setProperty('--progress', '0');
             return;
         } else if (format == 'JSONEachRowWithProgress') {
+            is_table = true;
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
@@ -807,10 +815,12 @@ async function postImpl(posted_request_num, query)
                 buffer = lines[lines.length - 1];
             }
         } else if (format == 'JSONCompactColumns') {
+            is_graph = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return; }
             renderChart(JSON.parse(reply));
         } else {
+            is_raw = true;
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
@@ -843,22 +853,22 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    if (extremes['min'] && extremes['max']) {
-        renderExtremes();
-    }
+    if (extremes['min'] && extremes['max']) renderExtremes();
 
-    transposeTableIfNeeded();
+    if (is_table) transposeTableIfNeeded();
 
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
+
+    if (is_raw) {
+        elapsed_ns = 1e6 * (performance.now() - last_query_start);
+    }
+
     updateProgressText();
     document.documentElement.style.setProperty('--progress', '0');
-
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
     if (posted_request_num != request_num) { return; }
-
-    const elapsed_msec = performance.now() - last_query_start; // TODO
 
     /// The query is saved in browser history (in a state JSON object)
     /// as well as in URL fragment identifier.
@@ -867,7 +877,7 @@ async function postImpl(posted_request_num, query)
             query: query,
             status: response.status,
             response: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
-            elapsed_msec: elapsed_msec,
+            elapsed_ns: elapsed_ns,
         };
         const title = "ClickHouse Query: " + query;
 
@@ -902,7 +912,7 @@ window.onpopstate = function(event) {
         clear();
         return;
     }
-    renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
+    renderResponse(event.state.status, event.state.response, event.state.elapsed_ns);
 };
 
 if (window.location.hash) {
@@ -1168,9 +1178,6 @@ function transposeTableIfNeeded()
     for (let i = 0; i < num_cols; ++i) {
         let tr = document.createElement('tr');
         let th = heads[1];
-        console.log(i);
-        console.log(tr);
-        console.log(th);
         th.className = 'right';
         th.style.width = '0';
         tr.appendChild(th);
@@ -1230,6 +1237,7 @@ function updateRaw(data) {
 }
 
 function updateProgressText() {
+    console.log(elapsed_ns);
     let progress_elem = document.getElementById('progress');
     let progress_text = '';
     if (row_idx) {
@@ -1238,6 +1246,7 @@ function updateProgressText() {
     }
     if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
     progress_elem.innerText = progress_text;
+    progress_elem.style.display = 'block';
 }
 
 function updateProgress(progress) {
@@ -1274,7 +1283,6 @@ function updateProgress(progress) {
     stats.innerHTML = text;
 
     updateProgressText();
-    progress_elem.style.display = 'block';
 
     document.documentElement.style.setProperty('--progress',
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
