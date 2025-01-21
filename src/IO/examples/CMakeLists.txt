@@ -70,11 +70,6 @@ target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io clickhous
 clickhouse_add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
 target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io clickhouse_common_config)
 
-if (CLICKHOUSE_CLOUD)
-    clickhouse_add_executable (azure_key_vault azure_key_vault.cpp)
-    target_link_libraries (azure_key_vault PRIVATE clickhouse_common_io clickhouse_common_config)
-endif()
-
 if (TARGET ch_contrib::hdfs)
     clickhouse_add_executable (read_buffer_from_hdfs read_buffer_from_hdfs.cpp)
     target_link_libraries (read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
