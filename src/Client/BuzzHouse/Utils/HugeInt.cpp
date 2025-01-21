@@ -566,6 +566,7 @@ HugeInt::operator bool() const
 String HugeInt::toString() const
 {
     String res;
+    String suffix;
     uint64_t remainder;
     HugeInt input = *this;
 
@@ -575,7 +576,7 @@ String HugeInt::toString() const
     }
     if (input.upper < 0)
     {
-        res += "-";
+        suffix = "-";
         negateInPlace(input);
     }
     while (true)
@@ -588,7 +589,7 @@ String HugeInt::toString() const
         res.insert(0, String(1, static_cast<char>('0' + remainder)));
     }
     // if empty then value is zero
-    return res.empty() ? "0" : res;
+    return res.empty() ? "0" : (suffix + res);
 }
 
 }
