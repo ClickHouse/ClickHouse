@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# no-parallel: dealing with an SQLite database makes concurrent SHOW TABLES queries fail sporadically with the "database is locked" error.
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# See 01658_read_file_to_string_column.sh
+user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+
+mkdir -p "${user_files_path}/"
+chmod 777 "${user_files_path}"
+
 export CURR_DATABASE="test_01889_sqllite_${CLICKHOUSE_DATABASE}"
 
-DB_PATH=${USER_FILES_PATH}/${CURR_DATABASE}_db1
+DB_PATH=${user_files_path}/${CURR_DATABASE}_db1
 DB_PATH2=$CUR_DIR/${CURR_DATABASE}_db2
 
 function cleanup()
@@ -39,8 +44,6 @@ sqlite3 "${DB_PATH}" "INSERT INTO table3 VALUES ('', 4)"
 
 sqlite3 "${DB_PATH}" 'CREATE TABLE table4 (a int, b integer, c tinyint, d smallint, e mediumint, f bigint, g int2, h int8)'
 sqlite3 "${DB_PATH}" 'CREATE TABLE table5 (a character(20), b varchar(10), c real, d double, e double precision, f float)'
-sqlite3 "${DB_PATH}" "CREATE TABLE \"table6'\" (col1 text, col2 smallint);"
-sqlite3 "${DB_PATH}" "INSERT INTO \"table6'\" VALUES ('table6_line1', 1), ('table6_line2', 2), ('table6_line3', 3)"
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'create database engine'";
@@ -82,8 +85,6 @@ ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table3 ORDER BY col2'
 ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table1') SELECT 'line4', 4"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table1') ORDER BY col2"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', '\\'); select 1 --') ORDER BY col2 -- { serverError SQLITE_ENGINE_ERROR }"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table6''') ORDER BY col2"
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'test schema inference'";

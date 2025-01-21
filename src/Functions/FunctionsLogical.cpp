@@ -1,13 +1,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
@@ -31,7 +29,7 @@ REGISTER_FUNCTION(Logical)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -50,7 +48,7 @@ using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
-MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
+MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
 {
     const size_t rows_count = ternary_data.size();
 
@@ -172,7 +170,7 @@ public:
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    ResultValueType apply(const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
         return Op::apply(a, next.apply(i));
@@ -192,7 +190,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    ResultValueType apply(const size_t i) const { return !!vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -293,7 +291,7 @@ public:
         }
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    ResultValueType apply(const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
         return Op::ternaryApply(vec[i], next.apply(i));
     }
@@ -317,7 +315,7 @@ public:
             TernaryValueBuilder::build(in[in.size() - 1], vec.data());
         }
 
-    ResultValueType apply(const size_t i) const { return vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return vec[i]; }
 
 private:
     UInt8Container vec;
@@ -651,42 +649,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
-    if constexpr (std::is_same_v<Name, NameAnd> || std::is_same_v<Name, NameOr>)
-    {
-        /// To apply short circuit execution on non function column arguments has negative return, since it needs to
-        /// run `filter` and `expand` on a column. For `and` and `or`, the execution order for arguments doesn't
-        /// affect the correctness of result. So we first to calculate a map column from all non function column
-        /// arguments, and combine it with the remaining function column arguments, use them as the input of
-        /// `exeucteShortCircuit` to calculate the final result.
-        ColumnRawPtrs not_short_circuit_args;
-        std::vector<size_t> short_circuit_args_index;
-        ColumnsWithTypeAndName new_args;
-
-        for (size_t i = 0, n = args.size(); i < n; ++i)
-        {
-            if (checkAndGetShortCircuitArgument(arguments[i].column))
-                short_circuit_args_index.emplace_back(i);
-            else
-                not_short_circuit_args.emplace_back(arguments[i].column.get());
-        }
-
-        ColumnPtr partial_result = nullptr;
-        if (not_short_circuit_args.size() > 1)
-        {
-            partial_result = result_type->isNullable()
-                ? executeForTernaryLogicImpl<Impl>(std::move(not_short_circuit_args), result_type, input_rows_count)
-                : basicExecuteImpl<Impl>(std::move(not_short_circuit_args), input_rows_count);
-            if (short_circuit_args_index.empty())
-                return partial_result;
-            new_args.emplace_back(partial_result, result_type, "__partial_result");
-            for (const auto & index : short_circuit_args_index)
-                new_args.emplace_back(std::move(arguments[index]));
-        }
-        else
-            new_args.swap(arguments);
-
-        return executeShortCircuit(new_args, result_type);
-    }
+    if (checkShortCircuitArguments(arguments) != -1)
+        return executeShortCircuit(arguments, result_type);
 
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
@@ -694,7 +658,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 
     if (result_type->isNullable())
         return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    else
+        return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
 template <typename Impl, typename Name>
@@ -736,11 +701,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
-            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Float64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
         else if (field_type == Field::Types::Int64)
-            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Int64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
         else if (field_type == Field::Types::UInt64)
-            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<UInt64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
         has_false_constant = has_false_constant || !constant_value_bool;
@@ -751,12 +716,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     if constexpr (std::is_same_v<Impl, AndImpl>)
     {
         if (has_false_constant)
-            result_column = result_type->createColumnConst(1, static_cast<UInt8>(false));
+            result_column = result_type->createColumnConst(0, static_cast<UInt8>(false));
     }
     else if constexpr (std::is_same_v<Impl, OrImpl>)
     {
         if (has_true_constant)
-            result_column = result_type->createColumnConst(1, static_cast<UInt8>(true));
+            result_column = result_type->createColumnConst(0, static_cast<UInt8>(true));
     }
 
     return result_column;

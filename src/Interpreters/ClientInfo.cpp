@@ -95,14 +95,8 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
         writeVarUInt(static_cast<UInt64>(collaborate_with_initiator), out);
-        writeVarUInt(obsolete_count_participating_replicas, out);
+        writeVarUInt(count_participating_replicas, out);
         writeVarUInt(number_of_current_replica, out);
-    }
-
-    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS)
-    {
-        writeVarUInt(script_query_number, out);
-        writeVarUInt(script_line_number, out);
     }
 }
 
@@ -191,14 +185,8 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         UInt64 value;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
-        readVarUInt(obsolete_count_participating_replicas, in);
+        readVarUInt(count_participating_replicas, in);
         readVarUInt(number_of_current_replica, in);
-    }
-
-    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS)
-    {
-        readVarUInt(script_query_number, in);
-        readVarUInt(script_line_number, in);
     }
 }
 
@@ -266,8 +254,6 @@ String toString(ClientInfo::Interface interface)
             return "LOCAL";
         case ClientInfo::Interface::TCP_INTERSERVER:
             return "TCP_INTERSERVER";
-        case ClientInfo::Interface::PROMETHEUS:
-            return "PROMETHEUS";
     }
 
     return std::format("Unknown server interface ({}).", static_cast<int>(interface));
@@ -292,21 +278,6 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
             continue;
         http_headers[header.first] = header.second;
-    }
-}
-
-String toString(ClientInfo::HTTPMethod method)
-{
-    switch (method)
-    {
-        case ClientInfo::HTTPMethod::UNKNOWN:
-            return "UNKNOWN";
-        case ClientInfo::HTTPMethod::GET:
-            return "GET";
-        case ClientInfo::HTTPMethod::POST:
-            return "POST";
-        case ClientInfo::HTTPMethod::OPTIONS:
-            return "OPTIONS";
     }
 }
 

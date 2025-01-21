@@ -32,8 +32,6 @@ private:
     ColumnConst(const ColumnConst & src) = default;
 
 public:
-    bool isConst() const override { return true; }
-
     ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
@@ -76,11 +74,6 @@ public:
     void get(size_t, Field & res) const override
     {
         data->get(0, res);
-    }
-
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
-    {
-        return data->getValueNameAndType(0);
     }
 
     StringRef getDataAt(size_t) const override
@@ -128,11 +121,7 @@ public:
         return data->isNullAt(0);
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
-#else
-    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
-#endif
     {
         s += length;
     }
@@ -156,20 +145,12 @@ public:
         ++s;
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
-#else
-    void doInsertFrom(const IColumn &, size_t) override
-#endif
     {
         ++s;
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
-#else
-    void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
-#endif
 
     void insertDefault() override
     {
@@ -242,11 +223,7 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
-#else
-    int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
-#endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
@@ -272,12 +249,6 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(data);
-    }
-
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
-    {
-        callback(*data);
-        data->forEachSubcolumnRecursively(callback);
     }
 
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
@@ -335,8 +306,6 @@ public:
     T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
-
-    bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
 
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);

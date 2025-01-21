@@ -3,7 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <double-conversion/double-conversion.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
@@ -145,7 +146,6 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     static constexpr int MAX_LENGTH = 316;
 
-    /// NOLINTBEGIN(readability-else-after-return)
     ReadBufferFromMemory * buf_from_memory = dynamic_cast<ReadBufferFromMemory *>(&buf);
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes or buf is ReadBufferFromMemory
     if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
@@ -222,6 +222,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
             break;
         }
 
+
         char tmp_buf[MAX_LENGTH];
         int num_copied_chars = 0;
 
@@ -259,7 +260,6 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
         return ReturnType(true);
     }
-    /// NOLINTEND(readability-else-after-return)
 }
 
 
@@ -321,12 +321,10 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
 
 
 template <typename T, typename ReturnType, bool allow_exponent = true>
-ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
+ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
-
-    has_fractional = false;
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -380,7 +378,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
 
     if (checkChar('.', in))
     {
-        has_fractional = true;
         auto after_point_count = in.count();
 
         while (!in.eof() && *in.position() == '0')
@@ -398,7 +395,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
     {
         if (checkChar('e', in) || checkChar('E', in))
         {
-            has_fractional = true;
             if (in.eof())
             {
                 if constexpr (throw_exception)
@@ -425,14 +421,10 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
     }
 
     if (after_point)
-    {
         x += static_cast<T>(shift10(after_point, after_point_exponent));
-    }
 
     if (exponent)
-    {
         x = static_cast<T>(shift10(x, exponent));
-    }
 
     if (negative)
         x = -x;
@@ -480,7 +472,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in, bool & has_fractional)
             }
             return ReturnType(false);
         }
-        if (*in.position() == 'n' || *in.position() == 'N')
+        else if (*in.position() == 'n' || *in.position() == 'N')
         {
             if (assertOrParseNaN<throw_exception>(in))
             {
@@ -596,85 +588,14 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        readFloatTextPreciseImpl<Float32, void>(tmp, in);
-        x = BFloat16(tmp);
-    }
-    else
-        readFloatTextPreciseImpl<T, void>(x, in);
-}
+template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
 
-template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        bool res = readFloatTextPreciseImpl<Float32, bool>(tmp, in);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-    }
-    else
-        return readFloatTextPreciseImpl<T, bool>(x, in);
-}
+template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
 
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in)
-{
-    bool has_fractional;
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        readFloatTextFastImpl<Float32, void>(tmp, in, has_fractional);
-        x = BFloat16(tmp);
-    }
-    else
-        readFloatTextFastImpl<T, void>(x, in, has_fractional);
-}
-
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in)
-{
-    bool has_fractional;
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        bool res = readFloatTextFastImpl<Float32, bool>(tmp, in, has_fractional);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-    }
-    else
-        return readFloatTextFastImpl<T, bool>(x, in, has_fractional);
-}
-
-template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        readFloatTextSimpleImpl<Float32, void>(tmp, in);
-        x = BFloat16(tmp);
-    }
-    else
-        readFloatTextSimpleImpl<T, void>(x, in);
-}
-
-template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        bool res = readFloatTextSimpleImpl<Float32, bool>(tmp, in);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-    }
-    else
-        return readFloatTextSimpleImpl<T, bool>(x, in);
-}
+template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
+template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
 
 
 /// Implementation that is selected as default.
@@ -683,50 +604,6 @@ template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatText
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
 
 /// Don't read exponent part of the number.
-template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in)
-{
-    bool has_fractional;
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        bool res = readFloatTextFastImpl<Float32, bool, false>(tmp, in, has_fractional);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-
-    }
-    else
-        return readFloatTextFastImpl<T, bool, false>(x, in, has_fractional);
-}
-
-/// With a @has_fractional flag
-/// Used for input_format_try_infer_integers
-template <typename T> bool tryReadFloatTextExt(T & x, ReadBuffer & in, bool & has_fractional)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        bool res = readFloatTextFastImpl<Float32, bool>(tmp, in, has_fractional);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-    }
-    else
-        return readFloatTextFastImpl<T, bool>(x, in, has_fractional);
-}
-
-template <typename T> bool tryReadFloatTextExtNoExponent(T & x, ReadBuffer & in, bool & has_fractional)
-{
-    if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 tmp;
-        bool res = readFloatTextFastImpl<Float32, bool, false>(tmp, in, has_fractional);
-        if (res)
-            x = BFloat16(tmp);
-        return res;
-    }
-    else
-        return readFloatTextFastImpl<T, bool, false>(x, in, has_fractional);
-}
+template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool, false>(x, in); }
 
 }

@@ -26,7 +26,7 @@
     1. Support readonly servers.
     Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
-    Also, it can provide visual indication that credentials are correct.
+    Also it can provide visual indication that credentials are correct.
 
     -->
 
@@ -331,11 +331,15 @@
         }
 
         @keyframes hourglass-animation {
-            0% { transform: none; }
-            25% { transform: rotate(180deg); }
-            50% { transform: rotate(180deg); }
-            75% { transform: rotate(360deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(-180deg);
+            }
+            50% {
+                transform: rotate(-180deg);
+            }
+            100% {
+                transform: none;
+            }
         }
 
         #hourglass
@@ -344,7 +348,7 @@
             margin-left: 1rem;
             font-size: 110%;
             color: #888;
-            animation: hourglass-animation 2s linear infinite;
+            animation: hourglass-animation 1s linear infinite;
         }
 
         #check-mark
@@ -512,14 +516,8 @@
     /// Save query in history only if it is different.
     let previous_query = '';
 
-    /// Start of the last query
-    let last_query_start = 0;
-
     const current_url = new URL(window.location);
     const opened_locally = location.protocol == 'file:';
-
-    /// Run query instantly after page is loaded if the run parameter is present.
-    const run_immediately = current_url.searchParams.has("run");
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
@@ -569,8 +567,6 @@
             '&password=' + encodeURIComponent(password)
         }
 
-        last_query_start = performance.now();
-
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
@@ -583,8 +579,7 @@
             if (posted_request_num != request_num) {
                 return;
             } else if (this.readyState === XMLHttpRequest.DONE) {
-                const elapsed_msec = performance.now() - last_query_start;
-                renderResponse(this.status, this.response, elapsed_msec);
+                renderResponse(this.status, this.response);
 
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
@@ -592,15 +587,11 @@
                     const state = {
                         query: query,
                         status: this.status,
-                        response: this.response.length > 100000 ? null : this.response, /// Lower than the browser's limit.
-                        elapsed_msec: elapsed_msec,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
                     const title = "ClickHouse Query: " + query;
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-                    if (run_immediately) {
-                        history_url += "&run=1";
-                    }
                     if (server_address != location.origin) {
                         /// Save server's address in URL if it's not identical to the address of the play UI.
                         history_url += '&url=' + encodeURIComponent(server_address);
@@ -626,7 +617,7 @@
         xhr.send(query);
     }
 
-    function renderResponse(status, response, elapsed_msec) {
+    function renderResponse(status, response) {
         document.getElementById('hourglass').style.display = 'none';
 
         if (status === 200) {
@@ -641,7 +632,6 @@
                 renderChart(json);
             } else {
                 renderUnparsedResult(response);
-                stats.innerText = `Elapsed (client-side): ${(elapsed_msec / 1000).toFixed(3)} sec.`;
             }
             document.getElementById('check-mark').style.display = 'inline';
         } else {
@@ -661,7 +651,7 @@
             clear();
             return;
         }
-        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
+        renderResponse(event.state.status, event.state.response);
     };
 
     if (window.location.hash) {
@@ -1160,10 +1150,6 @@
         media_query_list.addEventListener('change', function(e) {
             setColorTheme(e.matches ? 'dark' : 'light');
         });
-    }
-
-    if (run_immediately) {
-        post();
     }
 
     document.getElementById('toggle-light').onclick = function() {

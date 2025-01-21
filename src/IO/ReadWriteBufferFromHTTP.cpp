@@ -1,6 +1,4 @@
 #include "ReadWriteBufferFromHTTP.h"
-#include <sstream>
-#include <string_view>
 
 #include <IO/HTTPCommon.h>
 #include <Common/NetException.h>
@@ -10,8 +8,6 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferSeekCancelConnection;
-    extern const Event ReadWriteBufferFromHTTPRequestsSent;
-    extern const Event ReadWriteBufferFromHTTPBytes;
 }
 
 
@@ -74,6 +70,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -122,33 +119,15 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         credentials.authenticate(request);
 }
 
-std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
+size_t ReadWriteBufferFromHTTP::getFileSize()
 {
     if (!file_info)
-    {
-        try
-        {
-            file_info = getFileInfo();
-        }
-        catch (const HTTPException &)
-        {
-            return std::nullopt;
-        }
-        catch (const NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::IOException &)
-        {
-            return std::nullopt;
-        }
-    }
+        file_info = getFileInfo();
 
-    return file_info->file_size;
+    if (file_info->file_size)
+        return *file_info->file_size;
+
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", initial_uri.toString());
 }
 
 bool ReadWriteBufferFromHTTP::supportsReadAt()
@@ -240,7 +219,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
     if (iter == http_header_entries.end())
     {
-        http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}{}", VERSION_STRING, VERSION_OFFICIAL));
+        http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}", VERSION_STRING));
     }
 
     if (!delay_initialization && use_external_buffer)
@@ -265,8 +244,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     prepareRequest(request, range);
 
     auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
-
-    ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
     auto & stream_out = session->sendRequest(request);
     if (out_stream_callback)
@@ -330,12 +307,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (NetException & e)
+        catch (DB::NetException & e)
         {
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (HTTPException & e)
+        catch (DB::HTTPException & e)
         {
             if (!isRetriableError(e.getHTTPStatus()))
                 is_retriable = false;
@@ -343,7 +320,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (Exception & e)
+        catch (DB::Exception & e)
         {
             is_retriable = false;
 
@@ -364,11 +341,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (last_attempt || !is_retriable)
         {
             if (!mute_logging)
-                LOG_DEBUG(log,
+                LOG_ERROR(log,
                           "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
-                          initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                          initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                           error_message,
                           attempt, read_settings.http_max_tries);
 
@@ -380,12 +357,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                 on_retry();
 
             if (!mute_logging)
-                LOG_TRACE(log,
+                LOG_INFO(log,
                          "Failed to make request to '{}'{}. "
                          "Error: {}. "
                          "Failed at try {}/{}. "
                          "Will retry with current backoff wait is {}/{} ms.",
-                         initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                         initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                          error_message,
                          attempt + 1, read_settings.http_max_tries,
                          milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
@@ -415,7 +392,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             /// Retry 200OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
-                String explanation = fmt::format(
+                String reason = fmt::format(
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
                     *read_range.begin, read_range.end ? toString(*read_range.end) : "-",
                     toString(response.getStatus()), response.getReason());
@@ -425,18 +402,18 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                     current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
-                    response.getReason(),
-                    explanation);
+                    reason,
+                    "");
             }
-            throw Exception(
-                ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
-                *read_range.begin,
-                read_range.end ? toString(*read_range.end) : "-",
-                toString(response.getStatus()),
-                response.getReason());
+            else
+                throw Exception(
+                    ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                    "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
+                    *read_range.begin,
+                    read_range.end ? toString(*read_range.end) : "-",
+                    toString(response.getStatus()), response.getReason());
         }
-        if (read_range.end)
+        else if (read_range.end)
         {
             /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
             /// will affect only performance, so a warning is enough.
@@ -445,7 +422,6 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     }
 
     response.getCookies(cookies);
-    response.getHeaders(response_headers);
     content_encoding = response.get("Content-Encoding", "");
 
     // Remember file size. It'll be used to report eof in next nextImpl() call.
@@ -507,8 +483,6 @@ bool ReadWriteBufferFromHTTP::nextImpl()
             BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
-
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, working_buffer.size());
         },
         /*on_retry=*/ [&] ()
         {
@@ -540,7 +514,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             if (response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT &&
                 (offset != 0 || offset + n < *file_info->file_size))
             {
-                String explanation = fmt::format(
+                String reason = fmt::format(
                     "When reading with readBigAt {}."
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
                     initial_uri.toString(),
@@ -551,13 +525,11 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                     current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
-                    response.getReason(),
-                    explanation);
+                    reason,
+                    "");
             }
 
             copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
-
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
 
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
@@ -567,8 +539,6 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
         },
         /*on_retry=*/ [&] ()
         {
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
-
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -607,7 +577,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
     if (impl)
     {
         auto position = getPosition();
-        if (offset_ >= position)
+        if (offset_ > position)
         {
             size_t diff = offset_ - position;
             if (diff < read_settings.remote_read_min_bytes_for_seek)
@@ -683,19 +653,6 @@ std::string ReadWriteBufferFromHTTP::getResponseCookie(const std::string & name,
     return def;
 }
 
-Map ReadWriteBufferFromHTTP::getResponseHeaders() const
-{
-    Map map;
-    for (const auto & header : response_headers)
-    {
-        Tuple elem;
-        elem.emplace_back(header.first);
-        elem.emplace_back(header.second);
-        map.emplace_back(elem);
-    }
-    return map;
-}
-
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
@@ -716,19 +673,7 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         {
             file_info = getFileInfo();
         }
-        catch (const HTTPException &)
-        {
-            return std::nullopt;
-        }
-        catch (const NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::IOException &)
+        catch (...)
         {
             return std::nullopt;
         }
@@ -749,7 +694,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     {
         getHeadResponse(response);
     }
-    catch (const HTTPException & e)
+    catch (HTTPException & e)
     {
         /// Maybe the web server doesn't support HEAD requests.
         /// E.g. webhdfs reports status 400.
@@ -758,12 +703,8 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         /// fall back to slow whole-file reads when HEAD is actually supported; that sounds
         /// like a nightmare to debug.)
         if (e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
-        {
+            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS)
             return HTTPFileInfo{};
-        }
 
         throw;
     }

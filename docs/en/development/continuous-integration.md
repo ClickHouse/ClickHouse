@@ -1,8 +1,9 @@
 ---
 slug: /en/development/continuous-integration
-sidebar_position: 55
+sidebar_position: 62
 sidebar_label: Continuous Integration Checks
 title: Continuous Integration Checks
+description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
 ---
 
 When you submit a pull request, some automated checks are ran for your code by
@@ -70,7 +71,7 @@ If it fails, fix the style errors following the [code style guide](style.md).
 ```sh
 mkdir -p /tmp/test_output
 # running all checks
-python3 tests/ci/style_check.py --no-push
+docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE clickhouse/style-test
 
 # run specified check script (e.g.: ./check-mypy)
 docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
@@ -81,7 +82,7 @@ cd ./utils/check-style
 # Check duplicate includes
 ./check-duplicate-includes.sh
 
-# Check c++ formatting
+# Check c++ formatiing
 ./check-style
 
 # Check python formatting with black
@@ -89,9 +90,6 @@ cd ./utils/check-style
 
 # Check python type hinting with mypy
 ./check-mypy
-
-# Check python with flake8
-./check-flake8
 
 # Check code with codespell
 ./check-typos
@@ -155,7 +153,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ### Report Details
 
-- **Compiler**: `clang-19`, optionally with the name of a target platform
+- **Compiler**: `clang-17`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Status**: `success` or `fail`
@@ -179,7 +177,7 @@ Performs static analysis and code style checks using `clang-tidy`. The report is
 There is a convenience `packager` script that runs the clang-tidy build in docker
 ```sh
 mkdir build_tidy
-./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-19 --debug-build --clang-tidy
+./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-17 --debug-build --clang-tidy
 ```
 
 

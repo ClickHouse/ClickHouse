@@ -16,7 +16,7 @@ class IBackupEntry;
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;
-    std::shared_ptr<MutationCommands> commands;
+    MutationCommands commands;
 
     DiskPtr disk;
     String path_prefix;
@@ -29,7 +29,6 @@ struct MergeTreeMutationEntry
     MergeTreePartInfo latest_failed_part_info;
     time_t latest_fail_time = 0;
     String latest_fail_reason;
-    String latest_fail_error_code_name;
 
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;

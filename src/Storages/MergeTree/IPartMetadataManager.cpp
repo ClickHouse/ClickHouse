@@ -18,12 +18,4 @@ bool IPartMetadataManager::isCompressedFromFileName(const String & file_name)
         || isCompressedFromIndexExtension(extension);
 }
 
-std::unique_ptr<ReadBuffer> IPartMetadataManager::readIfExists(const String & file_name) const
-{
-    if (exists(file_name))
-        return read(file_name);
-    else
-        return {};
-}
-
 }

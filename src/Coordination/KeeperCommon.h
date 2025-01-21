@@ -1,9 +1,7 @@
 #pragma once
 
 #include <base/StringRef.h>
-#include <Common/Logger.h>
-
-#include <functional>
+#include "Common/Logger.h"
 
 namespace DB
 {

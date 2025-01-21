@@ -2,7 +2,6 @@
 
 #if USE_ULID
 
-#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
@@ -180,8 +179,9 @@ An optional second argument can be passed to specify a timezone for the timestam
             .examples{
                 {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
                 {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
-            .category{"ULID"}
-        });
+            .categories{"ULID"}
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 }

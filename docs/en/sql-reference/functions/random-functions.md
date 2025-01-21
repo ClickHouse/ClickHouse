@@ -24,7 +24,7 @@ Returns a random UInt32 number with uniform distribution.
 
 Uses a linear congruential generator with an initial state obtained from the system, which means that while it appears random, it's not truly random and can be predictable if the initial state is known. For scenarios where true randomness is crucial, consider using alternative methods like system-level calls or integrating with external libraries.
 
-**Syntax**
+### Syntax
 
 ```sql
 rand()
@@ -32,15 +32,15 @@ rand()
 
 Alias: `rand32`
 
-**Arguments**
+### Arguments
 
 None.
 
-**Returned value**
+### Returned value
 
 Returns a number of type UInt32.
 
-**Example**
+### Example
 
 ```sql
 SELECT rand();
@@ -54,23 +54,23 @@ SELECT rand();
 
 Returns a random UInt64 integer (UInt64) number
 
-**Syntax**
+### Syntax
 
 ```sql
 rand64()
 ```
 
-**Arguments**
+### Arguments
 
 None.
 
-**Arguments**
+### Returned value
 
 Returns a number UInt64 number with uniform distribution.
 
 Uses a linear congruential generator with an initial state obtained from the system, which means that while it appears random, it's not truly random and can be predictable if the initial state is known. For scenarios where true randomness is crucial, consider using alternative methods like system-level calls or integrating with external libraries.
 
-**Example**
+### Example
 
 ```sql
 SELECT rand64();
@@ -84,21 +84,21 @@ SELECT rand64();
 
 Returns a random Float64 number.
 
-**Syntax**
+### Syntax
 
 ```sql
 randCanonical()
 ```
 
-**Arguments**
+### Arguments
 
 None.
 
-**Arguments**
+### Returned value
 
 Returns a Float64 value between 0 (inclusive) and 1 (exclusive).
 
-**Example**
+### Example
 
 ```sql
 SELECT randCanonical();
@@ -112,25 +112,25 @@ SELECT randCanonical();
 
 Generates a single constant column filled with a random value. Unlike `rand`, this function ensures the same random value appears in every row of the generated column, making it useful for scenarios requiring a consistent random seed across rows in a single query.
 
-**Syntax**
+### Syntax
 
 ```sql
 randConstant([x]);
 ```
 
-**Arguments**
+### Arguments
 
 - **[x] (Optional):** An optional expression that influences the generated random value. Even if provided, the resulting value will still be constant within the same query execution. Different queries using the same expression will likely generate different constant values.
 
-**Arguments**
+### Returned value
 
 Returns a column of type UInt32 containing the same random value in each row.
 
-**Implementation details**
+### Implementation details
 
 The actual output will be different for each query execution, even with the same optional expression. The optional parameter may not significantly change the generated value compared to using `randConstant` alone.
 
-**Example**
+### Examples
 
 ```sql
 SELECT randConstant() AS random_value;
@@ -156,22 +156,22 @@ SELECT randConstant(10) AS random_value;
 
 Returns a random Float64 drawn uniformly from interval [`min`, `max`].
 
-**Syntax**
+### Syntax
 
 ```sql
 randUniform(min, max)
 ```
 
-**Arguments**
+### Arguments
 
 - `min` - `Float64` - left boundary of the range,
 - `max` - `Float64` - right boundary of the range.
 
-**Arguments**
+### Returned value
 
-A random number of type [Float64](../data-types/float.md).
+A random number of type [Float64](/docs/en/sql-reference/data-types/float.md).
 
-**Example**
+### Example
 
 ```sql
 SELECT randUniform(5.5, 10) FROM numbers(5)
@@ -204,7 +204,9 @@ randNormal(mean, variance)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -241,7 +243,9 @@ randLogNormal(mean, variance)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -278,7 +282,9 @@ randBinomial(experiments, probability)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -315,7 +321,9 @@ randNegativeBinomial(experiments, probability)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -351,7 +359,9 @@ randPoisson(n)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -387,7 +397,9 @@ randBernoulli(probability)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -423,7 +435,9 @@ randExponential(lambda)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -459,7 +473,9 @@ randChiSquared(degree_of_freedom)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -495,7 +511,9 @@ randStudentT(degree_of_freedom)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -532,7 +550,9 @@ randFisherF(d1, d2)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -568,7 +588,9 @@ randomString(length)
 
 **Returned value**
 
-- String filled with random bytes. [String](../data-types/string.md).
+- String filled with random bytes.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -604,11 +626,13 @@ randomFixedString(length);
 
 **Arguments**
 
-- `length` — String length in bytes. [UInt64](../data-types/int-uint.md).
+- `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 
-- String filled with random bytes. [FixedString](../data-types/fixedstring.md).
+- String filled with random bytes.
+
+Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -643,7 +667,9 @@ randomPrintableASCII(length)
 
 **Returned value**
 
-- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters. [String](../data-types/string.md)
+- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+Type: [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
@@ -671,11 +697,13 @@ randomStringUTF8(length);
 
 **Arguments**
 
-- `length` — Length of the string in code points. [UInt64](../data-types/int-uint.md).
+- `length` — Length of the string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 
-- UTF-8 random string. [String](../data-types/string.md).
+- UTF-8 random string.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 

@@ -6,10 +6,6 @@ title: "CREATE TABLE"
 keywords: [compression, codec, schema, DDL]
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 Creates a new table. This query can have various syntax forms depending on a use case.
 
 By default, tables are created only on the current server. Distributed DDL queries are implemented as `ON CLUSTER` clause, which is [described separately](../../../sql-reference/distributed-ddl.md).
@@ -21,11 +17,11 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
     ...
 ) ENGINE = engine
-  [COMMENT 'comment for table']
+  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -46,19 +42,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
-
-### With a Schema and Data Cloned from Another Table 
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
-```
-
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
-
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
-ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
-```
 
 ### From a Table Function
 
@@ -169,7 +152,7 @@ SELECT * FROM test;
 
 `MATERIALIZED expr`
 
-Materialized expression. Values of such columns are automatically calculated according to the specified materialized expression when rows are inserted. Values cannot be explicitly specified during `INSERT`s.
+Materialized expression. Values of such columns are always calculated, they cannot be specified in INSERT queries.
 
 Also, default value columns of this type are not included in the result of `SELECT *`. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`. This behavior can be disabled with setting `asterisk_include_materialized_columns`.
 
@@ -258,12 +241,12 @@ CREATE OR REPLACE TABLE test
 (
     id UInt64,
     size_bytes Int64,
-    size String ALIAS formatReadableSize(size_bytes)
+    size String Alias formatReadableSize(size_bytes)
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test VALUES (1, 4678899);
+INSERT INTO test Values (1, 4678899);
 
 SELECT id, size_bytes, size FROM test;
 ┌─id─┬─size_bytes─┬─size─────┐
@@ -354,7 +337,7 @@ Then, when executing the query `SELECT name FROM users_a WHERE length(name) < 5;
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs {#column_compression_codec}
+## Column Compression Codecs
 
 By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
 
@@ -421,17 +404,28 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 #### ZSTD_QAT
 
-<CloudNotSupportedBadge/>
-
 `ZSTD_QAT[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable level, implemented by [Intel® QATlib](https://github.com/intel/qatlib) and [Intel® QAT ZSTD Plugin](https://github.com/intel/QAT-ZSTD-Plugin). Possible levels: \[1, 12\]. Default level: 1. Recommended level range: \[6, 12\]. Some limitations apply:
 
 - ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
 - For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
 - Decompression is always performed in software.
 
+#### DEFLATE_QPL
+
+`DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
+
+- DEFLATE_QPL is disabled by default and can only be used after enabling configuration setting [enable_deflate_qpl_codec](../../../operations/settings/settings.md#enable_deflate_qpl_codec).
+- DEFLATE_QPL requires a ClickHouse build compiled with SSE 4.2 instructions (by default, this is the case). Refer to [Build Clickhouse with DEFLATE_QPL](/docs/en/development/building_and_benchmarking_deflate_qpl.md/#Build-Clickhouse-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/docs/en/development/building_and_benchmarking_deflate_qpl.md/#Run-Benchmark-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with SSE 4.2 enabled.
+
+:::note
+DEFLATE_QPL is not available in ClickHouse Cloud.
+:::
+
 ### Specialized Codecs
 
-These codecs are designed to make compression more effective by exploiting specific features of the data. Some of these codecs do not compress data themselves, they instead preprocess the data such that a second compression stage using a general-purpose codec can achieve a higher data compression rate.
+These codecs are designed to make compression more effective by exploiting specific features of the data. Some of these codecs do not compress data themself, they instead preprocess the data such that a second compression stage using a general-purpose codec can achieve a higher data compression rate.
 
 #### Delta
 
@@ -499,7 +493,7 @@ If you perform a SELECT query mentioning a specific value in an encrypted column
 ```sql
 CREATE TABLE mytable
 (
-    x String CODEC(AES_128_GCM_SIV)
+    x String Codec(AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```
@@ -550,39 +544,25 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 
 ## REPLACE TABLE
 
-The `REPLACE` statement allows you to update a table [atomically](/docs/en/concepts/glossary#atomicity).
+'REPLACE' query allows you to update the table atomically.
 
 :::note
-This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines, 
-which are the default database engines for ClickHouse and ClickHouse Cloud respectively.
+This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
 :::
 
-Ordinarily, if you need to delete some data from a table, 
-you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, 
-then drop the old table and rename the new one. 
-This approach is demonstrated in the example below:
+If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
-
-INSERT INTO myNewTable
-SELECT * FROM myOldTable 
-WHERE CounterID <12345;
-
+INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
 DROP TABLE myOldTable;
-
 RENAME TABLE myNewTable TO myOldTable;
 ```
 
-Instead of the approach above, it is also possible to use `REPLACE` (given you are using the default database engines) to achieve the same result:
+Instead of above, you can use the following:
 
 ```sql
-REPLACE TABLE myOldTable
-ENGINE = MergeTree()
-ORDER BY CounterID 
-AS
-SELECT * FROM myOldTable
-WHERE CounterID <12345;
+REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FROM myOldTable WHERE CounterID <12345;
 ```
 
 ### Syntax
@@ -591,133 +571,61 @@ WHERE CounterID <12345;
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 ```
 
-:::note
-All syntax forms for the `CREATE` statement also work for this statement. Invoking `REPLACE` for a non-existent table will cause an error.
-:::
+All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 
 ### Examples:
 
-<Tabs>
-<TabItem value="clickhouse_replace_example" label="Local" default>
-
-Consider the following table:
+Consider the table:
 
 ```sql
-CREATE DATABASE base 
-ENGINE = Atomic;
-
-CREATE OR REPLACE TABLE base.t1
-(
-    n UInt64,
-    s String
-)
-ENGINE = MergeTree
-ORDER BY n;
-
+CREATE DATABASE base ENGINE = Atomic;
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (1, 'test');
-
 SELECT * FROM base.t1;
+```
 
+```text
 ┌─n─┬─s────┐
 │ 1 │ test │
 └───┴──────┘
 ```
 
-We can use the `REPLACE` statement to clear all the data:
+Using `REPLACE` query to clear all data:
 
 ```sql
-CREATE OR REPLACE TABLE base.t1 
-(
-    n UInt64,
-    s Nullable(String)
-)
-ENGINE = MergeTree
-ORDER BY n;
-
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (2, null);
-
 SELECT * FROM base.t1;
+```
 
+```text
 ┌─n─┬─s──┐
 │ 2 │ \N │
 └───┴────┘
 ```
 
-Or we can use the `REPLACE` statement to change the table structure:
+Using `REPLACE` query to change table structure:
 
 ```sql
-REPLACE TABLE base.t1 (n UInt64) 
-ENGINE = MergeTree 
-ORDER BY n;
-
+REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (3);
-
 SELECT * FROM base.t1;
+```
 
+```text
 ┌─n─┐
 │ 3 │
 └───┘
-```  
-</TabItem>
-<TabItem value="cloud_replace_example" label="Cloud">
-
-Consider the following table on ClickHouse Cloud: 
-
-```sql
-CREATE DATABASE base;
-
-CREATE OR REPLACE TABLE base.t1 
-(
-    n UInt64,
-    s String
-)
-ENGINE = MergeTree
-ORDER BY n;
-
-INSERT INTO base.t1 VALUES (1, 'test');
-
-SELECT * FROM base.t1;
-
-1	test
 ```
-
-We can use the `REPLACE` statement to clear all the data:
-
-```sql
-CREATE OR REPLACE TABLE base.t1 
-(
-    n UInt64, 
-    s Nullable(String)
-)
-ENGINE = MergeTree
-ORDER BY n;
-
-INSERT INTO base.t1 VALUES (2, null);
-
-SELECT * FROM base.t1;
-
-2	
-```
-
-Or we can use the `REPLACE` statement to change the table structure:
-
-```sql
-REPLACE TABLE base.t1 (n UInt64) 
-ENGINE = MergeTree 
-ORDER BY n;
-
-INSERT INTO base.t1 VALUES (3);
-
-SELECT * FROM base.t1;
-
-3
-```    
-</TabItem>
-</Tabs>
 
 ## COMMENT Clause
 
-You can add a comment to the table when creating it.
+You can add a comment to the table when you creating it.
+
+:::note
+The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+:::
+
 
 **Syntax**
 

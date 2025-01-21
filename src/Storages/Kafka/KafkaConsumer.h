@@ -82,17 +82,17 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
-    bool hasMorePolledMessages() const
+    inline bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
     }
 
-    bool polledDataUnusable() const
+    inline bool polledDataUnusable() const
     {
         return  (stalled_status != NOT_STALLED) && (stalled_status != NO_MESSAGES_RETURNED);
     }
 
-    bool isStalled() const { return stalled_status != NOT_STALLED; }
+    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -191,7 +191,8 @@ private:
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
-    void filterMessageErrors();
+    /// Return number of messages with an error.
+    size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
 };
 

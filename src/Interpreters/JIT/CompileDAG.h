@@ -33,7 +33,7 @@ class CompileDAG
 {
 public:
 
-    enum class CompileType : uint8_t
+    enum class CompileType
     {
         INPUT = 0,
         CONSTANT = 1,
@@ -65,17 +65,17 @@ public:
         nodes.emplace_back(std::move(node));
     }
 
-    size_t getNodesCount() const { return nodes.size(); }
-    size_t getInputNodesCount() const { return input_nodes_count; }
+    inline size_t getNodesCount() const { return nodes.size(); }
+    inline size_t getInputNodesCount() const { return input_nodes_count; }
 
-    Node & operator[](size_t index) { return nodes[index]; }
-    const Node & operator[](size_t index) const { return nodes[index]; }
+    inline Node & operator[](size_t index) { return nodes[index]; }
+    inline const Node & operator[](size_t index) const { return nodes[index]; }
 
-    Node & front() { return nodes.front(); }
-    const Node & front() const { return nodes.front(); }
+    inline Node & front() { return nodes.front(); }
+    inline const Node & front() const { return nodes.front(); }
 
-    Node & back() { return nodes.back(); }
-    const Node & back() const { return nodes.back(); }
+    inline Node & back() { return nodes.back(); }
+    inline const Node & back() const { return nodes.back(); }
 
 private:
     std::vector<Node> nodes;

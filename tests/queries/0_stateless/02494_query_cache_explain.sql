@@ -1,8 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET enable_analyzer = 1;
-SET query_cache_system_table_handling = 'save';
+SET allow_experimental_analyzer = 1;
 
 SYSTEM DROP QUERY CACHE;
 
