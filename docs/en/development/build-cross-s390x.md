@@ -1,9 +1,10 @@
 ---
 slug: /en/development/build-cross-s390x
 sidebar_position: 30
-title: Build on Linux for s390x (zLinux)
 sidebar_label: Build on Linux for s390x (zLinux)
 ---
+
+# Build on Linux for s390x (zLinux)
 
 ClickHouse has experimental support for s390x.
 
