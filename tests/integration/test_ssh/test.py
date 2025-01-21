@@ -58,6 +58,48 @@ def test_options_and_settings_propagation(started_cluster):
     assert output.replace("\n\x00", "\n") == "{\"getSetting('max_threads')\":9999}\n"
 
 
+def test_no_queries_from_file(started_cluster):
+    # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+    ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "\\i /etc/passwd"'
+
+    completed_process = subprocess.run(
+        ssh_command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert "SUPPORT_IS_DISABLED" in completed_process.stderr
+
+
+def test_no_selects_into_outfile(started_cluster):
+    # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+    ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "SELECT 1 INTO OUTFILE \'/tmp/result.tsv\';"'
+
+    completed_process = subprocess.run(
+        ssh_command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert "SUPPORT_IS_DISABLED" in completed_process.stderr
+
+
+def test_no_inserts_from_infile(started_cluster):
+    # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+    ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "INSERT INTO function null(\'x UInt64\') FROM INFILE \'/etc/passwd\';"'
+
+    completed_process = subprocess.run(
+        ssh_command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert "SUPPORT_IS_DISABLED" in completed_process.stderr
+
+
 def test_create_table(started_cluster):
     def execute_command_and_get_output(command):
         # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts

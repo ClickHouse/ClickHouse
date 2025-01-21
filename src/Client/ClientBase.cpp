@@ -3281,6 +3281,9 @@ void ClientBase::runInteractive()
 
 bool ClientBase::processMultiQueryFromFile(const String & file_name)
 {
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not supported for an embedded client");
+
     String queries_from_file;
 
     ReadBufferFromFile in(file_name);
