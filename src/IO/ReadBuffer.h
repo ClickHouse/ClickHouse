@@ -63,23 +63,20 @@ public:
         chassert(!hasPendingData());
         chassert(position() <= working_buffer.end());
 
-        bool res = true;
-        do
+        bytes += offset();
+        bool res = nextImpl();
+        if (!res)
         {
-            bytes += offset();
-            res &= nextImpl();
-            if (!res)
-            {
-                working_buffer = Buffer(pos, pos);
-            }
-            else
-            {
-                pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            }
-            nextimpl_working_buffer_offset = 0;
-        } while (res && available() == 0);
+            working_buffer = Buffer(pos, pos);
+        }
+        else
+        {
+            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+            chassert(position() < working_buffer.end());
+        }
+        nextimpl_working_buffer_offset = 0;
 
-        chassert(res ? (position() < working_buffer.end()) : (position() <= working_buffer.end()));
+        chassert(position() <= working_buffer.end());
 
         return res;
     }
@@ -255,7 +252,8 @@ protected:
     size_t nextimpl_working_buffer_offset = 0;
 
 private:
-    /** Read the next data and fill a buffer with it.
+    /** Read the next data and fill a buffer with it. It should also account for `nextimpl_working_buffer_offset` out parameter if set
+      * so that after this value is applied to `pos` (see next() method) buffer still contains available data.
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */
