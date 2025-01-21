@@ -32,11 +32,8 @@ class IdentifierResolver
 {
 public:
 
-    IdentifierResolver(
-        std::unordered_set<std::string_view> & ctes_in_resolve_process_,
-        std::unordered_map<QueryTreeNodePtr, ProjectionName> & node_to_projection_name_)
-        : ctes_in_resolve_process(ctes_in_resolve_process_)
-        , node_to_projection_name(node_to_projection_name_)
+    explicit IdentifierResolver(std::unordered_map<QueryTreeNodePtr, ProjectionName> & node_to_projection_name_)
+        : node_to_projection_name(node_to_projection_name_)
     {}
 
     /// Utility functions
@@ -164,12 +161,8 @@ public:
         size_t identifier_column_qualifier_parts,
         bool can_be_not_found = false);
 
-    /// CTEs that are currently in resolve process
-    std::unordered_set<std::string_view> & ctes_in_resolve_process;
-
     /// Global expression node to projection name map
     std::unordered_map<QueryTreeNodePtr, ProjectionName> & node_to_projection_name;
-
 };
 
 }

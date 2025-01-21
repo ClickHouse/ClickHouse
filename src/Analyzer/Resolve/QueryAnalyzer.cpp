@@ -147,7 +147,7 @@ namespace ErrorCodes
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
-    : identifier_resolver(ctes_in_resolve_process, node_to_projection_name)
+    : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
 {}
 
@@ -1512,7 +1512,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         /// To accomplish this behaviour it's not allowed to resolve identifiers to
         /// CTE that is being resolved.
         if (cte_query_node_it != scope.cte_name_to_query_node.end()
-            && !ctes_in_resolve_process.contains(full_name))
+            && !ctes_in_resolve_process.contains(cte_query_node_it->second))
         {
             resolve_result = { .resolved_identifier = cte_query_node_it->second, .resolve_place = IdentifierResolvePlace::CTE };
         }
@@ -3698,11 +3698,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                     if (resolved_as_cte)
                     {
+                        auto original_cte_node = resolved_identifier_node;
                         resolved_identifier_node = resolved_identifier_node->clone();
                         subquery_node = resolved_identifier_node->as<QueryNode>();
                         union_node = resolved_identifier_node->as<UnionNode>();
-
-                        std::string_view cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
 
                         if (subquery_node)
                             subquery_node->setIsCTE(false);
@@ -3719,14 +3718,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         ///
                         /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
-                        ctes_in_resolve_process.insert(cte_name);
+                        ctes_in_resolve_process.insert(original_cte_node);
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
                         else
                             resolveUnion(resolved_identifier_node, subquery_scope);
 
-                        ctes_in_resolve_process.erase(cte_name);
+                        ctes_in_resolve_process.erase(original_cte_node);
                     }
                 }
             }
@@ -5417,7 +5416,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         return;
 
     if (query_node_typed.isCTE())
-        ctes_in_resolve_process.insert(query_node_typed.getCTEName());
+        ctes_in_resolve_process.emplace(query_node);
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
@@ -5759,7 +5758,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 
     if (query_node_typed.isCTE())
-        ctes_in_resolve_process.erase(query_node_typed.getCTEName());
+        ctes_in_resolve_process.erase(query_node);
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
@@ -5770,7 +5769,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         return;
 
     if (union_node_typed.isCTE())
-        ctes_in_resolve_process.insert(union_node_typed.getCTEName());
+        ctes_in_resolve_process.insert(union_node);
 
     auto & queries_nodes = union_node_typed.getQueries().getNodes();
 
@@ -5851,7 +5850,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
     }
 
     if (union_node_typed.isCTE())
-        ctes_in_resolve_process.erase(union_node_typed.getCTEName());
+        ctes_in_resolve_process.erase(union_node);
 }
 
 }

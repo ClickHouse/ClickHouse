@@ -259,7 +259,7 @@ private:
     QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
-    std::unordered_set<std::string_view> ctes_in_resolve_process;
+    QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
