@@ -31,7 +31,7 @@
     TODO:
     - JSONCompactEachRowWithProgress
     - save and restore results in the history
-    - diagrams
+    - explain diagrams
 
     Nice to have:
     - resizable columns
@@ -473,6 +473,7 @@
 
         #chart
         {
+            border: 1px solid var(--border-color);
             background-color: var(--element-background-color);
             filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
             display: none;
@@ -918,9 +919,11 @@ async function post()
     ++request_num;
     let query = query_area.value;
     in_flight = true;
-    document.getElementById('run').innerText = 'Stop';
+    let run = document.getElementById('run');
+    run.innerText = 'Stop';
     await postImpl(request_num, query);
-    document.getElementById('run').innerText = 'Run';
+    run.blur();
+    run.innerText = 'Run';
     in_flight = false;
 }
 
@@ -1474,8 +1477,8 @@ async function renderChart(json)
     let paths = uPlot.paths.stepped({align:  1});
 
     const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["#F80", "#FED", "#c7d0d9", "#2c3235"]
-        : ["#888", "#045", "#2c3235", "#c7d0d9"];
+        ? ["#F8C", "#F8C", "#CCC", "#444"]
+        : ["#FF6", "#FF6", "#444", "#CCC"];
 
     const opts = {
         width: chart.clientWidth,
