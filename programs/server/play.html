@@ -847,6 +847,8 @@ async function postImpl(posted_request_num, query)
         renderExtremes();
     }
 
+    transposeTableIfNeeded();
+
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
     updateProgressText();
@@ -1153,29 +1155,33 @@ document.addEventListener('keydown', e => {
     current_selected_cell = new_cell;
 });
 
-function renderTableTransposed(response)
+function transposeTableIfNeeded()
 {
-    let tbody = document.createElement('tbody');
-    for (let col_idx in response.meta) {
+    let table = document.getElementById('data-table');
+    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
+
+    let heads = table.tHead.childNodes;
+    let values = table.rows[0]?.cells;
+    let num_cols = heads.length - 1;
+
+    let new_tbody = document.createElement('tbody');
+    for (let i = 0; i < num_cols; ++i) {
         let tr = document.createElement('tr');
-        {
-            let th = document.createElement('th');
-            th.className = 'right';
-            th.style.width = '0';
-            th.appendChild(document.createTextNode(response.meta[col_idx].name));
-            tr.appendChild(th);
-        }
-        for (let row_idx in response.data)
-        {
-            let cell = response.data[row_idx][col_idx];
-            const td = renderCell(cell, col_idx, {is_transposed: true});
+        let th = heads[1];
+        console.log(i);
+        console.log(tr);
+        console.log(th);
+        th.className = 'right';
+        th.style.width = '0';
+        tr.appendChild(th);
+        if (values) {
+            let td = values[1];
+            td.classList.remove('right');
             tr.appendChild(td);
-        }
-        if (response.data.length == 0 && col_idx == 0)
-        {
+        } else if (i == 0) {
             /// If the result is empty, show this fact with a style.
             let td = document.createElement('td');
-            td.rowSpan = response.meta.length;
+            td.rowSpan = num_cols;
             td.className = 'empty-result';
             let div = document.createElement('div');
             div.appendChild(document.createTextNode("empty result"));
@@ -1183,11 +1189,12 @@ function renderTableTransposed(response)
             td.appendChild(div);
             tr.appendChild(td);
         }
-        tbody.appendChild(tr);
+        new_tbody.appendChild(tr);
     }
-    let table = document.getElementById('data-table');
-    table.appendChild(tbody);
-    table.style.display = 'table';
+
+    table.removeChild(table.tHead);
+    table.removeChild(table.tBodies[0]);
+    table.appendChild(new_tbody);
 }
 
 let extremes = {};
