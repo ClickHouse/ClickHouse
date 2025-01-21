@@ -265,7 +265,7 @@ public:
         }
 
         auto & write_buffer = getBuffer();
-        auto current_position =  initial_file_size + write_buffer.count();
+        auto current_position = initial_file_size + write_buffer.count();
         writeIntBinary(computeRecordChecksum(record), write_buffer);
 
         writeIntBinary(record.header.version, write_buffer);
@@ -290,7 +290,8 @@ public:
                 LogLocation{
                     .file_description = current_file_description,
                     .position = current_position,
-                    .size = record.header.blob_size});
+                    .entry_size = record.header.blob_size,
+                    .size_in_file = initial_file_size + write_buffer.count() - current_position});
         }
 
         last_index_written = record.header.index;
@@ -641,7 +642,8 @@ public:
                     LogLocation{
                         .file_description = changelog_description,
                         .position = static_cast<size_t>(result.last_position),
-                        .size = record.header.blob_size});
+                        .entry_size = record.header.blob_size,
+                        .size_in_file = read_buf->count() - result.last_position});
                 result.last_read_index = record.header.index;
 
                 if (result.total_entries_read_from_log % 50000 == 0)
@@ -799,6 +801,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
     size_t total_size = 0;
     std::vector<FileReadInfo> file_infos;
     FileReadInfo * current_file_info = nullptr;
+    size_t next_position = 0;
 
     size_t max_index_for_prefetch = 0;
     if (!latest_logs_cache.empty())
@@ -812,17 +815,26 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         if (location_it == logs_location.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", current_index);
 
-        const auto & [changelog_description, position, size] = location_it->second;
+        const auto & [changelog_description, position, entry_size, size_in_file] = location_it->second;
         if (total_size == 0)
+        {
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
-        else if (total_size + size > commit_logs_cache.size_threshold)
+            next_position = position + size_in_file;
+        }
+        else if (total_size + entry_size > commit_logs_cache.size_threshold)
             break;
-        else if (changelog_description == current_file_info->file_description)
+        else if (changelog_description == current_file_info->file_description && position == next_position)
+        {
             ++current_file_info->count;
+            next_position += size_in_file;
+        }
         else
+        {
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
+            next_position = position + size_in_file;
+        }
 
-        total_size += size;
+        total_size += entry_size;
         commit_logs_cache.addEntry(current_index, size, PrefetchedCacheEntry());
     }
 
@@ -1265,7 +1277,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
         it->second.file_description->withLock(
             [&]
             {
-                const auto & [changelog_description, position, size] = it->second;
+                const auto & [changelog_description, position, entry_size, size_in_file] = it->second;
                 auto file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
                 file->seek(position, SEEK_SET);
                 LOG_TRACE(
@@ -1274,7 +1286,7 @@ LogEntryPtr LogEntryStorage::getEntry(uint64_t index) const
                     index,
                     changelog_description->path,
                     position,
-                    size);
+                    entry_size);
 
                 auto record = readChangelogRecord(*file, changelog_description->path);
                 entry = logEntryFromRecord(record);
@@ -1374,12 +1386,14 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
     /// we rely on fact that changelogs need to be written sequentially with
     /// no other writes between
     std::optional<FileReadInfo> read_info;
+    size_t next_position = 0;
     const auto set_new_file = [&](const auto & log_location)
     {
         read_info.emplace();
         read_info->file_description = log_location.file_description;
         read_info->position = log_location.position;
         read_info->count = 1;
+        next_position = log_location.position + log_location.size_in_file;
     };
 
     const auto flush_file = [&]
@@ -1428,8 +1442,11 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
 
             if (!read_info)
                 set_new_file(log_location);
-            else if (read_info->file_description == log_location.file_description)
+            else if (read_info->file_description == log_location.file_description && next_position == log_location.position)
+            {
                 ++read_info->count;
+                next_position += log_location.size_in_file;
+            }
             else
             {
                 flush_file();
