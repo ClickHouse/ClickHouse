@@ -159,21 +159,16 @@ def main():
     validate_bugfix_check = args.validate_bugfix
 
     # temporary hack for praktika based CI
-    job_batch, total_batches = None, None
+    run_by_hash_num, run_by_hash_total = 0, 0
     if IS_NEW_CI:
         for option in check_name.split(","):
             if "/" in option:
-                job_batch = int(option.split("/")[0]) - 1
-                total_batches = int(option.split("/")[1])
+                run_by_hash_num = int(option.split("/")[0]) - 1
+                run_by_hash_total = int(option.split("/")[1])
                 break
-
-    if "RUN_BY_HASH_NUM" in os.environ:
+    else:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
         run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-    else:
-        if IS_NEW_CI:
-            run_by_hash_num = job_batch or 0
-            run_by_hash_total = total_batches or 0
 
     is_flaky_check = "flaky" in check_name
 
