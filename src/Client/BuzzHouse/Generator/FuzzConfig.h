@@ -50,7 +50,7 @@ public:
     String hostname;
     uint32_t port, mysql_port;
     String unix_socket, user, password, database;
-    std::filesystem::path query_log_file;
+    std::filesystem::path user_files_dir, query_log_file;
 
     ServerCredentials() : hostname("localhost"), port(0), mysql_port(0), user("test") { }
 
@@ -62,8 +62,17 @@ public:
         const String & u,
         const String & pass,
         const String & db,
+        const std::filesystem::path & ufd,
         const std::filesystem::path & qlf)
-        : hostname(h), port(p), mysql_port(mp), unix_socket(us), user(u), password(pass), database(db), query_log_file(qlf)
+        : hostname(h)
+        , port(p)
+        , mysql_port(mp)
+        , unix_socket(us)
+        , user(u)
+        , password(pass)
+        , database(db)
+        , user_files_dir(ufd)
+        , query_log_file(qlf)
     {
     }
 

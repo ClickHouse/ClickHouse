@@ -353,7 +353,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     Select * sel = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
     peer_query = pq;
-    measure_performance = fc.measure_performance && peer_query == PeerQuery::ClickHouseOnly /* && rg.nextBool()*/;
+    measure_performance = fc.measure_performance && peer_query == PeerQuery::ClickHouseOnly && rg.nextBool();
     const bool global_aggregate = !measure_performance && rg.nextSmallNumber() < 4;
 
     if (measure_performance)

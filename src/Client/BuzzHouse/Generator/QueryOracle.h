@@ -29,7 +29,9 @@ public:
     explicit QueryOracle(const FuzzConfig & ffc)
         : fc(ffc)
         , qfile(ffc.db_file_path / "query.data")
-        , qfile_peer(ffc.db_file_path / "peer.data")
+        , qfile_peer(
+              ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
+                                                : std::filesystem::temp_directory_path())
         , can_test_query_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {

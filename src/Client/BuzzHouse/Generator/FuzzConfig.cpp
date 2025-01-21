@@ -15,6 +15,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String user = "test";
     String password;
     String database = "test";
+    std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     static const SettingEntries config_entries
@@ -25,6 +26,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"user", [&](const JSONObjectType & value) { user = String(value.getString()); }},
            {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
            {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
+           {"user_files_dir", [&](const JSONObjectType & value) { user_files_dir = std::filesystem::path(String(value.getString())); }},
            {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }}};
 
     for (const auto [key, value] : jobj.getObject())
@@ -39,7 +41,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     }
 
     return std::optional<ServerCredentials>(
-        ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, query_log_file));
+        ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
 }
 
 FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(getLogger("BuzzHouse"))
