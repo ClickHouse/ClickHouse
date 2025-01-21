@@ -683,11 +683,11 @@ async function getServerStatus(server_address, user, password) {
 }
 
 function formatUptime(t) {
-    if (t < 60) { return t + " sec" }
-    if (t < 3600) { return Number(t / 60).toFixed() + " min" }
-    if (t < 86400) { return Number(t / 3600).toFixed() + " hr" }
+    if (t < 60) { return t + " sec" }
+    if (t < 3600) { return Number(t / 60).toFixed() + " min" }
+    if (t < 86400) { return Number(t / 3600).toFixed() + " hr" }
     const days = Number(t / 86400).toFixed();
-    return days + " day" + (days > 1 ? 's' : '');
+    return days + " day" + (days > 1 ? 's' : '');
 }
 
 let check_credentials_request_num = 0;
@@ -1032,13 +1032,13 @@ function formatReadable(number = 0, decimals = 2, units = []) {
 }
 
 function formatReadableBytes(bytes) {
-    const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
+    const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
 
     return formatReadable(bytes, 2, units);
 }
 
 function formatReadableRows(rows) {
-    const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
+    const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
 
     return formatReadable(rows, 2, units);
 }
@@ -1053,7 +1053,7 @@ function renderResult(response)
     const bytes = response.statistics.bytes_read;
     const formatted_bytes = formatReadableBytes(bytes);
     const formatted_rows = formatReadableRows(rows);
-    stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+    stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
     /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
     if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) { // TODO
@@ -1226,10 +1226,10 @@ function updateProgressText() {
     let progress_elem = document.getElementById('progress');
     let progress_text = '';
     if (row_idx) {
-        progress_text += `${row_idx}${incomplete_result ? '+' : ''} rows in result`;
+        progress_text += `${row_idx}${incomplete_result ? '+' : ''} rows in result`;
         if (elapsed_ns) progress_text += ', ';
     }
-    if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
+    if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
     progress_elem.innerText = progress_text;
 }
 
@@ -1260,7 +1260,7 @@ function updateProgress(progress) {
 
     if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
 
-    text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
+    text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
 
     if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
 
@@ -1390,7 +1390,7 @@ function renderTable(response)
 
 function renderError(message)
 {
-    document.getElementById('error').innerText = message ? message : "No response.";
+    document.getElementById('error').innerText = message ? message : "No response.";
     document.getElementById('error').style.display = 'block';
     document.getElementById('logo-container').style.display = 'none';
 }
