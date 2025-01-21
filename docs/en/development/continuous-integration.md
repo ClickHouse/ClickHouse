@@ -145,7 +145,7 @@ docker run --rm --cap-add=SYS_PTRACE -u $(id -u ${USER}):$(id -g ${USER})  --net
 
 Builds ClickHouse in various configurations for use in further steps.
 You have to fix the builds that fail.
-Build logs often has enough information to fix the error, but you might have to reproduce the failure locally.
+Build logs often have enough information to fix the error, but you might have to reproduce the failure locally.
 The `cmake` options can be found in the build log, grep for `cmake`.
 Use these options and follow the [general build process](../development/build.md).
 
