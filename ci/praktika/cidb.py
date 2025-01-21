@@ -42,6 +42,28 @@ class CIDB:
             "X-ClickHouse-Key": passwd,
         }
 
+    def _get_sub_result_with_test_cases(cls, result: Result) -> Result:
+        """
+        Returns the sub-result with the most test cases.
+        Assumes:
+        - `result.results` is a list of sub-tasks one of them is a Test subtask with test cases to be exported to cidb.
+        - Returns the original `result` if no sub-results exist or sub-results are test cases themselves (result depth=1).
+        """
+        max_test_cases = 0
+        index_with_max_test_cases = -1
+
+        for i, sub_result in enumerate(result.results):
+            test_case_count = len(sub_result.results)
+            if test_case_count > max_test_cases:
+                max_test_cases = test_case_count
+                index_with_max_test_cases = i
+
+        if max_test_cases > 0:
+            assert index_with_max_test_cases >= 0
+            return result.results[index_with_max_test_cases]
+
+        return result
+
     @classmethod
     def json_data_generator(cls, result: Result):
         env = _Environment.get()
@@ -71,12 +93,17 @@ class CIDB:
         )
         yield json.dumps(dataclasses.asdict(base_record))
         for result_ in result.results:
+            while result_.results and result_.results[0].results:
+                # it's up to a job hoe it's Result is formed. It can be multiple layers of nesting.
+                #  Go into final layer, assuming this is where test cases are located
+                result_ = result_.results
             record = copy.deepcopy(base_record)
             record.test_name = result_.name
             if result_.start_time:
                 record.check_start_time = (Utils.timestamp_to_str(result.start_time),)
             record.test_status = result_.status
-            record.test_duration_ms = int(result_.duration * 1000)
+            if result_.duration:
+                record.test_duration_ms = int(result_.duration * 1000)
             record.test_context_raw = result_.info
             yield json.dumps(dataclasses.asdict(record))
 
@@ -90,8 +117,7 @@ class CIDB:
         }
 
         session = requests.Session()
-
-        for json_str in self.json_data_generator(result):
+        for json_str in self.json_data_generator(result, env):
             try:
                 response1 = session.post(
                     url=self.url,
