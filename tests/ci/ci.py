@@ -1126,6 +1126,16 @@ def main() -> int:
             args.workflow,
         )
 
+        # Early post the version to have it before await
+        ch_helper = ClickHouseHelper()
+        _add_build_to_version_history(
+            pr_info,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            version,
+            ci_cache.job_digests[CI.BuildNames.PACKAGE_RELEASE],
+            ch_helper,
+        )
+
         ci_cache.print_status()
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
@@ -1163,14 +1173,6 @@ def main() -> int:
                 },
             }
         result["docker_data"] = docker_data
-        ch_helper = ClickHouseHelper()
-        _add_build_to_version_history(
-            pr_info,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            result["version"],
-            result["build"],
-            ch_helper,
-        )
     ### CONFIGURE action: end
 
     ### PRE action: start

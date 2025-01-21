@@ -71,8 +71,8 @@ ORDER BY id;
 USearch indexes are currently experimental, to use them you first need to `SET allow_experimental_vector_similarity_index = 1`.
 :::
 
-The index can be build on a column of type [Array(Float64)](../../../sql-reference/data-types/array.md),
-[Array(Float32)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md).
+The index can be build on columns of type [Array(Float64)](../../../sql-reference/data-types/array.md) or
+[Array(Float32)](../../../sql-reference/data-types/array.md).
 
 Index parameters:
 - `method`: Currently only `hnsw` is supported.

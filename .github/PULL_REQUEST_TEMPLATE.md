@@ -45,8 +45,7 @@ At a minimum, the following information should be added (but add more as needed)
 
 #### CI Settings (Only check the boxes if you know what you are doing)
 
-All builds in Builds_1 and Builds_2 stages are always mandatory
-and will run independently of the checks below:
+All builds in Builds_1 and Builds_2 stages are always mandatory and will run independently of the checks below:
 - [ ] <!---ci_include_stateless--> Only: Stateless tests
 - [ ] <!---ci_include_stateful--> Only: Stateful tests
 - [ ] <!---ci_include_integration--> Only: Integration tests
@@ -55,6 +54,14 @@ and will run independently of the checks below:
 - [ ] <!---ci_exclude_style--> Skip: Style check
 - [ ] <!---ci_exclude_fast--> Skip: Fast test
 ---
-- [ ] <!---woolen_wolfdog--> Non-blocking CI mode (Resource-intensive. All test jobs execute in parallel).
-- [ ] <!---no_merge_commit--> Disable merge-commit (Run CI on branch HEAD instead of merge commit with target branch)
+- [ ] <!---woolen_wolfdog--> Run all checks ignoring all possible failures (Resource-intensive. All test jobs execute in parallel).
 - [ ] <!---no_ci_cache--> Disable CI cache
+
+<!--
+GitHub Actions can run CI on a PR in one of two ways:
+1. Run CI on the branch HEAD.
+2. Merge master into the branch HEAD and run CI on the ephemeral merge commit.
+Option 2. is safer than 1. but also slower since incoming C++ changes from master typically trash the build artifact cache.
+The default in CI is 1. If you like to go for 2. remove the following line:
+#no_merge_commit
+-->
