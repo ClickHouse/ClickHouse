@@ -74,7 +74,7 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
     // std::swap(ret_columns, result_columns);
     // return ret_columns;
 
-    // return squashing.flush().mutateColumns();
+    ////// return squashing.flush().mutateColumns();
 
     ///// Chunk result_chunk = Squashing::squash(squashing.flush());
     return Squashing::squash(squashing.flush()).mutateColumns();
@@ -169,6 +169,9 @@ size_t StreamingFormatExecutor::execute()
 
                         auto chunk = port.pull();
                         new_rows += chunk.getNumRows();
+
+                        if (adding_defaults_transform)
+                            adding_defaults_transform->transform(chunk);
 
                         squashing.add(std::move(chunk));
                     }
