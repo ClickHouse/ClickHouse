@@ -8,145 +8,6 @@
 namespace BuzzHouse
 {
 
-SQLType * typeDeepCopy(SQLType * tp)
-{
-    IntType * it;
-    FloatType * ft;
-    DateType * dt;
-    DateTimeType * dtt;
-    DecimalType * decp;
-    StringType * st;
-    EnumType * et;
-    DynamicType * ddt;
-    JSONType * jt;
-    Nullable * nl;
-    LowCardinality * lc;
-    GeoType * gt;
-    ArrayType * at;
-    MapType * mt;
-    TupleType * ttp;
-    VariantType * vtp;
-    NestedType * ntp;
-
-    if (dynamic_cast<const BoolType *>(tp))
-    {
-        return new BoolType();
-    }
-    else if ((it = dynamic_cast<IntType *>(tp)))
-    {
-        return new IntType(it->size, it->is_unsigned);
-    }
-    else if ((ft = dynamic_cast<FloatType *>(tp)))
-    {
-        return new FloatType(ft->size);
-    }
-    else if ((dt = dynamic_cast<DateType *>(tp)))
-    {
-        return new DateType(dt->extended);
-    }
-    else if ((dtt = dynamic_cast<DateTimeType *>(tp)))
-    {
-        return new DateTimeType(dtt->extended, dtt->precision, dtt->timezone);
-    }
-    else if ((decp = dynamic_cast<DecimalType *>(tp)))
-    {
-        return new DecimalType(decp->short_notation, decp->precision, decp->scale);
-    }
-    else if ((st = dynamic_cast<StringType *>(tp)))
-    {
-        return new StringType(st->precision);
-    }
-    else if (dynamic_cast<UUIDType *>(tp))
-    {
-        return new UUIDType();
-    }
-    else if (dynamic_cast<IPv4Type *>(tp))
-    {
-        return new IPv4Type();
-    }
-    else if (dynamic_cast<IPv6Type *>(tp))
-    {
-        return new IPv6Type();
-    }
-    else if ((et = dynamic_cast<EnumType *>(tp)))
-    {
-        return new EnumType(et->size, et->values);
-    }
-    else if ((ddt = dynamic_cast<DynamicType *>(tp)))
-    {
-        return new DynamicType(ddt->ntypes);
-    }
-    else if ((jt = dynamic_cast<JSONType *>(tp)))
-    {
-        std::vector<JSubType> jsubcols;
-
-        jsubcols.reserve(jt->subcols.size());
-        for (const auto & entry : jt->subcols)
-        {
-            jsubcols.push_back(JSubType(entry.cname, typeDeepCopy(entry.subtype)));
-        }
-        return new JSONType(jt->desc, std::move(jsubcols));
-    }
-    else if ((nl = dynamic_cast<Nullable *>(tp)))
-    {
-        return new Nullable(typeDeepCopy(nl->subtype));
-    }
-    else if ((lc = dynamic_cast<LowCardinality *>(tp)))
-    {
-        return new LowCardinality(typeDeepCopy(lc->subtype));
-    }
-    else if ((gt = dynamic_cast<GeoType *>(tp)))
-    {
-        return new GeoType(gt->geo_type);
-    }
-    else if ((at = dynamic_cast<ArrayType *>(tp)))
-    {
-        return new ArrayType(typeDeepCopy(at->subtype));
-    }
-    else if ((mt = dynamic_cast<MapType *>(tp)))
-    {
-        return new MapType(typeDeepCopy(mt->key), typeDeepCopy(mt->value));
-    }
-    else if ((ttp = dynamic_cast<TupleType *>(tp)))
-    {
-        std::vector<SubType> subtypes;
-
-        subtypes.reserve(ttp->subtypes.size());
-        for (const auto & entry : ttp->subtypes)
-        {
-            subtypes.push_back(SubType(entry.cname, typeDeepCopy(entry.subtype)));
-        }
-        return new TupleType(std::move(subtypes));
-    }
-    else if ((vtp = dynamic_cast<VariantType *>(tp)))
-    {
-        std::vector<SQLType *> subtypes;
-
-        subtypes.reserve(vtp->subtypes.size());
-        for (const auto & entry : vtp->subtypes)
-        {
-            subtypes.push_back(typeDeepCopy(entry));
-        }
-        return new VariantType(std::move(subtypes));
-    }
-    else if ((ntp = dynamic_cast<NestedType *>(tp)))
-    {
-        std::vector<NestedSubType> subtypes;
-
-        subtypes.reserve(ntp->subtypes.size());
-        for (const auto & entry : ntp->subtypes)
-        {
-            subtypes.push_back(NestedSubType(entry.cname, typeDeepCopy(entry.subtype)));
-        }
-        return new NestedType(std::move(subtypes));
-    }
-    else
-    {
-        assert(0);
-    }
-    return nullptr;
-}
-
 String BoolType::typeName(const bool) const
 {
     return "Bool";
@@ -165,6 +26,11 @@ String BoolType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 String BoolType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     return "INTEGER";
+}
+
+SQLType * BoolType::typeDeepCopy() const
+{
+    return new BoolType();
 }
 
 String IntType::typeName(const bool) const
@@ -212,6 +78,11 @@ String IntType::SQLitetypeName(RandomGenerator &, const bool) const
     return "INTEGER";
 }
 
+SQLType * IntType::typeDeepCopy() const
+{
+    return new IntType(size, is_unsigned);
+}
+
 String FloatType::typeName(const bool) const
 {
     return fmt::format("{}Float{}", size == 16 ? "B" : "", std::to_string(size));
@@ -232,6 +103,11 @@ String FloatType::SQLitetypeName(RandomGenerator &, const bool) const
     return "REAL";
 }
 
+SQLType * FloatType::typeDeepCopy() const
+{
+    return new FloatType(size);
+}
+
 String DateType::typeName(const bool) const
 {
     return fmt::format("Date{}", extended ? "32" : "");
@@ -250,6 +126,11 @@ String DateType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 String DateType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     return "TEXT";
+}
+
+SQLType * DateType::typeDeepCopy() const
+{
+    return new DateType(extended);
 }
 
 String DateTimeType::typeName(const bool escape) const
@@ -304,6 +185,11 @@ String DateTimeType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 String DateTimeType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     return "TEXT";
+}
+
+SQLType * DateTimeType::typeDeepCopy() const
+{
+    return new DateTimeType(extended, precision, timezone);
 }
 
 String DecimalType::typeName(const bool) const
@@ -364,6 +250,11 @@ String DecimalType::SQLitetypeName(RandomGenerator & rg, const bool escape) cons
     return MySQLtypeName(rg, escape);
 }
 
+SQLType * DecimalType::typeDeepCopy() const
+{
+    return new DecimalType(short_notation, precision, scale);
+}
+
 String StringType::typeName(const bool) const
 {
     if (precision.has_value())
@@ -405,6 +296,11 @@ String StringType::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
+SQLType * StringType::typeDeepCopy() const
+{
+    return new StringType(precision);
+}
+
 String UUIDType::typeName(const bool) const
 {
     return "UUID";
@@ -423,6 +319,11 @@ String UUIDType::PostgreSQLtypeName(RandomGenerator &, const bool escape) const
 String UUIDType::SQLitetypeName(RandomGenerator & rg, const bool) const
 {
     return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+SQLType * UUIDType::typeDeepCopy() const
+{
+    return new UUIDType();
 }
 
 String EnumType::typeName(const bool escape) const
@@ -470,6 +371,11 @@ String EnumType::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
+SQLType * EnumType::typeDeepCopy() const
+{
+    return new EnumType(size, values);
+}
+
 String IPv4Type::typeName(const bool) const
 {
     return "IPv4";
@@ -490,6 +396,11 @@ String IPv4Type::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
+SQLType * IPv4Type::typeDeepCopy() const
+{
+    return new IPv4Type();
+}
+
 String IPv6Type::typeName(const bool) const
 {
     return "IPv6";
@@ -508,6 +419,11 @@ String IPv6Type::PostgreSQLtypeName(RandomGenerator &, const bool) const
 String IPv6Type::SQLitetypeName(RandomGenerator & rg, const bool) const
 {
     return rg.nextBool() ? "BLOB" : "TEXT";
+}
+
+SQLType * IPv6Type::typeDeepCopy() const
+{
+    return new IPv6Type();
 }
 
 String DynamicType::typeName(const bool) const
@@ -531,6 +447,11 @@ String DynamicType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     assert(0);
     return "";
+}
+
+SQLType * DynamicType::typeDeepCopy() const
+{
+    return new DynamicType(ntypes);
 }
 
 String JSONType::typeName(const bool escape) const
@@ -564,6 +485,26 @@ String JSONType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
+SQLType * JSONType::typeDeepCopy() const
+{
+    std::vector<JSubType> jsubcols;
+
+    jsubcols.reserve(subcols.size());
+    for (const auto & entry : subcols)
+    {
+        jsubcols.push_back(JSubType(entry.cname, entry.subtype->typeDeepCopy()));
+    }
+    return new JSONType(desc, std::move(jsubcols));
+}
+
+JSONType::~JSONType()
+{
+    for (const auto & entry : subcols)
+    {
+        delete entry.subtype;
+    }
+}
+
 String Nullable::typeName(const bool escape) const
 {
     return fmt::format("Nullable({})", subtype->typeName(escape));
@@ -582,6 +523,11 @@ String Nullable::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) con
 String Nullable::SQLitetypeName(RandomGenerator & rg, const bool escape) const
 {
     return subtype->SQLitetypeName(rg, escape);
+}
+
+SQLType * Nullable::typeDeepCopy() const
+{
+    return new Nullable(subtype->typeDeepCopy());
 }
 
 String LowCardinality::typeName(const bool escape) const
@@ -604,9 +550,14 @@ String LowCardinality::SQLitetypeName(RandomGenerator & rg, const bool escape) c
     return subtype->SQLitetypeName(rg, escape);
 }
 
+SQLType * LowCardinality::typeDeepCopy() const
+{
+    return new LowCardinality(subtype->typeDeepCopy());
+}
+
 String GeoType::typeName(const bool) const
 {
-    return GeoTypes_Name(geo_type);
+    return GeoTypes_Name(geotype);
 }
 
 String GeoType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -625,6 +576,11 @@ String GeoType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     assert(0);
     return "";
+}
+
+SQLType * GeoType::typeDeepCopy() const
+{
+    return new GeoType(geotype);
 }
 
 String ArrayType::typeName(const bool escape) const
@@ -675,6 +631,11 @@ String ArrayType::SQLitetypeName(RandomGenerator &, const bool) const
     return "";
 }
 
+SQLType * ArrayType::typeDeepCopy() const
+{
+    return new ArrayType(subtype->typeDeepCopy());
+}
+
 String MapType::typeName(const bool escape) const
 {
     return fmt::format("Map({},{})", key->typeName(escape), value->typeName(escape));
@@ -696,6 +657,17 @@ String MapType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     assert(0);
     return "";
+}
+
+SQLType * MapType::typeDeepCopy() const
+{
+    return new MapType(key->typeDeepCopy(), value->typeDeepCopy());
+}
+
+MapType::~MapType()
+{
+    delete key;
+    delete value;
 }
 
 String TupleType::typeName(const bool escape) const
@@ -741,6 +713,26 @@ String TupleType::SQLitetypeName(RandomGenerator &, const bool) const
     return "";
 }
 
+SQLType * TupleType::typeDeepCopy() const
+{
+    std::vector<SubType> nsubtypes;
+
+    nsubtypes.reserve(subtypes.size());
+    for (const auto & entry : subtypes)
+    {
+        nsubtypes.push_back(SubType(entry.cname, entry.subtype->typeDeepCopy()));
+    }
+    return new TupleType(std::move(nsubtypes));
+}
+
+TupleType::~TupleType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry.subtype;
+    }
+}
+
 String VariantType::typeName(const bool escape) const
 {
     String ret;
@@ -774,6 +766,26 @@ String VariantType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     assert(0);
     return "";
+}
+
+SQLType * VariantType::typeDeepCopy() const
+{
+    std::vector<SQLType *> nsubtypes;
+
+    nsubtypes.reserve(subtypes.size());
+    for (const auto & entry : subtypes)
+    {
+        nsubtypes.push_back(entry->typeDeepCopy());
+    }
+    return new VariantType(std::move(nsubtypes));
+}
+
+VariantType::~VariantType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry;
+    }
 }
 
 String NestedType::typeName(const bool escape) const
@@ -814,6 +826,27 @@ String NestedType::SQLitetypeName(RandomGenerator &, const bool) const
 {
     assert(0);
     return "";
+}
+
+SQLType * NestedType::typeDeepCopy() const
+{
+    std::vector<NestedSubType> nsubtypes;
+
+    nsubtypes.reserve(subtypes.size());
+    for (const auto & entry : subtypes)
+    {
+        nsubtypes.push_back(NestedSubType(entry.cname, entry.subtype->typeDeepCopy()));
+    }
+    return new NestedType(std::move(nsubtypes));
+}
+
+NestedType::~NestedType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry.array_subtype;
+        delete entry.subtype;
+    }
 }
 
 std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint32_t allowed_types)
@@ -1516,12 +1549,12 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     return ret;
 }
 
-String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & geo_type)
+String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
     const uint32_t limit = rg.nextLargeNumber() % 10;
 
-    switch (geo_type)
+    switch (gt)
     {
         case GeoTypes::Point:
             ret += "(";
@@ -2048,7 +2081,7 @@ String StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, SQLTy
     }
     else if ((gtp = dynamic_cast<GeoType *>(tp)))
     {
-        ret = strAppendGeoValue(rg, gtp->geo_type);
+        ret = strAppendGeoValue(rg, gtp->geotype);
     }
     else if (this->depth == this->fc.max_depth)
     {

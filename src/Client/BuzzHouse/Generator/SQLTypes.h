@@ -15,11 +15,10 @@ public:
     virtual String MySQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String SQLitetypeName(RandomGenerator & rg, bool escape) const = 0;
+    virtual SQLType * typeDeepCopy() const = 0;
 
     virtual ~SQLType() = default;
 };
-
-SQLType * typeDeepCopy(SQLType * tp);
 
 class BoolType : public SQLType
 {
@@ -28,6 +27,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~BoolType() override = default;
 };
@@ -43,6 +43,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~IntType() override = default;
 };
@@ -57,6 +58,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~FloatType() override = default;
 };
@@ -71,6 +73,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~DateType() override = default;
 };
@@ -91,6 +94,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~DateTimeType() override = default;
 };
@@ -110,6 +114,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~DecimalType() override = default;
 };
@@ -124,6 +129,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~StringType() override = default;
 };
@@ -135,6 +141,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~UUIDType() override = default;
 };
@@ -159,6 +166,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~EnumType() override = default;
 };
@@ -170,6 +178,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~IPv4Type() override = default;
 };
@@ -181,6 +190,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~IPv6Type() override = default;
 };
@@ -195,6 +205,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~DynamicType() override = default;
 };
@@ -219,14 +230,9 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
-    ~JSONType() override
-    {
-        for (const auto & entry : subcols)
-        {
-            delete entry.subtype;
-        }
-    }
+    ~JSONType() override;
 };
 
 class Nullable : public SQLType
@@ -239,6 +245,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~Nullable() override { delete subtype; }
 };
@@ -253,6 +260,7 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~LowCardinality() override { delete subtype; }
 };
@@ -260,13 +268,14 @@ public:
 class GeoType : public SQLType
 {
 public:
-    const GeoTypes geo_type;
-    explicit GeoType(const GeoTypes & gt) : geo_type(gt) { }
+    const GeoTypes geotype;
+    explicit GeoType(const GeoTypes & gt) : geotype(gt) { }
 
     String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~GeoType() override = default;
 };
@@ -281,6 +290,7 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
     ~ArrayType() override { delete subtype; }
 };
@@ -295,12 +305,9 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
-    ~MapType() override
-    {
-        delete key;
-        delete value;
-    }
+    ~MapType() override;
 };
 
 class SubType
@@ -322,14 +329,9 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
-    ~TupleType() override
-    {
-        for (const auto & entry : subtypes)
-        {
-            delete entry.subtype;
-        }
-    }
+    ~TupleType() override;
 };
 
 class VariantType : public SQLType
@@ -342,14 +344,9 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
-    ~VariantType() override
-    {
-        for (const auto & entry : subtypes)
-        {
-            delete entry;
-        }
-    }
+    ~VariantType() override;
 };
 
 class NestedSubType
@@ -359,7 +356,7 @@ public:
     SQLType * subtype;
     ArrayType * array_subtype;
 
-    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(typeDeepCopy(s))) { }
+    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(s->typeDeepCopy())) { }
 };
 
 class NestedType : public SQLType
@@ -372,15 +369,9 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
 
-    ~NestedType() override
-    {
-        for (const auto & entry : subtypes)
-        {
-            delete entry.array_subtype;
-            delete entry.subtype;
-        }
-    }
+    ~NestedType() override;
 };
 
 template <typename T>
@@ -447,6 +438,5 @@ String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
 String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
-String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & geo_type);
-
+String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & geotype);
 }

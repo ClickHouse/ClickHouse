@@ -829,11 +829,11 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     {
         if constexpr (is_document<T>)
         {
-            output << cname << strAppendGeoValue(rg, gtp->geo_type);
+            output << cname << strAppendGeoValue(rg, gtp->geotype);
         }
         else
         {
-            output << strAppendGeoValue(rg, gtp->geo_type);
+            output << strAppendGeoValue(rg, gtp->geotype);
         }
     }
     else
