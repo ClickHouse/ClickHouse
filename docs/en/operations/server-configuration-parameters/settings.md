@@ -1369,6 +1369,22 @@ A value of `0` means "never". The default value corresponds to 30 days.
 
 Default: `2592000` (30 days).
 
+## database_catalog_drop_error_cooldown_sec
+
+In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.
+
+Type: [`UInt64`](../../sql-reference/data-types/int-uint.md)
+
+Default: `0`
+
+## database_catalog_drop_table_concurrency
+
+The size of the threadpool used for dropping tables.
+
+Type: [`UInt64`](../../sql-reference/data-types/int-uint.md)
+
+Default: `0`
+
 ## database_catalog_unused_dir_cleanup_period_sec
 
 Parameter of a task that cleans up garbage from `store/` directory.
