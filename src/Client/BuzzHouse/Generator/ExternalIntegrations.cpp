@@ -1328,19 +1328,37 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
     }
 }
 
+std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt) const
+{
+    switch (pt)
+    {
+        case PeerTableDatabase::ClickHouse:
+            return clickhouse->sc.user_files_dir / "fuzz.data";
+        case PeerTableDatabase::MySQL:
+            return mysql->sc.user_files_dir / "fuzz.data";
+        case PeerTableDatabase::PostgreSQL:
+            return postresql->sc.user_files_dir / "fuzz.data";
+        case PeerTableDatabase::SQLite:
+            return sqlite->sc.user_files_dir / "fuzz.data";
+        case PeerTableDatabase::None:
+            return fc.fuzz_out;
+    }
+}
+
 void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
     String buf;
+    const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
     clickhouse->performQueryOnServerOrRemote(
         pt,
         fmt::format(
             "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '{}' "
             "TRUNCATE FORMAT TabSeparated;",
-            fc.fuzz_out.generic_string()));
+            out_path.generic_string()));
 
-    std::ifstream infile(fc.fuzz_out);
+    std::ifstream infile(out_path);
     if (std::getline(infile, buf))
     {
         const auto tabchar = buf.find('\t');
