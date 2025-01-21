@@ -426,6 +426,7 @@
         #graph
         {
             display: none;
+            margin: auto;
         }
 
         /* This is for graph in svg */
@@ -439,6 +440,7 @@
         {
             fill: var(--element-background-color);
             filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+            stroke: var(--border-color);
         }
 
         .edgePath path
@@ -714,6 +716,13 @@ function queryToColor(str) {
 }
 
 
+let row_idx = 0;
+let elapsed_ns = 0;
+let incomplete_result = false;
+let is_explain_graph = false;
+let explain_graph = '';
+let column_is_number = {};
+
 let controller = null;
 async function postImpl(posted_request_num, query)
 {
@@ -741,7 +750,7 @@ async function postImpl(posted_request_num, query)
 
     let is_table = false;
     let is_raw = false;
-    let is_graph = false;
+    let is_chart = false;
     let is_error = false;
 
     let response, reply;
@@ -809,7 +818,7 @@ async function postImpl(posted_request_num, query)
                 buffer = lines[lines.length - 1];
             }
         } else if (format == 'JSONCompactColumns') {
-            is_graph = true;
+            is_chart = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return; }
             renderChart(JSON.parse(reply));
@@ -847,9 +856,12 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    if (extremes['min'] && extremes['max']) renderExtremes();
-
-    if (is_table) transposeTableIfNeeded();
+    if (is_explain_graph) {
+        await renderGraph();
+    } else {
+        if (extremes['min'] && extremes['max']) renderExtremes();
+        if (is_table) transposeTableIfNeeded();
+    }
 
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
@@ -1029,6 +1041,8 @@ function clear()
     row_idx = 0;
     elapsed_ns = 0;
     incomplete_result = false;
+    is_explain_graph = false;
+    explain_graph = '';
 }
 
 function formatReadable(number = 0, decimals = 2, units = []) {
@@ -1049,26 +1063,6 @@ function formatReadableRows(rows) {
     const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
 
     return formatReadable(rows, 2, units);
-}
-
-function renderResult(response)
-{
-    clear();
-
-    let stats = document.getElementById('stats');
-    const seconds = response.statistics.elapsed.toFixed(3);
-    const rows = response.statistics.rows_read;
-    const bytes = response.statistics.bytes_read;
-    const formatted_bytes = formatReadableBytes(bytes);
-    const formatted_rows = formatReadableRows(rows);
-    stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
-
-    /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-    if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) { // TODO
-        renderGraph(response);
-    } else {
-        renderTable(response);
-    }
 }
 
 function renderCell(name, value)
@@ -1207,7 +1201,15 @@ function update(json, fragment) {
         appendHeader(json.meta);
         return true;
     } else if (json.row) {
-        return appendRow(json.row, fragment);
+        if (is_explain_graph
+            || (row_idx == 0 && Object.keys(json.row).length == 1 && json.row.explain == 'digraph'
+                && query_area.value.match(/^\s*EXPLAIN/i))) {
+            is_explain_graph = true;
+            explain_graph += json.row.explain + '\n';
+            return true;
+        } else {
+            return appendRow(json.row, fragment);
+        }
     } else if (json.min) {
         extremes['min'] = json.min;
         return true;
@@ -1224,9 +1226,6 @@ function updateRaw(data) {
     const fragment = document.createTextNode(data);
     let container = document.getElementById('data-unparsed');
     container.appendChild(fragment);
-    /// inline-block make width adjust to the size of content.
-    container.style.display = 'inline-block';
-    /// TODO: no extremes when the format is unknown
 }
 
 function updateProgressText() {
@@ -1279,11 +1278,6 @@ function updateProgress(progress) {
     document.documentElement.style.setProperty('--progress',
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
-
-let row_idx = 0;
-let elapsed_ns = 0;
-let incomplete_result = false;
-let column_is_number = {};
 
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
@@ -1384,17 +1378,6 @@ function renderExtremes() {
     }
 }
 
-function renderTable(response)
-{
-    // TODO
-    if (response.data.length <= 1 && response.meta.length >= 5) {
-        renderTableTransposed(response)
-        return;
-    }
-
-    // TODO display timings
-}
-
 function renderError(message)
 {
     document.getElementById('error').innerText = message ? message : "No response.";
@@ -1436,17 +1419,21 @@ function loadDagre() {
     return load_dagre_promise;
 }
 
-async function renderGraph(response)
+async function renderGraph()
 {
+    clearElement('data-table');
     await loadDagre();
 
     /// https://github.com/dagrejs/dagre-d3/issues/131
-    const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
+    const dot = explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
 
     let graph = graphlibDot.read(dot);
-    graph.graph().rankdir = 'TB';
-
     let render = new dagreD3.render();
+
+    graph.setGraph({
+        nodesep: 20,
+        rankdir: 'LR',
+    });
 
     let svg = document.getElementById('graph');
     svg.style.display = 'block';
