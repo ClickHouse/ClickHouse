@@ -46,7 +46,7 @@ public:
 
     UInt64 getPacketType() const;
 
-    bool hasReadPacketType() const { return has_read_packet_part == PacketPart::Type; }
+    bool hasReadTillPacketType() const { return has_read_packet_part == PacketPart::Type; }
 
     bool hasReadPacket() const { return has_read_packet_part == PacketPart::Body; }
 

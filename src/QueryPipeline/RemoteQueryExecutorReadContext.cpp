@@ -172,7 +172,7 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 
 UInt64 RemoteQueryExecutorReadContext::getPacketType() const
 {
-    chassert(hasReadPacketType());
+    chassert(hasReadTillPacketType());
     return packet.type;
 }
 

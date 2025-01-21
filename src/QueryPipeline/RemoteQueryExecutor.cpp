@@ -534,7 +534,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (packet_in_progress)
         {
             chassert(read_context->readPacketTypeSeparately());
-            chassert(read_context->hasReadPacketType());
+            chassert(read_context->hasReadTillPacketType());
 
             /// packet type is handled already, read and parse packet itself
             if (!read_context->hasReadPacket() && !read_context->read())
@@ -989,7 +989,7 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
         return false;
 
     // try to read packet type if hasn't read it yet
-    if (!read_context->hasReadPacketType() && !read_context->read())
+    if (!read_context->hasReadTillPacketType() && !read_context->read())
         return false;
 
     packet_in_progress = true;
