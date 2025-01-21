@@ -1304,6 +1304,7 @@ function updateRaw(data) {
     const fragment = document.createTextNode(data);
     let container = document.getElementById('data-unparsed');
     container.appendChild(fragment);
+    container.style.display = 'block';
 }
 
 function updateProgressText() {
