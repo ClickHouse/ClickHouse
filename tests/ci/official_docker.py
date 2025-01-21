@@ -267,7 +267,7 @@ def generate_tree(args: argparse.Namespace) -> None:
         "The versions to generate:\n  %s",
         "\n  ".join(v.string for v in sorted(versions)),
     )
-    directory = Path(git_runner.cwd) / args.directory / args.image_type
+    directory = (args.directory / args.image_type).resolve()  # type: Path
     if args.clean:
         try:
             logging.info("Removing directory %s before generating", directory)
@@ -365,7 +365,7 @@ def generate_ldf(args: argparse.Namespace) -> None:
     Library Definition File, read about it in
     https://github.com/docker-library/official-images/?tab=readme-ov-file#library-definition-files
     """
-    directory = Path(git_runner.cwd) / args.directory / args.image_type
+    directory = (args.directory / args.image_type).resolve()  # type: Path
     versions = sorted([get_version_from_string(d.name) for d in directory.iterdir()])
     assert versions, "There are no directories to generate the LDF"
     if args.check_changed:
@@ -375,8 +375,8 @@ def generate_ldf(args: argparse.Namespace) -> None:
     git = Git(True)
     # Support a few repositories, get the git-root for images directory
     dir_git_root = (
-        args.directory / git_runner(f"git -C {args.directory} rev-parse --show-cdup")
-    ).absolute()
+        directory / git_runner(f"git -C {directory} rev-parse --show-cdup")
+    ).resolve()
     lines = ldf_header(git, directory)
     tag_attrs = TagAttrs(versions[-1], None)
 
@@ -401,9 +401,7 @@ def generate_ldf(args: argparse.Namespace) -> None:
 
     # For the last '\n' in join
     lines.append("")
-    ldf_file = (
-        Path(git_runner.cwd) / args.directory / DOCKER_LIBRARY_NAME[args.image_type]
-    )
+    ldf_file = args.directory.resolve() / DOCKER_LIBRARY_NAME[args.image_type]
     ldf_file.write_text("\n".join(lines))
     logging.info("The content of LDF file:\n%s", "\n".join(lines))
     if args.commit and path_is_changed(ldf_file):
