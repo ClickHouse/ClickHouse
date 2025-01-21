@@ -2817,6 +2817,7 @@ def do_run_tests(
         len(test_suite.sequential_tests),
         "sequential tests",
     )
+    total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -2903,7 +2904,7 @@ def do_run_tests(
             )
         )
 
-    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
+    return total_tests
 
 
 def is_test_from_dir(suite_dir, case):

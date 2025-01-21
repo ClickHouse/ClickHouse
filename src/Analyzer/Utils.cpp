@@ -229,7 +229,7 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
 {
-    const auto * constant_node = condition_node->as<ConstantNode>();
+    const auto * constant_node = condition_node ? condition_node->as<ConstantNode>() : nullptr;
     if (!constant_node)
         return {};
 
