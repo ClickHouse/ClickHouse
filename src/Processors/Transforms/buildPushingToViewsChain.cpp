@@ -903,7 +903,7 @@ InputPorts FinalizingViewsTransform::initPorts(std::vector<Block> headers)
 
 IProcessor::Status FinalizingViewsTransform::prepare()
 {
-    LOG_DEBUG(getLogger("PushingToViews"), "prepare");
+    LOG_DEBUG(getLogger("FinalizingViewsTransform"), "prepare");
 
     if (output.isFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
@@ -954,7 +954,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         auto view = views_data->views.begin();
         std::advance(view, pos);
         LOG_DEBUG(
-            getLogger("PushingToViews"),
+            getLogger("FinalizingViewsTransform"),
                 "unwrapExternalException is_external {} in storege {}", is_external, view->table_id.getFullTableName());
 
         if (is_external)
@@ -979,7 +979,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         }
     }
 
-    LOG_DEBUG(getLogger("PushingToViews"), "prepare finished {}/{}", num_finished, inputs.size());
+    LOG_DEBUG(getLogger("FinalizingViewsTransform"), "prepare finished {}/{}", num_finished, inputs.size());
     if (num_finished == inputs.size())
         return Status::Ready;
 

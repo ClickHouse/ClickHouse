@@ -35,6 +35,8 @@ public:
         LoggerPtr log_,
         uint32_t queue_size_);
 
+    ~RabbitMQConsumer();
+
     struct CommitInfo
     {
         UInt64 delivery_tag = 0;

@@ -25,6 +25,8 @@ private:
     bool has_data = false;
     std::vector<char> was_output_processed;
 
+    int iteration = 0;
+
     Status prepareGenerate();
     Status prepareConsume();
 };

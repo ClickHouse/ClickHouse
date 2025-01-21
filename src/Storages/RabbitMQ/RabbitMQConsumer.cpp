@@ -7,6 +7,7 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <IO/ReadBufferFromMemory.h>
+#include "Common/StackTrace.h"
 #include <Common/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
@@ -33,6 +34,12 @@ RabbitMQConsumer::RabbitMQConsumer(
         , log(log_)
         , received(queue_size_)
 {
+    LOG_DEBUG(log, "ctor at {}", StackTrace().toString());
+}
+
+RabbitMQConsumer::~RabbitMQConsumer()
+{
+    LOG_DEBUG(log, "dtor at {}", StackTrace().toString());
 }
 
 void RabbitMQConsumer::stop()
@@ -147,23 +154,25 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
 
 bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
 {
+    LOG_DEBUG(log, "nackMessages");
+
     if (state != State::OK)
     {
-        LOG_TEST(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+        LOG_DEBUG(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
         return false;
     }
 
     /// Nothing to nack.
     if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
     {
-        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, Will not nack messages",
+        LOG_DEBUG(log, "Delivery tag is {}, last committed delivery tag: {}, Will not nack messages",
                  commit_info.delivery_tag, last_commited_delivery_tag);
         return false;
     }
 
     if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple))
     {
-        LOG_TRACE(
+        LOG_DEBUG(
             log, "Consumer rejected messages with deliveryTags from {} to {} on channel {}",
             last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
 
