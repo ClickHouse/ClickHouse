@@ -200,7 +200,7 @@ bool DisksApp::processQueryText(const String & text)
         return false;
     CommandPtr command;
 
-    auto subqueries = po::split_unix(text, "';");
+    auto subqueries = po::split_unix(text, ";");
     for (const auto & subquery : subqueries)
     {
         std::optional<String> error_string;
