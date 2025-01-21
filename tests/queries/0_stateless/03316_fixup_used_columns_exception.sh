@@ -8,12 +8,9 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_exception;"
 
 
 create_status=$($CLICKHOUSE_CLIENT --query="
-CREATE TABLE test_order_by
-(
-    `id` UInt64
-)
+CREATE TABLE test_exception(`id` UInt64)
 ENGINE = MergeTree
-ORDER BY `All`;
+ORDER BY `All`
 " 2>&1) || true
 
 if [[ $create_status == *"Missing columns: 'All' while processing: '`All`', required columns: 'All', available columns: 'id'"* ]]; then
