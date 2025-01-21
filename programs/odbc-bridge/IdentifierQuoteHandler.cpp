@@ -80,8 +80,15 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         auto identifier = getIdentifierQuote(std::move(connection));
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
-        writeStringBinary(identifier, out);
-        out.finalize();
+        try
+        {
+            writeStringBinary(identifier, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            out.finalize();
+        }
     }
     catch (...)
     {

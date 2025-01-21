@@ -79,7 +79,10 @@ jobs:
           python3 style_check.py
       data: ${{ needs.RunConfig.outputs.data }}
     secrets:
-      robot_git_token: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+      secret_envs: |
+        ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+        ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+        RCSK
   FastTest:
     needs: [RunConfig, BuildDockers, StyleCheck]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}

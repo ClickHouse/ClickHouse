@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Type
 
-from . import Workflow
-from .settings import Settings
-from .utils import MetaClasses, T
+from praktika import Workflow
+from praktika._settings import _Settings
+from praktika.utils import MetaClasses, T
 
 
 @dataclasses.dataclass
@@ -29,18 +29,14 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_TYPE: str
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
-    PR_BODY: str
-    PR_TITLE: str
-    USER_LOGIN: str
-    FORK_NAME: str
-    LOCAL_RUN: bool = False
-    PR_LABELS: List[str] = dataclasses.field(default_factory=list)
+    PARAMETER: Any = None
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
+    LOCAL_RUN_PARAM: str = ""
     name = "environment"
 
     @classmethod
     def file_name_static(cls, _name=""):
-        return f"{Settings.TEMP_DIR}/{cls.name}.json"
+        return f"{_Settings.TEMP_DIR}/{cls.name}.json"
 
     @classmethod
     def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
@@ -71,12 +67,12 @@ class _Environment(MetaClasses.Serializable):
 
     @staticmethod
     def get_needs_statuses():
-        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
-            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+        if Path(_Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(_Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
                 return json.load(f)
         else:
             print(
-                f"ERROR: Status file [{Settings.WORKFLOW_STATUS_FILE}] does not exist"
+                f"ERROR: Status file [{_Settings.WORKFLOW_STATUS_FILE}] does not exist"
             )
             raise RuntimeError()
 
@@ -92,53 +88,21 @@ class _Environment(MetaClasses.Serializable):
         RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
-        USER_LOGIN = os.getenv("GITHUB_ACTOR")
-        FORK_NAME = ""
-        PR_BODY = ""
-        PR_TITLE = ""
-        PR_LABELS = []
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
-            FORK_NAME = github_event["repository"]["full_name"]
             if "pull_request" in github_event:
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
                 PR_NUMBER = github_event["pull_request"]["number"]
                 SHA = github_event["pull_request"]["head"]["sha"]
                 CHANGE_URL = github_event["pull_request"]["html_url"]
                 COMMIT_URL = CHANGE_URL + f"/commits/{SHA}"
-                PR_BODY = github_event["pull_request"]["body"]
-                PR_TITLE = github_event["pull_request"]["title"]
-                PR_LABELS = [
-                    label["name"] for label in github_event["pull_request"]["labels"]
-                ]
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
                 CHANGE_URL = github_event["head_commit"]["url"]  # commit url
                 PR_NUMBER = 0
-                COMMIT_URL = CHANGE_URL
-            elif "schedule" in github_event:
-                EVENT_TYPE = Workflow.Event.SCHEDULE
-                SHA = os.getenv(
-                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
-                )
-                PR_NUMBER = 0
-                CHANGE_URL = (
-                    github_event["repository"]["html_url"] + "/commit/" + SHA
-                )  # commit url
-                COMMIT_URL = CHANGE_URL
-            elif "inputs" in github_event:
-                # assume this is a dispatch
-                EVENT_TYPE = Workflow.Event.DISPATCH
-                SHA = os.getenv(
-                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
-                )
-                PR_NUMBER = 0
-                CHANGE_URL = (
-                    github_event["repository"]["html_url"] + "/commit/" + SHA
-                )  # commit url
                 COMMIT_URL = CHANGE_URL
             else:
                 assert False, "TODO: not supported"
@@ -185,11 +149,6 @@ class _Environment(MetaClasses.Serializable):
             BASE_BRANCH=BASE_BRANCH,
             INSTANCE_TYPE=INSTANCE_TYPE,
             INSTANCE_ID=INSTANCE_ID,
-            PR_BODY=PR_BODY,
-            PR_TITLE=PR_TITLE,
-            USER_LOGIN=USER_LOGIN,
-            FORK_NAME=FORK_NAME,
-            PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
         )
@@ -200,8 +159,7 @@ class _Environment(MetaClasses.Serializable):
     @classmethod
     def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
         prefix = ""
-        assert sha or latest
-        if pr_number and pr_number > 0:
+        if pr_number > 0:
             prefix += f"{pr_number}"
         else:
             prefix += f"{branch}"
@@ -213,19 +171,19 @@ class _Environment(MetaClasses.Serializable):
 
     # TODO: find a better place for the function. This file should not import praktika.settings
     #   as it's requires reading users config, that's why imports nested inside the function
-    def get_report_url(self, settings, latest=False):
+    def get_report_url(self):
         import urllib
 
-        path = settings.HTML_S3_PATH
-        for bucket, endpoint in settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        from praktika.settings import Settings
+        from praktika.utils import Utils
+
+        path = Settings.HTML_S3_PATH
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={'latest' if latest else self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}"
+        REPORT_URL = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
         return REPORT_URL
-
-    def is_local_run(self):
-        return self.LOCAL_RUN
 
 
 def _to_object(data):

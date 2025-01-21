@@ -1,6 +1,5 @@
 #include <Server/ReplicasStatusHandler.h>
 
-#include <Common/quoteString.h>
 #include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>

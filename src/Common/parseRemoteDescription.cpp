@@ -95,8 +95,7 @@ std::vector<String> parseRemoteDescription(
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
-                size_t left;
-                size_t right;
+                size_t left, right;
                 if (description[last_dot - 1] != '.')
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

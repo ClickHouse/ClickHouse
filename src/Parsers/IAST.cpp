@@ -9,7 +9,6 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
-
 #include <algorithm>
 
 namespace DB
@@ -179,12 +178,12 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingStyle identifier_quoting_style) const
 {
     WriteBufferFromOwnString buf;
-    FormatSettings settings(one_line);
+    FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
     settings.print_pretty_type_names = print_pretty_type_names;
     settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
-    format(buf, settings);
+    format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 
@@ -221,7 +220,7 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const
+void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
 {
     checkIdentifier(name);
     bool must_quote

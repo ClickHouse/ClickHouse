@@ -706,7 +706,7 @@ REGISTER_FUNCTION(Overlay)
         {.description = R"(
 Replace a part of a string `input` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `input` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
 )",
-         .category{"Strings - Replacing"}},
+         .categories{"String"}},
         FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionOverlay<true>>(
@@ -715,7 +715,7 @@ Replace a part of a string `input` with another string `replace`, starting at 1-
 
 Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 )",
-         .category{"Strings - Replacing"}},
+         .categories{"String"}},
         FunctionFactory::Case::Sensitive);
 }
 }

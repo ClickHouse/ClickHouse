@@ -57,13 +57,7 @@ struct SchedulerNodeInfo
 
     SchedulerNodeInfo() = default;
 
-    explicit SchedulerNodeInfo(double weight_, Priority priority_ = {})
-    {
-        setWeight(weight_);
-        setPriority(priority_);
-    }
-
-    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix = {})
+    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
     {
         setWeight(config.getDouble(config_prefix + ".weight", weight));
         setPriority(config.getInt64(config_prefix + ".priority", priority));
@@ -74,7 +68,7 @@ struct SchedulerNodeInfo
         if (value <= 0 || !isfinite(value))
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Zero, negative and non-finite node weights are not allowed: {}",
+                "Negative and non-finite node weights are not allowed: {}",
                 value);
         weight = value;
     }
@@ -82,11 +76,6 @@ struct SchedulerNodeInfo
     void setPriority(Int64 value)
     {
         priority.value = value;
-    }
-
-    void setPriority(Priority value)
-    {
-        priority = value;
     }
 
     // To check if configuration update required
@@ -134,14 +123,7 @@ public:
         , info(config, config_prefix)
     {}
 
-    ISchedulerNode(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
-        : event_queue(event_queue_)
-        , info(info_)
-    {}
-
-    virtual ~ISchedulerNode();
-
-    virtual const String & getTypeName() const = 0;
+    virtual ~ISchedulerNode() = default;
 
     /// Checks if two nodes configuration is equal
     virtual bool equals(ISchedulerNode * other)
@@ -152,11 +134,10 @@ public:
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;
 
-    /// Detach child
-    /// NOTE: child might be destroyed if the only reference was stored in parent
+    /// Detach and destroy child
     virtual void removeChild(ISchedulerNode * child) = 0;
 
-    /// Get attached child by name (for tests only)
+    /// Get attached child by name
     virtual ISchedulerNode * getChild(const String & child_name) = 0;
 
     /// Activation of child due to the first pending request
@@ -166,7 +147,7 @@ public:
     /// Returns true iff node is active
     virtual bool isActive() = 0;
 
-    /// Returns number of active children (for introspection only).
+    /// Returns number of active children
     virtual size_t activeChildren() = 0;
 
     /// Returns the first request to be executed as the first component of resulting pair.
@@ -174,10 +155,10 @@ public:
     virtual std::pair<ResourceRequest *, bool> dequeueRequest() = 0;
 
     /// Returns full path string using names of every parent
-    String getPath() const
+    String getPath()
     {
         String result;
-        const ISchedulerNode * ptr = this;
+        ISchedulerNode * ptr = this;
         while (ptr->parent)
         {
             result = "/" + ptr->basename + result;
@@ -187,7 +168,10 @@ public:
     }
 
     /// Attach to a parent (used by attachChild)
-    void setParent(ISchedulerNode * parent_);
+    virtual void setParent(ISchedulerNode * parent_)
+    {
+        parent = parent_;
+    }
 
 protected:
     /// Notify parents about the first pending request or constraint becoming satisfied.
@@ -321,15 +305,6 @@ public:
         activations.push_back(*node);
         if (was_empty)
             pending.notify_one();
-    }
-
-    /// Removes an activation from queue
-    void cancelActivation(ISchedulerNode * node)
-    {
-        std::unique_lock lock{mutex};
-        if (node->is_linked())
-            activations.erase(activations.iterator_to(*node));
-        node->activation_event_id = 0;
     }
 
     /// Process single event if it exists
@@ -495,20 +470,6 @@ private:
 
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 };
-
-inline ISchedulerNode::~ISchedulerNode()
-{
-    // Make sure there is no dangling reference in activations queue
-    event_queue->cancelActivation(this);
-}
-
-inline void ISchedulerNode::setParent(ISchedulerNode * parent_)
-{
-    parent = parent_;
-    // Avoid activation of a detached node
-    if (parent == nullptr)
-        event_queue->cancelActivation(this);
-}
 
 inline void ISchedulerNode::scheduleActivation()
 {

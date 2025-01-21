@@ -1,9 +1,6 @@
 # Please do not use 'branch = ...' tags with submodule entries. Such tags make updating submodules a
 # little bit more convenient but they do *not* specify the tracked submodule branch. Thus, they are
 # more confusing than useful.
-[submodule "contrib/jwt-cpp"]
-	path = contrib/jwt-cpp
-	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd
@@ -308,6 +305,9 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/expected"]
+	path = contrib/expected
+	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
@@ -332,7 +332,7 @@
 	url = https://github.com/ClickHouse/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
-	url = https://github.com/ClickHouse/SimSIMD.git
+	url = https://github.com/ashvardanian/SimSIMD.git
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git

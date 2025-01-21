@@ -31,8 +31,7 @@ public:
     static String toString(BigNum num);
     static String toString(Rational ratio);
 
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 inline bool operator==(const ASTSampleRatio::Rational & lhs, const ASTSampleRatio::Rational & rhs)

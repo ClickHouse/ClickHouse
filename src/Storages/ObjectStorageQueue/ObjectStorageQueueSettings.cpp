@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
-    extern const int BAD_ARGUMENTS;
 }
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
@@ -24,20 +23,18 @@ namespace ErrorCodes
       0) \
     DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete or keep file in after successful processing", 0) \
     DECLARE(String, keeper_path, "", "Zookeeper node path", 0) \
-    DECLARE(UInt64, loading_retries, 10, "Retry loading up to specified number of times", 0) \
-    DECLARE(UInt64, processing_threads_num, 1, "Number of processing threads", 0) \
+    DECLARE(UInt32, loading_retries, 10, "Retry loading up to specified number of times", 0) \
+    DECLARE(UInt32, processing_threads_num, 1, "Number of processing threads", 0) \
     DECLARE(UInt32, enable_logging_to_queue_log, 1, "Enable logging to system table system.(s3/azure_)queue_log", 0) \
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
-    DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
-    DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
-    DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
-    DECLARE(UInt64, polling_max_timeout_ms, 10 * 60 * 1000, "Maximum timeout before next polling", 0) \
-    DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
+    DECLARE(UInt32, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
+    DECLARE(UInt32, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
+    DECLARE(UInt32, polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
+    DECLARE(UInt32, polling_backoff_ms, 1000, "Polling backoff", 0) \
+    DECLARE(UInt32, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
-    DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
-    DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batcn in object storage", 0) \
-    DECLARE(Bool, enable_hash_ring_filtering, 0, "Enable filtering files among replicas according to hash ring for Unordered mode", 0) \
+    DECLARE(UInt32, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
@@ -85,13 +82,10 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     const StorageObjectStorageQueue & storage) const
 {
     MutableColumns & res_columns = params.res_columns;
-    auto settings_changes_ast = storage.getInMemoryMetadataPtr()->settings_changes;
-    if (!settings_changes_ast)
-        return;
 
     /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
     /// Therefore check if the setting was changed via table metadata.
-    const auto & settings_changes = settings_changes_ast->as<ASTSetQuery>()->changes;
+    const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
     auto is_changed = [&](const std::string & setting_name) -> bool
     {
         return settings_changes.end() != std::find_if(
@@ -118,11 +112,6 @@ ObjectStorageQueueSettings::~ObjectStorageQueueSettings() = default;
 OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES(ObjectStorageQueueSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 
-void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
-{
-    impl->applyChanges(changes);
-}
-
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
@@ -131,8 +120,6 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
         {
             std::vector<std::string> ignore_settings;
             auto settings_changes = storage_def.settings->changes;
-
-            std::set<std::string> names;
 
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
@@ -145,14 +132,8 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
 
                 if (change.name == "current_shard_num")
                     ignore_settings.push_back(change.name);
-                else if (change.name == "total_shards_num")
+                if (change.name == "total_shards_num")
                     ignore_settings.push_back(change.name);
-                else
-                {
-                    bool inserted = names.insert(change.name).second;
-                    if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
-                }
             }
 
             for (const auto & setting : ignore_settings)
@@ -175,13 +156,4 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-Field ObjectStorageQueueSettings::get(const std::string & name)
-{
-    return impl->get(name);
-}
-
-bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
-{
-    return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
-}
 }

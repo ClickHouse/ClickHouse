@@ -26,7 +26,7 @@
     1. Support readonly servers.
     Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
-    Also, it can provide visual indication that credentials are correct.
+    Also it can provide visual indication that credentials are correct.
 
     -->
 
@@ -331,11 +331,15 @@
         }
 
         @keyframes hourglass-animation {
-            0% { transform: none; }
-            25% { transform: rotate(180deg); }
-            50% { transform: rotate(180deg); }
-            75% { transform: rotate(360deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(-180deg);
+            }
+            50% {
+                transform: rotate(-180deg);
+            }
+            100% {
+                transform: none;
+            }
         }
 
         #hourglass
@@ -344,7 +348,7 @@
             margin-left: 1rem;
             font-size: 110%;
             color: #888;
-            animation: hourglass-animation 2s linear infinite;
+            animation: hourglass-animation 1s linear infinite;
         }
 
         #check-mark

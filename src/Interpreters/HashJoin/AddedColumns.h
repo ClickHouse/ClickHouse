@@ -1,7 +1,4 @@
 #pragma once
-
-#include <Columns/ColumnNullable.h>
-#include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -17,8 +14,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct JoinOnKeyColumns
 {
-    const ScatteredBlock & block;
-
     Names key_names;
 
     Columns materialized_keys_holder;
@@ -32,13 +27,9 @@ struct JoinOnKeyColumns
 
     Sizes key_sizes;
 
-    JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+    explicit JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
-    bool isRowFiltered(size_t i) const
-    {
-        return join_mask_column.isRowFiltered(i);
-    }
+    bool isRowFiltered(size_t i) const { return join_mask_column.isRowFiltered(i); }
 };
 
 template <bool lazy>
@@ -63,7 +54,7 @@ public:
     };
 
     AddedColumns(
-        const ScatteredBlock & left_block_,
+        const Block & left_block_,
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const HashJoin & join,
@@ -71,11 +62,10 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         bool is_asof_join,
         bool is_join_get_)
-        : src_block(left_block_)
-        , left_block(left_block_.getSourceBlock())
+        : left_block(left_block_)
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
-        , rows_to_add(left_block_.rows())
+        , rows_to_add(left_block.rows())
         , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
         , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
         , join_data_sorted(join.getJoinedData()->sorted)
@@ -149,7 +139,6 @@ public:
 
     static constexpr bool isLazy() { return lazy; }
 
-    const ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
@@ -170,7 +159,7 @@ public:
             return;
 
         /// Do not allow big allocations when user set max_joined_block_rows to huge value
-        size_t reserve_size = std::min<size_t>(max_joined_block_rows, rows_to_add * 2);
+        size_t reserve_size = std::min<size_t>(max_joined_block_rows, DEFAULT_BLOCK_SIZE * 2);
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
@@ -229,7 +218,7 @@ private:
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(rows_to_add);
+        columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 

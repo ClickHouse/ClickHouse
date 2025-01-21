@@ -14,7 +14,7 @@ import string
 import subprocess
 import sys
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict, List, Optional
 
@@ -99,7 +99,7 @@ def chunks(lst, n):
         yield lst[i : i + n]
 
 
-def get_counters(fname: str) -> Dict[str, List[str]]:
+def get_counters(fname):
     counters = {
         "ERROR": set([]),
         "PASSED": set([]),
@@ -474,7 +474,7 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def group_test_by_file(tests):
-        result = OrderedDict()  # type: OrderedDict
+        result = {}  # type: Dict
         for test in tests:
             test_file = test.split("::")[0]
             if test_file not in result:
@@ -655,12 +655,13 @@ class ClickhouseIntegrationTestsRunner:
 
             log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
-            logging.info("Executing cmd: %s", cmd)
-            # ignore retcode, since it meaningful due to pipe to tee
-            with TeePopen(cmd, log_path) as proc:
-                global runner_subprocess  # pylint:disable=global-statement
-                runner_subprocess = proc
-                proc.wait()
+            with open(log_path, "w", encoding="utf-8") as log:
+                logging.info("Executing cmd: %s", cmd)
+                # ignore retcode, since it meaningful due to pipe to tee
+                with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
+                    global runner_subprocess  # pylint:disable=global-statement
+                    runner_subprocess = proc
+                    proc.wait()
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -672,7 +673,13 @@ class ClickhouseIntegrationTestsRunner:
             for pytest_log_path in glob.glob(
                 os.path.join(self.repo_path, "tests/integration/pytest*.log")
             ):
-                new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
+                new_name = (
+                    test_group_str
+                    + "_"
+                    + str(i)
+                    + "_"
+                    + os.path.basename(pytest_log_path)
+                )
                 os.rename(
                     pytest_log_path,
                     os.path.join(self.repo_path, "tests/integration", new_name),
@@ -718,7 +725,7 @@ class ClickhouseIntegrationTestsRunner:
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
                     str(self.path()),
-                    f"integration_run_{test_group_str}_{i}.tar.zst",
+                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(self.repo_path, "tests/integration"),
@@ -810,11 +817,10 @@ class ClickhouseIntegrationTestsRunner:
                         len(value),
                     )
                     counters[counter] += value
-                    for test_name in value:
-                        tests_log_paths[test_name] = log_paths
 
                 for test_name, test_time in group_test_times.items():
                     tests_times[test_name] = test_time
+                    tests_log_paths[test_name] = log_paths
                 if not should_fail and (
                     group_counters["FAILED"] or group_counters["ERROR"]
                 ):
@@ -990,12 +996,11 @@ class ClickhouseIntegrationTestsRunner:
                     "Totally have %s with status %s", len(counters[counter]), counter
                 )
                 total_tests += len(counters[counter])
-                for test_name in value:
-                    tests_log_paths[test_name] = log_paths
             logging.info("Totally finished tests %s/%s", total_tests, len(all_tests))
 
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
+                tests_log_paths[test_name] = log_paths
 
             if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
                 logging.info("Collected more than 20 failed/error tests, stopping")
@@ -1084,7 +1089,7 @@ def run():
 
 
 timeout_expired = False
-runner_subprocess = None  # type:Optional[TeePopen]
+runner_subprocess = None  # type:Optional[subprocess.Popen]
 
 
 def handle_sigterm(signum, _frame):
@@ -1093,7 +1098,7 @@ def handle_sigterm(signum, _frame):
     global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
     if runner_subprocess:
-        runner_subprocess.terminate()
+        runner_subprocess.send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":

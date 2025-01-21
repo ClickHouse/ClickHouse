@@ -3,8 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 
-#include <Poco/JSON/Object.h>
-
 namespace DB
 {
 
@@ -153,17 +151,15 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
         elem->deserializeFromKindsBinary(in);
 }
 
-void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
+Poco::JSON::Object SerializationInfoTuple::toJSON() const
 {
-    SerializationInfo::toJSON(object);
+    auto object = SerializationInfo::toJSON();
     Poco::JSON::Array subcolumns;
     for (const auto & elem : elems)
-    {
-        Poco::JSON::Object sub_column_json;
-        elem->toJSON(sub_column_json);
-        subcolumns.add(sub_column_json);
-    }
+        subcolumns.add(elem->toJSON());
+
     object.set("subcolumns", subcolumns);
+    return object;
 }
 
 void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)

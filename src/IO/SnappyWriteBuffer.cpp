@@ -26,6 +26,11 @@ SnappyWriteBuffer::SnappyWriteBuffer(WriteBuffer & out_, size_t buf_size, char *
 {
 }
 
+SnappyWriteBuffer::~SnappyWriteBuffer()
+{
+    finish();
+}
+
 void SnappyWriteBuffer::nextImpl()
 {
     if (!offset())
@@ -40,12 +45,28 @@ void SnappyWriteBuffer::nextImpl()
 
 void SnappyWriteBuffer::finish()
 {
-    finishImpl();
-    out->finalize();
+    if (finished)
+        return;
+
+    try
+    {
+        finishImpl();
+        out->finalize();
+        finished = true;
+    }
+    catch (...)
+    {
+        /// Do not try to flush next time after exception.
+        out->position() = out->buffer().begin();
+        finished = true;
+        throw;
+    }
 }
 
 void SnappyWriteBuffer::finishImpl()
 {
+    next();
+
     bool success = snappy::Compress(uncompress_buffer.data(), uncompress_buffer.size(), &compress_buffer);
     if (!success)
     {
@@ -71,18 +92,7 @@ void SnappyWriteBuffer::finishImpl()
     }
 }
 
-void SnappyWriteBuffer::cancelImpl() noexcept
-{
-    Base::cancelImpl();
-    out->cancel();
-}
-
-void SnappyWriteBuffer::finalizeImpl()
-{
-    Base::finalizeImpl();
-    finish();
-}
-
 }
 
 #endif
+

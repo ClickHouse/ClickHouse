@@ -134,7 +134,6 @@ public:
 private:
     friend class ReadFromStorageFileLog;
 
-    ContextMutablePtr filelog_context;
     std::unique_ptr<FileLogSettings> filelog_settings;
 
     const String path;

@@ -224,13 +224,6 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     /// check for non-nats-related settings
     modified_context->applySettingsChanges(nats_settings->getFormatSettings());
 
-    /// It does not make sense to use auto detection here, since the format
-    /// will be reset for each message, plus, auto detection takes CPU
-    /// time.
-    modified_context->setSetting("input_format_csv_detect_header", false);
-    modified_context->setSetting("input_format_tsv_detect_header", false);
-    modified_context->setSetting("input_format_custom_detect_header", false);
-
     return modified_context;
 }
 
@@ -799,7 +792,6 @@ void registerStorageNATS(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessType::NATS,
-            .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         });
 }
 

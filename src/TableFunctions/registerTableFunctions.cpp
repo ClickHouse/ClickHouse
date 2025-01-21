@@ -66,7 +66,6 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
     registerTableFunctionObjectStorage(factory);
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
-    registerDataLakeClusterTableFunctions(factory);
 }
 
 }

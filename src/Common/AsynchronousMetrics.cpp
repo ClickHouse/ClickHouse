@@ -103,11 +103,18 @@ AsynchronousMetrics::AsynchronousMetrics(
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
 
-    openFileIfExists("/proc/loadavg", loadavg);
-    openFileIfExists("/proc/stat", proc_stat);
-    openFileIfExists("/proc/uptime", uptime);
+    if (!cgroupcpu_stat && !cgroupcpuacct_stat)
+    {
+        /// The following metrics are not cgroup-aware and we've found cgroup-specific metric files for the similar metrics,
+        /// so we're better not reporting them at all to avoid confusion
+        openFileIfExists("/proc/loadavg", loadavg);
+        openFileIfExists("/proc/stat", proc_stat);
+        openFileIfExists("/proc/uptime", uptime);
+    }
 
-    openFileIfExists("/proc/meminfo", meminfo);
+    /// The same story for memory metrics
+    if (!cgroupmem_limit_in_bytes)
+        openFileIfExists("/proc/meminfo", meminfo);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -324,7 +331,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
-    SharedLockGuard lock(values_mutex);
+    std::lock_guard lock(data_mutex);
     return values;
 }
 
@@ -958,8 +965,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
-    if (cgroup_cpu_metrics_present)
+    if (cgroupcpu_stat || cgroupcpuacct_stat)
     {
         try
         {
@@ -1019,7 +1025,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
         }
     }
-    if (proc_stat)
+    else if (proc_stat)
     {
         try
         {
@@ -1043,14 +1049,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
-                    if (cgroup_cpu_metrics_present)
-                    {
-                        /// Skip the CPU metrics if we already have them from cgroup
-                        ProcStatValuesCPU current_values{};
-                        current_values.read(*proc_stat);
-                        continue;
-                    }
-
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1137,7 +1135,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
+                if (num_cpus_to_normalize > 0)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
@@ -1171,7 +1169,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    if (meminfo)
+    else if (meminfo)
     {
         try
         {
@@ -1809,10 +1807,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     first_run = false;
 
     // Finally, update the current metrics.
-    {
-        std::lock_guard values_lock(values_mutex);
-        values.swap(new_values);
-    }
+    values = new_values;
 }
 
 }

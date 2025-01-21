@@ -90,7 +90,7 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 array
-arrayAUCPR
+arrayAUC
 arrayAll
 arrayAvg
 arrayCompact
@@ -127,7 +127,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -310,7 +309,6 @@ fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
-fromUnixTimestamp64Second
 fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
@@ -515,7 +513,6 @@ parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
 parseDateTime32BestEffortOrZero
-parseDateTime64
 parseDateTime64BestEffort
 parseDateTime64BestEffortOrNull
 parseDateTime64BestEffortOrZero
@@ -525,8 +522,6 @@ parseDateTime64BestEffortUSOrZero
 parseDateTime64InJodaSyntax
 parseDateTime64InJodaSyntaxOrNull
 parseDateTime64InJodaSyntaxOrZero
-parseDateTime64OrNull
-parseDateTime64OrZero
 parseDateTimeBestEffort
 parseDateTimeBestEffortOrNull
 parseDateTimeBestEffortOrZero
@@ -858,7 +853,6 @@ toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
-toUnixTimestamp64Second
 toValidUTF8
 toWeek
 toYYYYMM

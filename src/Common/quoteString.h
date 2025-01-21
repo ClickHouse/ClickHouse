@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <base/StringRef.h>
+#include <concepts>
 
 
 namespace DB
@@ -12,18 +13,6 @@ namespace DB
 [[nodiscard]] inline String quoteString(std::same_as<StringRef> auto x)
 {
     return quoteString(std::string_view{x.data, x.size});
-}
-
-[[nodiscard]] String quoteStringSingleQuoteWithSingleQuote(std::string_view x);
-
-[[nodiscard]] inline String quoteStringPostgreSQL(std::string_view x)
-{
-    return quoteStringSingleQuoteWithSingleQuote(x);
-}
-
-[[nodiscard]] inline String quoteStringSQLite(std::string_view x)
-{
-    return quoteStringSingleQuoteWithSingleQuote(x);
 }
 
 /// Double quote the string.

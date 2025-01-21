@@ -39,9 +39,8 @@ class TestCIConfig(unittest.TestCase):
                     CI.BuildNames.PACKAGE_AARCH64_ASAN,
                 ):
                     self.assertTrue(
-                        CI.JOB_CONFIGS[job].runner_type
-                        in (CI.Runners.BUILDER_AARCH64,),
-                        f"Job [{job}] must have [{CI.Runners.BUILDER_AARCH64}] runner",
+                        CI.JOB_CONFIGS[job].runner_type in (CI.Runners.BUILDER_ARM,),
+                        f"Job [{job}] must have [{CI.Runners.BUILDER_ARM}] runner",
                     )
                 else:
                     self.assertTrue(
@@ -96,39 +95,69 @@ class TestCIConfig(unittest.TestCase):
                 self.assertTrue(CI.JOB_CONFIGS[job].required_builds is None)
             else:
                 self.assertTrue(CI.JOB_CONFIGS[job].build_config is None)
-                if "asan" in job and "aarch" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_AARCH64_ASAN]
-                elif "asan" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_ASAN]
+                if "asan" in job:
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_ASAN,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "msan" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_MSAN]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_MSAN,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "tsan" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_TSAN]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_TSAN,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "ubsan" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_UBSAN]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_UBSAN,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "debug" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_DEBUG]
-                elif job in (
-                    "Unit tests (release)",
-                    "ClickHouse Keeper Jepsen",
-                    "ClickHouse Server Jepsen",
-                ):
-                    expected_builds = [CI.BuildNames.BINARY_RELEASE]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_DEBUG,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "release" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_RELEASE]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        in (
+                            CI.BuildNames.PACKAGE_RELEASE,
+                            CI.BuildNames.BINARY_RELEASE,
+                        ),
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "coverage" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_RELEASE_COVERAGE]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_RELEASE_COVERAGE,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "aarch" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_AARCH64]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_AARCH64,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "amd64" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_RELEASE]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_RELEASE,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "uzzer" in job:
-                    expected_builds = [CI.BuildNames.FUZZERS]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0] == CI.BuildNames.FUZZERS,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "Docker" in job:
-                    expected_builds = [
-                        CI.BuildNames.PACKAGE_RELEASE,
-                        CI.BuildNames.PACKAGE_AARCH64,
-                    ]
                     self.assertTrue(
                         CI.JOB_CONFIGS[job].required_builds[0]
                         in (
@@ -138,12 +167,20 @@ class TestCIConfig(unittest.TestCase):
                         f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
                     )
                 elif "SQLTest" in job:
-                    expected_builds = [CI.BuildNames.PACKAGE_RELEASE]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        == CI.BuildNames.PACKAGE_RELEASE,
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif "Jepsen" in job:
-                    expected_builds = [
-                        CI.BuildNames.PACKAGE_RELEASE,
-                        CI.BuildNames.BINARY_RELEASE,
-                    ]
+                    self.assertTrue(
+                        CI.JOB_CONFIGS[job].required_builds[0]
+                        in (
+                            CI.BuildNames.PACKAGE_RELEASE,
+                            CI.BuildNames.BINARY_RELEASE,
+                        ),
+                        f"Job [{job}] probably has wrong required build [{CI.JOB_CONFIGS[job].required_builds[0]}] in JobConfig",
+                    )
                 elif job in (
                     CI.JobNames.STYLE_CHECK,
                     CI.JobNames.FAST_TEST,
@@ -151,16 +188,9 @@ class TestCIConfig(unittest.TestCase):
                     CI.JobNames.DOCS_CHECK,
                     CI.JobNames.BUGFIX_VALIDATE,
                 ):
-                    expected_builds = []
+                    self.assertTrue(CI.JOB_CONFIGS[job].required_builds is None)
                 else:
                     print(f"Job [{job}] required build not checked")
-                    assert False
-
-                self.assertCountEqual(
-                    expected_builds,
-                    CI.JOB_CONFIGS[job].required_builds or [],
-                    f"Required builds are not valid for job [{job}]",
-                )
 
     def test_job_stage_config(self):
         """

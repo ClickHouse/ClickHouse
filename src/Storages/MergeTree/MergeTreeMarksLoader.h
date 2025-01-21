@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Common/ThreadPool_fwd.h>
 
-#include <atomic>
-#include <future>
 
 namespace DB
 {
@@ -75,21 +73,8 @@ private:
 
     std::future<MarkCache::MappedPtr> future;
     ThreadPool * load_marks_threadpool;
-    std::atomic<bool> is_canceled{false};
 };
 
 using MergeTreeMarksLoaderPtr = std::shared_ptr<MergeTreeMarksLoader>;
-
-class IMergeTreeDataPart;
-struct MergeTreeSettings;
-
-/// Adds computed marks for part to the marks cache.
-void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache);
-
-/// Removes cached marks for all columns from part.
-void removeMarksFromCache(const IMergeTreeDataPart & part, MarkCache * mark_cache);
-
-/// Returns the list of columns suitable for prewarming of mark cache according to settings.
-Names getColumnsToPrewarmMarks(const MergeTreeSettings & settings, const NamesAndTypesList & columns_list);
 
 }

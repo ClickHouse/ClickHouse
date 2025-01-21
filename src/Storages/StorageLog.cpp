@@ -134,7 +134,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
+                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
                 compressed.emplace(*limited);
             }
             else
@@ -1154,8 +1154,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true,
-        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .supports_settings = true
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

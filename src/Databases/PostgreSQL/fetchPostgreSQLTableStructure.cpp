@@ -43,7 +43,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema));
+            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
@@ -58,7 +58,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     {
         std::string query = fmt::format(
             "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
-            quoteStringPostgreSQL(schema));
+            quoteString(schema));
 
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
@@ -108,8 +108,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision;
-        UInt32 scale;
+        UInt32 precision, scale;
         if (type.ends_with(")"))
         {
             res = DataTypeFactory::instance().get(type);
@@ -257,7 +256,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}. Make sure no empty array values in the first row.",
+                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}",
                     postgres_table,
                     postgres_column);
             }
@@ -298,11 +297,11 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 {
     PostgreSQLTableStructure table;
 
-    auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
+    auto where = fmt::format("relname = {}", quoteString(postgres_table));
 
     where += postgres_schema.empty()
         ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
-        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
+        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
 
     std::string columns_part;
     if (!columns.empty())
@@ -414,8 +413,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
-            quoteStringPostgreSQL(postgres_table),
-            (postgres_schema.empty() ? quoteStringPostgreSQL("public") : quoteStringPostgreSQL(postgres_schema))
+            quoteString(postgres_table),
+            (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
