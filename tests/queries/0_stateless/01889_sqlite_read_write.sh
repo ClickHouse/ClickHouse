@@ -87,7 +87,7 @@ ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table3 ORDER BY col2'
 ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table1') SELECT 'line4', 4"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table1') ORDER BY col2"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', '\\'); select 1 --') ORDER BY col2 -- { serverError SQLITE_ENGINE_ERROR }"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', '\\'); select 1 --') ORDER BY col2; -- { serverError SQLITE_ENGINE_ERROR }"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table6''') ORDER BY col2"
 
 
