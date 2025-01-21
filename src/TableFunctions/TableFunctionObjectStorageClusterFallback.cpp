@@ -95,7 +95,10 @@ void TableFunctionObjectStorageClusterFallback<Definition, Base>::parseArguments
         args.erase(args.begin());
     }
     else
+    {
+        // NOLINTNEXTLINE(bugprone-parent-virtual-call)
         BaseSimple::parseArgumentsImpl(args, context);
+    }
 }
 
 template <typename Definition, typename Base>
@@ -114,7 +117,10 @@ StoragePtr TableFunctionObjectStorageClusterFallback<Definition, Base>::executeI
         return result;
     }
     else
+    {
+        // NOLINTNEXTLINE(bugprone-parent-virtual-call)
         return BaseSimple::executeImpl(ast_function, context, table_name, cached_columns, is_insert_query);
+    }
 }
 
 #if USE_AWS_S3
