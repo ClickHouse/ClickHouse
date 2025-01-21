@@ -27,7 +27,7 @@ void collectColumnPaths(
     }
     if ((flags & collect_generated) != 0 && dynamic_cast<Nullable *>(tp))
     {
-        next.path.push_back(ColumnPathChainEntry("null", null_tp));
+        next.path.push_back(ColumnPathChainEntry("null", &(*null_tp)));
         paths.push_back(next);
         next.path.pop_back();
     }
@@ -35,12 +35,12 @@ void collectColumnPaths(
     {
         uint32_t i = 1;
 
-        next.path.push_back(ColumnPathChainEntry("size0", size_tp));
+        next.path.push_back(ColumnPathChainEntry("size0", &(*size_tp)));
         paths.push_back(next);
         next.path.pop_back();
         while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
         {
-            next.path.push_back(ColumnPathChainEntry("size" + std::to_string(i), size_tp));
+            next.path.push_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
             paths.push_back(next);
             next.path.pop_back();
             i++;

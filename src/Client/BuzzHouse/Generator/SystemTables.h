@@ -5,7 +5,7 @@
 namespace BuzzHouse
 {
 
-extern SQLType *size_tp, *null_tp;
+extern std::unique_ptr<SQLType> size_tp, null_tp;
 
 extern std::unordered_map<String, std::unordered_map<String, SQLType *>> systemTables;
 
