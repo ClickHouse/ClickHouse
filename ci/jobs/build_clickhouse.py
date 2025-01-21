@@ -176,7 +176,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="ninja azure_key_vault",
+                command="ninja clickhouse-bundle clickhouse-odbc-bridge clickhouse-library-bridge",
                 workdir=build_dir,
                 with_log=True,
             )
