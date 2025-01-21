@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
@@ -45,9 +46,14 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
 
 bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits)
 {
-    if (process_list_elem)
+    for (const auto & limits : storage_limits)
     {
-        if (!process_list_elem->checkTimeLimitSoft())
+        if (!ExecutionSpeedLimits::handleOverflowMode(
+                OverflowMode::BREAK,
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
+                static_cast<double>(total_stopwatch.elapsedNanoseconds()) / 1000000000ULL,
+                limits.local_limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0))
             return false;
     }
 
