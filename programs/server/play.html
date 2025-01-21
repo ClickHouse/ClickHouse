@@ -28,9 +28,6 @@
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
     Also, it can provide visual indication that credentials are correct.
 
-    TODO:
-    - JSONCompactEachRowWithProgress
-
     Nice to have:
     - resizable columns
     - display totals
@@ -736,6 +733,8 @@ let incomplete_result = false;
 let is_explain_graph = false;
 let explain_graph = '';
 let column_is_number = {};
+let extremes = {};
+let header = {};
 
 const default_format = 'JSONStringsEachRowWithProgress';
 
@@ -1118,6 +1117,7 @@ function clear()
     document.getElementById('logo-container').style.display = 'block';
 
     extremes = {};
+    header = {};
     row_idx = 0;
     elapsed_ns = 0;
     incomplete_result = false;
@@ -1271,8 +1271,6 @@ function transposeTableIfNeeded()
     table.appendChild(new_tbody);
 }
 
-let extremes = {};
-
 function update(json, fragment) {
     if (json.progress) {
         updateProgress(json.progress);
@@ -1361,6 +1359,7 @@ function updateProgress(progress) {
 
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
+    header = meta;
 
     let thead = document.createElement('thead');
 
@@ -1400,7 +1399,7 @@ const max_cells = 100_000;
 
 let current_selected_cell = null;
 function appendRow(row, fragment) {
-    if (row_idx >= max_rows || (1 + row_idx) * Object.keys(row).length > max_cells) {
+    if (row_idx >= max_rows || (1 + row_idx) * Object.keys(header).length > max_cells) {
         incomplete_result = true;
         return false;
     }
@@ -1414,8 +1413,8 @@ function appendRow(row, fragment) {
     tr.appendChild(td);
 
     let col_idx = 0;
-    for (let [name, value] of Object.entries(row)) {
-        const td = renderCell(name, value);
+    for (const column of header) {
+        const td = renderCell(column.name, row[column.name]);
         ++col_idx;
 
         td.onclick = () => {
@@ -1437,7 +1436,8 @@ function appendRow(row, fragment) {
 
 function renderExtremes() {
     let col_idx = 0;
-    for (const name of Object.keys(extremes.min)) {
+    for (const column of header) {
+        const name = column.name;
         ++col_idx;
         if (column_is_number[name]
             && extremes.min[name] !== undefined && extremes.max[name] !== undefined
