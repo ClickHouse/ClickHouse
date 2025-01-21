@@ -2,11 +2,18 @@
 title : JSONCompactEachRow
 slug : /en/interfaces/formats/JSONCompactEachRow
 keywords : [JSONCompactEachRow]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-Differs from JSONEachRow only in that data rows are output in arrays, not in objects.
+Differs from [`JSONEachRow`](./JSONEachRow.md) only in that data rows are output as arrays, not as objects.
 
 ## Example Usage
 

@@ -369,12 +369,22 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     res.clear();
     res.reserve(dispatched_blocks.size());
 
+    /// Might be zero, which means unlimited
+    size_t remaining_rows_before_limit = table_join->maxJoinedBlockRows();
+
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
+        if (table_join->maxJoinedBlockRows() && remaining_rows_before_limit == 0)
+        {
+            /// Joining previous blocks produced enough rows already, skipping the rest of the blocks until the next call
+            remaining_blocks[i] = std::move(dispatched_blocks[i]);
+            continue;
+        }
         auto & hash_join = hash_joins[i];
-        auto & dispatched_block = dispatched_blocks[i];
-        if (dispatched_block && (i == 0 || dispatched_block.rows()))
-            hash_join->data->joinBlock(dispatched_block, remaining_blocks[i]);
+        auto & current_block = dispatched_blocks[i];
+        if (current_block && (i == 0 || current_block.rows()))
+            hash_join->data->joinBlock(current_block, remaining_blocks[i]);
+        remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
     }
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {

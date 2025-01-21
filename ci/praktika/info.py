@@ -1,3 +1,7 @@
+import json
+from typing import Optional
+
+
 class Info:
 
     def __init__(self):
@@ -8,6 +12,10 @@ class Info:
     @property
     def pr_body(self):
         return self.env.get().PR_BODY
+
+    @property
+    def pr_title(self):
+        return self.env.get().PR_TITLE
 
     @property
     def repo_name(self):
@@ -24,3 +32,15 @@ class Info:
     @property
     def pr_labels(self):
         return self.env.get().PR_LABELS
+
+    @staticmethod
+    def get_workflow_input_value(input_name) -> Optional[str]:
+        from praktika.settings import _Settings
+
+        try:
+            with open(_Settings.WORKFLOW_INPUTS_FILE, "r", encoding="utf8") as f:
+                input_obj = json.load(f)
+                return input_obj[input_name]
+        except Exception as e:
+            print(f"ERROR: Exception, while reading workflow input [{e}]")
+        return None
