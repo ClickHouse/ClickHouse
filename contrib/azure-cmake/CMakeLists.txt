@@ -34,7 +34,7 @@ if (CLICKHOUSE_CLOUD)
         "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/src/*.cpp"
         "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/src/cryptography/*.cpp"
     )
-    list(APPEND AZURE_SDK_UNIFIED_SRC
+    list(APPEND AZURE_SDK_INCLUDES
         "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-keys/inc/"
         "${AZURE_SDK_LIBRARY_DIR}/keyvault/azure-security-keyvault-shared/inc/"
     )
