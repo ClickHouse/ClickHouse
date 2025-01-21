@@ -720,6 +720,21 @@ function queryToColor(str) {
     return 50 + Math.abs(hash % 200);
 }
 
+function parseJSON(text) {
+    return JSON.parse(text, (key, value) => {
+        if (typeof value === 'number' && !Number.isSafeInteger(value)) return BigInt(value);
+        return value;
+    });
+}
+
+function serializeJSONAsClickHouse(obj) {
+    return JSON.stringify(obj, (key, value) => {
+        if (typeof value === 'bigint') return value.toString();
+        if (typeof value === 'string') return value.toString(); /// In single quotes
+        return value;
+    });
+}
+
 let controller = null;
 async function postImpl(posted_request_num, query)
 {
@@ -766,7 +781,7 @@ async function postImpl(posted_request_num, query)
             let has_exception = false;
             for (line of reply.split('\n')) {
                 if (line.startsWith(`{"exception":`)) {
-                    update(JSON.parse(line));
+                    update(parseJSON(line));
                     has_exception = true;
                     break;
                 }
@@ -798,7 +813,7 @@ async function postImpl(posted_request_num, query)
 
                 let cont = true;
                 for (line of lines.slice(0, -1)) {
-                    const data = JSON.parse(line);
+                    const data = parseJSON(line);
                     cont = update(data, fragment);
                     if (!cont) { break; }
                 };
@@ -1087,7 +1102,7 @@ function renderCell(name, value)
     if (is_null) {
         text = 'ᴺᵁᴸᴸ';
     } else if (typeof(value) === 'object') {
-        text = JSON.stringify(value);
+        text = serializeJSONAsClickHouse(value);
     } else {
         text = value;
 
@@ -1237,7 +1252,6 @@ function updateRaw(data) {
 }
 
 function updateProgressText() {
-    console.log(elapsed_ns);
     let progress_elem = document.getElementById('progress');
     let progress_text = '';
     if (row_idx) {
@@ -1371,7 +1385,7 @@ function renderExtremes() {
         ++col_idx;
         if (column_is_number[name]
             && extremes.min[name] !== undefined && extremes.max[name] !== undefined
-            && +extremes.max[name] > +extremes.min[name]) {
+            && Number(extremes.max[name]) > Number(extremes.min[name])) {
             let table = document.getElementById('data-table');
             for (let row of table.rows) {
                 let cell = row.cells[col_idx];
