@@ -1,0 +1,18 @@
+--- LEFT [0, 1, 0] ---
+0	Int32	Int32	Int32	Int32	Int32	Int32	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Int32	Int32	Int32
+--- LEFT [1, 0, 1] ---
+0	Int32	Int32	Int32	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Int32	Int32	Int32	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)
+--- LEFT [0, 1, 1] ---
+0	Int32	Int32	Int32	Int32	Int32	Int32	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)
+--- RIGHT [0, 1, 0] ---
+0	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Int32	Int32	Int32	Int32	Int32	Int32
+--- RIGHT [1, 0, 1] ---
+0	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Int32	Int32	Int32
+--- RIGHT [0, 1, 1] ---
+0	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Int32	Int32	Int32
+--- FULL [0, 1, 0] ---
+0	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Int32	Int32	Int32
+--- FULL [1, 0, 1] ---
+0	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)
+--- FULL [0, 1, 1] ---
+0	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)	Nullable(Int32)

@@ -627,14 +627,6 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
         || join_info.kind == JoinKind::Full;
     if (need_add_nullable && join_settings.join_use_nulls)
     {
-        if (residual_filter_condition)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "{} JOIN ON expression '{}' contains column from left and right table, which is not supported with `join_use_nulls`",
-                toString(join_info.kind), residual_filter_condition.column_name);
-        }
-
         auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
         if (join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Full)
             addToNullableActions(expression_actions.right_pre_join_actions, to_nullable_function);
