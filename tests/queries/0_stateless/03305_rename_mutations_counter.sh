@@ -16,7 +16,7 @@ function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
         res=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveMetadataMutations'"`
-        if [[ $res == $value_before ]]; then
+        if [[ $res == "$value_before" ]]; then
             break
         fi
         sleep 0.5
