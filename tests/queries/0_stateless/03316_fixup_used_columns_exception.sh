@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_exception;"
 
 create_status=$($CLICKHOUSE_CLIENT --query="
 CREATE TABLE test_exception(`id` UInt64)
-ENGINE = MergeTree
+ENGINE=MergeTree
 ORDER BY `All`
 " 2>&1) || true
 
