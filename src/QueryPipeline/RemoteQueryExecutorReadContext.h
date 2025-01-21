@@ -44,11 +44,11 @@ public:
 
     Packet getPacket();
 
-    UInt64 getPacketType();
+    UInt64 getPacketType() const;
 
-    bool hasReadPacketType() const { return has_read_packet_type; }
+    bool hasReadPacketType() const { return has_read_packet_part == PacketPart::Type; }
 
-    bool hasReadPacket() const { return has_read_packet; }
+    bool hasReadPacket() const { return has_read_packet_part == PacketPart::Body; }
 
     bool readPacketTypeSeparately() const { return read_packet_type_separately; }
 
@@ -72,11 +72,20 @@ private:
         void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
+    /// true if no data has been received on the latest attempt to read
     std::atomic_bool is_in_progress = false;
-    std::atomic_bool has_read_packet_type = false;
-    std::atomic_bool has_read_packet = false;
-    std::optional<Packet> packet;
-    std::optional<UInt64> packet_type;
+
+    enum class PacketPart : uint8_t
+    {
+        None = 0,
+        Type = 1,
+        Body = 2
+    };
+    /// depending on read_packet_type_separately, possible value transitions are
+    /// None -> Type -> Body -> None
+    /// None -> Body -> None
+    std::atomic<PacketPart> has_read_packet_part = PacketPart::None;
+    Packet packet;
 
     RemoteQueryExecutor & executor;
 

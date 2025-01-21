@@ -56,19 +56,16 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
 
     while (true)
     {
-        read_context.packet_type.reset();
-        read_context.has_read_packet_type = false;
-        read_context.packet.reset();
-        read_context.has_read_packet = false;
+        read_context.has_read_packet_part = PacketPart::None;
 
         if (read_context.read_packet_type_separately)
         {
-            read_context.packet_type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
-            read_context.has_read_packet_type = true;
+            read_context.packet.type = read_context.executor.getConnections().receivePacketTypeUnlocked(async_callback);
+            read_context.has_read_packet_part = PacketPart::Type;
             suspend_callback();
         }
         read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
-        read_context.has_read_packet = true;
+        read_context.has_read_packet_part = PacketPart::Body;
         suspend_callback();
     }
 }
@@ -173,22 +170,18 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
     }
 }
 
-
-UInt64 RemoteQueryExecutorReadContext::getPacketType()
+UInt64 RemoteQueryExecutorReadContext::getPacketType() const
 {
-    chassert(has_read_packet_type);
-    return packet_type.value();
+    chassert(hasReadPacketType());
+    return packet.type;
 }
 
 Packet RemoteQueryExecutorReadContext::getPacket()
 {
-    chassert(has_read_packet);
+    chassert(hasReadPacket());
 
-    Packet p{std::move(packet.value())};
-    has_read_packet = false;
-    has_read_packet_type = false;
-    packet.reset();
-    packet_type.reset();
+    Packet p{std::move(packet)};
+    has_read_packet_part = PacketPart::None;
     return p;
 }
 
