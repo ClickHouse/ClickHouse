@@ -893,15 +893,12 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
+
         auto it = current_mutations_by_version.find(mutation_version);
         if (it != current_mutations_by_version.end())
         {
-            if (std::optional<Int64> min_version = getMinPartDataVersion())
-            {
-                bool mutation_finished = *min_version > static_cast<Int64>(mutation_version);
-                if (!mutation_finished)
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
-            }
+            if (!it->second.is_done)
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
