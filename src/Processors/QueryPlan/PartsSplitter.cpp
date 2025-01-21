@@ -853,130 +853,6 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
     return filters;
 }
 
-#if 0
-RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
-{
-    IndexAccess index_access(ranges_in_data_parts);
-
-    std::vector<PartsRangesIterator> combined_ranges;
-
-    RangesInDataPartsBuilder result(ranges_in_data_parts);
-    bool earliest_part_found = false;
-
-    auto skip_and_return_all_part_ranges = [&]()
-    {
-        RangesInDataParts all_part_ranges(std::move(ranges_in_data_parts));
-        for (auto & all_part_range : all_part_ranges)
-        {
-            const auto & index_granularity = all_part_range.data_part->index_granularity;
-            all_part_range.ranges = MarkRanges{{MarkRange{0, index_granularity->getMarksCountWithoutFinal()}}};
-        }
-        return all_part_ranges;
-    };
-
-    if (cannot_sort_primary_key) /// just expand to all parts + ranges
-    {
-        return skip_and_return_all_part_ranges();
-    }
-
-    size_t rejected_ranges_count = 0;
-    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
-    {
-        const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        std::vector<bool> is_selected_range(index_granularity->getMarksCountWithoutFinal(), false);
-        for (const auto & range : ranges_in_data_parts[part_index].ranges)
-        {
-            combined_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart, true});
-            const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
-            if (!value_is_defined_at_end_mark)
-            {
-                return skip_and_return_all_part_ranges();
-            }
-
-            combined_ranges.push_back(
-                {index_access.getValue(part_index, range.end), range, part_index, PartsRangesIterator::EventType::RangeEnd, true});
-            for (auto i = range.begin; i < range.end;i++)
-               is_selected_range[i] = true;
-
-            earliest_part_found = true;
-        }
-        if (!earliest_part_found)
-            continue;
-        for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
-        {
-            if (is_selected_range[range_begin])
-                continue;
-            MarkRange rejected_range(range_begin, range_begin + 1);
-            combined_ranges.push_back(
-                {index_access.getValue(part_index, rejected_range.begin), rejected_range, part_index, PartsRangesIterator::EventType::RangeStart, false});
-
-            const bool value_is_defined_at_end_mark = rejected_range.end < index_granularity->getMarksCount();
-            if (!value_is_defined_at_end_mark)
-            {
-                return skip_and_return_all_part_ranges();
-            }
-
-            combined_ranges.push_back(
-                {index_access.getValue(part_index, rejected_range.end), rejected_range, part_index, PartsRangesIterator::EventType::RangeEnd, false});
-            rejected_ranges_count++;
-        }
-    }
-    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : processed {} parts, combined ranges {}, rejected ranges {}", ranges_in_data_parts.size(), combined_ranges.size() / 2, rejected_ranges_count);
-
-    ::sort(combined_ranges.begin(), combined_ranges.end());
-
-    size_t active_selected_ranges = 0;
-    std::unordered_set<PartRangeIndex, PartRangeIndexHash> in_doubt_ranges;
-    for (auto ranges_iter : combined_ranges)
-    {
-        if (ranges_iter.event == PartsRangesIterator::EventType::RangeStart)
-        {
-            if (ranges_iter.selected)
-            {
-                active_selected_ranges++;
-                for (auto in_doubt_iter : in_doubt_ranges)
-                {
-                    result.addRange(in_doubt_iter.part_index, in_doubt_iter.range);
-                }
-                in_doubt_ranges.clear();
-
-                result.addRange(ranges_iter.part_index, ranges_iter.range);
-            }
-            else if (active_selected_ranges)
-            {
-                result.addRange(ranges_iter.part_index, ranges_iter.range);
-            }
-            else
-            {
-                in_doubt_ranges.insert(PartRangeIndex(ranges_iter));
-            }
-        }
-        else /// RangeEnd event
-        {
-            if (ranges_iter.selected)
-            {
-                active_selected_ranges--;
-            }
-            else
-            {
-                in_doubt_ranges.erase(PartRangeIndex(ranges_iter));
-            }
-        }
-    }
-
-    auto result_final_ranges = result.getCurrentRangesInDataParts();
-    std::stable_sort(
-        result_final_ranges.begin(),
-        result_final_ranges.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
-    for (auto & result_final_range : result_final_ranges)
-    {
-        std::sort(result_final_range.ranges.begin(), result_final_range.ranges.end());
-    }
-    return result_final_ranges;
-}
-#else
 RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
@@ -1023,6 +899,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         }
         if (!earliest_part_found)
             continue;
+
         for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
         {
             const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
@@ -1099,7 +976,6 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     }
     return result_final_ranges;
 }
-#endif
 }
 
 namespace DB
