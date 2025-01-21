@@ -46,14 +46,9 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
 
 bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits)
 {
-    for (const auto & limits : storage_limits)
+    if (process_list_elem)
     {
-        if (!ExecutionSpeedLimits::handleOverflowMode(
-                OverflowMode::BREAK,
-                ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
-                static_cast<double>(total_stopwatch.elapsedNanoseconds()) / 1000000000ULL,
-                limits.local_limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0))
+        if (!process_list_elem->checkTimeLimit()) 
             return false;
     }
 
