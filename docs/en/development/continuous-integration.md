@@ -105,7 +105,7 @@ cd ./utils/check-style
 
 ## Fast Test
 
-Normally this is the first check that is ran for a PR.
+Normally this is the first check that is run for a PR.
 It builds ClickHouse and runs most of [stateless functional tests](tests.md#functional-tests), omitting some.
 If it fails, further checks are not started until it is fixed.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](tests.md#functional-test-locally).
