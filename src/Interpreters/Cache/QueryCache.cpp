@@ -396,10 +396,11 @@ void QueryCache::Writer::finalizeWrite()
     if (skip_insert)
         return;
 
+    if (was_finalized)
+        return;
+        
     std::lock_guard lock(mutex);
-
-    chassert(!was_finalized);
-
+    
     /// Check some reasons why the entry must not be cached:
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)

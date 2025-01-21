@@ -389,6 +389,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     // creator_fn creates and returns a InterpreterPtr with the supplied arguments
     auto creator_fn = interpreters.at(interpreter_name);
 
+    LOG_TRACE(getLogger("QueryCache"),
+            "Use interpreter: {}",
+            interpreter_name);
+
     return creator_fn(arguments);
 }
 }

@@ -33,4 +33,12 @@ private:
     SelectQueryInfo query_info;
 };
 
+class ReadFromQueryCacheStep : public ReadFromPreparedSource
+{
+public:
+    explicit ReadFromQueryCacheStep(Pipe pipe_);
+
+    String getName() const override { return "ReadFromQueryCacheStep"; }
+};
+
 }

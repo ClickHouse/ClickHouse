@@ -22,6 +22,14 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 /// Does AST contain system tables like "system.processes"?
 bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
+enum class QueryCacheUsage : uint8_t
+    {
+        Unknown,  /// we don't know what happened
+        None,     /// query result neither written nor read into/from query cache
+        Write,    /// query result written into query cache
+        Read,     /// query result read from query cache
+    };
+
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -32,14 +40,6 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage : uint8_t
-    {
-        Unknown,  /// we don't know what happened
-        None,     /// query result neither written nor read into/from query cache
-        Write,    /// query result written into query cache
-        Read,     /// query result read from query cache
-    };
-
     /// Represents a query result in the cache.
     struct Key
     {
@@ -172,7 +172,7 @@ public:
         const size_t max_block_size;
         Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<Entry>();
         std::atomic<bool> skip_insert = false;
-        bool was_finalized = false;
+        std::atomic<bool> was_finalized = false;
         LoggerPtr logger = getLogger("QueryCache");
 
         Writer(Cache & cache_, const Key & key_,

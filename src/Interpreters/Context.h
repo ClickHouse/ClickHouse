@@ -103,6 +103,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryCache;
+enum class QueryCacheUsage : uint8_t;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -297,6 +298,8 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    bool can_use_query_cache = false; 
+    QueryCacheUsage query_cache_usage;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1118,6 +1121,10 @@ public:
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
     void clearQueryCache(const std::optional<String> & tag) const;
+    bool getCanUseQueryCache() const; /// info about Query Cache availability for caching subqueries
+    void setCanUseQueryCache(bool can_use_query_cache_); 
+    QueryCacheUsage getQueryCacheUsage() const; /// info about Query Cache usage for this query
+    void setQueryCacheUsage(QueryCacheUsage query_cache_usage_); 
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
