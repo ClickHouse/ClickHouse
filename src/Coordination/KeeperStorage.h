@@ -556,20 +556,6 @@ public:
 
         std::unordered_set<int64_t> closed_sessions;
 
-        struct PathCmp
-        {
-            auto operator()(const std::string_view a,
-                            const std::string_view b) const
-            {
-                return a < b;
-                //size_t level_a = std::count(a.begin(), a.end(), '/');
-                //size_t level_b = std::count(b.begin(), b.end(), '/');
-                //return level_a < level_b || (level_a == level_b && a < b);
-            }
-
-            using is_transparent = void; // required to make find() work with different type than key_type
-        };
-
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
