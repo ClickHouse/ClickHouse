@@ -14,7 +14,6 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>

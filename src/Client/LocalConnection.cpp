@@ -1,7 +1,6 @@
 #include "LocalConnection.h"
 #include <memory>
 #include <Client/ClientBase.h>
-#include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
@@ -47,25 +46,15 @@ namespace ErrorCodes
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(context_)
-    , session(std::make_unique<Session>(getContext(), ClientInfo::Interface::LOCAL))
+    , session(getContext(), ClientInfo::Interface::LOCAL)
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
     , in(in_)
 {
     /// Authenticate and create a context to execute queries.
-    session->authenticate("default", "", Poco::Net::SocketAddress{});
-    session->makeSessionContext();
-}
-
-LocalConnection::LocalConnection(
-    std::unique_ptr<Session> && session_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
-    : WithContext(session_->sessionContext())
-    , session(std::move(session_))
-    , send_progress(send_progress_)
-    , send_profile_events(send_profile_events_)
-    , server_display_name(server_display_name_)
-{
+    session.authenticate("default", "", Poco::Net::SocketAddress{});
+    session.makeSessionContext();
 }
 
 LocalConnection::~LocalConnection()
@@ -105,7 +94,8 @@ void LocalConnection::sendProfileEvents()
     Block profile_block;
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
-    state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
+    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
+    state->block.emplace(std::move(profile_block));
 }
 
 void LocalConnection::sendQuery(
@@ -117,7 +107,6 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
-    const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     /// Last query may not have been finished or cancelled due to exception on client side.
@@ -126,9 +115,9 @@ void LocalConnection::sendQuery(
 
     /// Suggestion comes without client_info.
     if (client_info)
-        query_context = session->makeQueryContext(*client_info);
+        query_context = session.makeQueryContext(*client_info);
     else
-        query_context = session->makeQueryContext();
+        query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
 
     if (send_progress)
@@ -180,7 +169,6 @@ void LocalConnection::sendQuery(
 
         const auto & settings = context->getSettingsRef();
         const char * begin = state->query.data();
-
         const char * end = begin + state->query.size();
         const Dialect & dialect = settings[Setting::dialect];
 
@@ -338,11 +326,6 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (send_profile_events)
         sendProfileEvents();
-}
-
-bool LocalConnection::isSendDataNeeded() const
-{
-    return !state || state->input_pipeline == nullptr;
 }
 
 void LocalConnection::sendCancel()
@@ -685,16 +668,6 @@ ServerConnectionPtr LocalConnection::createConnection(
     const String & server_display_name)
 {
     return std::make_unique<LocalConnection>(current_context, in, send_progress, send_profile_events, server_display_name);
-}
-
-ServerConnectionPtr LocalConnection::createConnection(
-    const ConnectionParameters &,
-    std::unique_ptr<Session> && session,
-    bool send_progress,
-    bool send_profile_events,
-    const String & server_display_name)
-{
-    return std::make_unique<LocalConnection>(std::move(session), send_progress, send_profile_events, server_display_name);
 }
 
 

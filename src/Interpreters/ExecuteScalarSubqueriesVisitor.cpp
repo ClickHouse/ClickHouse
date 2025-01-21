@@ -5,11 +5,9 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
@@ -21,8 +19,9 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FieldVisitorToString.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace ProfileEvents
 {
@@ -259,8 +258,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
-
-            logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
         }
 
         block = materializeBlock(block);

@@ -1,9 +1,7 @@
-#include <cstddef>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
-#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
 
@@ -50,6 +48,7 @@ void MutatePlainMergeTreeTask::prepare()
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -111,9 +110,8 @@ bool MutatePlainMergeTreeTask::executeStep()
                 transaction.renameParts();
                 transaction.commit();
 
-                storage.updateMutationEntriesErrors(future_part, true, "", "");
+                storage.updateMutationEntriesErrors(future_part, true, "");
                 mutate_task->updateProfileEvents();
-
                 write_part_log({});
 
                 state = State::NEED_FINISH;
@@ -125,12 +123,11 @@ bool MutatePlainMergeTreeTask::executeStep()
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
-                String error_code_name(ErrorCodes::getName(getCurrentExceptionCode()));
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
                 mutate_task->updateProfileEvents();
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
-                throw;
+                return false;
             }
         }
         case State::NEED_FINISH:
@@ -147,13 +144,6 @@ bool MutatePlainMergeTreeTask::executeStep()
 
     return false;
 }
-
-void MutatePlainMergeTreeTask::cancel() noexcept
-{
-    if (mutate_task)
-        mutate_task->cancel();
-}
-
 
 ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {

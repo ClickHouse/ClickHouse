@@ -1,4 +1,5 @@
 #include <Server/KeeperTCPHandler.h>
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 
 #if USE_NURAFT
 
@@ -18,8 +19,6 @@
 #    include <Common/NetException.h>
 #    include <Common/PipeFDs.h>
 #    include <Common/Stopwatch.h>
-#    include <Common/ZooKeeper/ZooKeeperCommon.h>
-#    include <Common/ZooKeeper/ZooKeeperConstants.h>
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
@@ -64,8 +63,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int BAD_ARGUMENTS;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 struct PollResult
@@ -328,21 +325,9 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
 
+    /// TODO Stop ignoring this value
     Coordination::read(previous_session_id, *in);
     Coordination::read(passwd, *in);
-
-
-    auto auth_data = keeper_dispatcher->getAuthenticationData();
-    if (auth_data)
-    {
-        String password{std::begin(passwd), std::end(passwd)};
-        /// It was padded to Coordination::PASSWORD_LENGTH with '\0'
-        boost::trim_right_if(password, [](char c) { return c == '\0'; });
-        AuthenticationData client_auth_data(auth_data->getType());
-        client_auth_data.setPassword(password, true);
-        if (client_auth_data != *auth_data)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
-    }
 
     int8_t readonly;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
@@ -549,14 +534,12 @@ void KeeperTCPHandler::runImpl()
                 break;
             }
         }
-        finalizeWriteBuffer();
     }
     catch (const Exception & ex)
     {
         log_long_operation("Unknown operation");
         LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
-        cancelWriteBuffer();
         keeper_dispatcher->finishSession(session_id);
     }
 }
@@ -611,21 +594,6 @@ void KeeperTCPHandler::flushWriteBuffer()
     out->next();
 }
 
-void KeeperTCPHandler::finalizeWriteBuffer()
-{
-    if (compressed_out)
-        compressed_out->finalize();
-    out->finalize();
-}
-
-void KeeperTCPHandler::cancelWriteBuffer() noexcept
-{
-    if (compressed_out)
-        compressed_out->cancel();
-    chassert(out);
-    out->cancel();
-}
-
 ReadBuffer & KeeperTCPHandler::getReadBuffer()
 {
     if (compressed_in)
@@ -653,23 +621,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-
-    auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
-    {
-        if (!keeper_dispatcher->getKeeperContext()->isOperationSupported(current_request.getOpNum()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}", current_request.getOpNum());
-    };
-
-    if (auto * multi_request = dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get()))
-    {
-        multi_request->readImpl(read_buffer, request_validator);
-    }
-    else
-    {
-        request->readImpl(read_buffer);
-        request_validator(*request);
-    }
-
+    request->readImpl(read_buffer);
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
@@ -787,7 +739,6 @@ void KeeperTCPHandler::resetStats()
 
 KeeperTCPHandler::~KeeperTCPHandler()
 {
-    cancelWriteBuffer();
     KeeperTCPHandler::unregisterConnection(this);
 }
 

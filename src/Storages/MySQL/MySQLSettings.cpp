@@ -138,9 +138,4 @@ void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collec
             impl->set(setting_name, named_collection.get<String>(setting_name));
     }
 }
-
-bool MySQLSettings::hasBuiltin(std::string_view name)
-{
-    return MySQLSettingsImpl::hasBuiltin(name);
-}
 }

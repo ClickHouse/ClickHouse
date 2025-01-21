@@ -6,7 +6,7 @@
 namespace DB
 {
 
-static UInt32 getSupportedArchs()
+UInt32 getSupportedArchs()
 {
     UInt32 result = 0;
     if (CPU::CPUFlagsCache::have_SSE42)
@@ -23,8 +23,6 @@ static UInt32 getSupportedArchs()
         result |= static_cast<UInt32>(TargetArch::AVX512VBMI);
     if (CPU::CPUFlagsCache::have_AVX512VBMI2)
         result |= static_cast<UInt32>(TargetArch::AVX512VBMI2);
-    if (CPU::CPUFlagsCache::have_AVX512BF16)
-        result |= static_cast<UInt32>(TargetArch::AVX512BF16);
     if (CPU::CPUFlagsCache::have_AMXBF16)
         result |= static_cast<UInt32>(TargetArch::AMXBF16);
     if (CPU::CPUFlagsCache::have_AMXTILE)
@@ -52,7 +50,6 @@ String toString(TargetArch arch)
         case TargetArch::AVX512BW:    return "avx512bw";
         case TargetArch::AVX512VBMI:  return "avx512vbmi";
         case TargetArch::AVX512VBMI2: return "avx512vbmi2";
-        case TargetArch::AVX512BF16:  return "avx512bf16";
         case TargetArch::AMXBF16: return "amxbf16";
         case TargetArch::AMXTILE: return "amxtile";
         case TargetArch::AMXINT8: return "amxint8";

@@ -1,4 +1,3 @@
-set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 print '-- ipv4_is_private(\'127.0.0.1\')';
 print ipv4_is_private('127.0.0.1');

@@ -58,11 +58,11 @@ class Runners(metaclass=WithIter):
     """
 
     BUILDER = "builder"
-    BUILDER_AARCH64 = "builder-aarch64"
+    BUILDER_ARM = "builder-aarch64"
     STYLE_CHECKER = "style-checker"
-    STYLE_CHECKER_AARCH64 = "style-checker-aarch64"
+    STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
-    FUNC_TESTER_AARCH64 = "func-tester-aarch64"
+    FUNC_TESTER_ARM = "func-tester-aarch64"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -78,7 +78,7 @@ class Tags(metaclass=WithIter):
     # to upload all binaries from build jobs
     UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_SYNC = "ci_set_sync"
-    CI_SET_AARCH64 = "ci_set_aarch64"
+    CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
 
@@ -92,7 +92,6 @@ class WorkFlowNames(metaclass=WithIter):
 
     JEPSEN = "JepsenWorkflow"
     CreateRelease = "CreateRelease"
-    NIGHTLY = "NightlyBuilds"
 
 
 class BuildNames(metaclass=WithIter):
@@ -135,22 +134,18 @@ class JobNames(metaclass=WithIter):
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
     INSTALL_TEST_AMD = "Install packages (release)"
-    INSTALL_TEST_AARCH64 = "Install packages (aarch64)"
+    INSTALL_TEST_ARM = "Install packages (aarch64)"
 
     STATELESS_TEST_DEBUG = "Stateless tests (debug)"
     STATELESS_TEST_RELEASE = "Stateless tests (release)"
     STATELESS_TEST_RELEASE_COVERAGE = "Stateless tests (coverage)"
     STATELESS_TEST_AARCH64 = "Stateless tests (aarch64)"
     STATELESS_TEST_ASAN = "Stateless tests (asan)"
-    STATELESS_TEST_AARCH64_ASAN = "Stateless tests (aarch64, asan)"
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
-    )
-    STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
-        "Stateless tests (release, ParallelReplicas, s3 storage)"
     )
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
@@ -162,7 +157,6 @@ class JobNames(metaclass=WithIter):
     STATEFUL_TEST_RELEASE_COVERAGE = "Stateful tests (coverage)"
     STATEFUL_TEST_AARCH64 = "Stateful tests (aarch64)"
     STATEFUL_TEST_ASAN = "Stateful tests (asan)"
-    STATEFUL_TEST_AARCH64_ASAN = "Stateful tests (aarch64, asan)"
     STATEFUL_TEST_TSAN = "Stateful tests (tsan)"
     STATEFUL_TEST_MSAN = "Stateful tests (msan)"
     STATEFUL_TEST_UBSAN = "Stateful tests (ubsan)"
@@ -185,7 +179,7 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
-    INTEGRATION_TEST_AARCH64 = "Integration tests (aarch64)"
+    INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
@@ -205,17 +199,11 @@ class JobNames(metaclass=WithIter):
     AST_FUZZER_TEST_TSAN = "AST fuzzer (tsan)"
     AST_FUZZER_TEST_UBSAN = "AST fuzzer (ubsan)"
 
-    BUZZHOUSE_TEST_DEBUG = "BuzzHouse (debug)"
-    BUZZHOUSE_TEST_ASAN = "BuzzHouse (asan)"
-    BUZZHOUSE_TEST_MSAN = "BuzzHouse (msan)"
-    BUZZHOUSE_TEST_TSAN = "BuzzHouse (tsan)"
-    BUZZHOUSE_TEST_UBSAN = "BuzzHouse (ubsan)"
-
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
 
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
-    PERFORMANCE_TEST_AARCH64 = "Performance Comparison (aarch64)"
+    PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
     # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
@@ -224,10 +212,10 @@ class JobNames(metaclass=WithIter):
     SQLTEST = "SQLTest"
 
     COMPATIBILITY_TEST = "Compatibility check (release)"
-    COMPATIBILITY_TEST_AARCH64 = "Compatibility check (aarch64)"
+    COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
     CLICKBENCH_TEST = "ClickBench (release)"
-    CLICKBENCH_TEST_AARCH64 = "ClickBench (aarch64)"
+    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -253,7 +241,7 @@ class StatusNames(metaclass=WithIter):
     # mergeable status
     MERGEABLE = "Mergeable Check"
     # status of a sync pr
-    SYNC = "CH Inc sync"
+    SYNC = "Cloud fork sync (only for ClickHouse Inc. employees)"
     # PR formatting check status
     PR_CHECK = "PR Check"
 
@@ -397,7 +385,7 @@ class CommonJobConfigs:
                 "./tests/ci/upload_result_helper.py",
             ],
         ),
-        runner_type=Runners.STYLE_CHECKER_AARCH64,
+        runner_type=Runners.STYLE_CHECKER_ARM,
         disable_await=True,
     )
     COMPATIBILITY_TEST = JobConfig(
@@ -501,23 +489,11 @@ class CommonJobConfigs:
         job_name_keyword="ast",
         digest=DigestConfig(
             include_paths=[
-                "./tests/ci/ci_fuzzer_check.py",
+                "./tests/ci/ast_fuzzer_check.py",
             ],
             docker=["clickhouse/fuzzer"],
         ),
-        run_command="ci_fuzzer_check.py",
-        run_always=True,
-        runner_type=Runners.FUZZER_UNIT_TESTER,
-    )
-    BUZZHOUSE_TEST = JobConfig(
-        job_name_keyword="buzzhouse",
-        digest=DigestConfig(
-            include_paths=[
-                "./tests/ci/ci_fuzzer_check.py",
-            ],
-            docker=["clickhouse/fuzzer"],
-        ),
-        run_command="ci_fuzzer_check.py",
+        run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
@@ -592,7 +568,6 @@ class CommonJobConfigs:
                 "tests/ci/docker_server.py",
                 "tests/ci/docker_images_helper.py",
                 "./docker/server",
-                "./docker/keeper",
             ]
         ),
         runner_type=Runners.STYLE_CHECKER,
@@ -633,7 +608,6 @@ class CommonJobConfigs:
                 "./docker/packager/packager",
                 "./rust",
                 "./tests/ci/version_helper.py",
-                "./tests/ci/build_check.py",
                 # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
                 # when there are changes in performance test scripts.
                 # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
@@ -658,8 +632,6 @@ REQUIRED_CHECKS = [
     JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
     JobNames.STATELESS_TEST_ASAN,
-    JobNames.STATELESS_TEST_AARCH64_ASAN,
-    JobNames.STATEFUL_TEST_AARCH64_ASAN,
     JobNames.STATELESS_TEST_FLAKY_ASAN,
     JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,
@@ -669,11 +641,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-    JobNames.INTEGRATION_TEST_FLAKY,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-    JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
-    JobNames.INSTALL_TEST_AMD,
-    JobNames.INSTALL_TEST_AARCH64,
 ]
 
 # Jobs that run in Merge Queue if it's enabled

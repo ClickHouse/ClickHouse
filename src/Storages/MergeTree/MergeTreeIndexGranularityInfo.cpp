@@ -69,7 +69,7 @@ MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Valu
 
 bool MarkType::isMarkFileExtension(std::string_view extension)
 {
-    return extension.contains("mrk");
+    return extension.find("mrk") != std::string_view::npos;
 }
 
 std::string MarkType::getFileExtension() const
@@ -106,14 +106,6 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
             if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
                 return MarkType(ext);
     return {};
-}
-
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_)
-    : mark_type(mark_type_)
-    , fixed_index_granularity(index_granularity_)
-    , index_granularity_bytes(index_granularity_bytes_)
-{
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)

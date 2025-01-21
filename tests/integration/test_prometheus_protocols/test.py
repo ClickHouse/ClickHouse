@@ -20,7 +20,7 @@ node = cluster.add_instance(
 
 def execute_query_on_prometheus_writer(query, timestamp):
     return execute_query_impl(
-        cluster.prometheus_writer_ip,
+        cluster.get_instance_ip(cluster.prometheus_writer_host),
         cluster.prometheus_writer_port,
         "/api/v1/query",
         query,
@@ -30,7 +30,7 @@ def execute_query_on_prometheus_writer(query, timestamp):
 
 def execute_query_on_prometheus_reader(query, timestamp):
     return execute_query_impl(
-        cluster.prometheus_reader_ip,
+        cluster.get_instance_ip(cluster.prometheus_reader_host),
         cluster.prometheus_reader_port,
         "/api/v1/query",
         query,
@@ -177,28 +177,3 @@ def test_external_tables():
         "DATA mydata TAGS mytags METRICS mymetrics"
     )
     compare_queries()
-
-
-def test_read_auth():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    def get(path):
-        headers = {
-            "Content-Type": "application/x-protobuf",
-            "Content-Encoding": "snappy",
-        }
-        return requests.request(
-            url=f"http://{node.ip_address}:{cluster.prometheus_remote_read_handler_port}{path}",
-            method="GET",
-            headers=headers,
-        )
-
-    auth_ok = get("/read_auth_ok")
-    # FIXME: prometheus read handler requires proper payload with snappy
-    # compression, but it will first try to authenticate and only after try to
-    # interpret the payload, so those two lines below is a workaround to ensure
-    # that the authentication works
-    assert auth_ok.status_code == 500
-    assert "DB::Exception: snappy uncomress failed" in auth_ok.text
-
-    assert get("/read_auth_fail").status_code == 403

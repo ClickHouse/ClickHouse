@@ -40,13 +40,6 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
-DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
-
-DOCS_FILES = DOCS_ONLY_FILES + [
-    "Settings.cpp",
-    "FormatFactorySettings.h",
-    "tests/ci/docs_check.py",
-]
 RETRY_SLEEP = 0
 
 
@@ -424,8 +417,11 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
-                docs_path in f for docs_path in DOCS_FILES
+            if (
+                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
+                or "docker/docs" in f
+                or "Settings.cpp" in f
+                or "FormatFactorySettings.h" in f
             ):
                 return True
         return False
@@ -433,6 +429,7 @@ class PRInfo:
     def has_changes_in_documentation_only(self) -> bool:
         """
         checks if changes are docs related without other changes
+        FIXME: avoid hardcoding filenames here
         """
         if not self.changed_files_requested:
             self.fetch_changed_files()
@@ -446,7 +443,10 @@ class PRInfo:
             path_in_docs = f.startswith("docs/")
             if not (
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or any(docs_path in f for docs_path in DOCS_ONLY_FILES)
+                or "docker/docs" in f
+                or "docs_check.py" in f
+                or "aspell-dict.txt" in f
+                or ext == ".md"
             ):
                 return False
         return True

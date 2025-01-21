@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 /// Embedded timezones.
-std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
+std::string_view getTimeZone(const char * name);
 
 
 namespace
@@ -290,16 +290,4 @@ namespace cctz_extension
     }
 
     ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
-}
-
-DateLUTImpl::Values DateLUTImpl::lutIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const
-{
-    Int16 year = 1970 + months / 12;
-    UInt8 month = months % 12 + 1;
-    return lut[makeLUTIndex(year, month, 1)];
-}
-
-DateLUTImpl::Values DateLUTImpl::lutIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const
-{
-    return lut[makeLUTIndex(years + 1970, 1, 1)];
 }

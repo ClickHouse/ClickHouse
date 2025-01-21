@@ -9,4 +9,4 @@
   </merge_tree>
 
   <include from_zk="/min_bytes_for_wide_part" merge="true"/>
-</clickhouse>
+ </clickhouse>

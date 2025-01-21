@@ -69,15 +69,19 @@ namespace
             query->authentication_methods.push_back(authentication_method.toAST());
         }
 
+        if (user.valid_until)
+        {
+            WriteBufferFromOwnString out;
+            writeDateTimeText(user.valid_until, out);
+            query->valid_until = std::make_shared<ASTLiteral>(out.str());
+        }
+
         if (!user.settings.empty())
         {
-            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query_settings = user.settings.toAST();
+                query->settings = user.settings.toAST();
             else
-                query_settings = user.settings.toASTWithNames(*access_control);
-            if (!query_settings->empty())
-                query->settings = query_settings;
+                query->settings = user.settings.toASTWithNames(*access_control);
         }
 
         if (user.grantees != RolesOrUsersSet::AllTag{})
@@ -108,13 +112,10 @@ namespace
 
         if (!role.settings.empty())
         {
-            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query_settings = role.settings.toAST();
+                query->settings = role.settings.toAST();
             else
-                query_settings = role.settings.toASTWithNames(*access_control);
-            if (!query_settings->empty())
-                query->settings = query_settings;
+                query->settings = role.settings.toASTWithNames(*access_control);
         }
 
         return query;
@@ -129,16 +130,12 @@ namespace
 
         if (!profile.elements.empty())
         {
-            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query_settings = profile.elements.toAST();
+                query->settings = profile.elements.toAST();
             else
-                query_settings = profile.elements.toASTWithNames(*access_control);
-            if (!query_settings->empty())
-            {
-                query_settings->setUseInheritKeyword(true);
-                query->settings = query_settings;
-            }
+                query->settings = profile.elements.toASTWithNames(*access_control);
+            if (query->settings)
+                query->settings->setUseInheritKeyword(true);
         }
 
         if (!profile.to_roles.empty())
