@@ -354,6 +354,22 @@
             border: 1px solid var(--border-color);
         }
 
+        .type-hint
+        {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: -1.25em;
+            font-size: 75%;
+            font-weight: normal;
+            color: var(--misc-text-color);
+        }
+
+        th:hover .type-hint
+        {
+            display: inline-block;
+        }
+
         /* The row under mouse pointer is highlight for better legibility. */
         tr:hover
         {
@@ -1292,6 +1308,10 @@ function appendHeader(meta) {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
         th.appendChild(name);
+        let type_hint = document.createElement('span');
+        type_hint.className = 'type-hint';
+        type_hint.appendChild(document.createTextNode(elem.type));
+        th.appendChild(type_hint);
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
