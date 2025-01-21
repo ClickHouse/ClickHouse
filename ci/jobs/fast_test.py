@@ -47,11 +47,13 @@ def clone_submodules():
         "contrib/c-ares",
         "contrib/morton-nd",
         "contrib/xxHash",
+        "contrib/expected",
         "contrib/simdjson",
         "contrib/liburing",
         "contrib/libfiu",
         "contrib/incbin",
         "contrib/yaml-cpp",
+        "contrib/corrosion",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)

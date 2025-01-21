@@ -22,6 +22,8 @@ workflow = Workflow.Config(
         *Jobs.clickbench_jobs,
         Jobs.docker_job,
         Jobs.sqltest_job,
+        Jobs.sqlancer_job,
+        *Jobs.install_check_job,
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,

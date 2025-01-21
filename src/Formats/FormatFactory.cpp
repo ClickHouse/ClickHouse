@@ -50,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
 }
 
@@ -202,6 +203,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
+    format_settings.parquet.output_compression_level = settings[Setting::output_format_compression_level];
     format_settings.parquet.output_compliant_nested_types = settings[Setting::output_format_parquet_compliant_nested_types];
     format_settings.parquet.use_custom_encoder = settings[Setting::output_format_parquet_use_custom_encoder];
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
