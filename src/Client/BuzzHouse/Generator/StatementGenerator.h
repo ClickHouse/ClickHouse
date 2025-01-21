@@ -280,7 +280,7 @@ private:
     void generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
     void generateAlterTable(RandomGenerator & rg, AlterTable * at);
-    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, String & ret, SetValue * set);
+    void setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set);
     void generateSettingValues(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SettingValues * vals);
     void generateSettingValues(
         RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, size_t nvalues, SettingValues * vals);

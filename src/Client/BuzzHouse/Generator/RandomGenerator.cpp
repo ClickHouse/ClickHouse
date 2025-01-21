@@ -1,5 +1,7 @@
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
+#include <fmt/format.h>
+
 namespace BuzzHouse
 {
 
@@ -74,49 +76,37 @@ bool RandomGenerator::nextBool()
 }
 
 //range [1970-01-01, 2149-06-06]
-void RandomGenerator::nextDate(String & ret)
+String RandomGenerator::nextDate()
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
 
-    ret += std::to_string(1970 + date_years(generator));
-    ret += "-";
-    if (month < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(month);
-    ret += "-";
-    if (day < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(day);
+    return fmt::format(
+        "{}-{}{}-{}{}",
+        std::to_string(1970 + date_years(generator)),
+        month < 10 ? "0" : "",
+        std::to_string(month),
+        day < 10 ? "0" : "",
+        std::to_string(day));
 }
 
 //range [1900-01-01, 2299-12-31]
-void RandomGenerator::nextDate32(String & ret)
+String RandomGenerator::nextDate32()
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
 
-    ret += std::to_string(1900 + datetime64_years(generator));
-    ret += "-";
-    if (month < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(month);
-    ret += "-";
-    if (day < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(day);
+    return fmt::format(
+        "{}-{}{}-{}{}",
+        std::to_string(1900 + datetime64_years(generator)),
+        month < 10 ? "0" : "",
+        std::to_string(month),
+        day < 10 ? "0" : "",
+        std::to_string(day));
 }
 
 //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-void RandomGenerator::nextDateTime(String & ret)
+String RandomGenerator::nextDateTime()
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -124,41 +114,23 @@ void RandomGenerator::nextDateTime(String & ret)
     const uint32_t minute = minutes(generator);
     const uint32_t second = minutes(generator);
 
-    ret += std::to_string(1970 + datetime_years(generator));
-    ret += "-";
-    if (month < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(month);
-    ret += "-";
-    if (day < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(day);
-    ret += " ";
-    if (hour < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(hour);
-    ret += ":";
-    if (minute < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(minute);
-    ret += ":";
-    if (second < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(second);
+    return fmt::format(
+        "{}-{}{}-{}{} {}{}:{}{}:{}{}",
+        std::to_string(1970 + datetime_years(generator)),
+        month < 10 ? "0" : "",
+        std::to_string(month),
+        day < 10 ? "0" : "",
+        std::to_string(day),
+        hour < 10 ? "0" : "",
+        std::to_string(hour),
+        minute < 10 ? "0" : "",
+        std::to_string(minute),
+        second < 10 ? "0" : "",
+        std::to_string(second));
 }
 
 //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-void RandomGenerator::nextDateTime64(String & ret)
+String RandomGenerator::nextDateTime64()
 {
     const uint32_t month = months(generator);
     const uint32_t day = days[month - 1](generator);
@@ -166,37 +138,19 @@ void RandomGenerator::nextDateTime64(String & ret)
     const uint32_t minute = minutes(generator);
     const uint32_t second = minutes(generator);
 
-    ret += std::to_string(1900 + datetime64_years(generator));
-    ret += "-";
-    if (month < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(month);
-    ret += "-";
-    if (day < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(day);
-    ret += " ";
-    if (hour < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(hour);
-    ret += ":";
-    if (minute < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(minute);
-    ret += ":";
-    if (second < 10)
-    {
-        ret += "0";
-    }
-    ret += std::to_string(second);
+    return fmt::format(
+        "{}-{}{}-{}{} {}{}:{}{}:{}{}",
+        std::to_string(1900 + datetime64_years(generator)),
+        month < 10 ? "0" : "",
+        std::to_string(month),
+        day < 10 ? "0" : "",
+        std::to_string(day),
+        hour < 10 ? "0" : "",
+        std::to_string(hour),
+        minute < 10 ? "0" : "",
+        std::to_string(minute),
+        second < 10 ? "0" : "",
+        std::to_string(second));
 }
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
@@ -210,15 +164,16 @@ double RandomGenerator::randomZeroOne()
     return zero_one(generator);
 }
 
-void RandomGenerator::nextJSONCol(String & ret)
+String RandomGenerator::nextJSONCol()
 {
     const String & pick = pickRandomlyFromVector(jcols);
 
-    ret += pick;
+    return pick;
 }
 
-void RandomGenerator::nextString(String & ret, const String & delimiter, const bool allow_nasty, const uint32_t limit)
+String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
+    String ret;
     bool use_bad_utf8 = false;
 
     if (delimiter == "'" && this->nextMediumNumber() < 4)
@@ -266,59 +221,71 @@ void RandomGenerator::nextString(String & ret, const String & delimiter, const b
         ret += "a";
     }
     ret += delimiter;
+    return ret;
 }
 
 static const constexpr char hex_digits[] = "0123456789abcdef";
 
-void RandomGenerator::nextUUID(String & ret)
+String RandomGenerator::nextUUID()
 {
-    for (uint32_t i = 0; i < 8; i++)
-    {
-        ret += hex_digits[hex_digits_dist(generator)];
-    }
-    ret += "-";
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        ret += hex_digits[hex_digits_dist(generator)];
-    }
-    ret += "-";
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        ret += hex_digits[hex_digits_dist(generator)];
-    }
-    ret += "-";
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        ret += hex_digits[hex_digits_dist(generator)];
-    }
-    ret += "-";
-    for (uint32_t i = 0; i < 12; i++)
-    {
-        ret += hex_digits[hex_digits_dist(generator)];
-    }
+    return fmt::format(
+        "{}{}{}{}{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}{}{}{}{}{}{}{}{}",
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)]);
 }
 
-void RandomGenerator::nextIPv4(String & ret)
+String RandomGenerator::nextIPv4()
 {
-    ret += std::to_string(this->nextRandomUInt8());
-    ret += ".";
-    ret += std::to_string(this->nextRandomUInt8());
-    ret += ".";
-    ret += std::to_string(this->nextRandomUInt8());
-    ret += ".";
-    ret += std::to_string(this->nextRandomUInt8());
+    return fmt::format(
+        "{}.{}.{}.{}",
+        std::to_string(this->nextRandomUInt8()),
+        std::to_string(this->nextRandomUInt8()),
+        std::to_string(this->nextRandomUInt8()),
+        std::to_string(this->nextRandomUInt8()));
 }
 
-void RandomGenerator::nextIPv6(String & ret)
+String RandomGenerator::nextIPv6()
 {
-    for (uint32_t i = 0; i < 8; i++)
-    {
-        ret += hex_digits[hex_digits_dist(generator)];
-        if (i < 7)
-        {
-            ret += ":";
-        }
-    }
+    return fmt::format(
+        "{}:{}:{}:{}:{}:{}:{}:{}",
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)],
+        hex_digits[hex_digits_dist(generator)]);
 }
 
 }

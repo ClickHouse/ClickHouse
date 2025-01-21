@@ -173,7 +173,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
             }
             buf += entry.getBottomName();
             buf += " ";
-            tp->typeName(buf, true);
+            buf += tp->typeName(true);
             if (entry.nullable.has_value())
             {
                 buf += entry.nullable.value() ? "" : " NOT";
@@ -639,9 +639,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         refColumn(rg, gcol, elike->mutable_expr1());
         if (rg.nextSmallNumber() < 5)
         {
-            buf.resize(0);
-            rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
-            expr2->mutable_lit_val()->set_no_quote_str(buf);
+            expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
         }
         else
         {

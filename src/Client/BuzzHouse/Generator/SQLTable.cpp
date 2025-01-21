@@ -1123,9 +1123,7 @@ void StatementGenerator::addTableColumn(
     }
     if (rg.nextSmallNumber() < 3)
     {
-        buf.resize(0);
-        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
-        cd->set_comment(buf);
+        cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
     to_add[cname] = std::move(col);
 }

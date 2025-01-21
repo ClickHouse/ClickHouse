@@ -48,7 +48,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
             }
             buf += entry.getBottomName();
             buf += " ";
-            columnTypeAsString(rg, tp, buf);
+            buf += columnTypeAsString(rg, tp);
             buf += " ";
             buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ";
             buf += "NULL";
@@ -247,9 +247,9 @@ bool MySQLIntegration::performQuery(const String & query)
     return true;
 }
 
-void MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const
+String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
 {
-    tp->MySQLtypeName(rg, out, false);
+    return tp->MySQLtypeName(rg, false);
 }
 
 #else
@@ -383,9 +383,9 @@ bool PostgreSQLIntegration::performQuery(const String & query)
     }
 }
 
-void PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const
+String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
 {
-    tp->PostgreSQLtypeName(rg, out, false);
+    return tp->PostgreSQLtypeName(rg, false);
 }
 
 #else
@@ -458,9 +458,9 @@ bool SQLiteIntegration::performQuery(const String & query)
     return true;
 }
 
-void SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const
+String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
 {
-    tp->SQLitetypeName(rg, out, false);
+    return tp->SQLitetypeName(rg, false);
 }
 
 #else
@@ -661,11 +661,11 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         buf.resize(0);
         if (dttp->extended)
         {
-            rg.nextDateTime64(buf);
+            buf += rg.nextDateTime64();
         }
         else
         {
-            rg.nextDateTime(buf);
+            buf += rg.nextDateTime();
         }
         if constexpr (is_document<T>)
         {
@@ -729,15 +729,13 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         }
         else
         {
-            buf.resize(0);
-            rg.nextString(buf, "", true, limit);
             if constexpr (is_document<T>)
             {
-                output << cname << buf;
+                output << cname << rg.nextString("", true, limit);
             }
             else
             {
-                output << buf;
+                output << rg.nextString("", true, limit);
             }
         }
     }
@@ -758,54 +756,46 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     {
         const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
 
-        buf.resize(0);
-        buf += nvalue.val;
         if constexpr (is_document<T>)
         {
-            output << cname << buf;
+            output << cname << nvalue.val;
         }
         else
         {
-            output << buf;
+            output << nvalue.val;
         }
     }
     else if (dynamic_cast<UUIDType *>(tp))
     {
-        buf.resize(0);
-        rg.nextUUID(buf);
         if constexpr (is_document<T>)
         {
-            output << cname << buf;
+            output << cname << rg.nextUUID();
         }
         else
         {
-            output << buf;
+            output << rg.nextUUID();
         }
     }
     else if (dynamic_cast<IPv4Type *>(tp))
     {
-        buf.resize(0);
-        rg.nextIPv4(buf);
         if constexpr (is_document<T>)
         {
-            output << cname << buf;
+            output << cname << rg.nextIPv4();
         }
         else
         {
-            output << buf;
+            output << rg.nextIPv4();
         }
     }
     else if (dynamic_cast<IPv6Type *>(tp))
     {
-        buf.resize(0);
-        rg.nextIPv6(buf);
         if constexpr (is_document<T>)
         {
-            output << cname << buf;
+            output << cname << rg.nextIPv6();
         }
         else
         {
-            output << buf;
+            output << rg.nextIPv6();
         }
     }
     else if (dynamic_cast<JSONType *>(tp))

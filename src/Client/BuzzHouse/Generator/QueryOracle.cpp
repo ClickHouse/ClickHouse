@@ -201,7 +201,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
         }
         buf += entry.getBottomName();
         buf += " ";
-        tp->typeName(buf, true);
+        buf += tp->typeName(true);
         if (entry.nullable.has_value())
         {
             buf += entry.nullable.value() ? "" : " NOT";

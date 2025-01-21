@@ -146,16 +146,16 @@ public:
     bool nextBool();
 
     //range [1970-01-01, 2149-06-06]
-    void nextDate(String & ret);
+    String nextDate();
 
     //range [1900-01-01, 2299-12-31]
-    void nextDate32(String & ret);
+    String nextDate32();
 
     //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    void nextDateTime(String & ret);
+    String nextDateTime();
 
     //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    void nextDateTime64(String & ret);
+    String nextDateTime64();
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -238,15 +238,15 @@ public:
         return std::make_tuple(it->first, it->second);
     }
 
-    void nextJSONCol(String & ret);
+    String nextJSONCol();
 
-    void nextString(String & ret, const String & delimiter, bool allow_nasty, uint32_t limit);
+    String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
 
-    void nextUUID(String & ret);
+    String nextUUID();
 
-    void nextIPv4(String & ret);
+    String nextIPv4();
 
-    void nextIPv6(String & ret);
+    String nextIPv6();
 };
 
 }

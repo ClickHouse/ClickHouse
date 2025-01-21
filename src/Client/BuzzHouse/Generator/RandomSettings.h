@@ -14,11 +14,11 @@ namespace BuzzHouse
 struct CHSetting
 {
 public:
-    const std::function<void(RandomGenerator &, String &)> random_func;
+    const std::function<String(RandomGenerator &)> random_func;
     const std::unordered_set<String> oracle_values;
     const bool changes_behavior;
 
-    CHSetting(const std::function<void(RandomGenerator &, String &)> & rf, const std::unordered_set<String> & ov, const bool cb)
+    CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
         : random_func(rf), oracle_values(ov), changes_behavior(cb)
     {
     }
@@ -27,27 +27,26 @@ public:
     constexpr CHSetting(CHSetting && rhs) = default;
 };
 
-const std::function<void(RandomGenerator &, String &)> trueOrFalse
-    = [](RandomGenerator & rg, String & ret) { ret += rg.nextBool() ? "1" : "0"; };
+const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
 
-const std::function<void(RandomGenerator &, String &)> zeroOneTwo
-    = [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 2)); };
+const std::function<String(RandomGenerator &)> zeroOneTwo
+    = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
 
-const std::function<void(RandomGenerator &, String &)> zeroToThree
-    = [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 3)); };
+const std::function<String(RandomGenerator &)> zeroToThree
+    = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
 extern std::unordered_map<String, CHSetting> serverSettings;
 
-const std::unordered_map<String, CHSetting> memoryTableSettings = {
-    {"min_bytes_to_keep",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"max_bytes_to_keep",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"min_rows_to_keep",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"max_rows_to_keep",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"compress", CHSetting(trueOrFalse, {}, false)}};
+const std::unordered_map<String, CHSetting> memoryTableSettings
+    = {{"min_bytes_to_keep",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+       {"max_bytes_to_keep",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+       {"min_rows_to_keep",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+       {"max_rows_to_keep",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+       {"compress", CHSetting(trueOrFalse, {}, false)}};
 
 const std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", CHSetting(trueOrFalse, {}, false)}};
 
@@ -56,14 +55,13 @@ const std::unordered_map<String, CHSetting> joinTableSettings = {{"persistent", 
 const std::unordered_map<String, CHSetting> embeddedRocksDBTableSettings = {
     {"optimize_for_bulk_insert", CHSetting(trueOrFalse, {}, false)},
     {"bulk_insert_block_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
 };
 
 const std::unordered_map<String, CHSetting> mySQLTableSettings
     = {{"connection_pool_size",
-        CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
-       {"connection_max_tries",
-        CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 7)); }, {}, false)},
+       {"connection_max_tries", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
        {"connection_auto_close", CHSetting(trueOrFalse, {}, false)}};
 
 const std::unordered_map<String, CHSetting> fileTableSettings
@@ -73,12 +71,10 @@ const std::unordered_map<String, CHSetting> fileTableSettings
        {"engine_file_truncate_on_insert", CHSetting(trueOrFalse, {}, false)},
        {"storage_file_read_method",
         CHSetting(
-            [](RandomGenerator & rg, String & ret)
+            [](RandomGenerator & rg)
             {
-                const std::vector<String> & choices = {"read", "pread", "mmap"};
-                ret += "'";
-                ret += rg.pickRandomlyFromVector(choices);
-                ret += "'";
+                const std::vector<String> & choices = {"'read'", "'pread'", "'mmap'"};
+                return rg.pickRandomlyFromVector(choices);
             },
             {},
             false)}};
@@ -86,29 +82,25 @@ const std::unordered_map<String, CHSetting> fileTableSettings
 const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
     {"after_processing",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"", "keep", "delete"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"''", "'keep'", "'delete'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
     {"enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
     {"processing_threads_num",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
-         {},
-         false)}};
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); }, {}, false)}};
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
-const std::unordered_map<String, CHSetting> mergeTreeColumnSettings = {
-    {"min_compress_block_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"max_compress_block_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)}};
+const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
+    = {{"min_compress_block_size",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+       {"max_compress_block_size",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)}};
 
 const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
     = {{MergeTree, mergeTreeColumnSettings},

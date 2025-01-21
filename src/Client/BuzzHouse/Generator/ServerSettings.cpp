@@ -9,7 +9,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"aggregation_in_order_max_block_bytes",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "1", "100", "10000"},
          false)},
     {"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -33,9 +33,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_insert_deduplicate", CHSetting(trueOrFalse, {}, false)},
     {"async_insert_threads",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
-         {},
-         false)},
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); }, {}, false)},
     {"async_insert_use_adaptive_busy_timeout", CHSetting(trueOrFalse, {}, false)},
     {"async_query_sending_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"async_socket_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -57,33 +55,25 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"composed_data_type_output_format_mode",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret)
-         {
-             ret += "'";
-             ret += rg.nextBool() ? "default" : "spark";
-             ret += "'";
-         },
-         {},
-         false)},
+     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'default'" : "'spark'"; }, {}, false)},
     {"convert_query_to_cnf", CHSetting(trueOrFalse, {}, false)},
     {"count_distinct_optimization", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"create_table_empty_primary_key_by_default", CHSetting(trueOrFalse, {}, false)},
     {"cross_join_min_bytes_to_compress",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices = {"0", "1", "100000000"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {"0", "1", "10000"},
          false)},
     {"cross_join_min_rows_to_compress",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices = {"0", "1", "100000000"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {"0", "1", "100", "10000"},
          false)},
@@ -93,11 +83,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", CHSetting(trueOrFalse, {}, false)},
     {"date_time_output_format",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices
                  = {"'simple', date_time_input_format = 'basic'", "'iso', date_time_input_format = 'best_effort'"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -159,12 +149,10 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", CHSetting(trueOrFalse, {}, false)},
     {"filesystem_cache_name",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"cache_for_s3"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'cache_for_s3'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -172,47 +160,34 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", CHSetting(trueOrFalse, {}, false)},
     {"filesystem_cache_segments_batch_size",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<uint32_t> choices{0, 3, 10, 50};
-             ret += std::to_string(rg.pickRandomlyFromVector(choices));
+             return std::to_string(rg.pickRandomlyFromVector(choices));
          },
          {},
          false)},
     {"filesystem_prefetch_max_memory_usage",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"32Mi", "64Mi", "128Mi"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'32Mi'", "'64Mi'", "'128Mi'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
     {"filesystem_prefetch_min_bytes_for_single_read_task",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"1Mi", "8Mi", "16Mi"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'1Mi'", "'8Mi'", "'16Mi'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
-    {"filesystem_prefetch_step_bytes",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret)
-         {
-             ret += "'";
-             ret += rg.nextBool() ? "0" : "100Mi";
-             ret += "'";
-         },
-         {},
-         false)},
-    {"filesystem_prefetch_step_marks", CHSetting([](RandomGenerator & rg, String & ret) { ret += rg.nextBool() ? "0" : "50"; }, {}, false)},
-    {"filesystem_prefetches_limit", CHSetting([](RandomGenerator & rg, String & ret) { ret += rg.nextBool() ? "0" : "10"; }, {}, false)},
+    {"filesystem_prefetch_step_bytes", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "0" : "'100Mi'"; }, {}, false)},
+    {"filesystem_prefetch_step_marks", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "0" : "50"; }, {}, false)},
+    {"filesystem_prefetches_limit", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "0" : "10"; }, {}, false)},
     {"final", CHSetting(trueOrFalse, {}, false)},
     {"flatten_nested", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"force_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -231,27 +206,23 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"function_locate_has_mysql_compatible_argument_order", CHSetting(trueOrFalse, {}, false)},
     {"geo_distance_returns_float64_on_float64_arguments", CHSetting(trueOrFalse, {}, false)},
     {"grace_hash_join_initial_buckets",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
     {"grace_hash_join_max_buckets",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, 1024)); }, {}, false)},
     /*{"group_by_overflow_mode",
-     CHSetting([](RandomGenerator & rg, String & ret)
+     CHSetting([](RandomGenerator & rg)
      {
-         const std::vector<String> & choices = {"throw", "break", "any"};
-         ret += "'";
-         ret += rg.pickRandomlyFromVector(choices);
-         ret += "'";
+         const std::vector<String> & choices = {"'throw'", "'break'", "'any'"};
+         return rg.pickRandomlyFromVector(choices);
      }, {}, false)},*/
     {"group_by_two_level_threshold",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 100000)); },
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 100000)); },
          {"0", "1", "100", "1000"},
          false)},
     {"group_by_two_level_threshold_bytes",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 500000)); },
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 1, 500000)); },
          {"0", "1", "100", "1000"},
          false)},
     {"group_by_use_nulls", CHSetting(trueOrFalse, {}, false)},
@@ -262,7 +233,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"http_make_head_request", CHSetting(trueOrFalse, {}, false)},
     {"http_native_compression_disable_checksumming_on_decompress", CHSetting(trueOrFalse, {}, false)},
     {"http_response_buffer_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"http_skip_not_found_url_for_globs", CHSetting(trueOrFalse, {}, false)},
     {"http_wait_end_of_query", CHSetting(trueOrFalse, {}, false)},
     {"http_write_exception_in_output_format", CHSetting(trueOrFalse, {}, false)},
@@ -355,34 +326,23 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"insert_null_as_default", CHSetting(trueOrFalse, {}, false)},
     {"insert_quorum", CHSetting(zeroOneTwo, {}, false)},
     {"insert_quorum_parallel", CHSetting(trueOrFalse, {}, false)},
-    {"interval_output_format",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret)
-         {
-             ret += "'";
-             ret += rg.nextBool() ? "kusto" : "numeric";
-             ret += "'";
-         },
-         {},
-         false)},
+    {"interval_output_format", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'kusto'" : "'numeric'"; }, {}, false)},
     {"join_algorithm",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices
-                 = {"default",
-                    "grace_hash",
-                    "direct, hash",
-                    "hash",
-                    "parallel_hash",
-                    "partial_merge",
-                    "direct",
-                    "auto",
-                    "full_sorting_merge",
-                    "prefer_partial_merge"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+                 = {"'default'",
+                    "'grace_hash'",
+                    "'direct, hash'",
+                    "'hash'",
+                    "'parallel_hash'",
+                    "'partial_merge'",
+                    "'direct'",
+                    "'auto'",
+                    "'full_sorting_merge'",
+                    "'prefer_partial_merge'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {"'default'",
           "'grace_hash'",
@@ -397,11 +357,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"join_any_take_last_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
     /*{"join_overflow_mode",
-     CHSetting([](RandomGenerator & rg, String & ret)
+     CHSetting([](RandomGenerator & rg)
      {
-         ret += "'";
-         ret += rg.nextBool() ? "throw" : "break";
-         ret += "'";
+         return rg.nextBool() ? "'throw'" : "'break'";
      }, {}, false)},*/
     {"join_use_nulls", CHSetting(trueOrFalse, {}, false)},
     {"keeper_map_strict_mode", CHSetting(trueOrFalse, {}, false)},
@@ -410,12 +368,10 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"load_marks_asynchronously", CHSetting(trueOrFalse, {}, false)},
     {"local_filesystem_read_method",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"read", "pread", "mmap", "pread_threadpool", "io_uring"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
          false)},
@@ -429,7 +385,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"log_query_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
     //{"low_cardinality_allow_in_native_format", CHSetting(trueOrFalse, {}, false)},
     {"low_cardinality_max_dictionary_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"materialize_skip_indexes_on_insert", CHSetting(trueOrFalse, {}, false)}};
 
@@ -441,169 +397,165 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialized_views_ignore_errors", CHSetting(trueOrFalse, {}, false)},
     {"max_block_size",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"32", "64", "1024", "1000000"},
          false)},
     {"max_bytes_before_external_group_by",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             ret += std::to_string(
+             return std::to_string(
                  rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "1", "1000", "1000000"},
          false)},
     {"max_bytes_before_external_sort",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             ret += std::to_string(
+             return std::to_string(
                  rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "1", "1000", "1000000"},
          false)},
     {"max_bytes_before_remerge_sort",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "1", "1000", "1000000"},
          false)},
     /*{"max_bytes_in_distinct",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_in_join",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_in_set",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_to_read",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_to_read_leaf",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_to_sort",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_to_transfer",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_columns_to_read",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},*/
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},*/
     {"max_compress_block_size",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "32", "64", "1024", "1000000"},
          false)},
     {"max_final_threads",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"max_insert_block_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_insert_delayed_streams_for_parallel_write",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 12)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 12)); }, {}, false)},
     {"max_insert_threads",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
-         {},
-         false)},
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); }, {}, false)},
     {"max_joined_block_size_rows",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"8", "32", "64", "1024", "1000000"},
          false)},
     /*{"max_memory_usage",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},
     {"max_memory_usage_for_user",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},*/
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << ((rg.nextLargeNumber() % 8) + 15)); }, {}, false)},*/
     {"max_number_of_partitions_for_independent_aggregation",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 15)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 15)); },
          {"0", "1", "100", "1000"},
          false)},
-    {"max_parallel_replicas",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
+    {"max_parallel_replicas", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
     {"max_parsing_threads",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices = {"0", "1", "10"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"max_parts_to_move",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096))); },
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(4096))); },
          {"0", "1", "100", "1000"},
          false)},
     {"max_read_buffer_size",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"32", "64", "1024", "1000000"},
          false)},
     /*{"max_result_bytes",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_result_rows",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_in_distinct",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_in_join",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_in_set",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_to_group_by",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_to_read",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_to_read_leaf",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_to_sort",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_rows_to_transfer",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_temporary_columns",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     {"max_temporary_non_const_columns",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},*/
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},*/
     {"max_threads",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); },
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"merge_tree_coarse_index_granularity",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(2, 32)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(2, 32)); }, {}, false)},
     {"merge_tree_compact_parts_min_granules_to_multibuffer_read",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(1, 128)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, 128)); }, {}, false)},
     {"merge_tree_determine_task_size_by_prewhere_columns", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(std::ceil(rg.randomZeroOne() * 100.0) / 100.0); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(std::ceil(rg.randomZeroOne() * 100.0) / 100.0); }, {}, false)},
     {"merge_tree_use_const_size_tasks_for_remote_reading", CHSetting(trueOrFalse, {}, false)},
     {"merge_tree_use_v1_object_and_dynamic_serialization", CHSetting(trueOrFalse, {}, false)},
     {"metrics_perf_events_enabled", CHSetting(trueOrFalse, {}, false)},
     {"min_bytes_to_use_direct_io",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             ret += std::to_string(
+             return std::to_string(
                  rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "100", "1000", "100000"},
          false)},
     {"min_bytes_to_use_mmap_io",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             ret += std::to_string(
+             return std::to_string(
                  rg.thresholdGenerator<uint32_t>(0.2, 0.5, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "100", "1000", "100000"},
          false)},
     {"min_chunk_bytes_for_parallel_parsing",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
-         { ret += std::to_string(std::max(1024, static_cast<int>(rg.randomGauss(10 * 1024 * 1024, 5 * 1000 * 1000)))); },
+         [](RandomGenerator & rg)
+         { return std::to_string(std::max(1024, static_cast<int>(rg.randomGauss(10 * 1024 * 1024, 5 * 1000 * 1000)))); },
          {"0", "100", "1000", "100000"},
          false)},
     {"min_compress_block_size",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "32", "64", "1024", "1000000"},
          false)},
     {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
@@ -611,26 +563,26 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"min_count_to_compile_sort_description", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
     {"min_external_table_block_size_bytes",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices = {"0", "1", "100000000"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {"0", "100", "1000", "100000"},
          false)},
     {"min_hit_rate_to_use_consecutive_keys_optimization",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); },
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); },
          {"0", "0.1", "0.5", "0.9"},
          false)},
     {"min_insert_block_size_bytes",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"min_insert_block_size_bytes_for_materialized_views",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"min_insert_block_size_rows",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"min_insert_block_size_rows_for_materialized_views",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"mongodb_throw_on_unsupported_query", CHSetting(trueOrFalse, {}, false)},
     {"move_all_conditions_to_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"move_primary_key_columns_to_end_of_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -685,12 +637,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_using_constraints", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"output_format_arrow_compression_method",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"lz4_frame", "zstd", "none"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'lz4_frame'", "'zstd'", "'none'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -708,12 +658,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_enable_streaming", CHSetting(trueOrFalse, {}, false)},
     {"output_format_avro_codec",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"null", "deflate", "snappy", "zstd"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'null'", "'deflate'", "'snappy'", "'zstd'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -731,12 +679,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_native_write_json_as_string", CHSetting(trueOrFalse, {}, false)},
     {"output_format_orc_compression_method",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"lz4", "snappy", "zlib", "zstd", "none"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'lz4'", "'snappy'", "'zlib'", "'zstd'", "'none'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -745,12 +691,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_compliant_nested_types", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_compression_method",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"snappy", "lz4", "brotli", "zstd", "gzip", "none"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'snappy'", "'lz4'", "'brotli'", "'zstd'", "'gzip'", "'none'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -760,37 +704,24 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_use_custom_encoder", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_version",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"1.0", "2.4", "2.6", "2.latest"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'1.0'", "'2.4'", "'2.6'", "'2.latest'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
     {"output_format_parquet_write_page_index", CHSetting(trueOrFalse, {}, false)},
     {"output_format_pretty_color",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"0", "1", "auto"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'0'", "'1'", "'auto'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
-    {"output_format_pretty_grid_charset",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret)
-         {
-             ret += "'";
-             ret += rg.nextBool() ? "UTF-8" : "ASCII";
-             ret += "'";
-         },
-         {},
-         false)},
+    {"output_format_pretty_grid_charset", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'UTF-8'" : "'ASCII'"; }, {}, false)},
     {"output_format_pretty_highlight_digit_groups", CHSetting(trueOrFalse, {}, false)},
     {"output_format_pretty_row_numbers", CHSetting(trueOrFalse, {}, false)},
     {"output_format_protobuf_nullables_with_google_wrappers", CHSetting(trueOrFalse, {}, false)},
@@ -803,30 +734,29 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"page_cache_inject_eviction", CHSetting(trueOrFalse, {"0", "1"}, false)},
     /*{"parallel_replica_offset",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},*/
+         [](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},*/
     {"parallel_replicas_allow_in_with_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
     /*{"parallel_replicas_count",
      CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},*/
+         [](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {"0", "1", "2", "3", "4"})},*/
     {"parallel_replicas_for_non_replicated_merge_tree", CHSetting(trueOrFalse, {}, false)},
     {"parallel_replicas_index_analysis_only_on_coordinator", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_custom_key_range_lower",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"parallel_replicas_custom_key_range_upper",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"parallel_replicas_local_plan", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_mark_segment_size",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"parallel_replicas_min_number_of_rows_per_replica",
-     CHSetting([](RandomGenerator & rg, String & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"parallel_replicas_mode",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"sampling_key", "read_tasks", "custom_key_range", "custom_key_sampling", "auto"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices
+                 = {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
          false)},
@@ -838,10 +768,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
     {"prefer_external_sort_block_bytes",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices = {"0", "1", "1000", "1000000"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {"0", "1", "1000", "1000000"},
          false)},
@@ -860,12 +790,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_filter_push_down", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"query_plan_join_swap_table",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"false", "true", "auto"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'false'", "'true'", "'auto'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {"'false'", "'true'", "'auto'"},
          false)},
@@ -883,10 +811,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"read_in_order_two_level_merge_threshold",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret) { ret += std::to_string(rg.randomInt<uint32_t>(0, 100)); },
-         {"0", "1", "10", "100"},
-         false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); }, {"0", "1", "10", "100"}, false)},
     {"read_in_order_use_buffering", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"read_in_order_use_virtual_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"read_through_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -894,15 +819,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"regexp_dict_flag_case_insensitive", CHSetting(trueOrFalse, {}, false)},
     {"regexp_dict_flag_dotall", CHSetting(trueOrFalse, {}, false)},
     {"remote_filesystem_read_method",
-     CHSetting(
-         [](RandomGenerator & rg, String & ret)
-         {
-             ret += "'";
-             ret += rg.nextBool() ? "read" : "threadpool";
-             ret += "'";
-         },
-         {"'read'", "'threadpool'"},
-         false)},
+     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},
     {"reject_expensive_hyperscan_regexps", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"remote_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"replace_running_query", CHSetting(trueOrFalse, {}, false)},
@@ -926,12 +843,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"select_sequential_consistency", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"send_logs_level",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"debug", "information", "trace", "error", "test", "warning", "fatal", "none"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices
+                 = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -940,23 +856,19 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"single_join_prefer_left_table", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)},
     /*{"set_overflow_mode",
-     CHSetting([](RandomGenerator & rg, String & ret)
+     CHSetting([](RandomGenerator & rg)
      {
-         ret += "'";
-         ret += rg.nextBool() ? "break" : "throw";
-         ret += "'";
+         return rg.nextBool() ? "'break'" : "'throw'";
      }, {}, false)},*/
     {"split_intersecting_parts_ranges_into_layers_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"split_parts_ranges_into_intersecting_and_non_intersecting_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"splitby_max_substrings_includes_remaining_string", CHSetting(trueOrFalse, {}, false)},
     {"storage_file_read_method",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"read", "pread", "mmap"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+             const std::vector<String> & choices = {"'read'", "'pread'", "'mmap'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -965,13 +877,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
     {"totals_mode",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices
-                 = {"before_having", "after_having_exclusive", "after_having_inclusive", "after_having_auto"};
-             ret += "'";
-             ret += rg.pickRandomlyFromVector(choices);
-             ret += "'";
+                 = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -992,12 +902,12 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"use_query_cache",
      CHSetting(
-         [](RandomGenerator & rg, String & ret)
+         [](RandomGenerator & rg)
          {
              const std::vector<String> & choices
                  = {"1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'",
                     "0, set_overflow_mode = 'break', group_by_overflow_mode = 'break', join_overflow_mode = 'break'"};
-             ret += rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},
@@ -1026,11 +936,12 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert(
             {{"session_timezone",
               CHSetting(
-                  [&](RandomGenerator & rg, String & ret)
+                  [&](RandomGenerator & rg)
                   {
-                      ret += "'";
-                      ret += rg.pickRandomlyFromVector(settings_timezones);
-                      ret += "'";
+                      String res = "'";
+                      res += rg.pickRandomlyFromVector(settings_timezones);
+                      res += "'";
+                      return res;
                   },
                   {},
                   false)}});

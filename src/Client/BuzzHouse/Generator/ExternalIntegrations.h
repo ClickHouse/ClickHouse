@@ -77,7 +77,7 @@ public:
 
     virtual String getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return String(); }
 
-    virtual void columnTypeAsString(RandomGenerator &, SQLType *, String &) const { }
+    virtual String columnTypeAsString(RandomGenerator &, SQLType *) const { return String(); }
 
     bool performIntegration(
         RandomGenerator & rg,
@@ -97,7 +97,7 @@ public:
         const CreateTable * ct,
         std::vector<ColumnPathChain> & entries);
 
-    virtual String truncateStatement() { return ""; }
+    virtual String truncateStatement() { return String(); }
 
     void truncatePeerTableOnRemote(const SQLTable & t);
 
@@ -132,7 +132,7 @@ public:
 
     bool performQuery(const String & query) override;
 
-    void columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const override;
+    String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
 
     ~MySQLIntegration() override
     {
@@ -173,7 +173,7 @@ public:
 
     String truncateStatement() override;
 
-    void columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const override;
+    String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
 
     bool performQuery(const String & query) override;
 #else
@@ -209,7 +209,7 @@ public:
 
     String truncateStatement() override;
 
-    void columnTypeAsString(RandomGenerator & rg, SQLType * tp, String & out) const override;
+    String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
 
     bool performQuery(const String & query) override;
 

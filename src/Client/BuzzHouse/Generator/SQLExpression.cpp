@@ -24,9 +24,7 @@ void StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const
         }
         else if (this->depth >= this->fc.max_depth || noption < 81)
         {
-            buf.resize(0);
-            rg.nextJSONCol(buf);
-            fa->mutable_array_key()->set_column(buf);
+            fa->mutable_array_key()->set_column(rg.nextJSONCol());
         }
         else
         {
@@ -69,9 +67,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 {
                     jcol->set_jarray(0);
                 }
-                buf.resize(0);
-                rg.nextJSONCol(buf);
-                jcol->mutable_col()->set_column(buf);
+                jcol->mutable_col()->set_column(rg.nextJSONCol());
             }
             if (noption < 4)
             {
@@ -208,22 +204,22 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         buf += "'";
         if (noption < 251)
         {
-            rg.nextDate(buf);
+            buf += rg.nextDate();
             buf += "'::Date";
         }
         else if (noption < 301)
         {
-            rg.nextDate32(buf);
+            buf += rg.nextDate32();
             buf += "'::Date32";
         }
         else if (noption < 351)
         {
-            rg.nextDateTime(buf);
+            buf += rg.nextDateTime();
             buf += "'::DateTime";
         }
         else
         {
-            rg.nextDateTime64(buf);
+            buf += rg.nextDateTime64();
             buf += "'::DateTime64";
         }
         lv->set_no_quote_str(buf);
@@ -275,19 +271,19 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         if (nopt < 31)
         {
             buf += "'";
-            rg.nextUUID(buf);
+            buf += rg.nextUUID();
             buf += "'::UUID";
         }
         else if (nopt < 51)
         {
             buf += "'";
-            rg.nextIPv4(buf);
+            buf += rg.nextIPv4();
             buf += "'::IPv4";
         }
         else if (nopt < 71)
         {
             buf += "'";
-            rg.nextIPv6(buf);
+            buf += rg.nextIPv6();
             buf += "'::IPv6";
         }
         else if (nopt < 101)
@@ -301,7 +297,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
+            buf += rg.nextString("'", true, rg.nextRandomUInt32() % 1009);
         }
         lv->set_no_quote_str(buf);
     }

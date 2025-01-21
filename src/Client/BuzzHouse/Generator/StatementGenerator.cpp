@@ -12,15 +12,12 @@ void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) 
     store->set_storage_name(rg.pickRandomlyFromVector(fc.disks));
 }
 
-void StatementGenerator::setRandomSetting(
-    RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, String & ret, SetValue * set)
+void StatementGenerator::setRandomSetting(RandomGenerator & rg, const std::unordered_map<String, CHSetting> & settings, SetValue * set)
 {
     const String & setting = rg.pickKeyRandomlyFromMap(settings);
 
     set->set_property(setting);
-    ret.resize(0);
-    settings.at(setting).random_func(rg, ret);
-    set->set_value(ret);
+    set->set_value(settings.at(setting).random_func(rg));
 }
 
 void StatementGenerator::generateSettingValues(
@@ -30,7 +27,7 @@ void StatementGenerator::generateSettingValues(
     {
         SetValue * sv = i == 0 ? vals->mutable_set_value() : vals->add_other_values();
 
-        setRandomSetting(rg, settings, this->buf, sv);
+        setRandomSetting(rg, settings, sv);
     }
 }
 
@@ -94,9 +91,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     cd->mutable_database()->set_database("d" + std::to_string(dname));
     if (rg.nextSmallNumber() < 3)
     {
-        buf.resize(0);
-        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
-        cd->set_comment(buf);
+        cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
 }
@@ -292,9 +287,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     }
     if (rg.nextSmallNumber() < 3)
     {
-        buf.resize(0);
-        rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
-        cv->set_comment(buf);
+        cv->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
     this->staged_views[tname] = next;
 }
@@ -1054,9 +1047,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomlyFromVector(this->entries), ccol->mutable_col());
                 this->entries.clear();
-                buf.resize(0);
-                rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
-                ccol->set_comment(buf);
+                ccol->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
             }
             else if (
                 delete_mask
@@ -1690,9 +1681,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
                        + comment_table + 1))
             {
-                buf.resize(0);
-                rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
-                ati->set_comment(buf);
+                ati->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
             }
             else
             {
