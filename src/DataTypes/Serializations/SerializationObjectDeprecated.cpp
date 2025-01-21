@@ -294,7 +294,7 @@ void SerializationObjectDeprecated<Parser>::serializeBinaryBulkWithMultipleStrea
     }
 
     settings.path.push_back(Substream::DeprecatedObjectData);
-    if (auto * /*stream*/ _ = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
     {
         state_object->nested_serialization->serializeBinaryBulkWithMultipleStreams(
             *tuple_column, offset, limit, settings, state_object->nested_state);
@@ -555,13 +555,13 @@ void SerializationObjectDeprecated<Parser>::serializeTextJSONPretty(const IColum
         if (it != subcolumns.begin())
             writeCString(",\n", ostr);
 
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', (indent + 1) * 4, ostr);
         writeDoubleQuoted(entry->path.getPath(), ostr);
         writeCString(": ", ostr);
         serializeTextFromSubcolumn<true>(entry->data, row_num, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    writeChar(' ', indent * 4, ostr);
     writeChar('}', ostr);
 }
 

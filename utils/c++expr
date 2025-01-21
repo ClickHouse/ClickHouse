@@ -55,7 +55,7 @@ KEEP_WORKTREE=0
 #
 
 if [ "$1" == "--help" ] || [ -z "$1" ]; then usage; fi
-while getopts "vc:CIi:l:b:kB:t:o:O:g:" OPT; do
+while getopts "vc:CIi:l:bkB:t:o:O:g:" OPT; do
     case "$OPT" in
     v)      set -x; ;;
     c)      CXX="$OPTARG"; ;;

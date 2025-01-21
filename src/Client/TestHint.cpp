@@ -78,7 +78,8 @@ bool TestHint::needRetry(const std::unique_ptr<Exception> & server_exception, si
 
     if (retry_until)
         return !hasExpectedServerError(error);  /// retry until we get the expected error
-    return hasExpectedServerError(error); /// retry while we have the expected error
+    else
+        return hasExpectedServerError(error);   /// retry while we have the expected error
 }
 
 void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)

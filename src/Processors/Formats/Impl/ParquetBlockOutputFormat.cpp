@@ -95,10 +95,8 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
             case C::GZIP: options.compression = CompressionMethod::Gzip; break;
             case C::BROTLI: options.compression = CompressionMethod::Brotli; break;
         }
-        options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
         options.output_string_as_string = format_settings.parquet.output_string_as_string;
         options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
-        options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
         options.data_page_size = format_settings.parquet.data_page_size;
         options.write_batch_size = format_settings.parquet.write_batch_size;
 
@@ -231,8 +229,6 @@ void ParquetBlockOutputFormat::finalizeImpl()
             base_offset = out.count();
             writeFileHeader(out);
         }
-        if (format_settings.parquet.write_page_index)
-            writePageIndex(column_indexes, offset_indexes, row_groups_complete, out, base_offset);
         writeFileFooter(std::move(row_groups_complete), schema, options, out);
     }
     else
@@ -268,8 +264,6 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     task_queue.clear();
     row_groups.clear();
     file_writer.reset();
-    column_indexes.clear();
-    offset_indexes.clear();
     row_groups_complete.clear();
     staging_chunks.clear();
     staging_rows = 0;
@@ -329,7 +323,6 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
         builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
-        builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
         // write page index is disable at default.
         if (format_settings.parquet.write_page_index)
             builder.enable_write_page_index();
@@ -375,17 +368,12 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
         base_offset = out.count();
         writeFileHeader(out);
     }
-    auto & rg_column_index = column_indexes.emplace_back();
-    auto & rg_offset_index = offset_indexes.emplace_back();
+
     std::vector<parquet::format::ColumnChunk> column_chunks;
     for (auto & s : columns_to_write)
     {
         size_t offset = out.count() - base_offset;
         writeColumnChunkBody(s, options, out);
-        for (auto & location : s.offset_index.page_locations)
-            location.offset -= base_offset;
-        rg_column_index.emplace_back(std::move(s.column_index));
-        rg_offset_index.emplace_back(std::move(s.offset_index));
         auto c = finalizeColumnChunkAndWriteFooter(offset, std::move(s), options, out);
         column_chunks.push_back(std::move(c));
     }
@@ -448,20 +436,16 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
             writeFileHeader(out);
         }
 
-        auto & rg_column_index = column_indexes.emplace_back();
-        auto & rg_offset_index = offset_indexes.emplace_back();
         std::vector<parquet::format::ColumnChunk> metadata;
         for (auto & cols : r.column_chunks)
         {
             for (ColumnChunk & col : cols)
             {
                 size_t offset = out.count() - base_offset;
-                for (auto & location : col.state.offset_index.page_locations)
-                    location.offset += offset;
+
                 out.write(col.serialized.data(), col.serialized.size());
-                rg_column_index.emplace_back(std::move(col.state.column_index));
-                rg_offset_index.emplace_back(std::move(col.state.offset_index));
                 auto m = finalizeColumnChunkAndWriteFooter(offset, std::move(col.state), options, out);
+
                 metadata.push_back(std::move(m));
             }
         }
@@ -572,7 +556,7 @@ void ParquetBlockOutputFormat::threadFunction()
 
             PODArray<char> serialized;
             {
-                auto buf = WriteBufferFromVector<PODArray<char>>(serialized);
+                WriteBufferFromVector buf(serialized);
                 writeColumnChunkBody(task.state, options, buf);
             }
 
@@ -601,7 +585,6 @@ void registerOutputFormatParquet(FormatFactory & factory)
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Parquet");
-    factory.markOutputFormatNotTTYFriendly("Parquet");
 }
 
 }

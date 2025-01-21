@@ -1,12 +1,16 @@
 #pragma once
 
-#include <map>
+#include <cassert>
 #include <vector>
+#include <algorithm>
+#include <map>
+#include <type_traits>
+#include <functional>
 
-#include <base/AlignedUnion.h>
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -254,7 +258,6 @@ template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = 
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal256>> { using Type = DecimalField<Decimal256>; };
 template <> struct NearestFieldTypeImpl<DecimalField<DateTime64>> { using Type = DecimalField<DateTime64>; };
-template <> struct NearestFieldTypeImpl<BFloat16> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
@@ -297,6 +300,7 @@ concept not_field_or_bool_or_stringlike
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
 static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
+
 
 /** Discriminated union of several types.
   * Made for replacement of `boost::variant`
@@ -475,20 +479,12 @@ public:
         return true;
     }
 
-    template <typename T> const auto & safeGet() const &
+    template <typename T> auto & safeGet() const
     {
         return const_cast<Field *>(this)->safeGet<T>();
     }
-    template <typename T> auto safeGet() const &&
-    {
-        return std::move(const_cast<Field *>(this)->safeGet<T>());
-    }
 
-    template <typename T> auto & safeGet() &;
-    template <typename T> auto safeGet() &&
-    {
-        return std::move(safeGet<T>());
-    }
+    template <typename T> auto & safeGet();
 
     bool operator< (const Field & rhs) const
     {
@@ -668,7 +664,7 @@ public:
     static Field restoreFromDump(std::string_view dump_);
 
 private:
-    AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
@@ -717,7 +713,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
-        chassert(which == TypeToEnum<JustT>::value);
+        assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
@@ -726,14 +722,14 @@ private:
     requires (sizeof(CharT) == 1)
     void assignString(const CharT * data, size_t size)
     {
-        chassert(which == Types::String);
+        assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
         ptr->assign(reinterpret_cast<const char *>(data), size);
     }
 
     void assignString(String && str)
     {
-        chassert(which == Types::String);
+        assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
         ptr->assign(std::move(str));
     }
@@ -867,9 +863,6 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
-/// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
-std::string_view fieldTypeToString(Field::Types::Which type);
-
 constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
@@ -884,7 +877,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 }
 
 template <typename T>
-auto & Field::safeGet() &
+auto & Field::safeGet()
 {
     const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
@@ -893,7 +886,7 @@ auto & Field::safeGet() &
     if (target != which &&
         !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
         !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
-        throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), fieldTypeToString(target));
+            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }
@@ -950,15 +943,14 @@ inline Field & Field::operator=(String && str)
 class ReadBuffer;
 class WriteBuffer;
 
-/// Binary serialization of generic field.
-void writeFieldBinary(const Field & x, WriteBuffer & buf);
-Field readFieldBinary(ReadBuffer & buf);
-
-void readBinaryArray(Array & x, ReadBuffer & buf);
+/// It is assumed that all elements of the array have the same type.
+void readBinary(Array & x, ReadBuffer & buf);
 [[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 [[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 
-void writeBinaryArray(const Array & x, WriteBuffer & buf);
+/// It is assumed that all elements of the array have the same type.
+/// Also write size and type into buf. UInt64 and Int64 is written in variadic size form
+void writeBinary(const Array & x, WriteBuffer & buf);
 void writeText(const Array & x, WriteBuffer & buf);
 [[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Array quoted."); }
 
@@ -1008,11 +1000,9 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
-
-void writeFieldBinary(const Field & x, WriteBuffer & buf);
-Field readFieldBinary(ReadBuffer & buf);
-
 String toString(const Field & x);
+
+std::string_view fieldTypeToString(Field::Types::Which type);
 }
 
 template <>

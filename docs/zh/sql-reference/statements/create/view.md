@@ -39,7 +39,7 @@ SELECT a, b, c FROM (SELECT ...)
 ## Materialized {#materialized}
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
 物化视图存储由相应的[SELECT](../../../sql-reference/statements/select/index.md)管理.

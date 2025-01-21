@@ -49,11 +49,10 @@ public:
     void copyFile(const String & destination, const String & source, size_t size) override;
 
     void removeFile(const String & file_name) override;
-    void removeEmptyDirectories() override;
+    void removeFiles(const Strings & file_names) override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
-    void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
 
     const DiskPtr disk;
     const std::filesystem::path root_path;

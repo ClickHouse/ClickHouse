@@ -35,7 +35,7 @@ struct PrewhereExprStep
     bool remove_filter_column = false;
     bool need_filter = false;
 
-    /// Some PREWHERE steps should be executed without conversions (e.g. early mutation steps)
+    /// Some PREWHERE steps should be executed without conversions.
     /// A step without alter conversion cannot be executed after step with alter conversions.
     bool perform_alter_conversions = false;
 };
@@ -313,8 +313,8 @@ private:
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
 
-    void fillVirtualColumns(Columns & columns, const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-    ColumnPtr createPartOffsetColumn(const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;

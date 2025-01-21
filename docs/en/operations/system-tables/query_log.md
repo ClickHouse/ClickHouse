@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/query_log
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # query_log
-
-<SystemTableCloud/>
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
@@ -13,11 +9,11 @@ Contains information about executed queries, for example, start time, duration o
 This table does not contain the ingested data for `INSERT` queries.
 :::
 
-You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) section of the server configuration.
+You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 
 You can disable queries logging by setting [log_queries = 0](../../operations/settings/settings.md#log-queries). We do not recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
@@ -94,8 +90,6 @@ Columns:
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
-- `script_query_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — A sequential query number in a multi-query script in [clickhouse-client](../../interfaces/cli.md).
-- `script_line_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — A line number in a multi-query script in [clickhouse-client](../../interfaces/cli.md) where the current query starts.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.

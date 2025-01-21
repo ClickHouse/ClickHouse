@@ -4,16 +4,11 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
 
 namespace DB
 {
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
-}
 
 namespace ErrorCodes
 {
@@ -123,9 +118,8 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_failed_part_info = source_part_info;
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
-                    status.latest_fail_error_code_name = ErrorCodes::getName(getExceptionErrorCode(saved_exception));
                     if (result_data_version == it->first)
-                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, (*storage.getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
+                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, storage.getSettings()->max_postpone_time_for_failed_mutations_ms);
                 }
             }
         }

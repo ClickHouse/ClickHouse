@@ -4,17 +4,14 @@ sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
 ---
-import BetaBadge from '@theme/badges/BetaBadge';
 
-# JSON Data Type
-
-<BetaBadge/>
+# JSON
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is beta and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
-If you want to use JSON type, set `enable_json_type = 1`. 
+This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
+If you want to use JSON type, set `allow_experimental_json_type = 1`. 
 :::
 
 To declare a column of `JSON` type, use the following syntax:
@@ -61,10 +58,10 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-Using CAST from `String`:
+Using CAST from 'String':
 
 ```sql
-SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json;
 ```
 
 ```text
@@ -73,48 +70,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 └────────────────────────────────────────────────┘
 ```
 
-Using CAST from `Tuple`:
-
-```sql
-SET enable_named_columns_in_function_tuple = 1;
-SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
-```
-
-```text
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
-```
-
-Using CAST from `Map`:
-
-```sql
-SET enable_variant_type=1, use_variant_as_common_type=1;
-SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
-```
-
-```text
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
-```
-
-Using CAST from deprecated `Object('json')`:
-
-```sql
-SET allow_experimental_object_type = 1;
-SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
-```
-
-```text
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
-```
-
-:::note
-CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into `String` column containing JSON objects and deserializing it back to `JSON` type column. 
-:::
+CAST from named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
 
 ## Reading JSON paths as subcolumns
 
@@ -191,7 +147,7 @@ select json.a.g.:Float64, dynamicType(json.a.g), json.d.:Date, dynamicType(json.
 └─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
 ```
 
-`Dynamic` subcolumns can be cast to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be cast to the requested type:
+`Dynamic` subcolumns can be casted to any data type. In this case the exception will be thrown if internal type inside `Dynamic` cannot be casted to the requested type:
 
 ```sql
 select json.a.g::UInt64 as uint FROM test;
@@ -497,8 +453,8 @@ As we can see, after inserting paths `e` and `f.g` the limit was reached and we 
 
 ### During merges of data parts in MergeTree table engines
 
-During merge of several data parts in MergeTree table the `JSON` column in the resulting data part can reach the limit of dynamic paths and won't be able to store all paths from source parts as subcolumns.
-In this case ClickHouse chooses what paths will remain as subcolumns after merge and what paths will be stored in the shared data structure. In most cases ClickHouse tries to keep paths that contain
+During merge of several data parts in MergeTree table the `JSON` column in the resulting data part can reach the limit of dynamic paths won't be able to store all paths from source parts as subcolumns.
+In this case ClickHouse chooses what paths will remain as subcolumns after merge and what types will be stored in the shared data structure. In most cases ClickHouse tries to keep paths that contains
 the largest number of non-null values and move the rarest paths to the shared data structure, but it depends on the implementation.
 
 Let's see an example of such merge. First, let's create a table with `JSON` column, set the limit of dynamic paths to `3` and insert values with `5` different paths:
@@ -549,185 +505,7 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 
 ## Introspection functions
 
-There are several functions that can help to inspect the content of the JSON column: [JSONAllPaths](../functions/json-functions.md#jsonallpaths), [JSONAllPathsWithTypes](../functions/json-functions.md#jsonallpathswithtypes), [JSONDynamicPaths](../functions/json-functions.md#jsondynamicpaths), [JSONDynamicPathsWithTypes](../functions/json-functions.md#jsondynamicpathswithtypes), [JSONSharedDataPaths](../functions/json-functions.md#jsonshareddatapaths), [JSONSharedDataPathsWithTypes](../functions/json-functions.md#jsonshareddatapathswithtypes), [distinctDynamicTypes](../aggregate-functions/reference/distinctdynamictypes.md), [distinctJSONPaths and distinctJSONPathsAndTypes](../aggregate-functions/reference/distinctjsonpaths.md)
-
-**Examples**
-
-Let's investigate the content of [GH Archive](https://www.gharchive.org/) dataset for `2020-01-01` date:
-
-```sql
-SELECT arrayJoin(distinctJSONPaths(json)) FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject) 
-```
-
-```text
-┌─arrayJoin(distinctJSONPaths(json))─────────────────────────┐
-│ actor.avatar_url                                           │
-│ actor.display_login                                        │
-│ actor.gravatar_id                                          │
-│ actor.id                                                   │
-│ actor.login                                                │
-│ actor.url                                                  │
-│ created_at                                                 │
-│ id                                                         │
-│ org.avatar_url                                             │
-│ org.gravatar_id                                            │
-│ org.id                                                     │
-│ org.login                                                  │
-│ org.url                                                    │
-│ payload.action                                             │
-│ payload.before                                             │
-│ payload.comment._links.html.href                           │
-│ payload.comment._links.pull_request.href                   │
-│ payload.comment._links.self.href                           │
-│ payload.comment.author_association                         │
-│ payload.comment.body                                       │
-│ payload.comment.commit_id                                  │
-│ payload.comment.created_at                                 │
-│ payload.comment.diff_hunk                                  │
-│ payload.comment.html_url                                   │
-│ payload.comment.id                                         │
-│ payload.comment.in_reply_to_id                             │
-│ payload.comment.issue_url                                  │
-│ payload.comment.line                                       │
-│ payload.comment.node_id                                    │
-│ payload.comment.original_commit_id                         │
-│ payload.comment.original_position                          │
-│ payload.comment.path                                       │
-│ payload.comment.position                                   │
-│ payload.comment.pull_request_review_id                     │
-...
-│ payload.release.node_id                                    │
-│ payload.release.prerelease                                 │
-│ payload.release.published_at                               │
-│ payload.release.tag_name                                   │
-│ payload.release.tarball_url                                │
-│ payload.release.target_commitish                           │
-│ payload.release.upload_url                                 │
-│ payload.release.url                                        │
-│ payload.release.zipball_url                                │
-│ payload.size                                               │
-│ public                                                     │
-│ repo.id                                                    │
-│ repo.name                                                  │
-│ repo.url                                                   │
-│ type                                                       │
-└─arrayJoin(distinctJSONPaths(json))─────────────────────────┘
-```
-
-```sql
-SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject) SETTINGS date_time_input_format='best_effort'
-```
-
-
-```text
-┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
-│ ('actor.avatar_url',['String'])                             │
-│ ('actor.display_login',['String'])                          │
-│ ('actor.gravatar_id',['String'])                            │
-│ ('actor.id',['Int64'])                                      │
-│ ('actor.login',['String'])                                  │
-│ ('actor.url',['String'])                                    │
-│ ('created_at',['DateTime'])                                 │
-│ ('id',['String'])                                           │
-│ ('org.avatar_url',['String'])                               │
-│ ('org.gravatar_id',['String'])                              │
-│ ('org.id',['Int64'])                                        │
-│ ('org.login',['String'])                                    │
-│ ('org.url',['String'])                                      │
-│ ('payload.action',['String'])                               │
-│ ('payload.before',['String'])                               │
-│ ('payload.comment._links.html.href',['String'])             │
-│ ('payload.comment._links.pull_request.href',['String'])     │
-│ ('payload.comment._links.self.href',['String'])             │
-│ ('payload.comment.author_association',['String'])           │
-│ ('payload.comment.body',['String'])                         │
-│ ('payload.comment.commit_id',['String'])                    │
-│ ('payload.comment.created_at',['DateTime'])                 │
-│ ('payload.comment.diff_hunk',['String'])                    │
-│ ('payload.comment.html_url',['String'])                     │
-│ ('payload.comment.id',['Int64'])                            │
-│ ('payload.comment.in_reply_to_id',['Int64'])                │
-│ ('payload.comment.issue_url',['String'])                    │
-│ ('payload.comment.line',['Int64'])                          │
-│ ('payload.comment.node_id',['String'])                      │
-│ ('payload.comment.original_commit_id',['String'])           │
-│ ('payload.comment.original_position',['Int64'])             │
-│ ('payload.comment.path',['String'])                         │
-│ ('payload.comment.position',['Int64'])                      │
-│ ('payload.comment.pull_request_review_id',['Int64'])        │
-...
-│ ('payload.release.node_id',['String'])                      │
-│ ('payload.release.prerelease',['Bool'])                     │
-│ ('payload.release.published_at',['DateTime'])               │
-│ ('payload.release.tag_name',['String'])                     │
-│ ('payload.release.tarball_url',['String'])                  │
-│ ('payload.release.target_commitish',['String'])             │
-│ ('payload.release.upload_url',['String'])                   │
-│ ('payload.release.url',['String'])                          │
-│ ('payload.release.zipball_url',['String'])                  │
-│ ('payload.size',['Int64'])                                  │
-│ ('public',['Bool'])                                         │
-│ ('repo.id',['Int64'])                                       │
-│ ('repo.name',['String'])                                    │
-│ ('repo.url',['String'])                                     │
-│ ('type',['String'])                                         │
-└─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
-```
-
-## ALTER MODIFY COLUMN to JSON type
-
-It's possible to alter an existing table and change the type of the column to the new `JSON` type. Right now only alter from `String` type is supported.
-
-**Example**
-
-```sql
-CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
-INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}')), ('{"c" : "2020-01-01"}');
-ALTER TABLE test MODIFY COLUMN json JSON;
-SELECT json, json.a, json.b, json.c FROM test;
-```
-
-```text
-┌─json─────────────────────────┬─json.a─┬─json.b──┬─json.c─────┐
-│ {"a":"42"}                   │ 42     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ       │
-│ {"a":"43","b":"Hello"}       │ 43     │ Hello   │ ᴺᵁᴸᴸ       │
-│ {"a":"44","b":["1","2","3"]} │ 44     │ [1,2,3] │ ᴺᵁᴸᴸ       │
-│ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
-└──────────────────────────────┴────────┴─────────┴────────────┘
-```
-
-## Comparison between values of the JSON type
-
-Values of the `JSON` column cannot be compared by `less/greater` functions, but can be compared using `equal` function.
-Two JSON objects considered equal when they have the same set of paths and value of each path have the same type and value in both objects.
-
-Example:
-```sql
-CREATE TABLE test (json1 JSON(a UInt32), json2 JSON(a UInt32)) ENGINE=Memory;
-INSERT INTO test FORMAT JSONEachRow
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "World"}}
-{"json1" : {"a" : 42, "b" : [1, 2, 3], "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42.0, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : "42", "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}};
-
-SELECT json1, json2, json1 == json2 FROM test;
-```
-
-```text
-┌─json1──────────────────────────────────┬─json2─────────────────────────┬─equals(json1, json2)─┐
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    1 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"World"} │                    0 │
-│ {"a":42,"b":["1","2","3"],"c":"Hello"} │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":42,"c":"Hello"}            │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-└────────────────────────────────────────┴───────────────────────────────┴──────────────────────┘
-```
-
+There are several functions that can help to inspect the content of the JSON column: [JSONAllPaths](../functions/json-functions.md#jsonallpaths), [JSONAllPathsWithTypes](../functions/json-functions.md#jsonallpathswithtypes), [JSONDynamicPaths](../functions/json-functions.md#jsondynamicpaths), [JSONDynamicPathsWithTypes](../functions/json-functions.md#jsondynamicpathswithtypes), [JSONSharedDataPaths](../functions/json-functions.md#jsonshareddatapaths), [JSONSharedDataPathsWithTypes](../functions/json-functions.md#jsonshareddatapathswithtypes).
 
 ## Tips for better usage of the JSON type
 

@@ -1,16 +1,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <Columns/ColumnObject.h>
 #include <Common/CurrentThread.h>
-#include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -24,8 +20,6 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
-#include "config.h"
-
 #if USE_SIMDJSON
 #  include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -37,12 +31,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool use_json_alias_for_old_object_type;
-    extern const SettingsBool allow_simdjson;
-}
 
 namespace ErrorCodes
 {
@@ -136,7 +124,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
             auto context = CurrentThread::getQueryContext();
             if (!context)
                 context = Context::getGlobalContextInstance();
-            if (context->getSettingsRef()[Setting::allow_simdjson])
+            if (context->getSettingsRef().allow_simdjson)
                 return std::make_shared<SerializationJSON<SimdJSONParser>>(
                     std::move(typed_path_serializations),
                     paths_to_skip,
@@ -253,14 +241,20 @@ namespace
 /// using json.array.:`Array(JSON)`.some.path without specifying max_dynamic_paths/max_dynamic_types.
 /// To support it, we do a trick - we replace JSON name in subcolumn to JSON(max_dynamic_paths=N, max_dynamic_types=M), because we know
 /// the exact values of max_dynamic_paths/max_dynamic_types for it.
-void replaceJSONTypeNameIfNeeded(String & type_name, const String & nested_json_type_name)
+void replaceJSONTypeNameIfNeeded(String & type_name, size_t max_dynamic_paths, size_t max_dynamic_types)
 {
     auto pos = type_name.find("JSON");
     while (pos != String::npos)
     {
         /// Replace only if we don't already have parameters in JSON type declaration.
         if (pos + 4 == type_name.size() || type_name[pos + 4] != '(')
-            type_name.replace(pos, 4, nested_json_type_name);
+            type_name.replace(
+                pos,
+                4,
+                fmt::format(
+                    "JSON(max_dynamic_paths={}, max_dynamic_types={})",
+                    max_dynamic_paths / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+                    max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR));
         pos = type_name.find("JSON", pos + 4);
     }
 }
@@ -268,7 +262,7 @@ void replaceJSONTypeNameIfNeeded(String & type_name, const String & nested_json_
 /// JSON subcolumn name with Dynamic type subcolumn looks like this:
 /// "json.some.path.:`Type_name`.some.subcolumn".
 /// We back quoted type name during identifier parsing so we can distinguish type subcolumn and path element ":TypeName".
-std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, const String & nested_json_type_name)
+std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, size_t max_dynamic_paths, size_t max_dynamic_types)
 {
     /// Try to find dynamic type subcolumn in a form .:`Type`.
     auto pos = subcolumn_name.find(".:`");
@@ -281,7 +275,7 @@ std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subc
     if (!tryReadBackQuotedString(dynamic_subcolumn, buf))
         return {String(subcolumn_name), ""};
 
-    replaceJSONTypeNameIfNeeded(dynamic_subcolumn, nested_json_type_name);
+    replaceJSONTypeNameIfNeeded(dynamic_subcolumn, max_dynamic_paths, max_dynamic_types);
 
     /// If there is more data in the buffer - it's subcolumn of a type, append it to the type name.
     if (!buf.eof())
@@ -405,7 +399,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     }
 
     /// Split requested subcolumn to the JSON path and Dynamic type subcolumn.
-    auto [path, path_subcolumn] = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
+    auto [path, path_subcolumn] = splitPathAndDynamicTypeSubcolumn(subcolumn_name, max_dynamic_paths, max_dynamic_types);
     std::unique_ptr<SubstreamData> res;
     if (auto it = typed_paths.find(path); it != typed_paths.end())
     {
@@ -445,7 +439,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// Get subcolumn for Dynamic type if needed.
     if (!path_subcolumn.empty())
     {
-        res = DB::IDataType::getSubcolumnData(path_subcolumn, *res, throw_if_null);
+        res = res->type->getSubcolumnData(path_subcolumn, *res, throw_if_null);
         if (!res)
             return nullptr;
     }
@@ -529,28 +523,16 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
 }
 
-const DataTypePtr & DataTypeObject::getTypeOfSharedData()
-{
-    /// Array(Tuple(String, String))
-    static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
-    return type;
-}
-
-DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
-{
-    return std::make_shared<DataTypeObject>(schema_format, max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR);
-}
-
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
     auto context = CurrentThread::getQueryContext();
     if (!context)
         context = Context::getGlobalContextInstance();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
+    if (context->getSettingsRef().allow_experimental_object_type && context->getSettingsRef().use_json_alias_for_old_object_type)
     {
         if (arguments && !arguments->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings enable_json_type = 1 and use_json_alias_for_old_object_type = 0");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings allow_experimental_json_type = 1 and use_json_alias_for_old_object_type = 0");
 
         return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
     }

@@ -416,7 +416,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            auto new_entity = update_func(old_entity, id);
+            auto new_entity = update_func(old_entity);
             if (new_entity->getName() != old_entity->getName())
             {
                 for (const auto & storage : *storages)
@@ -508,7 +508,7 @@ void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_colle
         throwBackupNotAllowed();
 }
 
-void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 {
     auto storages = getStoragesInternal();
 
@@ -516,7 +516,7 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, con
     {
         if (storage->isRestoreAllowed())
         {
-            storage->restoreFromBackup(restorer, data_path_in_backup);
+            storage->restoreFromBackup(restorer);
             return;
         }
     }

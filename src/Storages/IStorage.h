@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
 
@@ -104,7 +103,7 @@ public:
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
-    /// The main name of the table type (e.g. Memory, MergeTree, CollapsingMergeTree).
+    /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
     /// The name of the table.
@@ -120,9 +119,6 @@ public:
 
     /// Returns true if the storage is dictionary
     virtual bool isDictionary() const { return false; }
-
-    /// Returns true if the metadata of a table can be changed normally by other processes
-    virtual bool hasExternalDynamicMetadata() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
@@ -273,19 +269,12 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Returns true if storage can store columns in sparse serialization.
-    virtual bool supportsSparseSerialization() const { return false; }
-
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
-    /// 'storage_snapshot' may be nullptr.
     virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
     {
         return false;
     }
-
-    /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
-    virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
@@ -378,7 +367,7 @@ public:
         size_t /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
-    /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
 private:
@@ -509,12 +498,6 @@ public:
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
     virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
-
-    /// Updates metadata that can be changed by other processes
-    virtual void updateExternalDynamicMetadata(ContextPtr)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
-    }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -770,7 +753,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
-        std::shared_ptr<IStorage> storage_);
+        std::string storage_name);
 
 private:
     /// Lock required for alter queries (lockForAlter).
