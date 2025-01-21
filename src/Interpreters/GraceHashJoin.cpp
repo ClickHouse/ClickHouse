@@ -26,8 +26,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsUInt64 grace_hash_join_max_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 namespace ErrorCodes
