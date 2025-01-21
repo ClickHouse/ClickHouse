@@ -18,7 +18,7 @@ from textwrap import fill
 from typing import Dict, Iterable, List, Optional, Set
 
 from env_helper import GITHUB_REPOSITORY, IS_CI
-from git_helper import GIT_PREFIX, Git, git_runner
+from git_helper import GIT_PREFIX, Git, git_runner, is_shallow
 from version_helper import (
     ClickHouseVersion,
     get_supported_versions,
@@ -420,6 +420,7 @@ def main() -> None:
     log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
     logging.basicConfig(level=log_levels[min(args.verbose, 3)])
     logging.debug("Arguments are %s", pformat(args.__dict__))
+    assert not is_shallow(), "The repository must be full for script to work"
     if args.command == "generate-tree":
         generate_tree(args)
     elif args.command == "generate-ldf":
