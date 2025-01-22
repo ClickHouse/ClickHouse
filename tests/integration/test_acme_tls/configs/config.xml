@@ -1,0 +1,20 @@
+<clickhouse>
+    <https_port>3443</https_port>
+
+    <acme>
+        <email>test@clickhouse.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>integration-tests.clickhouse.com</domain>
+        </domains>
+        <directory_url>https://node_acme:8443/directory</directory_url>
+        <refresh_certificates_interval>60000</refresh_certificates_interval>
+    </acme>
+    <openSSL>
+        <client>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
