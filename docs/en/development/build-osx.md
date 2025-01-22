@@ -1,12 +1,12 @@
 ---
 slug: /en/development/build-osx
 sidebar_position: 15
-sidebar_label: Build on macOS
-title: How to Build ClickHouse on macOS
-description: How to build ClickHouse on macOS for macOS
+sidebar_label: Build on macOS for macOS
 ---
 
-:::info You don't have to build ClickHouse yourself!
+# How to Build ClickHouse on macOS for macOS
+
+:::info You don't need to build ClickHouse yourself!
 You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
 :::
 
@@ -14,15 +14,13 @@ ClickHouse can be compiled on macOS x86_64 (Intel) and arm64 (Apple Silicon) usi
 
 As compiler, only Clang from homebrew is supported.
 
-:::note
-Building with Apple's XCode `apple-clang` is not recommended, it may or may not work.
-:::
-
-## Install Homebrew
-
-First install [Homebrew](https://brew.sh/)
+Building with Apple's XCode `apple-clang` is not recommended, it may break in arbitrary ways.
 
 ## Install Prerequisites
+
+First install [Homebrew](https://brew.sh/).
+
+Next, run:
 
 ``` bash
 brew update
