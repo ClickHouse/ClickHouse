@@ -5853,6 +5853,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 - indices in simple filtering expressions
 - cross to inner join optimization
 )", 0) \
+    DECLARE(Bool, optimize_and_compare_chain, true, R"(
+Populate constant comparison in AND chains to enhance filtering ability. Support operators <, <=, >, >=, = and mix of them. For example, (a < b) AND (b < c) AND (c < 5) would be (a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5).
+)", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \

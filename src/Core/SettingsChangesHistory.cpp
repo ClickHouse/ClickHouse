@@ -96,6 +96,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

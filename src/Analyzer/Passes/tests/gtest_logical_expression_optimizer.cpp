@@ -1,9 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/QueryTreeBuilder.cpp>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -54,8 +55,7 @@ TEST(OptimizeAndCompareChain, compare)
         ContextPtr context = getContext().context;
         ParserExpressionWithOptionalAlias exp_elem(false);
         ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
-        QueryTreeBuilder builder(query, context);
-        QueryTreeNodePtr node = builder.getQueryTreeNode();
+        QueryTreeNodePtr node = buildQueryTree(query, context);
 
         node = resolve_everything(node, resolved_map, context);
         LogicalExpressionOptimizerPass pass;
@@ -95,4 +95,5 @@ TEST(OptimizeAndCompareChain, compare)
     test_f("c > 0 AND c < 5", "(c > 0) AND (c < 5)");
     test_f("a = b AND b = c AND c = 5", "(a = b) AND (b = c) AND (c = 5) AND (b = 5) AND (a = 5)");
     test_f("c < b AND a < 5 AND b < 6 AND b < 5", "(c < b) AND (a < 5) AND (b < 6) AND (b < 5) AND (c < 6) AND (c < 5)");
+    test_f("a = b AND a > 3 AND b > 0", "(a = b) AND (a > 3) AND (b > 0) AND (b > 3) AND (a > 0)");
 }

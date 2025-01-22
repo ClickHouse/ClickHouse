@@ -19,6 +19,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
+    extern const SettingsBool optimize_and_compare_chain;
 }
 
 namespace ErrorCodes
@@ -840,7 +841,8 @@ public:
         if (function_node->getFunctionName() == "and")
         {
             tryOptimizeAndEqualsNotEqualsChain(node);
-            tryOptimizeAndCompareChain(node);
+            if (getSettings()[Setting::optimize_and_compare_chain])
+                tryOptimizeAndCompareChain(node);
             return;
         }
 
@@ -1151,9 +1153,7 @@ private:
             }
         }
 
-        /// To avoid duplicate when traversing in equal condition
-        std::unordered_set<QueryTreeNodePtr> equal_set;
-        /// To avoid endless loop during the DFS, for example, a>b AND b>a AND a<5
+        /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5
         std::unordered_set<QueryTreeNodePtr> check_path;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         std::set<std::pair<QueryTreeNodePtr, const ConstantNode *>> equal_funcs;
@@ -1168,14 +1168,10 @@ private:
             {
                 for (const auto & left : it->second)
                 {
-                    if (left.second == CompareType::equals && equal_set.contains(left.first))
-                        continue;
-
                     if (path.contains(left.first))
                         continue;
-
-                    equal_set.insert(left.first);
                     path.insert(left.first);
+
                     CompareType compare_type = std::min(type, left.second);
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
@@ -1215,8 +1211,8 @@ private:
         for (const auto & constant : greater_constants)
             findPairs(greater_pairs, constant, nullptr, CompareType::equals, check_path);
 
-        equal_set.clear();
-        check_path.clear();
+        chassert(check_path.empty());
+
         /// Start from small constant
         for (const auto & constant : less_constants)
             findPairs(less_pairs, constant, nullptr, CompareType::equals, check_path);
