@@ -74,7 +74,7 @@ public:
 
     static void * allocateString(const struct ffi::KernelStringSlice slice)
     {
-        return new std::string(slice.ptr, slice.len); ///TODO: not good
+        return new std::string(slice.ptr, slice.len);
     }
 
     static void scanCallback(
@@ -92,16 +92,10 @@ public:
         DB::ObjectInfoWithParitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & name_and_type : context->schema)
         {
-            const auto * value = static_cast<const std::string *>(
-                ffi::get_from_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), allocateString));
+            auto raw_value = ffi::get_from_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), allocateString);
+            auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
             if (value)
-            {
-                const std::string partition_value(*value);
-                partitions_info.emplace_back(name_and_type, DB::parseFieldFromString(partition_value, name_and_type.type));
-
-                // LOG_TEST(context->log, "Got partition value {}={}", name_and_type.name, partition_value);
-                // delete value;
-            }
+                partitions_info.emplace_back(name_and_type, DB::parseFieldFromString(*value, name_and_type.type));
         }
 
         DB::ObjectInfoPtr object;

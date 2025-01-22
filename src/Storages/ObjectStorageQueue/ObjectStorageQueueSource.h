@@ -35,7 +35,7 @@ public:
         FileMetadataPtr file_metadata;
     };
 
-    class FileIterator : public IIterator, WithContext
+    class FileIterator : public IObjectIterator, private WithContext
     {
     public:
         FileIterator(
@@ -54,7 +54,7 @@ public:
 
         bool isFinished() const;
 
-        ObjectInfoPtr nextImpl(size_t processor) override;
+        ObjectInfoPtr next(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
@@ -92,7 +92,7 @@ public:
         std::mutex next_mutex;
         size_t index = 0;
 
-        std::pair<Source::ObjectInfoPtr, FileMetadataPtr> next();
+        std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(Source::ObjectInfos & objects);
         void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 

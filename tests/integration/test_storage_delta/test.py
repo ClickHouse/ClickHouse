@@ -377,11 +377,12 @@ def test_types(started_cluster):
         DeltaTable.create(spark)
         .tableName(TABLE_NAME)
         .location(f"/{result_file}")
-        .addColumn("a", "INT")
-        .addColumn("b", "STRING")
-        .addColumn("c", "DATE")
-        .addColumn("d", "ARRAY<STRING>")
-        .addColumn("e", "BOOLEAN")
+        .addColumn("a", "INT", nullable=True)
+        .addColumn("b", "STRING", nullable=False)
+        .addColumn("c", "DATE", nullable=False)
+        .addColumn("d", "ARRAY<STRING>", nullable=False)
+        .addColumn("e", "BOOLEAN", nullable=True)
+        .addColumn("f", ArrayType(StringType(), containsNull=False), nullable=False)
         .execute()
     )
     data = [
@@ -391,16 +392,18 @@ def test_types(started_cluster):
             datetime.strptime("2000-01-01", "%Y-%m-%d"),
             ["str1", "str2"],
             True,
+            ["str1", "str4"],
         )
     ]
 
     schema = StructType(
         [
-            StructField("a", IntegerType()),
-            StructField("b", StringType()),
-            StructField("c", DateType()),
+            StructField("a", IntegerType(), nullable=True),
+            StructField("b", StringType(), nullable=False),
+            StructField("c", DateType(), nullable=False),
             StructField("d", ArrayType(StringType())),
-            StructField("e", BooleanType()),
+            StructField("e", BooleanType(), nullable=False),
+            StructField("f", ArrayType(StringType(), containsNull=False)),
         ]
     )
     df = spark.createDataFrame(data=data, schema=schema)
@@ -420,22 +423,23 @@ def test_types(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
     assert (
         instance.query(f"SELECT * FROM {TABLE_NAME}").strip()
-        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue\t['str1','str4']"
     )
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"
     assert (
         instance.query(f"SELECT * FROM {table_function}").strip()
-        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue\t['str1','str4']"
     )
 
     assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
         [
             ["a", "Nullable(Int32)"],
-            ["b", "Nullable(String)"],
-            ["c", "Nullable(Date32)"],
+            ["b", "String"],
+            ["c", "Date32"],
             ["d", "Array(Nullable(String))"],
             ["e", "Nullable(Bool)"],
+            ["f", "Array(String)"],
         ]
     )
 
@@ -760,8 +764,8 @@ def test_complex_types(started_cluster):
 
     schema = pa.schema(
         [
-            ("id", pa.int32()),
-            ("name", pa.string()),
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
             (
                 "address",
                 pa.struct(
@@ -860,7 +864,7 @@ def test_filesystem_cache(started_cluster, storage_type):
     parquet_data_path = create_initial_data_file(
         started_cluster,
         instance,
-        "SELECT number, toString(number) FROM numbers(100)",
+        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
         TABLE_NAME,
     )
 

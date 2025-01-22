@@ -20,9 +20,10 @@ if (NOT ENABLE_DELTA_KERNEL_RS)
   return()
 endif()
 
-set(EXTENSION_SOURCES ${DELTA_KERNEL_RS_SOURCE_DIR}/delta_extension.cpp)
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
+set(SOURCES "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp")
 
-add_library(_delta_kernel_rs STATIC ${EXTENSION_SOURCES})
+add_library(_delta_kernel_rs STATIC ${SOURCES})
 
 set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/target4)
 

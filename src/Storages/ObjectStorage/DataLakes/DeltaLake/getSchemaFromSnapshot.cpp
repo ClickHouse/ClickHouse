@@ -33,17 +33,18 @@ public:
     DB::NamesAndTypesList getSchemaResult();
 
 private:
-    DB::DataTypes getDataTypesFromTypeList(size_t list_idx, bool nullable);
+    DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
 
     struct Field
     {
-        Field(const std::string & name_, const DB::TypeIndex & type_)
-            : name(name_), type(type_) {}
+        Field(const std::string & name_, const DB::TypeIndex & type_, bool nullable_)
+            : name(name_), type(type_), nullable(nullable_) {}
 
         /// Column name.
         const std::string name;
         /// Column type.
         const DB::TypeIndex type;
+        const bool nullable;
         /// If type is complex, whether it can contain nullable values.
         bool value_contains_null;
         /// If type is complex, list id of the child list
@@ -113,7 +114,7 @@ private:
     }
 
     template <DB::TypeIndex type, bool is_bool = false>
-    static void simpleTypeVisitor(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice name)
+    static void simpleTypeVisitor(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice name, bool nullable)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         auto it = state->type_lists.find(sibling_list_id);
@@ -128,10 +129,10 @@ private:
 
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {}, type: {}",
-            sibling_list_id, column_name, type);
+            "List id: {}, column name: {}, type: {}, nullable: {}",
+            sibling_list_id, column_name, type, nullable);
 
-        SchemaVisitorData::Field field(column_name, std::move(type));
+        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
         field.is_bool = is_bool;
 
         it->second->push_back(std::move(field));
@@ -141,6 +142,7 @@ private:
         void * data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
+        bool nullable,
         uint8_t precision,
         uint8_t scale)
     {
@@ -161,7 +163,7 @@ private:
             "List id: {}, column name: {}, type: {}",
             sibling_list_id, column_name, type);
 
-        SchemaVisitorData::Field field(column_name, type);
+        SchemaVisitorData::Field field(column_name, type, nullable);
         field.precision = precision;
         field.scale = scale;
 
@@ -173,28 +175,31 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool contains_null,
+        bool nullable,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, contains_null, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, contains_null, child_list_id);
     }
 
     static void tupleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
+        bool nullable,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, false, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, false, child_list_id);
     }
 
     static void mapTypeVisitor(
         void *data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
+        bool nullable,
         bool value_contains_null,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, value_contains_null, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, value_contains_null, child_list_id);
     }
 
     template <DB::TypeIndex type>
@@ -202,6 +207,7 @@ private:
         void * data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
+        bool nullable,
         bool value_contains_null,
         uintptr_t child_list_id)
     {
@@ -222,7 +228,7 @@ private:
             "value contains null: {}, child list id: {}",
             sibling_list_id, column_name, type, value_contains_null, child_list_id);
 
-        SchemaVisitorData::Field field(column_name, std::move(type));
+        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
         field.child_list_id = child_list_id;
         field.value_contains_null = value_contains_null;
 
@@ -233,7 +239,7 @@ private:
 
 DB::NamesAndTypesList SchemaVisitorData::getSchemaResult()
 {
-    const auto types = getDataTypesFromTypeList(0, true);
+    const auto types = getDataTypesFromTypeList(0);
     chassert(types.size() == type_lists[0]->size());
 
     std::list<DB::NameAndTypePair> result;
@@ -244,7 +250,7 @@ DB::NamesAndTypesList SchemaVisitorData::getSchemaResult()
     return DB::NamesAndTypesList(result.begin(), result.end());
 }
 
-DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx, bool nullable)
+DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
 {
     DB::DataTypes types;
     for (const auto & field : *type_lists[list_idx])
@@ -252,7 +258,7 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx, bool 
         if (field.is_bool)
         {
             auto type = DB::DataTypeFactory::instance().get("Bool");
-            if (nullable)
+            if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
 
             types.push_back(type);
@@ -260,7 +266,7 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx, bool 
         else if (field.type == DB::TypeIndex::Decimal32)
         {
             auto type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
-            if (nullable)
+            if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
 
             types.push_back(type);
@@ -268,7 +274,7 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx, bool 
         else if (DB::isSimpleDataType(field.type))
         {
             auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);
-            if (nullable)
+            if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
 
             types.push_back(type);
@@ -285,12 +291,12 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx, bool 
             DB::WhichDataType which(field.type);
             if (which.isTuple())
             {
-                auto child_types = getDataTypesFromTypeList(field.child_list_id, field.value_contains_null);
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 types.push_back(std::make_shared<DB::DataTypeTuple>(child_types));
             }
             else if (which.isArray())
             {
-                auto child_types = getDataTypesFromTypeList(field.child_list_id, field.value_contains_null);
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -303,7 +309,7 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx, bool 
             }
             else if (which.isMap())
             {
-                auto child_types = getDataTypesFromTypeList(field.child_list_id, field.value_contains_null);
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 if (child_types.size() != 2)
                 {
                     throw DB::Exception(

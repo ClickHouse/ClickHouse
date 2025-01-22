@@ -125,7 +125,7 @@ size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
         return object_infos.size();
 }
 
-std::pair<ObjectStorageQueueSource::Source::ObjectInfoPtr, ObjectStorageQueueSource::FileMetadataPtr>
+std::pair<ObjectInfoPtr, ObjectStorageQueueSource::FileMetadataPtr>
 ObjectStorageQueueSource::FileIterator::next()
 {
     std::lock_guard lock(next_mutex);
@@ -168,7 +168,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 VirtualColumnUtils::filterByPathOrFile(
                     new_batch, paths, filter_expr, virtual_columns, getContext());
 
-                LOG_TEST(logger, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
+                LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
 
             size_t previous_size = new_batch.size();
@@ -176,7 +176,7 @@ ObjectStorageQueueSource::FileIterator::next()
             /// Filter out files which we know we would not need to process.
             filterProcessableFiles(new_batch);
 
-            LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
+            LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
 
             if (!new_batch.empty()
                 && enable_hash_ring_filtering
