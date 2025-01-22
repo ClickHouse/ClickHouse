@@ -2610,7 +2610,7 @@ CONV_FN(TableEngineParam, tep)
             break;
         case TableEngineParamType::kRegexp:
             ret += "REGEXP('";
-            tep.regexp();
+            ret += tep.regexp();
             ret += "')";
             break;
         default:
