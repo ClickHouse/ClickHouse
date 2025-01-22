@@ -1,13 +1,14 @@
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
-#include <Access/SettingsConstraintsAndProfileIDs.h>
+#include "DataTypes/DataTypeArray.h"
 
 
 namespace DB
@@ -25,6 +26,7 @@ ColumnsDescription SystemMergeTreeSettings<replicated>::getColumnsDescription()
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"min",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Minimum value of the setting, if any is set via constraints. If the setting has no minimum value, contains NULL."},
         {"max",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Maximum value of the setting, if any is set via constraints. If the setting has no maximum value, contains NULL."},
+        {"disallowed_values",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of disallowed values"},
         {"readonly",    std::make_shared<DataTypeUInt8>(),
             "Shows whether the current user can change the setting: "
             "0 — Current user can change the setting, "

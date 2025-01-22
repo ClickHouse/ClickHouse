@@ -690,6 +690,8 @@ namespace
                     profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                else if (constraint_type == "disallow")
+                    profile_element.disallowed_values.push_back(settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type)));
                 else if (constraint_type == "readonly" || constraint_type == "const")
                 {
                     writability_count++;

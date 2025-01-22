@@ -6511,10 +6511,11 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 {
     MutableColumns & res_columns = params.res_columns;
 
+    size_t col = 0;
     const auto fill_data_for_setting = [&](std::string_view setting_name, const auto & setting)
     {
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
+        res_columns[col++]->insert(setting.getValueString());
+        res_columns[col++]->insert(setting.isValueChanged());
 
         /// Trim starting/ending newline.
         std::string_view doc = setting.getDescription();
@@ -6523,12 +6524,13 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!doc.empty() && doc[doc.length() - 1] == '\n')
             doc = doc.substr(0, doc.length() - 1);
 
-        res_columns[3]->insert(doc);
+        res_columns[col++]->insert(doc);
 
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, writability);
+        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -6536,31 +6538,38 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
-        res_columns[4]->insert(min);
-        res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getDefaultValueString());
-        res_columns[10]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[11]->insert(setting.getTier());
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+
+        res_columns[col++]->insert(min);
+        res_columns[col++]->insert(max);
+        res_columns[col++]->insert(disallowed_array);
+        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[col++]->insert(setting.getTypeName());
+        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[col++]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & setting : impl->all())
     {
+        col = 0;
         const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
+        res_columns[col++]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[9]->insert("");
+        res_columns[col++]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
+            col = 0;
             for (const auto alias : it->second)
             {
-                res_columns[0]->insert(alias);
+                res_columns[col++]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[9]->insert(setting_name);
+                res_columns[col++]->insert(setting_name);
             }
         }
     }
