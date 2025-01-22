@@ -122,6 +122,7 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            executable="/bin/bash",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -407,7 +408,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return Path.cwd()
+        return str(Path.cwd())
 
     @staticmethod
     def cpu_count():

@@ -11,6 +11,15 @@ class Validator:
     @classmethod
     def validate(cls):
         print("---Start validating Pipeline and settings---")
+
+        if Settings.DISABLED_WORKFLOWS:
+            for file in Settings.DISABLED_WORKFLOWS:
+                cls.evaluate_check_simple(
+                    Path(file).is_file()
+                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
+                    f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
+                )
+
         workflows = _get_workflows()
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
@@ -223,6 +232,18 @@ class Validator:
             print(
                 f"ERROR: Config validation failed: workflow [{workflow_name}], job [{job_name}]:"
             )
+            for message in messages:
+                print(" ||  " + message)
+            raise
+
+    @classmethod
+    def evaluate_check_simple(cls, check_ok, message):
+        message = message.split("\n")
+        messages = [message] if not isinstance(message, list) else message
+        if check_ok:
+            return
+        else:
+            print(f"ERROR: Validation failed:")
             for message in messages:
                 print(" ||  " + message)
             raise
