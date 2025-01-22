@@ -182,7 +182,7 @@ public:
                 getName(), arguments.size());
         }
 
-        if (!arguments[0].column->empty())
+        if (arguments[0].column && !arguments[0].column->empty())
         {
             if (arguments[0].column->getInt(0) < 0)
             {
