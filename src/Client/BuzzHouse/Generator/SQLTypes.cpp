@@ -1862,7 +1862,7 @@ String StatementGenerator::strAppendBottomValue(RandomGenerator & rg, SQLType * 
 String StatementGenerator::strAppendMap(RandomGenerator & rg, MapType * mt)
 {
     String ret = "map(";
-    std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_nested_rows);
+    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_nested_rows, fc.max_nested_rows);
     const uint64_t limit = rows_dist(rg.generator);
 
     for (uint64_t i = 0; i < limit; i++)
@@ -1896,7 +1896,7 @@ String StatementGenerator::strAppendArray(RandomGenerator & rg, SQLType * tp, co
 
 String StatementGenerator::strAppendArray(RandomGenerator & rg, ArrayType * at)
 {
-    std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_nested_rows);
+    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
     return strAppendArray(rg, at->subtype, rows_dist(rg.generator));
 }

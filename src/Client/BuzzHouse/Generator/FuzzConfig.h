@@ -95,7 +95,7 @@ public:
                                      minio_server = std::nullopt;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, use_dump_table_oracle = true,
          compare_success_results = false, measure_performance = false, allow_infinite_tables = false;
-    uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 1, max_nested_rows = 10, query_time_threshold = 10,
+    uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, query_time_threshold = 10,
              query_memory_threshold = 10, query_time_minimum = 2000, query_memory_minimum = 20000;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0,
              type_mask = std::numeric_limits<uint32_t>::max();
