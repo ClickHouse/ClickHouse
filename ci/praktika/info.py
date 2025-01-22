@@ -20,6 +20,10 @@ class Info:
         return self.env.PR_TITLE
 
     @property
+    def pr_number(self):
+        return self.env.PR_NUMBER
+
+    @property
     def git_branch(self):
         return self.env.BRANCH
 

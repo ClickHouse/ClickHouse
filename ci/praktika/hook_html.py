@@ -130,7 +130,11 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
         info = Info()
-        summary_result.set_info(f"{info.pr_title} | {info.git_branch} | {info.git_sha}")
+        summary_result.set_info(
+            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
+            if info.pr_number
+            else f"{info.git_branch}  |  {info.git_sha}"
+        )
 
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         page_url = Info().get_report_url(latest=True)

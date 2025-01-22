@@ -26,7 +26,3 @@ SECRET_CI_DB_USER = "clickhouse-test-stat-login"
 SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
-PIPELINE_PRECHECKS = [
-    "python3 ./ci/jobs/scripts/prechecks/pr_description.py",
-    "python3 ./ci/jobs/scripts/prechecks/trusted.py",
-]

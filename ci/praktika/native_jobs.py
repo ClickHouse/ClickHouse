@@ -228,10 +228,10 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         cache_jobs={},
     ).dump()
 
-    if Settings.PIPELINE_PRECHECKS:
+    if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
-        for pre_check in Settings.PIPELINE_PRECHECKS:
+        for pre_check in workflow.pre_hooks:
             if callable(pre_check):
                 name = pre_check.__name__
             else:
@@ -336,11 +336,11 @@ def _finish_workflow(workflow, job_name):
 
     update_final_report = False
     results = []
-    if Settings.PIPELINE_POSTCHECKS:
+    if workflow.post_hooks:
         sw_ = Utils.Stopwatch()
         res_ = workflow_result.results
         update_final_report = True
-        for check in Settings.PIPELINE_POSTCHECKS:
+        for check in workflow.post_hooks:
             if callable(check):
                 name = check.__name__
             else:
