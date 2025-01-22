@@ -68,8 +68,8 @@ SELECT _table, key, value FROM m2 WHERE _table = 'd4' and value <= 30;
 
 SELECT _table, key, value FROM (SELECT _table, key, value FROM d1 UNION ALL SELECT _table, key, value FROM d2) ORDER BY key ASC;
 
-SELECT _table, key FROM view1;
+SELECT _table, key FROM view1 ORDER BY key ASC;
 
-SELECT _table, key, value FROM buffer1;
+SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
 
-SELECT _table, key, value FROM mv1;
+SELECT _table, key, value FROM mv1 ORDER BY key ASC;
