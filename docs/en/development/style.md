@@ -1,8 +1,7 @@
 ---
 slug: /en/development/style
-sidebar_position: 71
-sidebar_label: C++ Guide
-description: A list of recommendations regarding coding style, naming convention, formatting and more
+sidebar_position: 70
+sidebar_label: C++ Style Guide
 ---
 
 # How to Write C++ Code

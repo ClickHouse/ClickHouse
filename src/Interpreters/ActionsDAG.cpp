@@ -428,16 +428,18 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
 
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
+    bool replaced = false;
     for (auto & output_node : outputs)
     {
         if (output_node->result_name == node.result_name)
         {
             output_node = &node;
-            return;
+            replaced = true;
         }
     }
 
-    outputs.push_back(&node);
+    if (!replaced)
+        outputs.push_back(&node);
 }
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
