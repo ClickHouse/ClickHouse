@@ -1074,7 +1074,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 {
                     generateNextTablePartition(rg, false, t, upt->mutable_partition());
                 }
-                flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
+                flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
                 if (this->entries.empty())
                 {
                     UpdateSet * upset = upt->mutable_update();
@@ -1638,7 +1638,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + 1))
             {
-                flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
+                flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
                 generateNextTTL(rg, t, nullptr, ati->mutable_modify_ttl());
                 this->entries.clear();
             }

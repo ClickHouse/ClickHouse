@@ -10,6 +10,32 @@ namespace BuzzHouse
 
 class StatementGenerator;
 
+enum class SQLTypeClass
+{
+    NONE = 0,
+    BOOL = 1,
+    INT = 2,
+    FLOAT = 3,
+    DATE = 4,
+    DATETIME = 5,
+    DECIMAL = 6,
+    STRING = 7,
+    UUID = 8,
+    ENUM = 9,
+    IPV4 = 10,
+    IPV6 = 11,
+    DYNAMIC = 12,
+    JSON = 13,
+    NULLABLE = 14,
+    LOWCARDINALITY = 15,
+    GEO = 16,
+    ARRAY = 17,
+    MAP = 18,
+    TUPLE = 19,
+    VARIANT = 20,
+    NESTED = 21
+};
+
 class SQLType
 {
 public:
@@ -20,6 +46,7 @@ public:
     virtual SQLType * typeDeepCopy() const = 0;
     virtual String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const = 0;
     virtual bool isNullable() const = 0;
+    virtual SQLTypeClass getTypeClass() const = 0;
 
     virtual ~SQLType() = default;
 };
@@ -34,6 +61,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::BOOL; }
 
     ~BoolType() override = default;
 };
@@ -52,6 +80,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::INT; }
 
     ~IntType() override = default;
 };
@@ -69,6 +98,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::FLOAT; }
 
     ~FloatType() override = default;
 };
@@ -86,6 +116,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::DATE; }
 
     ~DateType() override = default;
 };
@@ -109,6 +140,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::DATETIME; }
 
     ~DateTimeType() override = default;
 };
@@ -131,6 +163,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::DECIMAL; }
 
     ~DecimalType() override = default;
 };
@@ -148,6 +181,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::STRING; }
 
     ~StringType() override = default;
 };
@@ -162,6 +196,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::UUID; }
 
     ~UUIDType() override = default;
 };
@@ -189,6 +224,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::ENUM; }
 
     ~EnumType() override = default;
 };
@@ -203,6 +239,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::IPV4; }
 
     ~IPv4Type() override = default;
 };
@@ -217,6 +254,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::IPV6; }
 
     ~IPv6Type() override = default;
 };
@@ -234,6 +272,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::DYNAMIC; }
 
     ~DynamicType() override = default;
 };
@@ -261,6 +300,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::JSON; }
 
     ~JSONType() override;
 };
@@ -278,6 +318,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::NULLABLE; }
 
     ~Nullable() override { delete subtype; }
 };
@@ -295,6 +336,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::LOWCARDINALITY; }
 
     ~LowCardinality() override { delete subtype; }
 };
@@ -312,6 +354,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::GEO; }
 
     ~GeoType() override = default;
 };
@@ -330,6 +373,7 @@ public:
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & fc, const uint32_t limit) const;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::ARRAY; }
 
     ~ArrayType() override { delete subtype; }
 };
@@ -347,6 +391,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::MAP; }
 
     ~MapType() override;
 };
@@ -373,6 +418,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::TUPLE; }
 
     ~TupleType() override;
 };
@@ -390,6 +436,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::VARIANT; }
 
     ~VariantType() override;
 };
@@ -417,6 +464,7 @@ public:
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return false; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::NESTED; }
 
     ~NestedType() override;
 };

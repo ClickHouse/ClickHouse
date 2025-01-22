@@ -203,7 +203,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
             entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         /* ArrowStream doesn't support UUID */
-        if (outf == OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType *>(tp))
+        if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
         {
             outf = OutFormat::OUT_CSV;
         }

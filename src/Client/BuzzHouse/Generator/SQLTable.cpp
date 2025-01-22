@@ -19,12 +19,12 @@ void collectColumnPaths(
     checkStackSize();
     // Append this node to the path
     next.path.push_back(ColumnPathChainEntry(cname, tp));
-    if (((flags & skip_nested_node) == 0 || !dynamic_cast<NestedType *>(tp))
-        && ((flags & skip_tuple_node) == 0 || !dynamic_cast<TupleType *>(tp)))
+    if (((flags & skip_nested_node) == 0 || tp->getTypeClass() != SQLTypeClass::NESTED)
+        && ((flags & skip_tuple_node) == 0 || tp->getTypeClass() != SQLTypeClass::TUPLE))
     {
         paths.push_back(next);
     }
-    if ((flags & collect_generated) != 0 && dynamic_cast<Nullable *>(tp))
+    if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
         next.path.push_back(ColumnPathChainEntry("null", &(*null_tp)));
         paths.push_back(next);
@@ -250,7 +250,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
     {
         SQLType * tp = entry.getBottomType();
 
-        if (!tp || (tp && (dynamic_cast<DateTimeType *>(tp) || dynamic_cast<DateType *>(tp))))
+        if (!tp || (tp && (tp->getTypeClass() == SQLTypeClass::DATE || tp->getTypeClass() == SQLTypeClass::DATETIME)))
         {
             filtered_entries.push_back(std::ref<const ColumnPathChain>(entry));
         }
@@ -1092,7 +1092,7 @@ void StatementGenerator::addTableColumn(
         }
         if (!t.hasDatabasePeer() && rg.nextMediumNumber() < 16)
         {
-            flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
+            flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
             generateTTLExpression(rg, t, cd->mutable_ttl_expr());
             this->entries.clear();
         }
@@ -1575,12 +1575,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     {
         bool has_date_cols = false;
 
-        flatTableColumnPath(0, next, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
+        flatTableColumnPath(0, next, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
         for (const auto & entry : entries)
         {
             SQLType * tp = entry.getBottomType();
 
-            if (dynamic_cast<DateTimeType *>(tp) || dynamic_cast<DateType *>(tp))
+            if (tp->getTypeClass() == SQLTypeClass::DATE || tp->getTypeClass() == SQLTypeClass::DATETIME)
             {
                 has_date_cols = true;
                 break;
