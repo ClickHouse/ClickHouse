@@ -1,4 +1,5 @@
 #include <Server/ACMEClient.h>
+#include "IO/ReadWriteBufferFromHTTP.h"
 
 #if USE_SSL
 
@@ -185,7 +186,7 @@ ACMEClient & ACMEClient::instance()
 
 std::optional<std::tuple<Poco::Crypto::EVPPKey, Poco::Crypto::X509Certificate>> ACMEClient::requestCertificate(const Poco::Util::AbstractConfiguration &)
 {
-    LOG_DEBUG(log, "ACME requestCertificate called");
+    LOG_TEST(log, "ACME requestCertificate called");
 
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
@@ -258,221 +259,223 @@ void ACMEClient::initialize(const Poco::Util::AbstractConfiguration & config)
 
     BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
-
-    refresh_certificates_task = bgpool.createTask(
-        "ACMECertRefresh",
-        [this, &config]
-        {
-            try
-            {
-                auto context = Context::getGlobalContextInstance();
-                auto zk = context->getZooKeeper();
-
-                bool need_refresh = false;
-                for (const auto & domain : domains)
-                {
-                    Coordination::Stat certificate_stat;
-                    Coordination::Stat private_key_stat;
-
-                    std::string private_key;
-                    std::string certificate;
-
-                    zookeeper->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "private_key", private_key, &private_key_stat);
-                    zookeeper->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "certificate", certificate, &certificate_stat);
-
-                    if (private_key.empty() || certificate.empty())
-                    {
-                        need_refresh = true;
-                        break;
-                    }
-
-                    std::istringstream cert_stream(certificate); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                    auto wcert = Poco::Crypto::X509Certificate(cert_stream);
-
-                    LOG_DEBUG(log, "Certificate for domain {} expires on {} {}", domain, Poco::DateTimeFormatter::format(wcert.expiresOn(), Poco::DateTimeFormat::ISO8601_FORMAT), need_refresh);
-
-                    if (wcert.expiresOn() < Poco::Timestamp() + Poco::Timespan(14 * Poco::Timespan::DAYS))
-                        need_refresh = true;
-                }
-
-                if (!need_refresh)
-                {
-                    LOG_DEBUG(log, "No certificates need to be refreshed");
-
-                    CertificateReloader::instance().tryLoad(config);
-
-                    refresh_certificates_task->scheduleAfter(60000);
-                    return;
-                }
-
-                auto active_order_path = fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "active_order";
-
-                if (!lock && zk->exists(active_order_path))
-                {
-                    LOG_DEBUG(log, "Active order exists, skipping refresh");
-                    refresh_certificates_task->scheduleAfter(60000);
-                    return;
-                }
-
-                if (!active_order.has_value())
-                {
-                    lock = std::make_shared<zkutil::ZooKeeperLock>(zk, fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname, "active_order", "ACMEClient");
-                    lock->tryLock();
-
-                    active_order = order();
-
-                    refresh_certificates_task->scheduleAfter(1000);
-                    return;
-                }
-
-                lock->tryLock();
-
-                auto order_url = active_order.value();
-                auto order_data = describeOrder(order_url);
-                LOG_DEBUG(log, "Order {} status: {}", order_url, order_data.status);
-
-                if (order_data.status == "invalid")
-                {
-                    active_order.reset();
-                    lock.reset();
-
-                    refresh_certificates_task->scheduleAfter(10000);
-                    return;
-                }
-
-                if (order_data.status == "ready")
-                {
-                    auto pkey = generatePrivateKeyInPEM();
-
-                    for (const auto & domain : domains)
-                    {
-                        auto path = fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "private_key";
-                        zk->createOrUpdate(path, pkey, zkutil::CreateMode::Persistent);
-                        LOG_DEBUG(log, "Updated private key for domain {}", domain);
-                    }
-
-                    LOG_DEBUG(log, "Finalizing order {}", order_url);
-                    finalizeOrder(order_data.finalize_url, pkey);
-
-                    refresh_certificates_task->scheduleAfter(5000);
-                    return;
-                }
-
-                if (order_data.status == "valid")
-                {
-                    auto certificate = pullCertificate(order_data.certificate_url);
-                    for (const auto & domain : domains)
-                    {
-                        auto path = fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "certificate";
-                        zk->createOrUpdate(path, certificate, zkutil::CreateMode::Persistent);
-                        LOG_DEBUG(log, "Updated certificate for domain {}", domain);
-                    }
-
-                    active_order.reset();
-                    lock.reset();
-
-                    LOG_DEBUG(log, "Certificate refresh finished successfully");
-                }
-            }
-            catch (...)
-            {
-                refresh_certificates_task->scheduleAfter(10000);
-                tryLogCurrentException("ACMEClient");
-            }
-
-            refresh_certificates_task->scheduleAfter(60000); /// fixme config
-        }
-    );
-
-    authentication_task = bgpool.createTask(
-        "ACMEAuth",
-        [this]
-        {
-            LOG_DEBUG(log, "Running ACMEClient authentication task");
-            if (!key_id.empty())
-                return;
-
-            if (!private_acme_key)
-            {
-                LOG_WARNING(log, "Private key is not initialized, retrying in 1 second. This is a bug.");
-                refresh_key_task->scheduleAfter(1000);
-                return;
-            }
-
-            try
-            {
-                if (!directory)
-                    directory = getDirectory();
-
-                authenticate();
-
-                refresh_certificates_task->activateAndSchedule();
-                authentication_task->deactivate();
-            }
-            catch (...)
-            {
-                authentication_task->scheduleAfter(1000);
-                tryLogCurrentException("ACMEClient");
-            }
-        });
-
-    refresh_key_task = bgpool.createTask(
-        "ACMEKeygen",
-        [this]
-        {
-            LOG_DEBUG(log, "Running ACMEClient key refresh task");
-
-            if (private_acme_key)
-                return;
-
-            auto context = Context::getGlobalContextInstance();
-            auto zk = context->getZooKeeper();
-
-            Coordination::Stat private_key_stat;
-            std::string private_key;
-
-            zk->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "account_private_key", private_key, &private_key_stat);
-            if (private_key.empty())
-            {
-                LOG_DEBUG(log, "Generating new RSA private key for ACME account");
-                private_key = generatePrivateKeyInPEM();
-
-                try
-                {
-                    /// TODO handle exception
-                    zk->createIfNotExists(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "account_private_key", private_key);
-
-                    LOG_DEBUG(log, "Private key saved to ZooKeeper");
-                }
-                catch (...)
-                {
-                    refresh_key_task->scheduleAfter(1000);
-                    tryLogCurrentException("ACMEClient");
-                }
-
-                refresh_key_task->schedule();
-                return;
-            }
-
-            chassert(!private_key.empty());
-            chassert(!private_acme_key);
-
-            {
-                std::lock_guard key_lock(private_acme_key_mutex);
-                std::istringstream private_key_stream(private_key); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                private_acme_key = std::make_shared<Poco::Crypto::RSAKey>(nullptr, &private_key_stream, "");
-            }
-
-            LOG_DEBUG(log, "ACME private key successfully loaded {}", private_key);
-
-            authentication_task->activateAndSchedule();
-            refresh_key_task->deactivate();
-
-            keys_initialized = true;
-        });
+    refresh_certificates_task = bgpool.createTask("ACMECertRefresh", [this, &config] {refresh_certificates_fn(config);});
+    authentication_task = bgpool.createTask("ACMEAuth", [this] { authentication_fn(); });
+    refresh_key_task = bgpool.createTask("ACMEKeygen", [this] { refresh_key_fn(); });
 
     if (!private_acme_key)
         refresh_key_task->activateAndSchedule();
+}
+
+void ACMEClient::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & config)
+{
+    try
+    {
+        auto context = Context::getGlobalContextInstance();
+        auto zk = context->getZooKeeper();
+
+        bool need_refresh = false;
+        for (const auto & domain : domains)
+        {
+            Coordination::Stat certificate_stat;
+            Coordination::Stat private_key_stat;
+
+            std::string private_key;
+            std::string certificate;
+
+            zookeeper->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "private_key", private_key, &private_key_stat);
+            zookeeper->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "certificate", certificate, &certificate_stat);
+
+            if (private_key.empty() || certificate.empty())
+            {
+                need_refresh = true;
+                break;
+            }
+
+            std::istringstream cert_stream(certificate); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            auto wcert = Poco::Crypto::X509Certificate(cert_stream);
+
+            LOG_DEBUG(log, "Certificate for domain {} expires on {}", domain, Poco::DateTimeFormatter::format(wcert.expiresOn(), Poco::DateTimeFormat::ISO8601_FORMAT));
+
+            /// TODO configurable
+            if (wcert.expiresOn() < Poco::Timestamp() + Poco::Timespan(60 * Poco::Timespan::DAYS))
+                need_refresh = true;
+        }
+
+        if (!need_refresh)
+        {
+            LOG_DEBUG(log, "No certificates need to be refreshed");
+
+            CertificateReloader::instance().tryLoad(config);
+
+            refresh_certificates_task->scheduleAfter(60000);
+            return;
+        }
+
+        auto active_order_path = fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "active_order";
+
+        if ((!lock || !lock->isLocked()) && zk->exists(active_order_path))
+        {
+            LOG_DEBUG(log, "Certificate order is in progress by another replica, skipping");
+            refresh_certificates_task->scheduleAfter(60000);
+            return;
+        }
+
+        if (!active_order.has_value())
+        {
+            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname, "active_order", "ACMEClient");
+            lock->tryLock();
+
+            active_order = order();
+
+            refresh_certificates_task->scheduleAfter(1000);
+            return;
+        }
+
+        lock->tryLock();
+
+        auto order_url = active_order.value();
+        auto order_data = describeOrder(order_url);
+        LOG_DEBUG(log, "Order {} status: {}", order_url, order_data.status);
+
+        if (order_data.status == "invalid")
+        {
+            active_order.reset();
+            lock.reset();
+
+            refresh_certificates_task->scheduleAfter(10000);
+            return;
+        }
+
+        if (order_data.status == "ready")
+        {
+            auto pkey = generatePrivateKeyInPEM();
+
+            for (const auto & domain : domains)
+            {
+                auto path = fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "private_key";
+                zk->createOrUpdate(path, pkey, zkutil::CreateMode::Persistent);
+                LOG_DEBUG(log, "Updated private key for domain {}", domain);
+            }
+
+            LOG_DEBUG(log, "Finalizing order {}", order_url);
+            finalizeOrder(order_data.finalize_url, pkey);
+
+            refresh_certificates_task->scheduleAfter(5000);
+            return;
+        }
+
+        if (order_data.status == "valid")
+        {
+            auto certificate = pullCertificate(order_data.certificate_url);
+            for (const auto & domain : domains)
+            {
+                auto path = fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "certificate";
+                zk->createOrUpdate(path, certificate, zkutil::CreateMode::Persistent);
+                LOG_DEBUG(log, "Updated certificate for domain {}", domain);
+            }
+
+            active_order.reset();
+            lock.reset();
+
+            LOG_DEBUG(log, "Certificate refresh finished successfully");
+        }
+
+        /// Handle unknown status
+
+        CertificateReloader::instance().tryLoad(config);
+        LOG_DEBUG(log, "Reloaded active certificates");
+    }
+    catch (...)
+    {
+        refresh_certificates_task->scheduleAfter(10000);
+        tryLogCurrentException("ACMEClient");
+    }
+
+    refresh_certificates_task->scheduleAfter(60000); /// fixme config
+}
+
+void ACMEClient::authentication_fn()
+{
+    LOG_DEBUG(log, "Running ACMEClient authentication task");
+    if (!key_id.empty())
+        return;
+
+    if (!private_acme_key)
+    {
+        LOG_WARNING(log, "Private key is not initialized, retrying in 1 second. This is a bug.");
+        refresh_key_task->scheduleAfter(1000);
+        return;
+    }
+
+    try
+    {
+        if (!directory)
+            directory = getDirectory();
+
+        authenticate();
+
+        refresh_certificates_task->activateAndSchedule();
+        authentication_task->deactivate();
+    }
+    catch (...)
+    {
+        authentication_task->scheduleAfter(1000);
+        tryLogCurrentException("ACMEClient");
+    }
+}
+
+void ACMEClient::refresh_key_fn()
+{
+    LOG_DEBUG(log, "Running ACMEClient key refresh task");
+
+    if (private_acme_key)
+        return;
+
+    auto context = Context::getGlobalContextInstance();
+    auto zk = context->getZooKeeper();
+
+    Coordination::Stat private_key_stat;
+    std::string private_key;
+
+    zk->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "account_private_key", private_key, &private_key_stat);
+    if (private_key.empty())
+    {
+        LOG_DEBUG(log, "Generating new RSA private key for ACME account");
+        private_key = generatePrivateKeyInPEM();
+
+        try
+        {
+            /// TODO handle exception
+            zk->createIfNotExists(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "account_private_key", private_key);
+
+            LOG_DEBUG(log, "Private key saved to ZooKeeper");
+        }
+        catch (...)
+        {
+            refresh_key_task->scheduleAfter(1000);
+            tryLogCurrentException("ACMEClient");
+        }
+
+        refresh_key_task->schedule();
+        return;
+    }
+
+    chassert(!private_key.empty());
+    chassert(!private_acme_key);
+
+    {
+        std::lock_guard key_lock(private_acme_key_mutex);
+        std::istringstream private_key_stream(private_key); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        private_acme_key = std::make_shared<Poco::Crypto::RSAKey>(nullptr, &private_key_stream, "");
+    }
+
+    LOG_DEBUG(log, "ACME private key successfully loaded");
+
+    authentication_task->activateAndSchedule();
+    refresh_key_task->deactivate();
+
+    keys_initialized = true;
 }
 
 
@@ -500,7 +503,20 @@ ACMEClient::doJWSRequest(const std::string & url, const std::string & payload, s
     if (!private_acme_key)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Account private key is not initialized");
 
-    const auto nonce = requestNonce();
+    std::string nonce;
+    /// FIXME
+    for (int i = 0; i < 10; ++i)
+    {
+        try
+        {
+            nonce = requestNonce();
+            break;
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ACMEClient");
+        }
+    }
 
     LOG_DEBUG(log, "Making JWS request to URL: {}", url);
 
@@ -577,7 +593,7 @@ void ACMEClient::authenticate()
     payload.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(payload_object, payload);
 
-    LOG_DEBUG(log, "Account payload: {}", payload.str());
+    LOG_TEST(log, "Account payload: {}", payload.str());
 
     auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
     auto response = doJWSRequest(directory->new_account, payload.str(), http_response);
@@ -585,13 +601,14 @@ void ACMEClient::authenticate()
     Poco::JSON::Parser parser;
     auto json = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
 
-    LOG_DEBUG(log, "Account response: {}", response);
+    LOG_TEST(log, "Account response: {}", response);
+
+    if (!json->has("status") || json->getValue<std::string>("status") != "valid")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Account creation failed");
 
     key_id = (*http_response).get("Location");
     for (const auto & [k, v] : *http_response)
-    {
-        LOG_DEBUG(log, "Response header: {} -> {}", k, v);
-    }
+        LOG_TEST(log, "Response header: {} -> {}", k, v);
 }
 
 std::string ACMEClient::order()
@@ -697,7 +714,7 @@ std::string ACMEClient::pullCertificate(const std::string & certificate_url)
         /* read_until_position */ 0);
     readStringUntilEOF(certificate, *reader);
 
-    LOG_DEBUG(log, "PullCertificate response: {}", certificate);
+    LOG_TEST(log, "PullCertificate response: {}", certificate);
 
     return certificate;
 }
@@ -742,7 +759,7 @@ void ACMEClient::processAuthorization(const std::string & auth_url)
         {
             if (status == "valid")
             {
-                LOG_DEBUG(log, "Challenge is already validated");
+                LOG_TEST(log, "Challenge is already validated");
                 continue;
             }
 
@@ -752,7 +769,7 @@ void ACMEClient::processAuthorization(const std::string & auth_url)
 
             auto response = doJWSRequest(url, "{}", nullptr);
 
-            LOG_DEBUG(log, "Response: {}", response);
+            LOG_TEST(log, "Response: {}", response);
         }
     }
 }
@@ -781,10 +798,10 @@ std::string ACMEClient::requestNonce()
     if (!directory)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory is not initialized");
 
+    LOG_TEST(log, "Requesting nonce from {}", directory->new_nonce);
+
     auto uri = Poco::URI(directory->new_nonce);
     auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_HEAD, uri.getPathAndQuery());
-
-    LOG_TRACE(log, "Requesting nonce from {}", uri.getPathAndQuery());
 
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, connection_timeout_settings, proxy_configuration);
     session->sendRequest(r);
