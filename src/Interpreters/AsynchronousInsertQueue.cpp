@@ -1062,20 +1062,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     };
 
 
-    size_t total_bytes = 0;
-    for (const auto & entry : data->entries)
-    {
-        const auto * bytes = entry->chunk.asString();
-        total_bytes += bytes->size();
-    }
-
-
     StreamingFormatExecutor executor(
         header,
         format,
         std::move(on_error),
-        // StreamingFormatExecutor::predictNumRows(total_bytes /*data->size_in_bytes*/, header),
-        total_bytes,
+        data->size_in_bytes,
         std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 

@@ -1,17 +1,9 @@
-#include <Core/ServerSettings.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 avg_field_size_for_preallocate_prediction;
-}
 
 namespace ErrorCodes
 {
@@ -33,39 +25,11 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
     , total_bytes(total_bytes_)
-    // , squashing(header_, std::numeric_limits<uint64_t>::max(), 0)
 {
-    // LOG_WARNING(
-    //     &Poco::Logger::get("StreamingFormatExecutor"),
-    //     "ctor");
-
     connect(format->getPort(), port);
 
     for (size_t i = 0; i < result_columns.size(); ++i)
         checkpoints[i] = result_columns[i]->getCheckpoint();
-
-    // if (estimated_rows_)
-    // {
-    //     // std::lock_guard lock(prealloc_mutex);
-    //     for (size_t i = 0; i < result_columns.size(); ++i)
-    //         result_columns[i]->reserve(estimated_rows_);
-    // }
-
-
-    // LOG_WARNING(
-    //     &Poco::Logger::get("StreamingFormatExecutor"),
-    //     "reserved called {} times for {} rows", result_columns.size(), estimated_rows_);
-
-    // for (size_t i = 0; i < result_columns.size(); ++i)
-    // {
-    //     LOG_WARNING(
-    //         &Poco::Logger::get("StreamingFormatExecutor"),
-    //         "addr {}", static_cast<const void*>(result_columns[i]->getRawData().begin()));
-    // }
-
-
-        // for (auto & column : result_columns)
-        //     column->reserve(estimated_rows_);
 }
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
@@ -73,12 +37,6 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
     auto ret_columns = header.cloneEmptyColumns();
     std::swap(ret_columns, result_columns);
     return ret_columns;
-
-    ////// return squashing.flush().mutateColumns();
-
-    ///// Chunk result_chunk = Squashing::squash(squashing.flush());
-    /// return Squashing::squash(squashing.flush()).mutateColumns();
-
 }
 
 void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameters)
@@ -93,18 +51,22 @@ void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes, const Chunk
     if (!try_reserve)
         return;
 
-    try_reserve = false;
+    try_reserve = false; /// do it once
 
     if (total_bytes && num_bytes)
     {
-        size_t ratio = total_bytes / num_bytes;
-        if (ratio > 4)
+        size_t factor = total_bytes / num_bytes;
+        if (factor > 4) /// we expect significat number of chunks - preallocation makes sence
         {
             const auto & reference_columns = chunk.getColumns();
 
+            /// assume that all chunks are identical, use first one to predict
+
+            ++factor; /// a bit more space just in case
+
             for (size_t i = 0; i < result_columns.size(); ++i)
             {
-                result_columns[i]->prepareForSquashing({reference_columns[i]}, ratio);
+                result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
             }
         }
     }
@@ -118,19 +80,13 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
     /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
     /// we call format->resetReadBuffer() method that resets all buffers inside format.
     SCOPE_EXIT(format->resetReadBuffer());
-    auto new_rows = execute(num_bytes);
-    // reserveResultColumns(num_bytes);
-    return new_rows;
+    return execute(num_bytes);
 }
 
 size_t StreamingFormatExecutor::execute(size_t num_bytes)
 {
     for (size_t i = 0; i < result_columns.size(); ++i)
         result_columns[i]->updateCheckpoint(*checkpoints[i]);
-
-    // LOG_WARNING(
-    //     &Poco::Logger::get("StreamingFormatExecutor"),
-    //     "execute");
 
     try
     {
@@ -143,39 +99,15 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
             switch (status)
             {
                 case IProcessor::Status::Ready:
-                    // LOG_WARNING(
-                    //     &Poco::Logger::get("StreamingFormatExecutor"),
-                    //     "format->work()");
                     format->work();
                     break;
 
                 case IProcessor::Status::Finished:
-                    // LOG_WARNING(
-                    //     &Poco::Logger::get("StreamingFormatExecutor"),
-                    //     "resetParser");
                     format->resetParser();
                     return new_rows;
 
                 case IProcessor::Status::PortFull:
-                    {
-                        // LOG_WARNING(
-                        //     &Poco::Logger::get("StreamingFormatExecutor"),
-                        //     "insertChunk");
-
-
-
-
-                        new_rows += insertChunk(port.pull(), num_bytes);
-
-                        // auto chunk = port.pull();
-                        // new_rows += chunk.getNumRows();
-
-                        // if (adding_defaults_transform)
-                        //     adding_defaults_transform->transform(chunk);
-
-                        // squashing.add(std::move(chunk));
-                    }
-
+                    new_rows += insertChunk(port.pull(), num_bytes);
                     break;
 
                 case IProcessor::Status::NeedData:
@@ -214,17 +146,9 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
 
     auto columns = chunk.detachColumns();
     for (size_t i = 0, s = columns.size(); i < s; ++i)
-    {
         result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-    }
 
     return chunk_rows;
 }
-
-// size_t StreamingFormatExecutor::predictNumRows(size_t buffer_size, const Block & header, size_t max_rows)
-// {
-//     auto avg_field_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::avg_field_size_for_preallocate_prediction];
-//     return avg_field_size ? std::min(buffer_size / ( header.columns() * avg_field_size), max_rows) : 0;
-// }
 
 }

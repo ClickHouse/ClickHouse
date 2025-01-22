@@ -169,15 +169,3 @@ TEST(ColumnVector, Index)
     testIndex<UInt16, UInt8>();
     testIndex<UInt16, UInt16>();
 }
-
-template <typename T, typename IndexType>
-static void testParallel()
-{
-}
-
-
-TEST(ColumnVector, Parallel)
-{
-    testParallel<UInt8, UInt8>();
-    testParallel<UInt16, UInt8>();
-}

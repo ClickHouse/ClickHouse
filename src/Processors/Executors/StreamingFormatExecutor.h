@@ -3,7 +3,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <IO/EmptyReadBuffer.h>
-#include <Interpreters/Squashing.h>
 
 namespace DB
 {
@@ -44,17 +43,6 @@ public:
     /// Sets query parameters for input format if applicable.
     void setQueryParameters(const NameToNameMap & parameters);
 
-    /// Determines a conservative estimate of the average field size (8 bytes)
-    /// assuming fields are generally larger than this value.
-    static const size_t AVG_FIELD_SIZE_FOR_PREALLOCATE_PREDICTION = 8;
-
-    // /// Vague estimate number of rows based on buffer size.
-    // /// Helps guide preallocation to minimize reallocations
-    // static size_t predictNumRows(
-    //     size_t buffer_size,
-    //     const Block & header,
-    //     size_t max_rows = std::numeric_limits<uint64_t>::max());
-
 private:
     void reserveResultColumns(size_t num_bytes, const Chunk & chunk);
 
@@ -67,10 +55,7 @@ private:
     MutableColumns result_columns;
     ColumnCheckpoints checkpoints;
 
-
     size_t total_bytes;
-
-    // Squashing squashing;
     bool try_reserve = true;
 };
 

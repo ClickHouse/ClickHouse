@@ -1154,14 +1154,14 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     {
         /// We want to keep the most frequent variants in the resulting dynamic column.
         DataTypes result_variants;
-        result_variants.reserve((max_dynamic_types + 1) * factor); /// +1 for shared variant.
+        result_variants.reserve(max_dynamic_types + 1); /// +1 for shared variant.
         /// Add variants from current variant column as we will not rewrite it.
         for (const auto & variant : assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())
             result_variants.push_back(variant);
 
         /// Create list of remaining variants with their sizes and sort it.
         std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
-        variants_with_sizes.reserve((all_variants.size() - variant_info.variant_names.size()) * factor);
+        variants_with_sizes.reserve(all_variants.size() - variant_info.variant_names.size());
         for (const auto & variant : all_variants)
         {
             /// Add variant to the list only of we didn't add it yet.
@@ -1195,7 +1195,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
         Columns source_variant_columns;
-        source_variant_columns.reserve(source_columns.size() * factor);
+        source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
         {
             const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
