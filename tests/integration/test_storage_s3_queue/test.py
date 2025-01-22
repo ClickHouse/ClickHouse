@@ -1472,6 +1472,29 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         )
         logging.debug(f"Unprocessed files: {info}")
 
+        files1 = (
+            node.query(f"select distinct(_path) from {dst_table_name}_1")
+            .strip()
+            .split("\n")
+        )
+        files2 = (
+            node.query(f"select distinct(_path) from {dst_table_name}_2")
+            .strip()
+            .split("\n")
+        )
+        files3 = (
+            node.query(f"select distinct(_path) from {dst_table_name}_3")
+            .strip()
+            .split("\n")
+        )
+
+        def intersection(list_a, list_b):
+            return [e for e in list_a if e in list_b]
+
+        logging.debug(f"Intersecting files 1: {intersection(files1, files2)}")
+        logging.debug(f"Intersecting files 2: {intersection(files1, files3)}")
+        logging.debug(f"Intersecting files 3: {intersection(files2, files3)}")
+
         assert False
 
     res1 = [
