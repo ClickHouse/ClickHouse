@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel
+# Tags: no-shared-merge-tree, no-parallel, no-replicated-database
 # no-shared-merge-tree - this test relies that there are different
 # parts on different replicas which is inapplicable for SharedMergeTree.
+# no-replicated-database: fails due to additional replicas or shards.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

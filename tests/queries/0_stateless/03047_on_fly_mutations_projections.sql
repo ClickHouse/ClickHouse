@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: projections don't work with parallel replicas.
+
 DROP TABLE IF EXISTS t_update_projections;
 
 SET apply_mutations_on_fly = 1;
