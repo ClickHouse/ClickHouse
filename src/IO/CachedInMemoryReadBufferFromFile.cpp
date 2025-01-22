@@ -15,8 +15,11 @@ namespace ErrorCodes
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_, bool restricted_seek_)
-    : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_), block_size(cache->defaultBlockSize()), settings(settings_), in(std::move(in_))
-    , read_until_position(file_size.value()), restricted_seek(restricted_seek_)
+    : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_)
+    , block_size(cache->defaultBlockSize())
+    , lookahead_blocks(std::max(cache->defaultLookaheadBlocks(), size_t(1))), settings(settings_)
+    , in(std::move(in_)), read_until_position(file_size.value())
+    , inner_read_until_position(read_until_position), restricted_seek(restricted_seek_)
 {
     cache_key.offset = 0;
 }
@@ -72,7 +75,7 @@ size_t CachedInMemoryReadBufferFromFile::getFileOffsetOfBufferEnd() const
 
 void CachedInMemoryReadBufferFromFile::setReadUntilPosition(size_t position)
 {
-    read_until_position = position;
+    read_until_position = std::min(position, file_size.value());
     if (position < static_cast<size_t>(getPosition()))
     {
         resetWorkingBuffer();
@@ -120,7 +123,32 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                 size_t piece_size = cache_key.size - pos;
                 in->set(piece_start, piece_size);
                 if (pos == 0)
+                {
+                    /// Do in->setReadUntilPosition if needed.
+                    /// If the next few blocks are likely cache misses, include them too, to reduce
+                    /// the number of requests (usually `in` makes a new HTTP request after each
+                    /// nontrivial seek or setReadUntilPosition call).
+                    /// Use aligned groups of blocks (rather than sliding window) to work better
+                    /// with distributed cache.
+                    size_t lookahead_bytes = block_size * lookahead_blocks;
+                    size_t lookahead_block_end = (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes;
+                    if (inner_read_until_position < cache_key.offset + cache_key.size ||
+                        inner_read_until_position > lookahead_block_end)
+                    {
+                        PageCacheKey temp_key = cache_key;
+                        do
+                        {
+                            temp_key.offset += block_size;
+                            chassert(temp_key.offset <= lookahead_block_end);
+                        }
+                        while (temp_key.offset < lookahead_block_end
+                            && !cache->contains(temp_key, settings.page_cache_inject_eviction));
+                        inner_read_until_position = temp_key.offset;
+                        in->setReadUntilPosition(inner_read_until_position);
+                    }
+
                     in->seek(cache_key.offset, SEEK_SET);
+                }
                 else
                     chassert(!in->available());
 

@@ -28,6 +28,17 @@ struct PageCacheKey
     std::string path;
     /// Optional string with ETag, or file modification time, or anything else.
     std::string file_version {};
+
+    /// Byte range in the file: [offset, offset + size).
+    ///
+    /// Note: for simplicity, PageCache doesn't do any interval-based lookup to handle partially
+    /// overlapping ranges.
+    /// E.g. if someone puts range [0, 100] to the cache, then someone else does getOrSet for
+    /// range [0, 50], it'll be a cache miss, and the cache will end up with two ranges:
+    /// [0, 100] and [0, 50].
+    /// This is ok for correctness, but would be bad for performance if happens often.
+    /// In practice this limitation causes no trouble as all users of page cache use aligned blocks
+    /// of fixed size anyway (server setting page_cache_block_size).
     size_t offset = 0;
     size_t size = 0;
 
@@ -68,7 +79,7 @@ extern template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, Page
 
 /// The key is hash of PageCacheKey.
 /// Private inheritance because we have to add MemoryTrackerBlockerInThread to all operations that
-/// lock the mutex, to avoid deadlocking if MemoryTracker calls autoResize().
+/// lock the mutex and allocate memory, to avoid deadlocking if MemoryTracker calls autoResize().
 class PageCache : private CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>
 {
 public:
@@ -77,7 +88,7 @@ public:
     using Mapped = typename Base::Mapped;
     using MappedPtr = typename Base::MappedPtr;
 
-    PageCache(size_t default_block_size_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_);
+    PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_);
 
     /// Get or insert a chunk for the given key.
     ///
@@ -85,9 +96,12 @@ public:
     /// will be just a standalone PageCacheCell not connected to the cache.
     MappedPtr getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load);
 
+    bool contains(const PageCacheKey & key, bool inject_eviction) const;
+
     void autoResize(size_t memory_usage, size_t memory_limit);
 
     size_t defaultBlockSize() const { return default_block_size; }
+    size_t defaultLookaheadBlocks() const { return default_lookahead_blocks; }
 
     void clear();
     size_t sizeInBytes() const;
@@ -96,6 +110,7 @@ public:
 
 private:
     size_t default_block_size;
+    size_t default_lookahead_blocks;
 
     /// Cache size is automatically adjusted by background thread, within this range,
     /// targeting cache size (total_memory_limit * (1 - free_memory_ratio) - memory_used_excluding_cache).

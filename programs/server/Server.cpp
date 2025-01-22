@@ -299,6 +299,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_min_size;
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
 }
 
 }
@@ -1097,6 +1098,7 @@ try
     {
         global_context->setPageCache(
             server_settings[ServerSetting::page_cache_block_size],
+            server_settings[ServerSetting::page_cache_lookahead_blocks],
             std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
             server_settings[ServerSetting::page_cache_policy], server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());

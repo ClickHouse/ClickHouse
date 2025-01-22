@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
@@ -49,9 +50,10 @@ std::string PageCacheKey::toString() const
     return fmt::format("{}:{}:{}{}{}", path, offset, size, file_version.empty() ? "" : ":", file_version);
 }
 
-PageCache::PageCache(size_t default_block_size_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_)
+PageCache::PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_)
     : Base(cache_policy, min_size_in_bytes_, 0, size_ratio)
     , default_block_size(default_block_size_)
+    , default_lookahead_blocks(default_lookahead_blocks_)
     , min_size_in_bytes(min_size_in_bytes_)
     , max_size_in_bytes(max_size_in_bytes_)
     , free_memory_ratio(free_memory_ratio_)
@@ -115,6 +117,19 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached
         ProfileEvents::increment(ProfileEvents::PageCacheHits);
 
     return result;
+}
+
+bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
+{
+    /// Avoid deadlock if MemoryTracker calls PageCache::autoResize.
+    /// (If you're here because it turned out that CacheBase::contains actually needs to allocate,
+    ///  just replace this with MemoryTrackerBlockerInThread, like in the other methods here.)
+    DENY_ALLOCATIONS_IN_SCOPE;
+
+    if (inject_eviction && thread_local_rng() % 10 == 0)
+        return false;
+    Key key_hash = key.hash();
+    return Base::contains(key_hash);
 }
 
 void PageCache::onRemoveOverflowWeightLoss(size_t weight_loss)

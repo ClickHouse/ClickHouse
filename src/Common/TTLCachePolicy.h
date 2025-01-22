@@ -170,6 +170,11 @@ public:
         return it->second;
     }
 
+    bool contains(const Key & key) const override
+    {
+        return cache.count(key) != 0;
+    }
+
     std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         auto it = cache.find(key);
