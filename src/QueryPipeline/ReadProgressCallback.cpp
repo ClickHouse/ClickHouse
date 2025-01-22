@@ -47,7 +47,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 {
     if (process_list_elem)
     {
-        if (!process_list_elem->checkTimeLimit()) 
+        if (!process_list_elem->checkTimeLimit())
             return false;
     }
 
