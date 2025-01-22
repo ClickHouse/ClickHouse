@@ -16,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
