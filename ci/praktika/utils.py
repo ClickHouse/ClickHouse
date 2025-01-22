@@ -122,6 +122,7 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            executable="/bin/bash",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -407,7 +408,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return Path.cwd()
+        return str(Path.cwd())
 
     @staticmethod
     def cpu_count():
@@ -420,7 +421,7 @@ class Utils:
 
     @staticmethod
     def timestamp():
-        return datetime.utcnow().timestamp()
+        return datetime.now().timestamp()
 
     @staticmethod
     def timestamp_to_str(timestamp):
@@ -469,20 +470,22 @@ class Utils:
         res = string.lower()
         for r in (
             (" ", "_"),
-            ("(", ""),
-            (")", ""),
-            ("{", ""),
-            ("}", ""),
-            ("'", ""),
-            ("[", ""),
-            ("]", ""),
-            (",", ""),
+            ("(", "_"),
+            (")", "_"),
+            ("{", "_"),
+            ("}", "_"),
+            ("'", "_"),
+            ("[", "_"),
+            ("]", "_"),
+            (",", "_"),
             ("/", "_"),
             ("-", "_"),
-            (":", ""),
-            ('"', ""),
+            (":", "_"),
+            ('"', "_"),
         ):
             res = res.replace(*r)
+            res = re.sub(r"_+", "_", res)
+            res = res.rstrip("_")
         return res
 
     @staticmethod
@@ -558,11 +561,11 @@ class Utils:
 
     class Stopwatch:
         def __init__(self):
-            self.start_time = datetime.utcnow().timestamp()
+            self.start_time = datetime.now().timestamp()
 
         @property
         def duration(self) -> float:
-            return datetime.utcnow().timestamp() - self.start_time
+            return datetime.now().timestamp() - self.start_time
 
 
 class TeePopen:

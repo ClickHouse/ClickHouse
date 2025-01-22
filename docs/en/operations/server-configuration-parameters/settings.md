@@ -32,6 +32,41 @@ Type: UInt32
 
 Default: `120`
 
+## asynchronous_metric_log
+
+Enabled by default on ClickHouse Cloud deployments.
+
+If the setting is not enabled by default on your environment, depending on how ClickHouse was installed, you can follow the instruction below to enable or disable it.
+
+**Enabling**
+
+To manually turn on asynchronous metric logs history collection [`system.asynchronous_metric_log`](../../operations/system-tables/asynchronous_metric_log.md), create `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+     <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </asynchronous_metric_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `asynchronous_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_asynchronous_metric_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<asynchronous_metric_log remove="1" />
+</clickhouse>
+```
+
 ## asynchronous_metrics_update_period_s
 
 Period in seconds for updating asynchronous metrics.
@@ -242,7 +277,7 @@ Default: `SLRU`
 
 ## index_mark_cache_size
 
-Size of cache for index marks.
+Maximum size of cache for index marks.
 
 :::note
 
@@ -257,7 +292,7 @@ Default: `0`
 
 ## index_mark_cache_size_ratio
 
-The size of the protected queue in the index mark cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the index mark cache relative to the cache's total size.
 
 Type: Double
 
@@ -273,7 +308,7 @@ Default: `SLRU`
 
 ## index_uncompressed_cache_size
 
-Size of cache for uncompressed blocks of `MergeTree` indices.
+Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
 :::note
 A value of `0` means disabled.
@@ -287,11 +322,47 @@ Default: `0`
 
 ## index_uncompressed_cache_size_ratio
 
-The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the index uncompressed cache relative to the cache's total size.
 
 Type: Double
 
 Default: `0.5`
+
+## skipping_index_cache_policy
+
+Skipping index cache policy name.
+
+Type: String
+
+Default: SLRU
+
+## skipping_index_cache_size
+
+Size of cache for skipping indexes. Zero means disabled.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: UInt64
+
+Default: 5368709120 (= 5 GiB)
+
+## skipping_index_cache_size_ratio
+
+The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
+
+## skipping_index_cache_max_entries
+
+The maximum number of entries in the skipping index cache.
+
+Type: UInt64
+
+Default: 10000000
 
 ## io_thread_pool_queue_size
 
@@ -315,7 +386,7 @@ Default: `SLRU`
 
 ## mark_cache_size
 
-Size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
 
 :::note
 This setting can be modified at runtime and will take effect immediately.
@@ -327,7 +398,7 @@ Default: `5368709120`
 
 ## mark_cache_size_ratio
 
-The size of the protected queue in the mark cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
 
 Type: Double
 
@@ -1020,7 +1091,7 @@ Default: `SLRU`
 
 ## uncompressed_cache_size
 
-Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+Maximum cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -1038,7 +1109,7 @@ Default: `0`
 
 ## uncompressed_cache_size_ratio
 
-The size of the protected queue in the uncompressed cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.
 
 Type: Double
 
@@ -1297,6 +1368,22 @@ A value of `0` means "never". The default value corresponds to 30 days.
 :::
 
 Default: `2592000` (30 days).
+
+## database_catalog_drop_error_cooldown_sec
+
+In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.
+
+Type: [`UInt64`](../../sql-reference/data-types/int-uint.md)
+
+Default: `5`
+
+## database_catalog_drop_table_concurrency
+
+The size of the threadpool used for dropping tables.
+
+Type: [`UInt64`](../../sql-reference/data-types/int-uint.md)
+
+Default: `16`
 
 ## database_catalog_unused_dir_cleanup_period_sec
 

@@ -29,6 +29,7 @@ namespace Setting
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+    extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsString force_optimize_projection_name;
@@ -57,6 +58,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
     aggregate_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_aggregate_partitions_independently];
     remove_redundant_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_distinct];
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
+    join_swap_table = from[Setting::query_plan_join_swap_table].get();
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
@@ -71,6 +73,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
     optimize_join_read_by_layers = from[Setting::query_plan_optimize_join_read_by_layers].value;
+
+    /// This comes from EXPLAIN settings not query settings and outside of the scope of this class
+    keep_logical_steps = false;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

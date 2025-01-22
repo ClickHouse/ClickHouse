@@ -220,6 +220,10 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString skipping_index_cache_policy;
+    extern const ServerSettingsUInt64 skipping_index_cache_size;
+    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
+    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -305,6 +309,7 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace ProfileEvents
@@ -1647,6 +1652,17 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
+    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
+    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
+    size_t skipping_index_cache_max_entries = server_settings[ServerSetting::skipping_index_cache_max_entries];
+    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
+    if (skipping_index_cache_size > max_cache_size)
+    {
+        skipping_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
+    }
+    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_entries, skipping_index_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -1942,6 +1958,7 @@ try
             global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
+            global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
 
@@ -2510,6 +2527,8 @@ try
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
 
+            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
+
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
@@ -2530,6 +2549,8 @@ try
                 }
             }
 
+            global_context->getRefreshSet().setRefreshesStopped(true);
+
             if (current_connections)
                 LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
@@ -2545,14 +2566,19 @@ try
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries();
 
+            size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
+            auto wait_start = std::chrono::steady_clock::now();
+
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
+                current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
+
+            global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
 
             dns_cache_updater.reset();
 
