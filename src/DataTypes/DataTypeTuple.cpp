@@ -270,11 +270,16 @@ size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensiti
     size_t size = elems.size();
     for (size_t i = 0; i < size; ++i)
     {
-        if (names[i] == name)
-            return i;
-
-        if (case_insensitive && boost::iequals(names[i], name))
-            return i;
+        if (case_insensitive)
+        {
+            if (boost::iequals(names[i], name))
+                return i;
+        }
+        else
+        {
+            if (boost::equals(names[i], name))
+                return i;
+        }
     }
     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
@@ -284,11 +289,16 @@ std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name, b
     size_t size = elems.size();
     for (size_t i = 0; i < size; ++i)
     {
-        if (names[i] == name)
-            return std::optional<size_t>(i);
-
-        if (case_insensitive && boost::iequals(names[i], name))
-            return std::optional<size_t>(i);
+        if (case_insensitive)
+        {
+            if (boost::iequals(names[i], name))
+                return i;
+        }
+        else
+        {
+            if (boost::equals(names[i], name))
+                return i;
+        }
     }
     return std::nullopt;
 }
