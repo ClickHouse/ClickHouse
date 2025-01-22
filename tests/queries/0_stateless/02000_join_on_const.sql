@@ -119,6 +119,8 @@ SETTINGS enable_analyzer=1, join_use_nulls=1;
 
 -- Join on constant with empty table fixed only with query_plan_use_new_logical_join_step
 SET query_plan_use_new_logical_join_step = 1;
+-- query_plan_use_new_logical_join_step disabled for parallel replicas
+SET enable_parallel_replicas = 0;
 SET join_use_nulls = 1;
 SET enable_analyzer = 1;
 

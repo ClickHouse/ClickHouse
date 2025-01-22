@@ -36,7 +36,7 @@ key1	e	5	5	5			0	0	\N
 key2	a2	1	1	1			0	0	\N
 key4	f	2	3	4			0	0	\N
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -99,7 +99,7 @@ key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
 SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -166,7 +166,7 @@ key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
 SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
@@ -244,7 +244,7 @@ key1	e	5	5	5			0	0	\N
 key2	a2	1	1	1			0	0	\N
 key4	f	2	3	4			0	0	\N
 SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
@@ -319,7 +319,7 @@ key1	e	5	5	5			0	0	\N
 key2	a2	1	1	1			0	0	\N
 key4	f	2	3	4			0	0	\N
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -382,7 +382,7 @@ key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
 SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -449,7 +449,7 @@ key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
 SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
@@ -527,7 +527,7 @@ key1	e	5	5	5			0	0	\N
 key2	a2	1	1	1			0	0	\N
 key4	f	2	3	4			0	0	\N
 SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1;
+SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
