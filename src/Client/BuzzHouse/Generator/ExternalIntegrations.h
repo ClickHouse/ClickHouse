@@ -309,7 +309,7 @@ private:
     size_t requires_external_call_check = 0;
     std::vector<bool> next_calls_succeeded;
 
-    std::filesystem::path getDatabaseDataDir(const PeerTableDatabase pt) const;
+    std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt) const;
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }
@@ -334,7 +334,7 @@ public:
 
     bool hasClickHouseExtraServerConnection() const { return clickhouse != nullptr; }
 
-    const std::filesystem::path & getSQLitePath() const { return hasSQLiteConnection() ? sqlite->sqlite_path : default_sqlite_path; }
+    const std::filesystem::path & getSQLitePath() const { return sqlite ? sqlite->sqlite_path : default_sqlite_path; }
 
     void resetExternalStatus()
     {

@@ -1106,7 +1106,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
         LOG_ERROR(fc.log, "Could not connect: {}", buffer);
         return false;
     }
-    auto v = gmtime_r(&time, &ttm);
+    auto * v = gmtime_r(&time, &ttm);
     auto w = std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
     UNUSED(v);
     UNUSED(w);

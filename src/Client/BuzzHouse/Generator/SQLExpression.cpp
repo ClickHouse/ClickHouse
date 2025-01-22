@@ -535,7 +535,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     {
         const String buf = String(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
-        rel.cols.push_back(SQLRelationCol("", {std::move(buf)}));
+        rel.cols.push_back(SQLRelationCol("", {buf}));
     }
     this->levels[this->current_level].rels.push_back(std::move(rel));
     this->generateExpression(rg, lexpr->mutable_expr());

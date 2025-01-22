@@ -109,7 +109,7 @@ public:
     bool processServerQuery(const String & input) const;
 
 private:
-    void loadServerSettings(std::vector<String> & out, const String & table, const String & col);
+    void loadServerSettings(std::vector<String> & out, const String & table, const String & col) const;
 
 public:
     void loadServerConfigurations();

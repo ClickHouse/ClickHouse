@@ -190,13 +190,13 @@ bool FuzzConfig::processServerQuery(const String & input) const
     return true;
 }
 
-void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col)
+void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col) const
 {
     String buf;
     uint64_t found = 0;
 
     processServerQuery(fmt::format(
-        "SELECT \"{}\" FROM \"system\".\"{}\" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;", col, table, fuzz_out.generic_string()));
+        R"(SELECT "{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", col, table, fuzz_out.generic_string()));
 
     std::ifstream infile(fuzz_out);
     out.clear();
@@ -220,12 +220,11 @@ void FuzzConfig::loadServerConfigurations()
 bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table) const
 {
     String buf;
-    const String &detached_tbl = detached ? "detached_parts" : "parts",
-                 &db_clause = database.empty() ? "" : ("\"database\" = '" + database + "' AND ");
+    const String & detached_tbl = detached ? "detached_parts" : "parts";
+    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
     processServerQuery(fmt::format(
-        "SELECT count() FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND \"partition_id\" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT "
-        "CSV;",
+        R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
         detached_tbl,
         db_clause,
         table,
@@ -243,8 +242,8 @@ String
 FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table) const
 {
     String res;
-    const String &detached_tbl = detached ? "detached_parts" : "parts",
-                 &db_clause = database.empty() ? "" : ("\"database\" = '" + database + "' AND ");
+    const String & detached_tbl = detached ? "detached_parts" : "parts";
+    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
     //system.parts doesn't support sampling, so pick up a random part with a window function
     processServerQuery(fmt::format(

@@ -438,5 +438,5 @@ String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
 String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
-String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & geotype);
+String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
 }
