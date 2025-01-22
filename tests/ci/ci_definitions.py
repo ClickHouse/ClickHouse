@@ -50,6 +50,8 @@ class WorkflowStages(metaclass=WithIter):
     TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
     TESTS_2 = "Tests_2"
+    BUILDS_0 = "Builds_0"
+    TESTS_0 = "Tests_0"
 
 
 class Runners(metaclass=WithIter):
@@ -147,7 +149,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
-        "Stateless tests (release, old analyzer, s3 storage, DatabaseReplicated)"
+        "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
     STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
         "Stateless tests (release, ParallelReplicas, s3 storage)"
@@ -669,6 +671,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+    JobNames.INTEGRATION_TEST_FLAKY,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
     JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
     JobNames.INSTALL_TEST_AMD,

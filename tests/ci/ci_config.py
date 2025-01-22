@@ -636,12 +636,29 @@ class CI:
                     break
             else:
                 stage_type = WorkflowStages.BUILDS_2
+            if job_name in (
+                BuildNames.BINARY_TIDY,
+                BuildNames.PACKAGE_RELEASE,
+                BuildNames.PACKAGE_AARCH64,
+            ):
+                stage_type = WorkflowStages.BUILDS_0
         elif cls.is_docs_job(job_name):
             stage_type = WorkflowStages.TESTS_1
         elif cls.is_test_job(job_name):
             if job_name in CI.JOB_CONFIGS:
                 if job_name in REQUIRED_CHECKS:
                     stage_type = WorkflowStages.TESTS_1
+                    required_builds = cls.get_job_config(job_name).required_builds
+                    if required_builds:
+                        if any(
+                            build
+                            in (
+                                BuildNames.PACKAGE_RELEASE,
+                                BuildNames.PACKAGE_AARCH64,
+                            )
+                            for build in required_builds
+                        ):
+                            stage_type = WorkflowStages.TESTS_0
                 else:
                     stage_type = WorkflowStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
