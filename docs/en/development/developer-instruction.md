@@ -9,7 +9,7 @@ sidebar_label: Prerequisites
 ClickHouse can be build on Linux, FreeBSD and macOS.
 If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
-## Creating a Repository on GitHub {#creating-a-repository-on-github}
+## Create a Repository on GitHub
 
 To start developing for ClickHouse you will need a [GitHub](https://www.github.com/) account.
 Please also generate an SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
@@ -28,7 +28,7 @@ sudo apt install git
 A Git cheatsheet can be found [here](https://education.github.com/git-cheat-sheet-education.pdf).
 A detailed Git manual is [here](https://git-scm.com/book/en/v2).
 
-## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
+## Clone the Repository to Your Development Machine
 
 First, download the source files to your working machine, i.e. clone the repository:
 
@@ -83,7 +83,17 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
-## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
+## Writing Code
+
+Below you can find some quick links which may be useful when writing code for ClickHouse:
+
+- [ClickHouse Architecture](https://clickhouse.com/docs/en/development/architecture/).
+- [Code style guide](https://clickhouse.com/docs/en/development/style/).
+- [Third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
+- [Writing tests](https://clickhouse.com/docs/en/development/tests/)
+- [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
+
+### IDE
 
 **CLion (recommended)**
 
@@ -108,17 +118,7 @@ After doing so, KDevelop should be fine to work with.
 Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux).
 If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
 
-## Writing Code {#writing-code}
-
-Below you can find some quick links which may be useful when writing code for ClickHouse:
-
-- [ClickHouse Architecture](https://clickhouse.com/docs/en/development/architecture/).
-- [Code style guide](https://clickhouse.com/docs/en/development/style/).
-- [Third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
-- [Writing tests](https://clickhouse.com/docs/en/development/tests/)
-- [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
-
-## Creating Pull Request {#creating-pull-request}
+## Create A Pull Request
 
 Navigate to your fork repository in GitHub’s UI.
 If you have been developing in a branch, you need to select that branch.
@@ -139,7 +139,7 @@ The system will prepare ClickHouse binary builds for your pull request individua
 To retrieve these builds click the “Details” link next to “Builds” entry in the list of checks.
 There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
-## Writing Documentation {#writing-documentation}
+## Write Documentation
 
 Every pull request which adds a new feature must come with proper documentation.
 If you'd like to preview your documentation changes the instructions for how to build the documentation page locally are available in the README.md file [here](https://github.com/ClickHouse/clickhouse-docs).
@@ -187,7 +187,7 @@ Response:
 \```
 ```
 
-## Test Data {#test-data}
+## Using Test Data
 
 Developing ClickHouse often requires loading realistic datasets.
 This is particularly important for performance testing.
