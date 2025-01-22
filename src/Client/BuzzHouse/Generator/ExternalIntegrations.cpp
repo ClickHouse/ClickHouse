@@ -1344,6 +1344,10 @@ void ExternalIntegrations::getPerformanceMetricsForLastQuery(
     std::ifstream infile(out_path);
     if (std::getline(infile, buf))
     {
+        if (buf[buf.size() - 1] == '\r')
+        {
+            buf.pop_back();
+        }
         const auto tabchar = buf.find('\t');
 
         query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
@@ -1370,6 +1374,10 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
     std::ifstream infile(fc.fuzz_out);
     while (std::getline(infile, buf))
     {
+        if (buf[buf.size() - 1] == '\r')
+        {
+            buf.pop_back();
+        }
         const auto tabchar = buf.find('\t');
         const auto nname = buf.substr(0, tabchar);
         const auto nvalue = buf.substr(tabchar + 1);

@@ -1,5 +1,7 @@
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 
+#include <IO/copyData.h>
+
 namespace BuzzHouse
 {
 
@@ -48,13 +50,11 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
 {
     JSONParserImpl parser;
     JSONObjectType object;
-    std::ostringstream sstr;
-    std::ifstream inputFile(path);
+    DB::ReadBufferFromFile in(path);
+    DB::WriteBufferFromOwnString out;
 
-    sstr << inputFile.rdbuf();
-    String fileContent = sstr.str();
-    inputFile.close();
-    if (!parser.parse(fileContent, object))
+    DB::copyData(in, out);
+    if (!parser.parse(out.str(), object))
     {
         throw std::runtime_error("Could not parse BuzzHouse JSON configuration file");
     }
@@ -229,6 +229,10 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, std::vector<String>
     std::ifstream infile(fuzz_out);
     while (std::getline(infile, buf))
     {
+        if (buf[buf.size() - 1] == '\r')
+        {
+            buf.pop_back();
+        }
         const auto tabchar = buf.find('\t');
         const auto ntable = buf.substr(0, tabchar);
         const auto ncol = buf.substr(tabchar + 1);
