@@ -1308,7 +1308,7 @@ void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
     }
 }
 
-void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns)
+void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1371,17 +1371,17 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
     /// prepareForSquashing on them to preallocate the memory.
     /// Also we can preallocate memory for dynamic paths and shared data.
     Columns shared_data_source_columns;
-    shared_data_source_columns.reserve(source_columns.size());
+    shared_data_source_columns.reserve(source_columns.size() * factor);
     std::unordered_map<String, Columns> typed_paths_source_columns;
-    typed_paths_source_columns.reserve(typed_paths.size());
+    typed_paths_source_columns.reserve(typed_paths.size() * factor);
     std::unordered_map<String, Columns> dynamic_paths_source_columns;
-    dynamic_paths_source_columns.reserve(dynamic_paths.size());
+    dynamic_paths_source_columns.reserve(dynamic_paths.size() * factor);
 
     for (const auto & [path, column] : typed_paths)
-        typed_paths_source_columns[path].reserve(source_columns.size());
+        typed_paths_source_columns[path].reserve(source_columns.size() * factor);
 
     for (const auto & [path, column] : dynamic_paths)
-        dynamic_paths_source_columns[path].reserve(source_columns.size());
+        dynamic_paths_source_columns[path].reserve(source_columns.size() * factor);
 
     size_t total_size = 0;
     for (const auto & source_column : source_columns)
@@ -1412,7 +1412,7 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
-        dynamic_paths_ptrs[path]->reserve(total_size);
+        dynamic_paths_ptrs[path]->reserve(total_size * factor);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
     }
 }

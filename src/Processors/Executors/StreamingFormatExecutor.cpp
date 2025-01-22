@@ -23,7 +23,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     const Block & header_,
     InputFormatPtr format_,
     ErrorCallback on_error_,
-    size_t /* total_bytes_ */,
+    size_t total_bytes_,
     SimpleTransformPtr adding_defaults_transform_)
     : header(header_)
     , format(std::move(format_))
@@ -32,8 +32,8 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
-    // , total_bytes(total_bytes_)
-    , squashing(header_, std::numeric_limits<uint64_t>::max(), 0)
+    , total_bytes(total_bytes_)
+    // , squashing(header_, std::numeric_limits<uint64_t>::max(), 0)
 {
     // LOG_WARNING(
     //     &Poco::Logger::get("StreamingFormatExecutor"),
@@ -70,14 +70,14 @@ StreamingFormatExecutor::StreamingFormatExecutor(
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
 {
-    // auto ret_columns = header.cloneEmptyColumns();
-    // std::swap(ret_columns, result_columns);
-    // return ret_columns;
+    auto ret_columns = header.cloneEmptyColumns();
+    std::swap(ret_columns, result_columns);
+    return ret_columns;
 
     ////// return squashing.flush().mutateColumns();
 
     ///// Chunk result_chunk = Squashing::squash(squashing.flush());
-    return Squashing::squash(squashing.flush()).mutateColumns();
+    /// return Squashing::squash(squashing.flush()).mutateColumns();
 
 }
 
@@ -88,27 +88,29 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
         values_format->setQueryParameters(parameters);
 }
 
-// void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes)
-// {
-//     if (!try_reserve)
-//         return;
+void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes, const Chunk & chunk)
+{
+    if (!try_reserve)
+        return;
 
-//     try_reserve = false;
+    try_reserve = false;
 
-//     if (total_bytes && num_bytes)
-//     {
-//         size_t ratio = total_bytes / num_bytes;
-//         if (ratio > 4)
-//         {
-//             for (size_t i = 0; i < result_columns.size(); ++i)
-//             {
-//                 result_columns[i]->reserve(result_columns[i]->capacity() * ratio);
-//             }
-//         }
-//     }
-// }
+    if (total_bytes && num_bytes)
+    {
+        size_t ratio = total_bytes / num_bytes;
+        if (ratio > 4)
+        {
+            const auto & reference_columns = chunk.getColumns();
 
-size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t /* num_bytes */)
+            for (size_t i = 0; i < result_columns.size(); ++i)
+            {
+                result_columns[i]->prepareForSquashing({reference_columns[i]}, ratio);
+            }
+        }
+    }
+}
+
+size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
 {
     format->setReadBuffer(buffer);
 
@@ -116,12 +118,12 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t /* num_bytes
     /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
     /// we call format->resetReadBuffer() method that resets all buffers inside format.
     SCOPE_EXIT(format->resetReadBuffer());
-    auto new_rows = execute();
+    auto new_rows = execute(num_bytes);
     // reserveResultColumns(num_bytes);
     return new_rows;
 }
 
-size_t StreamingFormatExecutor::execute()
+size_t StreamingFormatExecutor::execute(size_t num_bytes)
 {
     for (size_t i = 0; i < result_columns.size(); ++i)
         result_columns[i]->updateCheckpoint(*checkpoints[i]);
@@ -163,17 +165,15 @@ size_t StreamingFormatExecutor::execute()
 
 
 
-                        // new_rows += insertChunk(port.pull());
+                        new_rows += insertChunk(port.pull(), num_bytes);
 
+                        // auto chunk = port.pull();
+                        // new_rows += chunk.getNumRows();
 
+                        // if (adding_defaults_transform)
+                        //     adding_defaults_transform->transform(chunk);
 
-                        auto chunk = port.pull();
-                        new_rows += chunk.getNumRows();
-
-                        if (adding_defaults_transform)
-                            adding_defaults_transform->transform(chunk);
-
-                        squashing.add(std::move(chunk));
+                        // squashing.add(std::move(chunk));
                     }
 
                     break;
@@ -204,24 +204,19 @@ size_t StreamingFormatExecutor::execute()
     }
 }
 
-size_t StreamingFormatExecutor::insertChunk(Chunk chunk)
+size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
 {
     size_t chunk_rows = chunk.getNumRows();
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
 
+    reserveResultColumns(num_bytes, chunk);
+
     auto columns = chunk.detachColumns();
     for (size_t i = 0, s = columns.size(); i < s; ++i)
     {
-        // LOG_WARNING(
-        //     &Poco::Logger::get("StreamingFormatExecutor"),
-        //     "addr before {}", static_cast<const void*>(result_columns[i]->getRawData().begin()));
         result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-        // LOG_WARNING(
-        //     &Poco::Logger::get("StreamingFormatExecutor"),
-        //     "addr after {}", static_cast<const void*>(result_columns[i]->getRawData().begin()));
     }
-
 
     return chunk_rows;
 }

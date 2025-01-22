@@ -30,13 +30,13 @@ public:
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
-    size_t execute();
+    size_t execute(size_t num_bytes = 0);
 
     /// Execute with provided read buffer.
     size_t execute(ReadBuffer & buffer, size_t num_bytes = 0);
 
     /// Inserts into result columns already preprocessed chunk.
-    size_t insertChunk(Chunk chunk);
+    size_t insertChunk(Chunk chunk, size_t num_bytes = 0);
 
     /// Releases currently accumulated columns.
     MutableColumns getResultColumns();
@@ -56,7 +56,7 @@ public:
     //     size_t max_rows = std::numeric_limits<uint64_t>::max());
 
 private:
-    // void reserveResultColumns(size_t num_bytes);
+    void reserveResultColumns(size_t num_bytes, const Chunk & chunk);
 
     const Block header;
     const InputFormatPtr format;
@@ -67,7 +67,11 @@ private:
     MutableColumns result_columns;
     ColumnCheckpoints checkpoints;
 
-    Squashing squashing;
+
+    size_t total_bytes;
+
+    // Squashing squashing;
+    bool try_reserve = true;
 };
 
 }

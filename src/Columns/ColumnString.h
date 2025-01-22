@@ -288,7 +288,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor = 1) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;
