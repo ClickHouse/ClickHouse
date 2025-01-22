@@ -5896,6 +5896,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(String, object_storage_cluster, "", R"(
+Cluster to make distributed requests to object storages with alternative syntax.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6035,9 +6038,6 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(String, object_storage_cluster, "", R"(
-Cluster to make distributed requests to object storages with alternative syntax.
 )", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
