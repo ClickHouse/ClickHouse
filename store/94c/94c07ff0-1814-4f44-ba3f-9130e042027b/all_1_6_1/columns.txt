@@ -1,5 +1,0 @@
-columns format version: 1
-3 columns:
-`a` UInt64
-`b` String
-`_block_number` UInt64

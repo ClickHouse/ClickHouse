@@ -1,4 +1,0 @@
-columns format version: 1
-2 columns:
-`key` UInt64
-`value` UInt64
