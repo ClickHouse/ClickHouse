@@ -81,7 +81,7 @@ jobs:
     secrets:
       robot_git_token: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
   FastTest:
-    needs: [RunConfig, BuildDockers, StyleCheck]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
