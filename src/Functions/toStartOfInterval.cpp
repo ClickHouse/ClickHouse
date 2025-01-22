@@ -186,7 +186,6 @@ public:
         {
             if (arguments[0].column->getInt(0) < 0)
             {
-                LOG_TRACE(getLogger("DEBUGGING toStartOFInterval: "), "Got it. ");
                 if (result_type == ResultType::Date)
                     result_type = ResultType::Date32;
                 else if (result_type == ResultType::DateTime)
