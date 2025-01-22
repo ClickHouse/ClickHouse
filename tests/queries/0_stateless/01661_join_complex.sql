@@ -29,7 +29,7 @@ insert into tab3 values (5, 4);
 insert into tab3 values (100, 4);
 
 select 'join on OR/AND chain';
-select a2, b2, a3, b3 from tab2 any left join tab3 on a2=a3 and a2 +1 = b3 + 0 or b2=b3 and a2 +1 = b3 + 0 ;
+select a2, b2, a3, b3 from tab2 any left join tab3 on a2=a3 and a2 +1 = b3 + 0 or b2=b3 and a2 +1 = b3 + 0 ORDER BY ALL;
 
 drop table tab2;
 drop table tab3;

@@ -21,10 +21,6 @@ namespace DB
   */
 struct FormatSettings
 {
-    /// Format will be used for streaming. Not every formats support it
-    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
-    bool enable_streaming = false;
-
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
@@ -292,6 +288,7 @@ struct FormatSettings
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
+        uint64_t output_compression_level;
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;

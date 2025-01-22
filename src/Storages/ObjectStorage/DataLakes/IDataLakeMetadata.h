@@ -7,6 +7,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int UNSUPPORTED_METHOD;
+}
+
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
@@ -15,6 +21,11 @@ public:
     virtual NamesAndTypesList getTableSchema() const = 0;
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
     virtual const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const = 0;
+    virtual bool supportsPartitionPruning() { return false; }
+    virtual Strings makePartitionPruning(const ActionsDAG &)
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Partition pruning is not supported by the metadata type");
+    }
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
     virtual bool supportsExternalMetadataChange() const { return false; }

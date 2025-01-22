@@ -223,6 +223,20 @@
     <interserver_http_host>example.clickhouse.com</interserver_http_host>
     -->
 
+    <!-- Port for the SSH server which allows to connect and execute
+         queries in an interactive fashion using the embedded client over the PTY.
+    -->
+    <!-- <tcp_ssh_port>9022</tcp_ssh_port> -->
+
+    <ssh_server>
+        <!-- The public part of the host key will be written to the known_hosts file
+             on the SSH client side on the first connect.
+        -->
+        <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
+        <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
+        <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
+    </ssh_server>
+
     <!-- You can specify credentials for authenthication between replicas.
          This is required when interserver_https_port is accessible from untrusted networks,
          and also recommended to avoid SSRF attacks from possibly compromised services in your network.
@@ -341,9 +355,9 @@
         </client>
     </openSSL>
 
-    <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
+    <!-- Default root page on http[s] server. -->
     <!--
-    <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
+    <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>
     -->
 
     <!-- The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries.

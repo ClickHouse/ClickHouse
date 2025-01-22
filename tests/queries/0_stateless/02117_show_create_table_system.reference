@@ -904,7 +904,7 @@ CREATE TABLE system.replicas
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8),
-    `readonly_duration` Nullable(DateTime) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
+    `readonly_duration` Nullable(UInt64) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
 )
 ENGINE = SystemReplicas
 COMMENT 'Contains information and status of all table replicas on current server. Each replica is represented by a single row.'

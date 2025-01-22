@@ -85,7 +85,7 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     std::optional<Chunk> res;
 
-    if (last_is_positive || count_positive != count_negative)
+    if ((last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0))
     {
         if (count_positive <= count_negative && !only_positive_sign)
         {
@@ -165,6 +165,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 
             count_negative = 0;
             count_positive = 0;
+            count_invalid = 0;
 
             current_pos = 0;
             first_negative_pos = 0;
@@ -236,6 +237,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
         /// Set counter to zero so that insertRows() will return immediately next time.
         count_positive = 0;
         count_negative = 0;
+        count_invalid = 0;
         return Status(std::move(*res));
     }
 

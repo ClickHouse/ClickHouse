@@ -29,7 +29,13 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_TYPE: str
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
+    PR_BODY: str
+    PR_TITLE: str
+    USER_LOGIN: str
+    FORK_NAME: str
+    PR_LABELS: str
     LOCAL_RUN: bool = False
+    PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
@@ -87,16 +93,27 @@ class _Environment(MetaClasses.Serializable):
         RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
+        USER_LOGIN = os.getenv("GITHUB_ACTOR")
+        FORK_NAME = ""
+        PR_BODY = ""
+        PR_TITLE = ""
+        PR_LABELS = []
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
+            FORK_NAME = github_event["repository"]["full_name"]
             if "pull_request" in github_event:
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
                 PR_NUMBER = github_event["pull_request"]["number"]
                 SHA = github_event["pull_request"]["head"]["sha"]
                 CHANGE_URL = github_event["pull_request"]["html_url"]
                 COMMIT_URL = CHANGE_URL + f"/commits/{SHA}"
+                PR_BODY = github_event["pull_request"]["body"]
+                PR_TITLE = github_event["pull_request"]["title"]
+                PR_LABELS = [
+                    label["name"] for label in github_event["pull_request"]["labels"]
+                ]
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -105,6 +122,17 @@ class _Environment(MetaClasses.Serializable):
                 COMMIT_URL = CHANGE_URL
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
+                SHA = os.getenv(
+                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
+                )
+                PR_NUMBER = 0
+                CHANGE_URL = (
+                    github_event["repository"]["html_url"] + "/commit/" + SHA
+                )  # commit url
+                COMMIT_URL = CHANGE_URL
+            elif "inputs" in github_event:
+                # assume this is a dispatch
+                EVENT_TYPE = Workflow.Event.DISPATCH
                 SHA = os.getenv(
                     "GITHUB_SHA", "0000000000000000000000000000000000000000"
                 )
@@ -158,6 +186,11 @@ class _Environment(MetaClasses.Serializable):
             BASE_BRANCH=BASE_BRANCH,
             INSTANCE_TYPE=INSTANCE_TYPE,
             INSTANCE_ID=INSTANCE_ID,
+            PR_BODY=PR_BODY,
+            PR_TITLE=PR_TITLE,
+            USER_LOGIN=USER_LOGIN,
+            FORK_NAME=FORK_NAME,
+            PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
         )

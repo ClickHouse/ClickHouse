@@ -107,7 +107,7 @@ def main():
             for line in lfd:
                 if "ERROR" in line:
                     build_status = FAIL
-                    job_status = FAIL
+                    job_status = FAILURE
                     break
 
     test_results.append(
@@ -116,8 +116,6 @@ def main():
 
     htmltest_log = test_output / "htmltest.log"
 
-    # FIXME: after all issues in htmltest will be fixed, consider the failure as a
-    # failed job
     test_sw.reset()
     with TeePopen(
         f"{cmd} htmltest -c /ClickHouse/docs/.htmltest.yml /output_path/build",
@@ -130,11 +128,11 @@ def main():
                 TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
             )
         else:
+            description = "Docs check failed (htmltest failed)"
+            job_status = FAILURE
             logging.info("Run failed")
             test_results.append(
-                TestResult(
-                    "htmltest", "FLAKY", test_sw.duration_seconds, [htmltest_log]
-                )
+                TestResult("htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log])
             )
 
     JobReport(
