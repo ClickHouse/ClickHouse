@@ -1,7 +1,6 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/GWPAsan.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Daemon/BaseDaemon.h>
@@ -16,8 +15,6 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
-
-#include <thread>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
@@ -178,7 +175,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 template <typename T>
 struct ValueHolder
 {
-    explicit ValueHolder(T value_) : value(value_)
+    ValueHolder(T value_) : value(value_)
     {}
 
     T value;

@@ -3,20 +3,17 @@ slug: /en/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/docs/en/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 
 Syntax:
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
@@ -58,14 +55,14 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
 
 :::tip
-Here is a step-by-step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
+Here is a step by step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
 :::
 
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.
@@ -151,25 +148,22 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View
-
-<DeprecatedBadge/>
+## Live View [Deprecated]
 
 This feature is deprecated and will be removed in the future.
 
 For your convenience, the old documentation is located [here](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View {#refreshable-materialized-view}
+## Refreshable Materialized View [Experimental] {#refreshable-materialized-view}
 
 ```sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
 REFRESH EVERY|AFTER interval [OFFSET interval]
-[RANDOMIZE FOR interval]
-[DEPENDS ON [db.]name [, [db.]name [, ...]]]
-[SETTINGS name = value [, name = value [, ...]]]
+RANDOMIZE FOR interval
+DEPENDS ON [db.]name [, [db.]name [, ...]]
+SETTINGS name = value [, name = value [, ...]]
 [APPEND]
-[TO[db.]name] [(columns)] [ENGINE = engine] 
-[EMPTY]
+[TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -287,7 +281,7 @@ This replaces *all* refresh parameters at once: schedule, dependencies, settings
 
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
-To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](../system.md#refreshable-materialized-views).
+To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
 
 To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refreshable-materialized-views). In particular, useful for waiting for initial refresh after creating a view.
 
@@ -295,10 +289,7 @@ To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refresh
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 :::
 
-## Window View
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+## Window View [Experimental]
 
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.

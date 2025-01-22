@@ -55,7 +55,6 @@ public:
     bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     Float64 getFloat64(size_t n) const override;
@@ -142,7 +141,7 @@ public:
     // Special function for nullable minmax index
     void getExtremesNullLast(Field & min, Field & max) const;
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;

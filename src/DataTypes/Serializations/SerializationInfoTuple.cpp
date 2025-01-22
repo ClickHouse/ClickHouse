@@ -3,8 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 
-#include <Poco/JSON/Object.h>
-
 namespace DB
 {
 
@@ -15,9 +13,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_, Names names_)
-    /// Pass default settings because Tuple column cannot be sparse itself.
-    : SerializationInfo(ISerialization::Kind::DEFAULT, SerializationInfo::Settings{})
+SerializationInfoTuple::SerializationInfoTuple(
+    MutableSerializationInfos elems_, Names names_, const Settings & settings_)
+    : SerializationInfo(ISerialization::Kind::DEFAULT, settings_)
     , elems(std::move(elems_))
     , names(std::move(names_))
 {
@@ -112,7 +110,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     for (const auto & elem : elems)
         elems_cloned.push_back(elem->clone());
 
-    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
+    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
     ret->data = data;
     return ret;
 }
@@ -128,15 +126,15 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     const auto & old_elements = old_tuple.getElements();
     const auto & new_elements = new_tuple.getElements();
 
-    chassert(elems.size() == old_elements.size());
-    chassert(elems.size() == new_elements.size());
+    assert(elems.size() == old_elements.size());
+    assert(elems.size() == new_elements.size());
 
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (size_t i = 0; i < elems.size(); ++i)
         infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, new_settings);
 }
 
 void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const
@@ -153,17 +151,15 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
         elem->deserializeFromKindsBinary(in);
 }
 
-void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
+Poco::JSON::Object SerializationInfoTuple::toJSON() const
 {
-    SerializationInfo::toJSON(object);
+    auto object = SerializationInfo::toJSON();
     Poco::JSON::Array subcolumns;
     for (const auto & elem : elems)
-    {
-        Poco::JSON::Object sub_column_json;
-        elem->toJSON(sub_column_json);
-        subcolumns.add(sub_column_json);
-    }
+        subcolumns.add(elem->toJSON());
+
     object.set("subcolumns", subcolumns);
+    return object;
 }
 
 void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)

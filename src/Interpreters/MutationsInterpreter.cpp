@@ -42,7 +42,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -791,13 +790,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
-            // Can't materialize a column in the sort key
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
-            {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
-            }
-
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
@@ -1101,8 +1093,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// and so it is not in the list of AllPhysical columns.
             for (const auto & [column_name, _] : prepared_stages[i].column_to_updated)
             {
-                /// If we rewrite the whole part in ALTER DELETE and mask is not updated
-                /// do not write mask because it will be applied during execution of mutation.
                 if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
                     continue;
 
@@ -1354,10 +1344,12 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
-    QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
-    do_not_optimize_plan_settings.optimize_plan = false;
+    QueryPlanOptimizationSettings do_not_optimize_plan;
+    do_not_optimize_plan.optimize_plan = false;
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(
+        do_not_optimize_plan,
+        BuildQueryPipelineSettings::fromContext(context)));
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -1464,7 +1456,6 @@ size_t MutationsInterpreter::evaluateCommandsSize()
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
 {
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -1472,16 +1463,9 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     for (size_t i = 0; i < sort_columns_size; ++i)
     {
         if (header.has(sort_columns[i]))
-        {
-            if (!reverse_flags.empty() && reverse_flags[i])
-                sort_description.emplace_back(sort_columns[i], -1, 1);
-            else
-                sort_description.emplace_back(sort_columns[i], 1, 1);
-        }
+            sort_description.emplace_back(sort_columns[i], 1, 1);
         else
-        {
             return {};
-        }
     }
 
     return sort_description;

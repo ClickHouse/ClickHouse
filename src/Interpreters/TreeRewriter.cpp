@@ -1024,10 +1024,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
     }
-    else
-    {
-        source_columns_ordinary = source_columns;
-    }
 
     source_columns_set = removeDuplicateColumns(source_columns);
 }
@@ -1357,15 +1353,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (tables_with_columns.size() > 1)
     {
-        auto columns_from_left_table = tables_with_columns[0].columns;
         const auto & right_table = tables_with_columns[1];
         auto columns_from_joined_table = right_table.columns;
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
         columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-        columns_from_left_table.insert(columns_from_left_table.end(), tables_with_columns[0].hidden_columns.begin(), tables_with_columns[0].hidden_columns.end());
-        result.analyzed_join->setColumnsFromJoinedTable(
-            std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix(), columns_from_left_table);
+        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -1578,7 +1571,7 @@ void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query, context_);
+        UserDefinedSQLFunctionVisitor::visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings[Setting::count_distinct_implementation]};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);

@@ -1,5 +1,5 @@
 #include "ZooKeeper.h"
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include "Coordination/KeeperFeatureFlags.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"

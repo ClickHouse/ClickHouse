@@ -89,8 +89,6 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const SettingsChanges & settingsFromServer() const;
-
     /// For log and exception messages.
     const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
@@ -215,7 +213,6 @@ private:
     UInt64 server_parallel_replicas_protocol_version = 0;
     String server_timezone;
     String server_display_name;
-    SettingsChanges settings_from_server;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;

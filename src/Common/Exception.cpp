@@ -56,6 +56,7 @@ void abortOnFailedAssertion(const String & description)
 
 bool terminate_on_any_exception = false;
 static int terminate_status_code = 128 + SIGABRT;
+thread_local bool update_error_statistics = true;
 std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
@@ -73,6 +74,9 @@ static void handle_error_code(const std::string & msg, int code, bool remote, co
 
     if (Exception::callback)
         Exception::callback(msg, code, remote, trace);
+
+    if (!update_error_statistics) [[unlikely]]
+        return;
 
     ErrorCodes::increment(code, remote, msg, trace);
 }
@@ -289,7 +293,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// getLogger can allocate memory too
-    auto logger = getLogger(String{log_name});
+    auto logger = getLogger(log_name);
     tryLogCurrentExceptionImpl(logger.get(), start_of_message, level);
 }
 

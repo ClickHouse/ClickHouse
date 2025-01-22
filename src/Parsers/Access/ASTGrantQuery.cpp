@@ -12,11 +12,11 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatCurrentGrantsElements(const AccessRightsElements & elements, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatCurrentGrantsElements(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
-        ostr << "(";
-        elements.formatElementsWithoutOptions(ostr, settings.hilite);
-        ostr << ")";
+        settings.ostr << "(";
+        elements.formatElementsWithoutOptions(settings.ostr, settings.hilite);
+        settings.ostr << ")";
     }
 }
 
@@ -41,9 +41,9 @@ ASTPtr ASTGrantQuery::clone() const
 }
 
 
-void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
                   << (settings.hilite ? hilite_keyword : "") << (is_revoke ? "REVOKE" : "GRANT")
                   << (settings.hilite ? IAST::hilite_none : "");
 
@@ -53,20 +53,20 @@ void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
     bool grant_option = !access_rights_elements.empty() && access_rights_elements[0].grant_option;
 
-    formatOnCluster(ostr, settings);
+    formatOnCluster(settings);
 
     if (is_revoke)
     {
         if (grant_option)
-            ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
-            ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
     }
 
-    ostr << " ";
+    settings.ostr << " ";
     if (roles)
     {
-        roles->format(ostr, settings);
+        roles->format(settings);
         if (!access_rights_elements.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "ASTGrantQuery can contain either roles or access rights elements "
@@ -74,27 +74,27 @@ void ASTGrantQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     }
     else if (current_grants)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
-        formatCurrentGrantsElements(access_rights_elements, ostr, settings);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
+        formatCurrentGrantsElements(access_rights_elements, settings);
     }
     else
     {
-        access_rights_elements.formatElementsWithoutOptions(ostr, settings.hilite);
+        access_rights_elements.formatElementsWithoutOptions(settings.ostr, settings.hilite);
     }
 
-    ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
                   << (settings.hilite ? IAST::hilite_none : "");
-    grantees->format(ostr, settings);
+    grantees->format(settings);
 
     if (!is_revoke)
     {
         if (grant_option)
-            ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
-            ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
 
         if (replace_access || replace_granted_roles)
-            ostr << (settings.hilite ? hilite_keyword : "") << " WITH REPLACE OPTION" << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH REPLACE OPTION" << (settings.hilite ? hilite_none : "");
     }
 }
 
