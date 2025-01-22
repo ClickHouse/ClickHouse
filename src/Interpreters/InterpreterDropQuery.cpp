@@ -251,7 +251,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                     bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
 
                     /// Check that table can be DETACHed. Note: method throws in case if the operation is not allowed.
-                    DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                    DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
                     /// Table will be dropped from the memory, the data remain untouched,
                     /// metadata file.sql on disk renamed and be skipped during server restart
@@ -266,11 +266,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                     /// Drop table from memory, don't touch data and metadata
                     database->detachTable(context_, table_id.table_name);
                 }
-            }
 
-            /// After we detached the table from the database we can safely shut it down.
-            /// We don't need a lock for this, because this table is no longer visible from the outside.
-            table->flushAndShutdown();
+                /// After we detached the table from the database we can safely shut it down.
+                /// We don't need a lock for this, because this table is no longer visible from the outside.
+                table->flushAndShutdown();
+            }
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
