@@ -592,7 +592,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 else if (entry.path.size() > 1)
                 {
                     //make sure all nested entries have the same number of rows
-                    buf += strAppendArray(rg, entry.getBottomType(), next_nested_rows);
+                    ArrayType atp(entry.getBottomType());
+
+                    buf += atp.appendRandomRawValue(rg, *this, next_nested_rows);
                 }
                 else
                 {

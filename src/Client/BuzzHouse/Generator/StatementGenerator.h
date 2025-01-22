@@ -77,16 +77,18 @@ const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), fl
 
 class StatementGenerator
 {
-private:
+public:
     const FuzzConfig & fc;
+    uint32_t next_type_mask = std::numeric_limits<uint32_t>::max();
+
+private:
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
 
     PeerQuery peer_query = PeerQuery::None;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
          allow_subqueries = true, enforce_final = false, allow_engine_udf = true;
-    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0,
-             next_type_mask = std::numeric_limits<uint32_t>::max();
+    uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::unordered_map<uint32_t, SQLTable> staged_tables, tables;
     std::unordered_map<uint32_t, SQLView> staged_views, views;
@@ -235,16 +237,7 @@ private:
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
-
-    String strAppendBottomValue(RandomGenerator & rg, SQLType * tp);
-    String strAppendMap(RandomGenerator & rg, MapType * mt);
-    String strAppendArray(RandomGenerator & rg, ArrayType * at);
-    String strAppendArray(RandomGenerator & rg, SQLType * tp, uint64_t limit);
-    String strAppendTuple(RandomGenerator & rg, TupleType * at);
-    String strAppendVariant(RandomGenerator & rg, VariantType * vtp);
-    String strAppendAnyValueInternal(RandomGenerator & rg, SQLType * tp);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
-
     void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
@@ -337,7 +330,6 @@ private:
     std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
     SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
     SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
-    SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname);
@@ -345,6 +337,8 @@ private:
     void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
 
 public:
+    SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> attached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED; };
     const std::function<bool(const SQLTable &)> attached_tables

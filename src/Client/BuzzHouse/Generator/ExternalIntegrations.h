@@ -100,7 +100,7 @@ public:
 
     void truncatePeerTableOnRemote(const SQLTable & t);
 
-    void performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
+    bool performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
 
     ~ClickHouseIntegratedDatabase() override = default;
 };
@@ -358,7 +358,7 @@ public:
 
     bool performQuery(PeerTableDatabase pt, const String & query);
 
-    void getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
+    bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
 
     void setDefaultSettings(PeerTableDatabase pt, const std::vector<String> & settings);
 

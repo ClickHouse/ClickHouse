@@ -8,6 +8,8 @@
 namespace BuzzHouse
 {
 
+class StatementGenerator;
+
 class SQLType
 {
 public:
@@ -16,6 +18,8 @@ public:
     virtual String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String SQLitetypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual SQLType * typeDeepCopy() const = 0;
+    virtual String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const = 0;
+    virtual bool isNullable() const = 0;
 
     virtual ~SQLType() = default;
 };
@@ -28,6 +32,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~BoolType() override = default;
 };
@@ -44,6 +50,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~IntType() override = default;
 };
@@ -59,6 +67,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~FloatType() override = default;
 };
@@ -74,6 +84,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~DateType() override = default;
 };
@@ -95,6 +107,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~DateTimeType() override = default;
 };
@@ -115,6 +129,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~DecimalType() override = default;
 };
@@ -130,6 +146,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~StringType() override = default;
 };
@@ -142,6 +160,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~UUIDType() override = default;
 };
@@ -167,6 +187,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~EnumType() override = default;
 };
@@ -179,6 +201,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~IPv4Type() override = default;
 };
@@ -191,6 +215,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return true; }
 
     ~IPv6Type() override = default;
 };
@@ -206,6 +232,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~DynamicType() override = default;
 };
@@ -231,6 +259,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~JSONType() override;
 };
@@ -246,6 +276,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~Nullable() override { delete subtype; }
 };
@@ -261,6 +293,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~LowCardinality() override { delete subtype; }
 };
@@ -276,6 +310,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~GeoType() override = default;
 };
@@ -291,6 +327,9 @@ public:
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & fc, const uint32_t limit) const;
+    bool isNullable() const override { return false; }
 
     ~ArrayType() override { delete subtype; }
 };
@@ -306,6 +345,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~MapType() override;
 };
@@ -330,6 +371,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~TupleType() override;
 };
@@ -345,6 +388,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~VariantType() override;
 };
@@ -370,6 +415,8 @@ public:
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    bool isNullable() const override { return false; }
 
     ~NestedType() override;
 };

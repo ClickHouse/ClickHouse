@@ -595,7 +595,8 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
     {
         if (measure_performance)
         {
-            ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
+            measure_performance
+                &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
         }
         else
         {
@@ -617,24 +618,26 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
         {
             if (measure_performance)
             {
-                ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2);
-                if (this->fc.query_time_minimum<this->query_duration_ms1 && this->query_duration_ms1> static_cast<uint64_t>(
-                        this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
+                if (ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2))
                 {
-                    throw std::runtime_error(fmt::format(
-                        "{}: ClickHouse peer table query was faster than the server: {} vs {}",
-                        oracle_name,
-                        formatReadableTime(static_cast<double>(this->query_duration_ms1 * 1000000)),
-                        formatReadableTime(static_cast<double>(this->query_duration_ms2 * 1000000))));
-                }
-                if (this->fc.query_memory_minimum<this->memory_usage1 && this->memory_usage1> static_cast<uint64_t>(
-                        this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
-                {
-                    throw std::runtime_error(fmt::format(
-                        "{}: ClickHouse peer table query used less memory than the server: {} vs {}",
-                        oracle_name,
-                        formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage1)),
-                        formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage2))));
+                    if (this->fc.query_time_minimum<this->query_duration_ms1 && this->query_duration_ms1> static_cast<uint64_t>(
+                            this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
+                    {
+                        throw std::runtime_error(fmt::format(
+                            "{}: ClickHouse peer table query was faster than the server: {} vs {}",
+                            oracle_name,
+                            formatReadableTime(static_cast<double>(this->query_duration_ms1 * 1000000)),
+                            formatReadableTime(static_cast<double>(this->query_duration_ms2 * 1000000))));
+                    }
+                    if (this->fc.query_memory_minimum<this->memory_usage1 && this->memory_usage1> static_cast<uint64_t>(
+                            this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
+                    {
+                        throw std::runtime_error(fmt::format(
+                            "{}: ClickHouse peer table query used less memory than the server: {} vs {}",
+                            oracle_name,
+                            formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage1)),
+                            formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage2))));
+                    }
                 }
             }
             else

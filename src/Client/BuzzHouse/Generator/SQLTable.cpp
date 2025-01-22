@@ -1048,11 +1048,7 @@ void StatementGenerator::addTableColumn(
     }
     col.tp = tp;
     col.special = special;
-    if (!modify && col.special == ColumnSpecial::NONE
-        && (dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
-            || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
-            || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp))
-        && rg.nextSmallNumber() < 3)
+    if (!modify && col.special == ColumnSpecial::NONE && tp->isNullable() && rg.nextSmallNumber() < 3)
     {
         cd->set_nullable(rg.nextBool());
         col.nullable = std::optional<bool>(cd->nullable());

@@ -216,7 +216,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            ret = fmt::format("'{}'::nextDateTime64", rg.nextDateTime64());
+            ret = fmt::format("'{}'::DateTime64", rg.nextDateTime64());
         }
         lv->set_no_quote_str(ret);
     }

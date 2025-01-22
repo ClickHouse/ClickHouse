@@ -120,22 +120,17 @@ void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
     UNUSED(u);
 }
 
-void ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
+bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
 {
     switch (pt)
     {
         case PeerTableDatabase::ClickHouse:
         case PeerTableDatabase::MySQL:
         case PeerTableDatabase::PostgreSQL:
-        case PeerTableDatabase::SQLite: {
-            auto u = performQuery(query);
-            UNUSED(u);
-        }
-        break;
-        case PeerTableDatabase::None: {
-            auto u = fc.processServerQuery(query);
-            UNUSED(u);
-        }
+        case PeerTableDatabase::SQLite:
+            return performQuery(query);
+        case PeerTableDatabase::None:
+            return fc.processServerQuery(query);
     }
 }
 
@@ -207,9 +202,11 @@ void MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     assert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
-        performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        performQueryOnServerOrRemote(
+        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        UNUSED(u);
+        auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
+        UNUSED(v);
     }
 }
 
@@ -1292,38 +1289,43 @@ std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDa
     }
 }
 
-void ExternalIntegrations::getPerformanceMetricsForLastQuery(
+bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
     String buf;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
-    clickhouse->performQueryOnServerOrRemote(
-        pt,
-        fmt::format(
-            "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE '{}' "
-            "TRUNCATE FORMAT TabSeparated;",
-            out_path.generic_string()));
-
-    std::ifstream infile(out_path);
-    if (std::getline(infile, buf))
+    if (clickhouse->performQueryOnServerOrRemote(
+            pt,
+            fmt::format(
+                "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE "
+                "'{}' "
+                "TRUNCATE FORMAT TabSeparated;",
+                out_path.generic_string())))
     {
-        if (buf[buf.size() - 1] == '\r')
+        std::ifstream infile(out_path);
+        if (std::getline(infile, buf))
         {
-            buf.pop_back();
-        }
-        const auto tabchar = buf.find('\t');
+            if (buf[buf.size() - 1] == '\r')
+            {
+                buf.pop_back();
+            }
+            const auto tabchar = buf.find('\t');
 
-        query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
-        memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
+            query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
+            memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
+            return true;
+        }
     }
+    return false;
 }
 
 void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const std::vector<String> & settings)
 {
     for (const auto & entry : settings)
     {
-        clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
+        auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
+        UNUSED(u);
     }
 }
 
@@ -1385,7 +1387,8 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
                     replaced += c;
             }
         }
-        clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
+        auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
+        UNUSED(u);
         buf.resize(0);
     }
 }
