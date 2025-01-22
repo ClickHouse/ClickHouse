@@ -25,6 +25,8 @@
 #include "Loggers/OwnPatternFormatter.h"
 #include "config.h"
 
+#include "Utils.h"
+
 namespace DB
 {
 
@@ -200,10 +202,11 @@ bool DisksApp::processQueryText(const String & text)
         return false;
     CommandPtr command;
 
-    auto subqueries = po::split_unix(text, ";");
+    auto subqueries = splitOnUnquotedSemicolons(text);
     for (const auto & subquery : subqueries)
     {
         std::optional<String> error_string;
+        // std::cerr << "SUBQUERY: " << subquery << "\n";
         try
         {
             auto arguments = po::split_unix(subquery, word_break_characters);
