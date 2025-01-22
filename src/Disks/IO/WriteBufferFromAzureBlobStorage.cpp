@@ -158,6 +158,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             detached_part_data.pop_front();
             return;
         }
+        /// Upload a single empty block
         else if (detached_part_data.empty())
         {
             Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
