@@ -18,6 +18,7 @@ node = cluster.add_instance(
     with_zookeeper=True,
 )
 
+
 def start_metadata_server(started_cluster):
     script_dir = os.path.join(os.path.dirname(__file__), "mocks")
     start_mock_servers(
@@ -31,6 +32,7 @@ def start_metadata_server(started_cluster):
             )
         ],
     )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -47,7 +49,11 @@ def test_acme_authorization(started_cluster):
         time.sleep(1)
 
         curl_result = node.exec_in_container(
-            ["bash", "-c", "curl -k -v 'https://127.0.0.1:3443' 2>&1 | grep issuer: || true"]
+            [
+                "bash",
+                "-c",
+                "curl -k -v 'https://127.0.0.1:3443' 2>&1 | grep issuer: || true",
+            ]
         )
 
         print(curl_result)
