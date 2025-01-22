@@ -343,11 +343,48 @@ String EnumType::typeName(const bool escape) const
         }
         for (const auto & c : v.val)
         {
-            if (escape && (c == '\'' || c == '\\'))
+            if (escape)
             {
-                ret += "\\";
+                switch (c)
+                {
+                    case '\'':
+                        ret += "\\'";
+                        break;
+                    case '\\':
+                        ret += "\\\\";
+                        break;
+                    case '\b':
+                        ret += "\\b";
+                        break;
+                    case '\f':
+                        ret += "\\f";
+                        break;
+                    case '\r':
+                        ret += "\\r";
+                        break;
+                    case '\n':
+                        ret += "\\n";
+                        break;
+                    case '\t':
+                        ret += "\\t";
+                        break;
+                    case '\0':
+                        ret += "\\0";
+                        break;
+                    case '\a':
+                        ret += "\\a";
+                        break;
+                    case '\v':
+                        ret += "\\v";
+                        break;
+                    default:
+                        ret += c;
+                }
             }
-            ret += c;
+            else
+            {
+                ret += c;
+            }
         }
         ret += " = ";
         ret += std::to_string(v.number);
@@ -461,11 +498,48 @@ String JSONType::typeName(const bool escape) const
     ret += "JSON";
     for (const auto & c : desc)
     {
-        if (escape && (c == '\'' || c == '\\'))
+        if (escape)
         {
-            ret += '\\';
+            switch (c)
+            {
+                case '\'':
+                    ret += "\\'";
+                    break;
+                case '\\':
+                    ret += "\\\\";
+                    break;
+                case '\b':
+                    ret += "\\b";
+                    break;
+                case '\f':
+                    ret += "\\f";
+                    break;
+                case '\r':
+                    ret += "\\r";
+                    break;
+                case '\n':
+                    ret += "\\n";
+                    break;
+                case '\t':
+                    ret += "\\t";
+                    break;
+                case '\0':
+                    ret += "\\0";
+                    break;
+                case '\a':
+                    ret += "\\a";
+                    break;
+                case '\v':
+                    ret += "\\v";
+                    break;
+                default:
+                    ret += c;
+            }
         }
-        ret += c;
+        else
+        {
+            ret += c;
+        }
     }
     return ret;
 }

@@ -1394,11 +1394,41 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         replaced.resize(0);
         for (const auto & c : nvalue)
         {
-            if (c == '\'' || c == '\\')
+            switch (c)
             {
-                replaced += '\\';
+                case '\'':
+                    replaced += "\\'";
+                    break;
+                case '\\':
+                    replaced += "\\\\";
+                    break;
+                case '\b':
+                    replaced += "\\b";
+                    break;
+                case '\f':
+                    replaced += "\\f";
+                    break;
+                case '\r':
+                    replaced += "\\r";
+                    break;
+                case '\n':
+                    replaced += "\\n";
+                    break;
+                case '\t':
+                    replaced += "\\t";
+                    break;
+                case '\0':
+                    replaced += "\\0";
+                    break;
+                case '\a':
+                    replaced += "\\a";
+                    break;
+                case '\v':
+                    replaced += "\\v";
+                    break;
+                default:
+                    replaced += c;
             }
-            replaced += c;
         }
         clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
         buf.resize(0);
