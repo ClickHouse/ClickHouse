@@ -15,9 +15,9 @@ from build_download_helper import download_all_deb_packages
 from ci_config import CI
 from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
-from docker_images_helper import DockerImage, get_docker_image, pull_image
+from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH, IS_NEW_CI
+from env_helper import IS_NEW_CI, REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (

@@ -187,9 +187,7 @@ def main():
             if image.name in (
                 "clickhouse/integration-test",
                 "clickhouse/integration-tests-runner",
-                # "clickhouse/integration-helper",
                 "clickhouse/python-bottle",
-                # "clickhouse/nginx-dav",
             ):
                 image.version = "latest"
         print(images)
