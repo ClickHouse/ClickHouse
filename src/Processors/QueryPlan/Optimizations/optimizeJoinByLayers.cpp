@@ -292,7 +292,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
                 // std::cerr << frame.results.back()->dag.dumpDAG() << std::endl;
 
                 common_prefix = findCommonPromaryKeyPrefixByJoinKey(
-                    frame.results.front()->joins.sources.front(),  frame.results.front()->dag,
+                    frame.results.front()->joins.sources.front(), frame.results.front()->dag,
                     frame.results.back()->joins.sources.front(), frame.results.back()->dag,
                     clauses[0]);
             }
@@ -308,7 +308,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
 
                 /// Here we choose the minimal common prefix.
                 /// Applying optimization to more joins is potentially better.
-                /// Hopefully, even the first PK column would be enouth to shard the data.
+                /// Hopefully, even the first PK column would be enough to shard the data.
                 result->joins.common_prefix = std::min(result->joins.common_prefix, common_prefix);
                 result->joins.common_prefix = std::min(result->joins.common_prefix, frame.results.back()->joins.common_prefix);
 
@@ -326,7 +326,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
             result->joins.sources.emplace_back(source);
             result->dag = makeSourceDAG(*source);
         }
-        else if (frame.results.size() == 1 && frame.results[0] )
+        else if (frame.results.size() == 1 && frame.results[0])
         {
             if (updateDAG(*frame.node, frame.results[0]->dag))
                 result = std::move(frame.results[0]);
