@@ -124,6 +124,10 @@ private:
     BackgroundSchedulePoolTaskHolder refresh_key_task;
     BackgroundSchedulePoolTaskHolder refresh_certificates_task;
 
+    void refresh_key_fn();
+    void authentication_fn();
+    void refresh_certificates_fn(const Poco::Util::AbstractConfiguration & config);
+
     zkutil::ZooKeeperPtr zookeeper;
     std::shared_ptr<zkutil::ZooKeeperLock> lock;
     zkutil::EphemeralNodeHolderPtr lock2;

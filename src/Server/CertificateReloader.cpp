@@ -152,6 +152,9 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     //     return;
     // }
 
+    if (!config.has("acme"))
+        return;
+
     try
     {
         auto maybe_certificates = ACMEClient::ACMEClient::instance().requestCertificate(config);
