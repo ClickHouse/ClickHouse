@@ -382,9 +382,11 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     for (const auto & condition : where_conditions)
         condition_positions[&condition] = position++;
 
+    size_t moved_conditions_count = 0;
     auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
     {
-        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
+        moved_conditions_count++;
+        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
         if (where_optimizer_context.allow_reorder_prewhere_conditions)
         {
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
@@ -458,6 +460,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Nothing was moved.
     if (prewhere_conditions.empty())
         return {};
+    LOG_TRACE(log, "Moved {} conditions to PREWHERE", moved_conditions_count);
 
     OptimizeResult result = {std::move(where_conditions), std::move(prewhere_conditions)};
     return result;

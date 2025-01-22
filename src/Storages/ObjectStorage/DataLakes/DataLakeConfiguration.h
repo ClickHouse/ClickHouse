@@ -5,19 +5,29 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
+#include "Storages/ColumnsDescription.h"
 
 #include <memory>
+#include <string>
+#include <unordered_map>
+
+#include <Common/ErrorCodes.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int FORMAT_VERSION_TOO_OLD;
+}
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
@@ -30,18 +40,28 @@ public:
 
     bool isDataLakeConfiguration() const override { return true; }
 
-    std::string getEngineName() const override { return DataLakeMetadata::name; }
+    std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
         BaseStorageConfiguration::update(object_storage, local_context);
-        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
-        if (current_metadata && *current_metadata == *new_metadata)
-            return;
 
-        current_metadata = std::move(new_metadata);
-        BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-        BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+        bool existed = current_metadata != nullptr;
+
+        if (updateMetadataObjectIfNeeded(object_storage, local_context))
+        {
+            if (hasExternalDynamicMetadata() && existed)
+            {
+                throw Exception(
+                    ErrorCodes::FORMAT_VERSION_TOO_OLD,
+                    "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
+            }
+            else
+            {
+                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+                BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+            }
+        }
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -55,6 +75,46 @@ public:
         }
         return std::nullopt;
     }
+
+    void implementPartitionPruning(const ActionsDAG & filter_dag) override
+    {
+        if (!current_metadata || !current_metadata->supportsPartitionPruning())
+            return;
+        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
+    }
+
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getInitialSchemaByPath(data_path);
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getSchemaTransformer(data_path);
+    }
+
+    bool hasExternalDynamicMetadata() override
+    {
+        return StorageObjectStorage::Configuration::allow_dynamic_metadata_for_data_lakes && current_metadata
+            && current_metadata->supportsExternalMetadataChange();
+    }
+
+    ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
+    {
+        BaseStorageConfiguration::update(object_storage, context);
+        if (updateMetadataObjectIfNeeded(object_storage, context))
+        {
+            BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+            BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+        }
+
+        return ColumnsDescription{current_metadata->getTableSchema()};
+    }
+
 
 private:
     DataLakeMetadataPtr current_metadata;
@@ -82,20 +142,46 @@ private:
         }
         return info;
     }
+
+    bool updateMetadataObjectIfNeeded(ObjectStoragePtr object_storage, ContextPtr context)
+    {
+        if (!current_metadata)
+        {
+            current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+            return true;
+        }
+
+        if (current_metadata->supportsUpdate())
+        {
+            return current_metadata->update(context);
+        }
+
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+        if (*current_metadata != *new_metadata)
+        {
+            current_metadata = std::move(new_metadata);
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
 };
 
+
 #if USE_AVRO
-#if USE_AWS_S3
+#    if USE_AWS_S3
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
-#    endif
+#endif
 
 #if USE_AZURE_BLOB_STORAGE
 using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
-#    endif
+#endif
 
 #if USE_HDFS
 using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
-#    endif
+#endif
 
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
@@ -103,7 +189,7 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 #if USE_PARQUET
 #if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
-#    endif
+#endif
 #endif
 
 #if USE_AWS_S3

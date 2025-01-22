@@ -249,11 +249,29 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStorageOrderByExpressionList : public IParserBase
+{
+public:
+    explicit ParserStorageOrderByExpressionList(bool allow_order_) : allow_order(allow_order_) {}
+
+protected:
+    bool allow_order;
+
+    const char * getName() const override { return "storage order by expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 class ParserOrderByExpressionList : public IParserBase
 {
 protected:
     const char * getName() const override { return "order by expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserAliasesExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "list of aliases expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

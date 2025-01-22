@@ -209,7 +209,7 @@ struct DeltaLakeMetadataImpl
             if (!object)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             object->stringify(oss);
             LOG_TEST(log, "Metadata: {}", oss.str());

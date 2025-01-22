@@ -24,6 +24,7 @@ struct QueryResultDetails
     std::optional<String> content_type = {};
     std::optional<String> format = {};
     std::optional<String> timezone = {};
+    std::unordered_map<String, String> additional_headers = {};
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
@@ -42,7 +43,7 @@ void executeQuery(
     WriteBuffer & ostr,                 /// Where to write query output to.
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
-    SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
+    SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone, as well as additional headers.
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {} /// If a non-empty callback is passed, it will be called on exception with created output format.

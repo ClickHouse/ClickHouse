@@ -130,7 +130,6 @@ private:
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
     void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
-    void prewarmCaches(const MergeTreeDataWriter::TemporaryPart & temp_part) const;
 };
 
 using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;

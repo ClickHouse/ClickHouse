@@ -42,9 +42,9 @@ void copyS3File(
     const S3::S3RequestSettings & settings,
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
-    const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    bool for_disk_s3 = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    const CreateReadBuffer& fallback_file_reader,
+    const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
@@ -60,9 +60,8 @@ void copyDataToS3File(
     const String & dest_key,
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
-    const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    bool for_disk_s3 = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    const std::optional<std::map<String, String>> & object_metadata = std::nullopt);
 
 }
 

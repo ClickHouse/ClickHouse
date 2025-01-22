@@ -48,6 +48,8 @@ class Job:
 
         parameter: Any = None
 
+        no_download_requires: bool = False
+
         def parametrize(
             self,
             parameter: Optional[List[Any]] = None,
@@ -131,3 +133,10 @@ class Job:
 
         def __repr__(self):
             return self.name
+
+        def copy(self):
+            """
+            To create an instant copy of a job config used in multiple workflows
+            :return: Job.Config
+            """
+            return copy.deepcopy(self)

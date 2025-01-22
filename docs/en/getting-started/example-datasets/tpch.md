@@ -812,26 +812,6 @@ ORDER BY
 DROP VIEW revenue0;
 ```
 
-::::note
-As of October 2024, the view definition does not work out-of-the box. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70139
-
-This alternative view definition does work:
-
-```sql
-CREATE VIEW revenue0 AS
-    SELECT
-        l_suppkey AS supplier_no,
-        sum(l_extendedprice * (1 - l_discount)) AS total_revenue
-    FROM
-        lineitem
-    WHERE
-        l_shipdate >= DATE '1996-01-01'
-        AND l_shipdate < DATE '1996-01-01' + INTERVAL '3' MONTH
-    GROUP BY
-        l_suppkey;
-```
-::::
-
 **Q16**
 
 ```sql
@@ -997,46 +977,6 @@ WHERE
         AND l_shipinstruct = 'DELIVER IN PERSON'
     );
 ```
-
-::::note
-As of October 2024, the query is extremely slow due to missing join predicate pushdown. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70802
-
-This alternative formulation works and was verified to return the reference results.
-
-```sql
-SELECT
-     sum(l_extendedprice * (1 - l_discount)) AS revenue
-FROM
-     lineitem,
-     part
-WHERE
-    p_partkey = l_partkey
-    AND l_shipinstruct = 'DELIVER IN PERSON'
-    AND l_shipmode IN ('AIR', 'AIR REG')
-    AND (
-        (
-            p_brand = 'Brand#12'
-            AND p_container IN ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
-            AND l_quantity >= 1 AND l_quantity <= 1 + 10
-            AND p_size BETWEEN 1 AND 5
-        )
-        OR
-        (
-            p_brand = 'Brand#23'
-            AND p_container IN ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
-            AND l_quantity >= 10 AND l_quantity <= 10 + 10
-            AND p_size BETWEEN 1 AND 10
-        )
-        OR
-        (
-            p_brand = 'Brand#34'
-            AND p_container IN ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
-            AND l_quantity >= 20 AND l_quantity <= 20 + 10
-            AND p_size BETWEEN 1 AND 15
-        )
-    )
-```
-::::
 
 **Q20**
 

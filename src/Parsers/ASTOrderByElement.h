@@ -54,9 +54,9 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-private:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+private:
     ASTPtr getChild(Child child) const
     {
         auto it = positions.find(child);
@@ -83,6 +83,25 @@ private:
     }
 
     std::unordered_map<Child, size_t> positions;
+};
+
+class ASTStorageOrderByElement : public IAST
+{
+public:
+    int direction = 1; /// 1 for ASC, -1 for DESC
+
+    ASTPtr clone() const override
+    {
+        auto clone = std::make_shared<ASTStorageOrderByElement>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
+
+    String getID(char) const override { return "StorageOrderByElement"; }
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

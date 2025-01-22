@@ -21,10 +21,6 @@ namespace DB
   */
 struct FormatSettings
 {
-    /// Format will be used for streaming. Not every formats support it
-    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
-    bool enable_streaming = false;
-
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
@@ -220,7 +216,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
-        bool write_named_tuples_as_objects = false;
+        bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
@@ -243,6 +239,9 @@ struct FormatSettings
         bool ignore_unnecessary_fields = true;
         bool empty_as_default = false;
         bool type_json_skip_duplicated_paths = false;
+        bool pretty_print = true;
+        char pretty_print_indent = ' ';
+        size_t pretty_print_indent_multiplier = 4;
     } json{};
 
     struct
@@ -281,6 +280,7 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_datetime_as_uint32 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
@@ -288,6 +288,7 @@ struct FormatSettings
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
+        uint64_t output_compression_level;
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
@@ -300,16 +301,27 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_column_name_width_cut_to = 24;
+        UInt64 max_column_name_width_min_chars_to_cut = 4;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
+        bool highlight_trailing_spaces = true;
+        bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
 
-        bool output_format_pretty_row_numbers = false;
-        UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
-        UInt64 output_format_pretty_display_footer_column_names = 1;
-        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
+        bool row_numbers = false;
+        UInt64 single_large_number_tip_threshold = 1'000'000;
+        UInt64 display_footer_column_names = 1;
+        UInt64 display_footer_column_names_min_rows = 50;
+
+        UInt64 squash_consecutive_ms = 50;
+        UInt64 squash_max_wait_ms = 1000;
+
+        bool fallback_to_vertical = true;
+        UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
+        UInt64 fallback_to_vertical_min_table_width = 250;
 
         enum class Charset : uint8_t
         {
@@ -422,6 +434,7 @@ struct FormatSettings
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
         bool dictionary_as_low_cardinality = true;
+        String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 

@@ -706,7 +706,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n <= 32768.
+It is efficient only if n &lt;= 32768.
 
 **Example**
 

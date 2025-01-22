@@ -10,6 +10,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #include <Common/PageCache.h>
+#include <Common/quoteString.h>
 
 #include <Databases/IDatabase.h>
 

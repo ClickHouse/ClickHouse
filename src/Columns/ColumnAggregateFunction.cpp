@@ -1,4 +1,6 @@
+#include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -418,9 +420,10 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 {
-    /// Fallback to per-element hashing, as there is no faster way
-    for (size_t i = 0; i < size(); ++i)
-        updateHashWithValue(i, hash);
+    WriteBufferFromOwnString wbuf;
+    const ColumnAggregateFunction::Container & vec = getData();
+    func->serializeBatch(vec, 0, size(), wbuf);
+    hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
 /// The returned size is less than real size. The reason is that some parts of
@@ -469,6 +472,19 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = operator[](n);
+}
+
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
+{
+    String state;
+    {
+        WriteBufferFromOwnString buffer;
+        func->serialize(data[n], buffer, version);
+        WriteBufferFromString wb(state);
+        writeQuoted(buffer.str(), wb);
+    }
+
+    return {state, DataTypeFactory::instance().get(type_string)};
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const

@@ -10,6 +10,7 @@
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupCoordinationOnCluster.h>
 #include <Backups/BackupCoordinationLocal.h>
+#include <Backups/BackupInMemory.h>
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
@@ -220,7 +221,7 @@ public:
             {
                 metric_threads = CurrentMetrics::BackupsThreads;
                 metric_active_threads = CurrentMetrics::BackupsThreadsActive;
-                metric_active_threads = CurrentMetrics::BackupsThreadsScheduled;
+                metric_scheduled_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
                 use_queue = (thread_pool_id != ThreadPoolId::BACKUP);
@@ -235,7 +236,7 @@ public:
             {
                 metric_threads = CurrentMetrics::RestoreThreads;
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
-                metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
+                metric_scheduled_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
                 use_queue = true;
                 break;
@@ -352,8 +353,12 @@ struct BackupsWorker::BackupStarter
         , query_context(context_)
         , backup_context(Context::createCopy(query_context))
     {
-        backup_context->makeQueryContext();
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
+
+        backup_context->makeQueryContext();
+        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
+        backup_context->applySettingsChanges(backup_settings.core_settings);
+
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
@@ -724,8 +729,12 @@ struct BackupsWorker::RestoreStarter
         , query_context(context_)
         , restore_context(Context::createCopy(query_context))
     {
-        restore_context->makeQueryContext();
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
+
+        restore_context->makeQueryContext();
+        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
+        restore_context->applySettingsChanges(restore_settings.core_settings);
+
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
@@ -966,7 +975,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
 
     String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
     auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-    auto keeper_settings = BackupKeeperSettings::fromContext(context);
+    auto keeper_settings = BackupKeeperSettings(context);
 
     auto all_hosts = BackupSettings::Util::filterHostIDs(
         backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
@@ -1004,7 +1013,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 
     String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
     auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-    auto keeper_settings = BackupKeeperSettings::fromContext(context);
+    auto keeper_settings = BackupKeeperSettings(context);
 
     auto all_hosts = BackupSettings::Util::filterHostIDs(
         restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);

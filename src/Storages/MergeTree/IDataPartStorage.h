@@ -1,6 +1,7 @@
 #pragma once
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>

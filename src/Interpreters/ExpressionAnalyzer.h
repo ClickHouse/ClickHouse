@@ -126,7 +126,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/QualifiedTableName.h>
+#include <Server/HTTPHandler.h>
 
 
 namespace DB
@@ -34,6 +35,8 @@ struct PrometheusRequestHandlerConfig
 
     size_t keep_alive_timeout = 0;
     bool is_stacktrace_enabled = true;
+
+    HTTPHandlerConnectionConfig connection_config;
 };
 
 }

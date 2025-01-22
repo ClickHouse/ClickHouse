@@ -35,6 +35,9 @@ namespace JSONBuilder
 
 class SortDescription;
 
+struct SerializedSetsRegistry;
+struct DeserializedSetsRegistry;
+
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -113,13 +116,10 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
     const NodeRawConstPtrs & getInputs() const { return inputs; }
+    const NodeRawConstPtrs & getOutputs() const { return outputs; }
+    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    NodeRawConstPtrs & getOutputs() { return outputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;
@@ -129,6 +129,9 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dumpDAG() const;
+
+    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);

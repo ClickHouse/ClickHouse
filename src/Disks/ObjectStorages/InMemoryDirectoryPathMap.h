@@ -2,10 +2,9 @@
 
 #include <filesystem>
 #include <map>
-#include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
-#include <shared_mutex>
 #include <base/defines.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
@@ -65,14 +64,8 @@ struct InMemoryDirectoryPathMap
 
     mutable SharedMutex mutex;
 
-#ifdef OS_LINUX
     FileNames TSA_GUARDED_BY(mutex) unique_filenames;
     Map TSA_GUARDED_BY(mutex) map;
-/// std::shared_mutex may not be annotated with the 'capability' attribute in libcxx.
-#else
-    FileNames unique_filenames;
-    Map map;
-#endif
 };
 
 }

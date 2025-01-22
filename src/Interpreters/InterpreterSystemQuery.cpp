@@ -98,6 +98,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsMaxThreads max_threads;
@@ -395,6 +398,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
+            break;
+        case Type::DROP_SKIPPING_INDEX_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
+            system_context->clearSkippingIndexCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
@@ -818,6 +825,10 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
+        case Type::LOAD_PRIMARY_KEY: {
+            loadPrimaryKeys();
+            break;
+        }
         case Type::UNLOAD_PRIMARY_KEY:
         {
             unloadPrimaryKeys();
@@ -874,7 +885,13 @@ void InterpreterSystemQuery::restoreReplica()
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    table_replicated_ptr->restoreMetadataInZooKeeper();
+    const auto & settings = getContext()->getSettingsRef();
+
+    table_replicated_ptr->restoreMetadataInZooKeeper(
+        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
+                             settings[Setting::keeper_retry_initial_backoff_ms],
+                             settings[Setting::keeper_retry_max_backoff_ms],
+                             getContext()->getProcessListElementSafe()});
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
@@ -1224,28 +1241,38 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::loadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(true);
+};
+
 void InterpreterSystemQuery::unloadPrimaryKeys()
+{
+    loadOrUnloadPrimaryKeysImpl(false);
+}
+
+void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 {
     if (!table_id.empty())
     {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
-            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->unloadPrimaryKeys();
+            LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
+            load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Command {} PRIMARY KEY is supported only for MergeTree tables, but got: {}", load ? "LOAD" : "UNLOAD", table->getName());
         }
     }
     else
     {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Unloading primary keys for all tables");
+        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
@@ -1253,7 +1280,7 @@ void InterpreterSystemQuery::unloadPrimaryKeys()
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    merge_tree->unloadPrimaryKeys();
+                    load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
             }
         }
@@ -1395,6 +1422,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
@@ -1633,6 +1661,14 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+        case Type::LOAD_PRIMARY_KEY:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::UNLOAD_PRIMARY_KEY:

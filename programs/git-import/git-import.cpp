@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 #include <unordered_set>
 #include <unordered_map>
 #include <list>
@@ -610,6 +611,8 @@ struct FileBlame
     /// This is important when file was copied or renamed.
     FileBlame & operator=(const FileBlame & rhs)
     {
+        if (&rhs == this)
+            return *this;
         lines = rhs.lines;
         it = lines.begin();
         current_idx = 1;
