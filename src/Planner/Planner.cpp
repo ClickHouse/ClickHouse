@@ -1325,6 +1325,8 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 
 void Planner::buildQueryPlanIfNeeded()
 {
+    LOG_TRACE(getLogger("QueryCache"), "build query plan");
+
     if (query_plan.isInitialized())
         return;
 
@@ -1458,6 +1460,8 @@ void Planner::buildPlanForQueryNode()
     ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
+    LOG_TRACE(getLogger("QueryCache"), "buildPlanForQueryNode");
+
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
@@ -1490,14 +1494,18 @@ void Planner::buildPlanForQueryNode()
 
     if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
     {
+        LOG_TRACE(getLogger("QueryCache"), "Try to read from subquery cache");
         QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getUserID(), query_context->getCurrentRoles());
         auto reader = std::make_shared<QueryCache::Reader>(query_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
+            LOG_TRACE(getLogger("QueryCache"), "Entry found");
             addReadFromQueryCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());            
             planner_context->getMutableQueryContext()->setQueryCacheUsage(QueryCacheUsage::Read);
             return;
         }
+    } else {
+        LOG_TRACE(getLogger("QueryCache"), "No read from subquery cache {} {}", can_use_query_cache, settings[Setting::enable_reads_from_query_cache]);
     }
 
 
@@ -1903,7 +1911,7 @@ void Planner::buildPlanForQueryNode()
     if (can_use_query_cache && settings[Setting::enable_writes_to_query_cache])
     {
         /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-
+        LOG_TRACE(getLogger("QueryCache"), "Try to write subquery cache");
         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, query_context);
         const bool ast_contains_system_tables = astContainsSystemTables(ast, query_context);
 
@@ -1950,10 +1958,15 @@ void Planner::buildPlanForQueryNode()
                 
                 auto stream_into_query_cache_step = std::make_unique<StreamInQueryCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_cache_writer);
                 query_plan.addStep(std::move(stream_into_query_cache_step));
-                
+                LOG_TRACE(getLogger("QueryCache"),
+                        "Write step added");
                 planner_context->getMutableQueryContext()->setQueryCacheUsage(QueryCacheUsage::Write);
             }
+        } else {
+            LOG_TRACE(getLogger("QueryCache"), "AAA");
         }
+    } else {
+        LOG_TRACE(getLogger("QueryCache"), "No write to subquery cache");
     }
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();

@@ -135,11 +135,12 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const ContextPtr & context,
     const StoragePtr & storage)
 {
+    LOG_TRACE(getLogger("QueryCache"), "Run passes1");
     auto query_tree = buildQueryTree(query, context);
-
+    LOG_TRACE(getLogger("QueryCache"), "Run passes2");
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
-
+    LOG_TRACE(getLogger("QueryCache"), "Run passes3");
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
@@ -147,10 +148,10 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
-
+    LOG_TRACE(getLogger("QueryCache"), "Run passes4");
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
-
+    LOG_TRACE(getLogger("QueryCache"), "Run passes5");
     return query_tree;
 }
 
@@ -167,6 +168,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
 {
+    LOG_TRACE(getLogger("QueryCache"), "Use select query analyzer");
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -181,6 +183,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
 {
+    LOG_TRACE(getLogger("QueryCache"), "Use select query analyzer");
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -193,6 +196,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
 {
+    LOG_TRACE(getLogger("QueryCache"), "Use select query analyzer");
 }
 
 Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
@@ -226,7 +230,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
     auto pipeline_builder = buildQueryPipeline();
-
+    LOG_TRACE(getLogger("QueryCache"), "execute on select query analyzer");
     BlockIO result;
     result.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
@@ -250,6 +254,7 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
 
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
+    LOG_TRACE(getLogger("QueryCache"), "build query pipeline");
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 

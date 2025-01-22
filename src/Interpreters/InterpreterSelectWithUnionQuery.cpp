@@ -53,12 +53,14 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : InterpreterSelectWithUnionQuery(query_ptr_, Context::createCopy(context_), options_, required_result_column_names)
 {
+    LOG_TRACE(getLogger("QueryCache"), "Use old interpreter");
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
+    LOG_TRACE(getLogger("QueryCache"), "Use old interpreter");
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
@@ -383,6 +385,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
     BlockIO res;
+    LOG_TRACE(getLogger("QueryCache"), "execute on old interpreter");
 
     QueryPlan query_plan;
     buildQueryPlan(query_plan);

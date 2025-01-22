@@ -650,6 +650,9 @@ void QueryPipeline::finalizeWriteInQueryCache()
     /// The pipeline can contain multiple StreamInQueryCacheTransforms which all points to different query cache writer objects.
     /// We should call finalize() on all of them.
 
+    LOG_TRACE(getLogger("QueryCache"),
+                        "Start finalizing {}", processors->size());
+                        
     for (auto& processor : *processors) {
         if (auto* stream_processor = dynamic_cast<StreamInQueryCacheTransform *>(&*processor); stream_processor) {
             stream_processor->finalizeWriteInQueryCache();

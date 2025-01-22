@@ -11,10 +11,15 @@ StreamInQueryCacheTransform::StreamInQueryCacheTransform(
     , query_cache_writer(query_cache_writer_)
     , chunk_type(chunk_type_)
 {
+    LOG_TRACE(getLogger("QueryCache"),
+                        "Build stream in query cache {}", chunk_type_);
 }
 
 void StreamInQueryCacheTransform::transform(Chunk & chunk)
 {
+    LOG_TRACE(getLogger("QueryCache"),
+                        "Transform stream in query cache");
+                        
     query_cache_writer->buffer(chunk.clone(), chunk_type);
 }
 

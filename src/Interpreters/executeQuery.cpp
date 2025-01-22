@@ -1308,8 +1308,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+        LOG_TRACE(getLogger("QueryCache"), "Can use query cache {}", can_use_query_cache);
         context->setCanUseQueryCache(can_use_query_cache);
-        
+        LOG_TRACE(getLogger("QueryCache"), "Can use query cache context {}", context->getCanUseQueryCache());
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
         /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
@@ -1376,6 +1377,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
+                LOG_TRACE(getLogger("QueryCache"), "Choose interpreter");
                 interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
@@ -1385,11 +1387,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
                 }
 
+                 LOG_TRACE(getLogger("QueryCache"), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get())) {
                     interpreter_with_analyzer->getQueryPlan();
                     LOG_TRACE(getLogger("QueryCache"), "Analyzer query plan get");
+                    LOG_TRACE(getLogger("QueryCache"), "Can use query cache context2 {}", context->getCanUseQueryCache());
                 }
 
                 if (!interpreter->ignoreQuota() && !quota_checked)
@@ -1443,7 +1448,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     LOG_TRACE(getLogger("QueryCache"), "Execute interpreter");
                     res = interpreter->execute();
-
+                    LOG_TRACE(getLogger("QueryCache"), "End execute interpreter");
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (can_use_query_cache && settings[Setting::enable_writes_to_query_cache])
@@ -1495,6 +1500,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                                  settings[Setting::query_cache_max_entries]));
                                 res.pipeline.writeResultIntoQueryCache(query_cache_writer);
                                 context->setQueryCacheUsage(QueryCacheUsage::Write);
+                                LOG_TRACE(getLogger("QueryCache"), "Will use query cache for writing");
                             }
                         }
                     }
@@ -1553,7 +1559,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCacheUsage::Write)
+                LOG_TRACE(getLogger("QueryCache"),
+                        "Query cache usage {}",
+                        query_cache_usage);
+
+                // if (query_cache_usage == QueryCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
