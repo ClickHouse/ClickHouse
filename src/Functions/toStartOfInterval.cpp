@@ -182,6 +182,14 @@ public:
                 getName(), arguments.size());
         }
 
+        if (arguments[0].column->getInt(0) < 0) /// If we have a date/datetime before the 1970-01-01, we should use date32/dateTime64 instead
+        {
+            if (result_type == ResultType::Date)
+                result_type = ResultType::Date32;
+            else if (result_type == ResultType::DateTime)
+                result_type = ResultType::DateTime64;
+        }
+
         switch (result_type)
         {
             case ResultType::Date:
