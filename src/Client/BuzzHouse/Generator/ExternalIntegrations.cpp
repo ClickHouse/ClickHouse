@@ -87,8 +87,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
 
             CreateDatabaseToString(buf, newd);
-            buf += ";";
-            res &= performQuery(buf);
+            res &= performQuery(buf + ";");
         }
         if (res)
         {
@@ -104,8 +103,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             }
 
             CreateTableToString(buf, newt);
-            buf += ";";
-            res &= performQuery(buf);
+            res &= performQuery(buf + ";");
         }
     }
     else if (res)
@@ -271,52 +269,26 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
 
     if (!scc.unix_socket.empty() || !scc.hostname.empty())
     {
-        connection_str += "host='";
-        connection_str += scc.unix_socket.empty() ? scc.hostname : scc.unix_socket;
-        connection_str += "'";
+        connection_str += fmt::format("host='{}'", scc.unix_socket.empty() ? scc.hostname : scc.unix_socket);
         has_something = true;
     }
     if (scc.port)
     {
-        if (has_something)
-        {
-            connection_str += " ";
-        }
-        connection_str += "port='";
-        connection_str += std::to_string(scc.port);
-        connection_str += "'";
+        connection_str += fmt::format("{}port='{}'", has_something ? " " : "", std::to_string(scc.port));
         has_something = true;
     }
     if (!scc.user.empty())
     {
-        if (has_something)
-        {
-            connection_str += " ";
-        }
-        connection_str += "user='";
-        connection_str += scc.user;
-        connection_str += "'";
+        connection_str += fmt::format("{}user='{}'", has_something ? " " : "", scc.user);
         has_something = true;
     }
     if (!scc.password.empty())
     {
-        if (has_something)
-        {
-            connection_str += " ";
-        }
-        connection_str += "password='";
-        connection_str += scc.password;
-        connection_str += "'";
+        connection_str += fmt::format("{}password='{}'", has_something ? " " : "", scc.password);
     }
     if (!scc.database.empty())
     {
-        if (has_something)
-        {
-            connection_str += " ";
-        }
-        connection_str += "dbname='";
-        connection_str += scc.database;
-        connection_str += "'";
+        connection_str += fmt::format("{}dbname='{}'", has_something ? " " : "", scc.database);
     }
     try
     {
@@ -498,17 +470,9 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 
     if (!scc.user.empty())
     {
-        connection_str += scc.user;
-        if (!scc.password.empty())
-        {
-            connection_str += ":";
-            connection_str += scc.password;
-        }
-        connection_str += "@";
+        connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += scc.hostname;
-    connection_str += ":";
-    connection_str += std::to_string(scc.port);
+    connection_str += fmt::format("{}={}", scc.hostname, std::to_string(scc.port));
 
     try
     {

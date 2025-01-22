@@ -166,18 +166,12 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         {
             SQLType * tp = entry.getBottomType();
 
-            if (!first)
-            {
-                buf += ", ";
-            }
-            buf += entry.getBottomName();
-            buf += " ";
-            buf += tp->typeName(true);
-            if (entry.nullable.has_value())
-            {
-                buf += entry.nullable.value() ? "" : " NOT";
-                buf += " NULL";
-            }
+            buf += fmt::format(
+                "{}{} {}{}",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                tp->typeName(true),
+                entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
         }
         remote_entries.clear();

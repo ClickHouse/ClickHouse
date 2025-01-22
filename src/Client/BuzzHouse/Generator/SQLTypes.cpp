@@ -1606,11 +1606,11 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     }
     else if (next_option < 373)
     {
-        ret += std::to_string(rg.nextRandomInt32());
+        ret = std::to_string(rg.nextRandomInt32());
     }
     else if (next_option < 673)
     {
-        ret += std::to_string(rg.nextRandomInt64());
+        ret = std::to_string(rg.nextRandomInt64());
     }
     else
     {
@@ -1631,11 +1631,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
     switch (gt)
     {
         case GeoTypes::Point:
-            ret += "(";
-            ret += nextFloatingPoint(rg, false);
-            ret += ",";
-            ret += nextFloatingPoint(rg, false);
-            ret += ")";
+            ret = fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
             break;
         case GeoTypes::Ring:
         case GeoTypes::LineString:
@@ -1646,11 +1642,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
                 {
                     ret += ", ";
                 }
-                ret += "(";
-                ret += nextFloatingPoint(rg, false);
-                ret += ",";
-                ret += nextFloatingPoint(rg, false);
-                ret += ")";
+                ret += fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
             }
             ret += "]";
             break;
@@ -1672,11 +1664,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
                     {
                         ret += ", ";
                     }
-                    ret += "(";
-                    ret += nextFloatingPoint(rg, false);
-                    ret += ",";
-                    ret += nextFloatingPoint(rg, false);
-                    ret += ")";
+                    ret += fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
                 }
                 ret += "]";
             }
@@ -1708,11 +1696,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
                         {
                             ret += ", ";
                         }
-                        ret += "(";
-                        ret += nextFloatingPoint(rg, false);
-                        ret += ",";
-                        ret += nextFloatingPoint(rg, false);
-                        ret += ")";
+                        ret += fmt::format("({},{})", nextFloatingPoint(rg, false), nextFloatingPoint(rg, false));
                     }
                     ret += "]";
                 }
@@ -1787,29 +1771,11 @@ String StatementGenerator::strAppendBottomValue(RandomGenerator & rg, SQLType * 
     }
     else if ((dtp = dynamic_cast<DateType *>(tp)))
     {
-        ret += "'";
-        if (dtp->extended)
-        {
-            ret += rg.nextDate32();
-        }
-        else
-        {
-            ret += rg.nextDate();
-        }
-        ret += "'";
+        ret = "'" + (dtp->extended ? rg.nextDate32() : rg.nextDate()) + "'";
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        ret += "'";
-        if (dttp->extended)
-        {
-            ret += rg.nextDateTime64();
-        }
-        else
-        {
-            ret += rg.nextDateTime();
-        }
-        ret += "'";
+        ret = "'" + (dttp->extended ? rg.nextDateTime64() : rg.nextDateTime()) + "'";
     }
     else if ((detp = dynamic_cast<DecimalType *>(tp)))
     {
@@ -1822,35 +1788,29 @@ String StatementGenerator::strAppendBottomValue(RandomGenerator & rg, SQLType * 
     {
         const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
 
-        ret += rg.nextString("'", true, limit);
+        ret = rg.nextString("'", true, limit);
     }
     else if (dynamic_cast<const BoolType *>(tp))
     {
-        ret += rg.nextBool() ? "TRUE" : "FALSE";
+        ret = rg.nextBool() ? "TRUE" : "FALSE";
     }
     else if ((etp = dynamic_cast<EnumType *>(tp)))
     {
         const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
 
-        ret += nvalue.val;
+        ret = nvalue.val;
     }
     else if (dynamic_cast<UUIDType *>(tp))
     {
-        ret += "'";
-        ret += rg.nextUUID();
-        ret += "'";
+        ret = "'" + rg.nextUUID() + "'";
     }
     else if (dynamic_cast<IPv4Type *>(tp))
     {
-        ret += "'";
-        ret += rg.nextIPv4();
-        ret += "'";
+        ret = "'" + rg.nextIPv4() + "'";
     }
     else if (dynamic_cast<IPv6Type *>(tp))
     {
-        ret += "'";
-        ret += rg.nextIPv6();
-        ret += "'";
+        ret = "'" + rg.nextIPv6() + "'";
     }
     else
     {
@@ -2015,39 +1975,25 @@ String strBuildJSONElement(RandomGenerator & rg)
             ret = rg.nextString("\"", false, rg.nextRandomUInt32() % 1009);
             break;
         case 14: //date
-            ret += '"';
-            ret += rg.nextDate();
-            ret += '"';
+            ret = '"' + rg.nextDate() + '"';
             break;
         case 15: //date32
-            ret += '"';
-            ret += rg.nextDate32();
-            ret += '"';
+            ret = '"' + rg.nextDate32() + '"';
             break;
         case 16: //datetime
-            ret += '"';
-            ret += rg.nextDateTime();
-            ret += '"';
+            ret = '"' + rg.nextDateTime() + '"';
             break;
         case 17: //datetime64
-            ret += '"';
-            ret += rg.nextDateTime64();
-            ret += '"';
+            ret = '"' + rg.nextDateTime64() + '"';
             break;
         case 18: //uuid
-            ret += '"';
-            ret += rg.nextUUID();
-            ret += '"';
+            ret = '"' + rg.nextUUID() + '"';
             break;
         case 19: //ipv4
-            ret += '"';
-            ret += rg.nextIPv4();
-            ret += '"';
+            ret = '"' + rg.nextIPv4() + '"';
             break;
         case 20: //ipv6
-            ret += '"';
-            ret += rg.nextIPv6();
-            ret += '"';
+            ret = '"' + rg.nextIPv6() + '"';
             break;
         default:
             assert(0);
@@ -2132,9 +2078,7 @@ String StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, SQLTy
         std::uniform_int_distribution<int> dopt(1, this->fc.max_depth);
         std::uniform_int_distribution<int> wopt(1, this->fc.max_width);
 
-        ret += "'";
-        ret += strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator));
-        ret += "'";
+        ret = "'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)) + "'";
     }
     else if (dynamic_cast<DynamicType *>(tp))
     {
