@@ -24,14 +24,21 @@ namespace
 
 UInt128 BackupEntryWithChecksumCalculation::getChecksum(const ReadSettings & read_settings) const
 {
-    if (!calculated_checksum)
     {
-        auto full_checksum = calculateChecksum(getSize(), read_settings);
-        chassert(full_checksum);
+        std::lock_guard lock{mutex};
+        if (calculated_checksum)
+            return *calculated_checksum;
+    }
+
+    auto full_checksum = calculateChecksum(getSize(), read_settings);
+    chassert(full_checksum);
+
+    {
+        std::lock_guard lock{mutex};
         calculated_checksum = full_checksum.value();
     }
 
-    return *calculated_checksum;
+    return full_checksum.value();
 }
 
 
@@ -41,12 +48,24 @@ std::optional<UInt128> BackupEntryWithChecksumCalculation::getPartialChecksum(UI
     if (limit >= size)
         return getChecksum(read_settings);
 
-    if (calculated_checksum)
+    bool has_calculated_full_checksum;
+
+    {
+        std::lock_guard lock{mutex};
+        has_calculated_full_checksum = calculated_checksum.has_value();
+    }
+
+    if (has_calculated_full_checksum)
         return calculateChecksum(limit, read_settings);
 
     auto [partial_checksum, full_checksum] = calculateChecksum(limit, size, read_settings);
     chassert(full_checksum);
-    calculated_checksum = full_checksum.value();
+
+    {
+        std::lock_guard lock{mutex};
+        calculated_checksum = full_checksum.value();
+    }
+
     return partial_checksum;
 }
 

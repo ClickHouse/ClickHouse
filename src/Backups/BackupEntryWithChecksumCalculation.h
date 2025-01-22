@@ -20,6 +20,8 @@ protected:
     /// Whether it is allowed to calculate a checksum of a part of the file from its beginning up to some point.
     virtual bool isPartialChecksumAllowed() const { return true; }
 
+    mutable std::mutex mutex;
+
 private:
     std::optional<UInt128> calculateChecksum(UInt64 limit, const ReadSettings & read_settings) const;
 
@@ -63,7 +65,7 @@ private:
     std::pair<std::optional<UInt128>, std::optional<UInt128>> calculateChecksumFromReading(
         UInt64 limit, std::optional<UInt64> second_limit, const ReadSettings & read_settings) const;
 
-    mutable std::optional<UInt128> calculated_checksum;
+    mutable std::optional<UInt128> calculated_checksum TSA_GUARDED_BY(mutex);
 };
 
 }

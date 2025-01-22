@@ -47,7 +47,7 @@ private:
     const bool copy_encrypted;
     const std::optional<UInt64> passed_file_size;
     const std::optional<UInt128> passed_checksum;
-    mutable std::optional<UInt64> calculated_size;
+    mutable std::optional<UInt64> calculated_size TSA_GUARDED_BY(mutex);
 };
 
 }

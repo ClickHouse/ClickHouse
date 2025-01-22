@@ -32,11 +32,20 @@ std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(
 
 UInt64 BackupEntryFromImmutableFile::getSize() const
 {
-    if (calculated_size)
-        return *calculated_size;
+    {
+        std::lock_guard lock{mutex};
+        if (calculated_size)
+            return *calculated_size;
+    }
 
-    calculated_size = calculateSize();
-    return *calculated_size;
+    UInt64 size = calculateSize();
+
+    {
+        std::lock_guard lock{mutex};
+        calculated_size = size;
+    }
+
+    return size;
 }
 
 UInt64 BackupEntryFromImmutableFile::calculateSize() const
