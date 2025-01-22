@@ -5,6 +5,7 @@ import urllib
 from typing import Optional
 
 import requests
+from praktika.info import Info
 
 from ._environment import _Environment
 from .result import Result
@@ -68,7 +69,7 @@ class CIDB:
             check_status=result.status,
             check_duration_ms=int(result.duration * 1000),
             check_start_time=Utils.timestamp_to_str(result.start_time),
-            report_url=env.get_report_url(settings=Settings),
+            report_url=Info().get_report_url(),
             pull_request_url=env.CHANGE_URL,
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,

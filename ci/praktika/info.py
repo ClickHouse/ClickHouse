@@ -1,4 +1,6 @@
 import json
+import urllib
+from pathlib import Path
 from typing import Optional
 
 
@@ -40,6 +42,23 @@ class Info:
     @property
     def pr_labels(self):
         return self.env.PR_LABELS
+
+    def get_report_url(self, latest=False):
+        from praktika.settings import Settings
+
+        path = Settings.HTML_S3_PATH
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+            if bucket in path:
+                path = path.replace(bucket, endpoint)
+                break
+        if self.env.PR_NUMBER:
+            if latest:
+                sha = "latest"
+            else:
+                sha = self.env.SHA
+        else:
+            sha = self.env.SHA
+        return f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.env.PR_NUMBER}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
 
     @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:

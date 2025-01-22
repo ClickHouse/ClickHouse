@@ -86,7 +86,8 @@ class _Environment(MetaClasses.Serializable):
         WORKFLOW_NAME = os.getenv("GITHUB_WORKFLOW", "")
         JOB_NAME = os.getenv("JOB_NAME", "")
         REPOSITORY = os.getenv("GITHUB_REPOSITORY", "")
-        BRANCH = os.getenv("GITHUB_HEAD_REF", "")
+        # GITHUB_HEAD_REF for pull_request, GITHUB_REF_NAME for push
+        BRANCH = os.getenv("GITHUB_HEAD_REF", "") or os.getenv("GITHUB_REF_NAME", "")
 
         EVENT_FILE_PATH = os.getenv("GITHUB_EVENT_PATH", "")
         JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "")
@@ -196,34 +197,18 @@ class _Environment(MetaClasses.Serializable):
         )
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
+        return self.get_s3_prefix_static(self.PR_NUMBER, self.SHA, latest)
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
-        prefix = ""
+    def get_s3_prefix_static(cls, pr_number, sha, latest=False):
+        prefix = f"{pr_number}"
         assert sha or latest
-        if pr_number and pr_number > 0:
-            prefix += f"{pr_number}"
-        else:
-            prefix += f"{branch}"
+        assert pr_number >= 0
         if latest:
             prefix += f"/latest"
         elif sha:
             prefix += f"/{sha}"
         return prefix
-
-    # TODO: find a better place for the function. This file should not import praktika.settings
-    #   as it's requires reading users config, that's why imports nested inside the function
-    def get_report_url(self, settings, latest=False):
-        import urllib
-
-        path = settings.HTML_S3_PATH
-        for bucket, endpoint in settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
-            if bucket in path:
-                path = path.replace(bucket, endpoint)
-                break
-        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={'latest' if latest else self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}"
-        return REPORT_URL
 
     def is_local_run(self):
         return self.LOCAL_RUN
