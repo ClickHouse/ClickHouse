@@ -12,7 +12,7 @@ CREATE TABLE testing_memory (a UInt64, b String) ENGINE = MergeTree ORDER BY ();
 "
 
 settings="
-    max_insert_threads=500, max_memory_usage = 3e8, max_rows_to_read = 300000000, max_execution_time=100
+    max_insert_threads=600, max_memory_usage = 2e8, max_rows_to_read = 300000000, max_execution_time=150
 "
 
 # Insert initial data with throttling enabled. I've changed max_execution time because test can take too much time to run if the server has memory shortage
