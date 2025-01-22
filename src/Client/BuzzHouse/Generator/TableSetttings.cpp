@@ -238,16 +238,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
         mergeTreeTableSettings.insert(
             {{"storage_policy",
-              CHSetting(
-                  [&](RandomGenerator & rg)
-                  {
-                      String res = "'";
-                      res += rg.pickRandomlyFromVector(merge_storage_policies);
-                      res += "'";
-                      return res;
-                  },
-                  {},
-                  false)}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false)}});
     }
 }
 

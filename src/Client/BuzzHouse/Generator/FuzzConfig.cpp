@@ -46,16 +46,13 @@ static std::optional<ServerCredentials> loadServerCredentials(
 
 FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(getLogger("BuzzHouse"))
 {
-    String buf;
     JSONParserImpl parser;
     JSONObjectType object;
+    std::ostringstream sstr;
     std::ifstream inputFile(path);
-    String fileContent;
 
-    while (std::getline(inputFile, buf))
-    {
-        fileContent += buf;
-    }
+    sstr << inputFile.rdbuf();
+    String fileContent = sstr.str();
     inputFile.close();
     if (!parser.parse(fileContent, object))
     {
@@ -239,7 +236,7 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, std::vector<String>
         if (ntable != current_table && !next_cols.empty())
         {
             if (current_table != "stack_trace"
-                && (allow_infinite_tables || (current_table.rfind("numbers", 0) != 0 && current_table.rfind("zeros", 0) != 0)))
+                && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
             {
                 tables[current_table] = next_cols;
             }

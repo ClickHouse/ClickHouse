@@ -935,16 +935,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         settings_timezones.insert(settings_timezones.end(), fc.timezones.begin(), fc.timezones.end());
         serverSettings.insert(
             {{"session_timezone",
-              CHSetting(
-                  [&](RandomGenerator & rg)
-                  {
-                      String res = "'";
-                      res += rg.pickRandomlyFromVector(settings_timezones);
-                      res += "'";
-                      return res;
-                  },
-                  {},
-                  false)}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(settings_timezones) + "'"; }, {}, false)}});
     }
 }
 

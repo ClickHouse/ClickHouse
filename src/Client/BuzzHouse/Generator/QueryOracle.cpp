@@ -195,18 +195,12 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     {
         SQLType * tp = entry.getBottomType();
 
-        if (!first)
-        {
-            buf += ", ";
-        }
-        buf += entry.getBottomName();
-        buf += " ";
-        buf += tp->typeName(true);
-        if (entry.nullable.has_value())
-        {
-            buf += entry.nullable.value() ? "" : " NOT";
-            buf += " NULL";
-        }
+        buf += fmt::format(
+            "{}{} {}{}",
+            first ? "" : ", ",
+            entry.getBottomName(),
+            tp->typeName(true),
+            entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         /* ArrowStream doesn't support UUID */
         if (outf == OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType *>(tp))

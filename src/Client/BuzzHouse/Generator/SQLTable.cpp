@@ -558,7 +558,6 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
 template <typename T>
 String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char initial)
 {
-    String res;
     const uint32_t noption = rg.nextSmallNumber();
 
     if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
@@ -568,9 +567,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const ch
             const std::shared_ptr<SQLDatabase> & d
                 = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
-            res += initial;
-            res += std::to_string(d->dname);
-            return res;
+            return initial + std::to_string(d->dname);
         }
     }
     else
@@ -579,41 +576,28 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const ch
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
-            res += initial;
-            res += std::to_string(t.tname);
-            return res;
+            return initial + std::to_string(t.tname);
         }
     }
     if (noption < 7)
     {
-        res += initial;
-        res += std::to_string(rg.nextSmallNumber() - 1);
-        res += ".*";
+        return initial + std::to_string(rg.nextSmallNumber() - 1) + ".*";
     }
     else if (noption < 10)
     {
         const uint32_t first = rg.nextSmallNumber() - 1;
         const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-        res += initial;
-        res += "[";
-        res += std::to_string(first);
-        res += "-";
-        res += std::to_string(second);
-        res += "].*";
+        return fmt::format("{}[{}-{}].*", initial, std::to_string(first), std::to_string(second));
+    }
+    else if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
+    {
+        return "default";
     }
     else
     {
-        if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
-        {
-            res += "default";
-        }
-        else
-        {
-            res += "t0";
-        }
+        return "t0";
     }
-    return res;
 }
 
 void StatementGenerator::generateMergeTreeEngineDetails(

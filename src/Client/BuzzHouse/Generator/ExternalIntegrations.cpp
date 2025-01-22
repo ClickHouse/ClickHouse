@@ -27,12 +27,8 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 
     if (performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
-        String buf;
         bool first = true;
-
-        buf += "CREATE TABLE ";
-        buf += str_tname;
-        buf += "(";
+        String buf = fmt::format("CREATE TABLE {}(", str_tname);
 
         if (can_shuffle && rg.nextSmallNumber() < 7)
         {
@@ -42,16 +38,12 @@ bool ClickHouseIntegratedDatabase::performIntegration(
         {
             SQLType * tp = entry.getBottomType();
 
-            if (!first)
-            {
-                buf += ", ";
-            }
-            buf += entry.getBottomName();
-            buf += " ";
-            buf += columnTypeAsString(rg, tp);
-            buf += " ";
-            buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ";
-            buf += "NULL";
+            buf += fmt::format(
+                "{}{} {} {}NULL",
+                first ? "" : ", ",
+                entry.getBottomName(),
+                columnTypeAsString(rg, tp),
+                ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             assert(entry.path.size() == 1);
             first = false;
         }
@@ -627,15 +619,15 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
 
         if (next_option < 25)
         {
-            buf += "nan";
+            buf = "nan";
         }
         else if (next_option < 49)
         {
-            buf += "inf";
+            buf = "inf";
         }
         else if (next_option < 73)
         {
-            buf += "0.0";
+            buf = "0.0";
         }
         else
         {
@@ -643,7 +635,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-            buf += appendDecimal(rg, left, right);
+            buf = appendDecimal(rg, left, right);
         }
         if constexpr (is_document<T>)
         {
@@ -670,16 +662,8 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf;
+        String buf = dttp->extended ? rg.nextDateTime64() : rg.nextDateTime();
 
-        if (dttp->extended)
-        {
-            buf += rg.nextDateTime64();
-        }
-        else
-        {
-            buf += rg.nextDateTime();
-        }
         if constexpr (is_document<T>)
         {
             output << cname << buf;
@@ -691,11 +675,10 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((detp = dynamic_cast<DecimalType *>(tp)))
     {
-        String buf;
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
+        String buf = appendDecimal(rg, left, right);
 
-        buf += appendDecimal(rg, left, right);
         if (rg.nextBool())
         {
             bsoncxx::types::b_decimal128 decimal_value(buf.c_str());

@@ -200,26 +200,23 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     }
     else if (noption < 401)
     {
-        String ret = "'";
+        String ret;
+
         if (noption < 251)
         {
-            ret += rg.nextDate();
-            ret += "'::Date";
+            ret = fmt::format("'{}'::Date", rg.nextDate());
         }
         else if (noption < 301)
         {
-            ret += rg.nextDate32();
-            ret += "'::Date32";
+            ret = fmt::format("'{}'::Date32", rg.nextDate32());
         }
         else if (noption < 351)
         {
-            ret += rg.nextDateTime();
-            ret += "'::DateTime";
+            ret = fmt::format("'{}'::DateTime", rg.nextDateTime());
         }
         else
         {
-            ret += rg.nextDateTime64();
-            ret += "'::DateTime64";
+            ret = fmt::format("'{}'::nextDateTime64", rg.nextDateTime64());
         }
         lv->set_no_quote_str(ret);
     }
@@ -253,10 +250,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         {
             ret = "randomStringUTF8";
         }
-        ret += "(";
-        ret += std::to_string(nlen);
-        ret += ")";
-        lv->set_no_quote_str(ret);
+        lv->set_no_quote_str(fmt::format("{}({})", ret, std::to_string(nlen)));
     }
     else if (noption < 601)
     {
@@ -858,11 +852,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             const uint32_t first = rg.nextSmallNumber() - 1;
             const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-            ret += "[";
-            ret += std::to_string(first);
-            ret += "-";
-            ret += std::to_string(second);
-            ret += "]";
+            ret = fmt::format("[{}-{}]", std::to_string(first), std::to_string(second));
         }
         expr->mutable_comp_expr()->set_columns(ret);
     }
