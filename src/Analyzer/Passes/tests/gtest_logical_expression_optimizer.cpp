@@ -76,6 +76,7 @@ TEST(OptimizeAndCompareChain, compare)
     test_f("a < b AND b = c AND c <= 5", "(a < b) AND (b = c) AND (c <= 5) AND (b <= 5) AND (a < 5)");
     test_f("a < b AND b = c AND c = 5", "(a < b) AND (b = c) AND (c = 5) AND (b = 5) AND (a < 5)");
     test_f("a > b AND b > c AND c > a AND a < 5", "(a > b) AND (b > c) AND (c > a) AND (a < 5) AND (b < 5) AND (c < 5)");
+    test_f("a < 3 AND b < a AND c < b AND c < a", "(a < 3) AND (b < a) AND (c < b) AND (c < a) AND (b < 3) AND (c < 3)");
 
     // constant is small
     test_f("a > b AND b > c AND c > 5", "(a > b) AND (b > c) AND (c > 5) AND (b > 5) AND (a > 5)");
@@ -90,6 +91,7 @@ TEST(OptimizeAndCompareChain, compare)
     test_f("a > b AND b = c AND c >= 5", "(a > b) AND (b = c) AND (c >= 5) AND (b >= 5) AND (a > 5)");
     test_f("a > b AND b = c AND c = 5", "(a > b) AND (b = c) AND (c = 5) AND (b = 5) AND (a > 5)");
     test_f("a < b AND b < c AND c < a AND a > 5", "(a < b) AND (b < c) AND (c < a) AND (a > 5) AND (b > 5) AND (c > 5)");
+    test_f("a > 3 AND b > a AND c > b AND c > a", "(a > 3) AND (b > a) AND (c > b) AND (c > a) AND (b > 3) AND (c > 3)");
 
     // miscellaneous
     test_f("c > 0 AND c < 5", "(c > 0) AND (c < 5)");

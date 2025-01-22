@@ -1153,24 +1153,23 @@ private:
             }
         }
 
-        /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5
-        std::unordered_set<QueryTreeNodePtr> check_path;
+        /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5,
+        /// also avoid duplicate such as a>3 AND b>a AND c>b AND c>a.
+        std::unordered_set<QueryTreeNodePtr> visited;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         std::set<std::pair<QueryTreeNodePtr, const ConstantNode *>> equal_funcs;
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *,
-            CompareType, std::unordered_set<QueryTreeNodePtr> &)> findPairs
-            = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant,
-                CompareType type, std::unordered_set<QueryTreeNodePtr> & path)
+        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
+            = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
         {
             if (auto it = pairs.find(current); it != pairs.end())
             {
                 for (const auto & left : it->second)
                 {
-                    if (path.contains(left.first))
+                    if (visited.contains(left.first))
                         continue;
-                    path.insert(left.first);
+                    visited.insert(left.first);
 
                     CompareType compare_type = std::min(type, left.second);
 
@@ -1199,23 +1198,24 @@ private:
                         function_node.getArguments().getNodes().push_back(and_node);
                     }
 
-                    findPairs(pairs, left.first,
-                        constant ? constant : current->as<ConstantNode>(), compare_type, path);
-
-                    path.erase(left.first);
+                    findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
                 }
             }
         };
 
         /// Start from large constant
         for (const auto & constant : greater_constants)
-            findPairs(greater_pairs, constant, nullptr, CompareType::equals, check_path);
-
-        chassert(check_path.empty());
+        {
+            visited.clear();
+            findPairs(greater_pairs, constant, nullptr, CompareType::equals);
+        }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
-            findPairs(less_pairs, constant, nullptr, CompareType::equals, check_path);
+        {
+            visited.clear();
+            findPairs(less_pairs, constant, nullptr, CompareType::equals);
+        }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
