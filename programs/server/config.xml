@@ -355,6 +355,18 @@
         </client>
     </openSSL>
 
+    <!-- Let's Encrypt certificate provider configuration -->
+    <!--
+    <acme>
+        <email>someone@example.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>example.com</domain>
+        </domains>
+        <refresh_certificates_interval>60000</refresh_certificates_interval>
+    </acme>
+    -->
+
     <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
     <!--
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>

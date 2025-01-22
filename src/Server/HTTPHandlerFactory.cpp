@@ -1,9 +1,10 @@
 #include <Server/HTTPHandlerFactory.h>
 
+#include <Server/ACMEClient.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
-#include <Server/IServer.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -159,6 +160,14 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+#if USE_SSL
+            else if (handler_type == "acme")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+#endif
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
@@ -195,7 +204,6 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
 
     return factory;
 }
-
 
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
 {
@@ -263,6 +271,16 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
+
+#if USE_SSL
+    if (server.config().has("acme"))
+    {
+        auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+        acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_HTTP_PATH);
+        acme_handler->allowGetAndHeadRequest();
+        factory.addHandler(acme_handler);
+    }
+#endif
 }
 
 void addDefaultHandlersFactory(

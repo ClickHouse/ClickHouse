@@ -40,6 +40,7 @@ public:
         Poco::Crypto::EVPPKey key;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+        Data(Poco::Crypto::EVPPKey, Poco::Crypto::X509Certificate);
     };
 
     struct File
@@ -57,7 +58,7 @@ public:
     {
         SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
-        bool init_was_not_made = true;
+        bool initialized = false;
 
         File cert_file{"certificate"};
         File key_file{"key"};
