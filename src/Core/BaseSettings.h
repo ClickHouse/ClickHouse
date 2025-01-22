@@ -24,6 +24,7 @@ class WriteBuffer;
 
 struct BaseSettingsHelpers
 {
+    [[noreturn]] static void throwInvalidCharacterInSettingDescription(std::string_view name);
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
 
@@ -900,7 +901,22 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             size_t find(std::string_view name) const; \
             const String & getName(size_t index) const { return field_infos[index].name; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
-            const char * getDescription(size_t index) const { return field_infos[index].description; } \
+            const char * getDescription(size_t index) const \
+            { \
+                /* Public documentation for settings is generated like this: \
+                   System view 'system.settings' (respectively equivalent views for server and MergeTree settings) \
+                      --> (some script) --> Markdown \
+                        --> (Docusaurus) --> HTML \
+                   Docusaurus interprets certain characters as special characters. \
+                   For the result to look pretty, these characters need to be quoted. \
+                   This generally applies to all setting fields (name, value, description, etc.) but only free-text descriptions are really prone. */ \
+                const char * description = field_infos[index].description; \
+                static constexpr std::array<char, 4> disallowed_characters = {'{', '}', '<', '>'}; \
+                for (auto ch : disallowed_characters) \
+                    if (std::string_view(description).contains(ch)) \
+                        BaseSettingsHelpers::throwInvalidCharacterInSettingDescription(field_infos[index].name); \
+                return description; \
+            } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             Field castValueUtil(size_t index, const Field & value) const { return field_infos[index].cast_value_util_function(value); } \

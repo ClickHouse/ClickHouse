@@ -268,7 +268,7 @@ Connection timeout for receiving first packet of data or packet with positive pr
 Enables hedged requests logic for remote queries. It allows to establish many connections with different replicas for query.
 New connection is enabled in case existent connection(s) with replica(s) were not established within `hedged_connection_timeout`
 or no data was received within `receive_data_timeout`. Query uses the first connection which send non empty progress packet (or data packet, if `allow_changing_replica_until_first_data_packet`);
-other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.
+other connections are cancelled. Queries with `max_parallel_replicas &gt; 1` are supported.
 
 Enabled by default.
 

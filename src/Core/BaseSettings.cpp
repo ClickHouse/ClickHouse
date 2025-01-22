@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_SETTING;
+    extern const int INVALID_SETTING_DESCRIPTION;
 }
 
 void BaseSettingsHelpers::writeString(std::string_view str, WriteBuffer & out)
@@ -48,9 +49,15 @@ SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 }
 
 
+void BaseSettingsHelpers::throwInvalidCharacterInSettingDescription(std::string_view name)
+{
+    throw Exception(ErrorCodes::INVALID_SETTING_DESCRIPTION, "Invalid character in description of setting '{}'", name);
+}
+
+
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
-    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
+    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", name);
 }
 
 
