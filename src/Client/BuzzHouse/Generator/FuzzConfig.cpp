@@ -238,7 +238,8 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, std::vector<String>
 
         if (ntable != current_table && !next_cols.empty())
         {
-            if (allow_infinite_tables || (current_table.rfind("numbers", 0) != 0 && current_table.rfind("zeros", 0) != 0))
+            if (current_table != "stack_trace"
+                && (allow_infinite_tables || (current_table.rfind("numbers", 0) != 0 && current_table.rfind("zeros", 0) != 0)))
             {
                 tables[current_table] = next_cols;
             }
