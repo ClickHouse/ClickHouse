@@ -835,7 +835,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         }
 
         total_size += entry_size;
-        commit_logs_cache.addEntry(current_index, size, PrefetchedCacheEntry());
+        commit_logs_cache.addEntry(current_index, entry_size, PrefetchedCacheEntry());
     }
 
     if (!file_infos.empty())
