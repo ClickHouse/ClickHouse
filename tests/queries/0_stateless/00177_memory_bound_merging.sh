@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful
+# Tags: stateful, no-s3-storage
 
 # shellcheck disable=SC2154
 
