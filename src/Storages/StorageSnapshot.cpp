@@ -92,7 +92,8 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
         for (const auto & column : all_columns)
             column_names.insert(column.name);
 
-        if (!virtual_columns->empty()) {
+        if (!virtual_columns->empty())
+        {
             auto virtuals_list = virtual_columns->getNamesAndTypesList(options.virtuals_kind);
             for (const auto & column : virtuals_list)
             {
