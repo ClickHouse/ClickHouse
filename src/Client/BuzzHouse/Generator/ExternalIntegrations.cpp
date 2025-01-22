@@ -1394,7 +1394,7 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
         replaced.resize(0);
         for (const auto & c : nvalue)
         {
-            if (c == '\'')
+            if (c == '\'' || c == '\\')
             {
                 replaced += '\\';
             }

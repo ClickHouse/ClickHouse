@@ -343,7 +343,7 @@ String EnumType::typeName(const bool escape) const
         }
         for (const auto & c : v.val)
         {
-            if (escape && c == '\'')
+            if (escape && (c == '\'' || c == '\\'))
             {
                 ret += "\\";
             }
@@ -461,7 +461,7 @@ String JSONType::typeName(const bool escape) const
     ret += "JSON";
     for (const auto & c : desc)
     {
-        if (escape && c == '\'')
+        if (escape && (c == '\'' || c == '\\'))
         {
             ret += '\\';
         }
