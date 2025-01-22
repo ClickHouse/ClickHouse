@@ -948,4 +948,16 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
 }
 
+std::unique_ptr<SQLType> size_tp = nullptr, null_tp = nullptr;
+
+std::unordered_map<String, std::vector<String>> systemTables;
+
+void loadSystemTables(const FuzzConfig & fc)
+{
+    size_tp = std::make_unique<IntType>(64, true);
+    null_tp = std::make_unique<BoolType>();
+
+    fc.loadSystemTables(systemTables);
+}
+
 }

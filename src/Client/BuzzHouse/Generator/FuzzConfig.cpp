@@ -97,6 +97,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
         {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"measure_performance", [&](const JSONObjectType & value) { measure_performance = value.getBool(); }},
+        {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -215,6 +216,38 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->storage_policies, "storage_policies", "policy_name");
     loadServerSettings(this->disks, "disks", "name");
     loadServerSettings(this->timezones, "time_zones", "time_zone");
+}
+
+void FuzzConfig::loadSystemTables(std::unordered_map<String, std::vector<String>> & tables) const
+{
+    String buf;
+    String current_table;
+    std::vector<String> next_cols;
+
+    processServerQuery(fmt::format(
+        "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' INTO OUTFILE "
+        "'{}' TRUNCATE FORMAT TabSeparated;",
+        fuzz_out.generic_string()));
+
+    std::ifstream infile(fuzz_out);
+    while (std::getline(infile, buf))
+    {
+        const auto tabchar = buf.find('\t');
+        const auto ntable = buf.substr(0, tabchar);
+        const auto ncol = buf.substr(tabchar + 1);
+
+        if (ntable != current_table && !next_cols.empty())
+        {
+            if (allow_infinite_tables || (current_table.rfind("numbers", 0) != 0 && current_table.rfind("zeros", 0) != 0))
+            {
+                tables[current_table] = next_cols;
+            }
+            next_cols.clear();
+            current_table = ntable;
+        }
+        next_cols.push_back(ncol);
+        buf.resize(0);
+    }
 }
 
 bool FuzzConfig::tableHasPartitions(const bool detached, const String & database, const String & table) const

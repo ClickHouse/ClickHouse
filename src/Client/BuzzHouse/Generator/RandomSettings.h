@@ -3,6 +3,7 @@
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
+#include <Client/BuzzHouse/Generator/SQLTypes.h>
 
 #include <cstdint>
 #include <functional>
@@ -131,7 +132,12 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {IcebergS3, {}},
        {Merge, {}}};
 
+extern std::unique_ptr<SQLType> size_tp, null_tp;
+
+extern std::unordered_map<String, std::vector<String>> systemTables;
+
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
+void loadSystemTables(const FuzzConfig & fc);
 
 }

@@ -1,6 +1,5 @@
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#include <Client/BuzzHouse/Generator/SystemTables.h>
 
 namespace BuzzHouse
 {
@@ -413,7 +412,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         jt->mutable_table_alias()->set_table(name);
         for (const auto & entry : tentries)
         {
-            rel.cols.push_back(SQLRelationCol(name, {entry.first}));
+            rel.cols.push_back(SQLRelationCol(name, {entry}));
         }
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }

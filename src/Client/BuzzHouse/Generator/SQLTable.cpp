@@ -3,7 +3,6 @@
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#include <Client/BuzzHouse/Generator/SystemTables.h>
 
 namespace BuzzHouse
 {

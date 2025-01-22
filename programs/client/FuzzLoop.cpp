@@ -18,7 +18,6 @@
 #    include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #    include <Client/BuzzHouse/Generator/QueryOracle.h>
 #    include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#    include <Client/BuzzHouse/Generator/SystemTables.h>
 #endif
 
 namespace DB
@@ -553,8 +552,7 @@ bool Client::buzzHouse()
         loadFuzzerServerSettings(fc);
         loadFuzzerTableSettings(fc);
         loadFuzzerOracleSettings(fc);
-        SCOPE_EXIT({ BuzzHouse::clearSystemTables(); });
-        BuzzHouse::loadSystemTables(has_cloud_features);
+        loadSystemTables(fc);
 
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features, replica_setup);
