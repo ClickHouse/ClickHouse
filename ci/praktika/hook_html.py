@@ -174,7 +174,7 @@ class HtmlRunnerHooks:
     @classmethod
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
-        _ResultS3.upload_result_files_to_s3(result)
+        _ResultS3.upload_result_files_to_s3(result).dump()
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()
