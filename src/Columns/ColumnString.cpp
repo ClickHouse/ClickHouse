@@ -545,9 +545,11 @@ void ColumnString::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, si
     {
         size_t row_to_lookup = std::min(row + lookup_rows, to);
 
-        if (offsetAt(row_to_lookup) - offsetAt(row) == lookup_rows)
+        /// Optimization uses a fact that empty string is represented by one char ('\0') and
+        /// if the difference between offsets for n rows is equal to n than they are empty strings.
+        if (offsetAt(row_to_lookup) - offsetAt(row) == row_to_lookup - row)
         {
-            row += lookup_rows;
+            row = row_to_lookup;
             continue;
         }
 

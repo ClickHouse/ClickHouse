@@ -291,7 +291,7 @@ void ColumnObjectDeprecated::Subcolumn::insert(Field field)
 
 void ColumnObjectDeprecated::Subcolumn::addNewColumnPart(DataTypePtr type)
 {
-    auto serialization = type->getSparseSerialization();
+    auto serialization = type->supportsSparseSerialization() ? type->getSparseSerialization() : type->getDefaultSerialization();
     data.push_back(type->createColumn(*serialization));
     least_common_type = LeastCommonType{std::move(type)};
 }

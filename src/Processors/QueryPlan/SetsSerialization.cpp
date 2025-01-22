@@ -105,7 +105,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                         num_rows, columns[col]->size());
 
                 encodeDataType(types[col], out);
-                auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = types[col]->getDefaultSerialization();
                 serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
             }
         }
@@ -173,7 +173,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             for (size_t col = 0; col < num_columns; ++col)
             {
                 auto type = decodeDataType(in);
-                auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = type->getDefaultSerialization();
                 auto column = type->createColumn();
                 serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
 
