@@ -647,7 +647,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByLayer
     right->addSimpleTransform([&](const Block & header)
     {
         joins.push_back(join->clone(std::make_shared<TableJoin>(join->getTableJoin()), left->getHeader(), header));
-        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back());
+        auto finish_counter = std::make_shared<FinishCounter>(1);
+        return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter);
     });
 
     auto lit = left->pipe.output_ports.begin();
@@ -658,7 +659,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByLayer
         auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
         connect(**lit, squashing->getInputs().front());
 
-        auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(1);
+        auto finish_counter = std::make_shared<FinishCounter>(1);
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, joins[i], max_block_size, false, false, finish_counter);
 
