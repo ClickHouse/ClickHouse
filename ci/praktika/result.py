@@ -60,7 +60,7 @@ class Result(MetaClasses.Serializable):
         status="",
         files=None,
         info: Union[List[str], str] = "",
-        with_info_from_results=True,
+        with_info_from_results=False,
     ):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
@@ -95,9 +95,9 @@ class Result(MetaClasses.Serializable):
                 if result.status == Result.Status.ERROR:
                     result_status = Result.Status.ERROR
                     break
-        if results:
+        if results and with_info_from_results:
             for result in results:
-                if result.info and with_info_from_results:
+                if result.info:
                     infos.append(f"{result.name}: {result.info}")
         return Result(
             name=name,
@@ -549,16 +549,22 @@ class _ResultS3:
     #     return True
 
     @classmethod
-    def upload_result_files_to_s3(cls, result: Result, s3_subprefix=""):
+    def upload_result_files_to_s3(
+        cls, result: Result, s3_subprefix="", _uploaded_file_link=None
+    ):
         s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
-        if result.results:
-            for result_ in result.results:
-                cls.upload_result_files_to_s3(result_, s3_subprefix=s3_subprefix)
+
+        if not _uploaded_file_link:
+            _uploaded_file_link = {}
+
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
                 result.set_info(f"WARNING: File [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
+            elif file in _uploaded_file_link:
+                # in case different sub results have the same file for upload
+                file_link = _uploaded_file_link[file]
             else:
                 is_text = False
                 for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
@@ -574,9 +580,18 @@ class _ResultS3:
                     text=is_text,
                     s3_subprefix=s3_subprefix,
                 )
+                _uploaded_file_link[file] = file_link
             result.links.append(file_link)
         result.files = []
-        result.dump()
+
+        if result.results:
+            for result_ in result.results:
+                cls.upload_result_files_to_s3(
+                    result_,
+                    s3_subprefix=s3_subprefix,
+                    _uploaded_file_link=_uploaded_file_link,
+                )
+        return result
 
     @classmethod
     def update_workflow_results(cls, workflow_name, new_info="", new_sub_results=None):

@@ -1535,6 +1535,7 @@ corrmatrix
 corrstable
 cors
 cosineDistance
+cooldown
 countDigits
 countEqual
 countIf
