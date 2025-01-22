@@ -570,26 +570,26 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta)
     chassert(!delta.path.empty());
     UncommittedNode * uncommitted_node = nullptr;
 
-    std::string_view node_path;
+    auto node_it = nodes.end();
     if (auto it = nodes.find(delta.path); it != nodes.end())
     {
         uncommitted_node = &it->second;
-        node_path = it->first;
+        node_it = it;
     }
     else
     {
         if (auto storage_node = tryGetNodeFromStorage(delta.path))
         {
             auto [emplaced_it, _] = nodes.emplace(delta.path, UncommittedNode{.node = std::move(storage_node)});
-            node_path = emplaced_it->first;
-            zxid_to_nodes[0].insert(node_path);
+            node_it = emplaced_it;
+            zxid_to_nodes[0].insert(emplaced_it);
             uncommitted_node = &emplaced_it->second;
         }
         else
         {
             auto [emplaced_it, _] = nodes.emplace(delta.path, UncommittedNode{.node = nullptr});
-            node_path = emplaced_it->first;
-            zxid_to_nodes[0].insert(node_path);
+            node_it = emplaced_it;
+            zxid_to_nodes[0].insert(emplaced_it);
             uncommitted_node = &emplaced_it->second;
         }
     }
@@ -630,7 +630,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta)
             }
 
             applied_zxids.insert(delta.zxid);
-            zxid_to_nodes[delta.zxid].insert(node_path);
+            zxid_to_nodes[delta.zxid].insert(node_it);
         },
         delta.operation);
 }
@@ -765,12 +765,8 @@ void KeeperStorage<Container>::UncommittedState::cleanup(int64_t commit_zxid)
         if (transaction_zxid > commit_zxid)
             break;
 
-        for (const auto node : transaction_nodes)
+        for (const auto node_it : transaction_nodes)
         {
-            auto node_it = nodes.find(node);
-            if (node_it == nodes.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing expected uncommitted node '{}'", node);
-
             node_it->second.applied_zxids.erase(transaction_zxid);
             if (node_it->second.applied_zxids.empty())
                 nodes.erase(node_it);
@@ -875,7 +871,7 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
     if (node)
     {
         auto [node_it, _] = nodes.emplace(std::string{path}, UncommittedNode{.node = node});
-        zxid_to_nodes[0].insert(node_it->first);
+        zxid_to_nodes[0].insert(node_it);
     }
 
     return node;
@@ -904,7 +900,7 @@ Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef
     if (node)
     {
         auto [it, inserted] = nodes.emplace(std::string{path}, UncommittedNode{.node = node});
-        zxid_to_nodes[0].insert(it->first);
+        zxid_to_nodes[0].insert(it);
         it->second.acls = storage.acl_map.convertNumber(node->acl_id);
         return *it->second.acls;
     }
@@ -1876,20 +1872,23 @@ private:
     {
         auto & nodes = storage.uncommitted_state.nodes;
 
-        for (auto nodes_it = nodes.upper_bound(path + "/"); nodes_it != nodes.end() && parentNodePath(nodes_it->first) == path; ++nodes_it)
+        for (auto & [node_path, uncommitted_node] : nodes)
         {
-            const auto actual_child_node_ptr = nodes_it->second.node.get();
-
-            uncommitted_children.insert(nodes_it->first);
-
-            if (actual_child_node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+            if (parentNodePath(node_path) != path)
                 continue;
 
-            if (checkLimits(*actual_child_node_ptr))
+            uncommitted_children.insert(node_path);
+
+            const auto node_ptr = uncommitted_node.node;
+
+            if (node_ptr == nullptr) /// node was deleted in previous step of multi transaction
+                continue;
+
+            if (checkLimits(*node_ptr))
                 return CollectStatus::LimitExceeded;
 
-            nodes_it->second.materializeACL(storage.acl_map);
-            addDelta(nodes_it->first, actual_child_node_ptr->stats, *nodes_it->second.acls, std::string{actual_child_node_ptr->getData()});
+            uncommitted_node.materializeACL(storage.acl_map);
+            addDelta(node_path, node_ptr->stats, *uncommitted_node.acls, std::string{node_ptr->getData()});
         }
 
         return CollectStatus::Ok;
