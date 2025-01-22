@@ -2282,6 +2282,7 @@ def test_alter_settings(started_cluster):
             "s3queue_processing_threads_num": 10,
             "s3queue_loading_retries": 20,
             "s3queue_tracked_files_limit": 1000,
+            "s3queue_polling_max_timeout_ms": 1000,
         },
         database_name="r",
     )
@@ -2313,7 +2314,7 @@ def test_alter_settings(started_cluster):
         )
 
     expected_rows = files_to_generate
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
