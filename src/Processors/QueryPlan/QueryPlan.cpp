@@ -486,7 +486,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
     if (optimization_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
+        QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const
