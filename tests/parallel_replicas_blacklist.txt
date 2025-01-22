@@ -50,8 +50,14 @@
 02861_filter_pushdown_const_bug
 
     https://github.com/ClickHouse/ClickHouse/issues/74547
+    vector search segfault
 02354_vector_search_multiple_marks
 02354_vector_search_expansion_search
+02354_vector_search_detach_attach
+02354_vector_search_different_array_sizes
+
+    https://github.com/ClickHouse/ClickHouse/issues/74711
+03080_incorrect_join_with_merge
 
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
@@ -116,6 +122,7 @@
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
 01513_optimize_aggregation_in_order_memory_long
+00154_avro
 
     https://github.com/ClickHouse/clickhouse-private/issues/15758
     dictGet by dict name
@@ -165,6 +172,7 @@
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 02023_transform_or_to_in
 03174_exact_rows_before_aggregation
+00066_sorting_distributed_many_replicas
 
     https://github.com/ClickHouse/clickhouse-private/issues/19792
 01622_constraints_simple_optimization
@@ -182,6 +190,8 @@
 02989_join_using_parent_scope
 02514_if_with_lazy_low_cardinality
 
+    https://github.com/ClickHouse/ClickHouse/issues/74411
+02884_create_view_with_sql_security_option
 
     Transactions
 02421_truncate_isolation_no_merges
@@ -383,6 +393,7 @@
 03252_merge_tree_min_bytes_to_seek
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
+00183_prewhere_conditions_order
 
     # NOT BUGS
     Not a bug
@@ -406,6 +417,9 @@
     No order guarantee with group_by_overflow_mode='any'
 02180_group_by_lowcardinality
 
+    RMT zookeeper test
+01154_move_partition_long
+
     plan and incorrect result
 01763_filter_push_down_bugs
 
@@ -417,6 +431,14 @@
 
     fail with parallel_replicas_local_plan=0
     03155_in_nested_subselects
+
+    max_memory_usage limit
+    !!!(MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3390 (official build)) (from [::1]:59776) (comment: 02782_uniq_exact_parallel_merging_bug.sh) (in query: select count(distinct s) from test_372i6d19.t settings max_memory_usage = \'50Mi\')
+02782_uniq_exact_parallel_merging_bug
+    !!!Query memory limit exceeded: would use 286.54 MiB (attempt to allocate chunk of 1117086 bytes), current RSS 285.47 MiB, maximum: 286.10 MiB.: while receiving packet from 127.0.0.3:9000. (MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3187 (official build)) (from [::1]:38602) (comment: 00084_external_aggregation.sql) (in query: SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u DESC, URL LIMIT 10;
+00084_external_aggregation
+
+    max_rows limit
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
@@ -445,6 +467,11 @@
 03171_indexing_by_hilbert_curve
     !!!max rows: 20.00 million, current rows: 22.00 million
 02435_rollback_cancelled_queries
+    !!!max rows: 20.00 million, current rows: 26.64 million
+00063_loyalty_joins
+    !!!max rows: 1.00 million, current rows: 8.88 million
+00097_constexpr_in_index
+
 
     max rows: 3.00, current rows: 8.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:38554) (comment: 00319_index_for_like.sql) (in query: SELECT `__table1`.`s` AS `s` FROM `test_l6on3y96`.`index_for_like` AS `__table1` WHERE `__table1`.`s` LIKE 'Hello, World%')
 00319_index_for_like
@@ -508,3 +535,13 @@
 
     Failpoint
 02910_prefetch_unexpceted_exception
+
+
+    investigate failed tests
+00148_monotonic_functions_and_index
+00161_parallel_parsing_with_names
+00166_explain_estimate
+00141_transform
+00443_optimize_final_vertical_merge
+01660_join_or_any
+01801_s3_cluster
