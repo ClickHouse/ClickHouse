@@ -3058,6 +3058,7 @@ uniq
 uniqCombined
 uniqExact
 uniqHLL
+uniqHLLPP
 uniqTheta
 uniqThetaIntersect
 uniqThetaNot
@@ -3067,6 +3068,7 @@ uniqUpTo
 uniqcombined
 uniqexact
 uniqhll
+uniqhllpp
 uniqtheta
 uniqthetasketch
 unix
