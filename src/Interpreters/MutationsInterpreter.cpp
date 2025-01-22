@@ -43,10 +43,9 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include "Storages/IStorage.h"
-#include "Storages/StorageDistributed.h"
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include "Storages/StorageDistributed.h"
 #include <Storages/StorageMerge.h>
 
 namespace DB
