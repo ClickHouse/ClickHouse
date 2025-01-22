@@ -8,6 +8,8 @@
 #include <Common/Exception.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
+class PositionalDeleteFileInfo;
+
 namespace Iceberg
 {
 
@@ -34,6 +36,7 @@ struct DataFileEntry
     ManifestEntryStatus status;
     DataFileContent content;
     std::unordered_map<Int32, DB::Range> partition_ranges;
+    std::vector<PositionalDeleteFileInfo *> positional_delete_file_info;
 
     std::vector<DB::Range> getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const;
 };
