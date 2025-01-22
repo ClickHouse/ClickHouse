@@ -39,6 +39,7 @@ public:
     }
     inline size_t totalRows() const { return max_rows; }
     inline void setOffset(size_t offset_) { offset = offset_; }
+    inline void addOffset(size_t offset_) { offset += offset_; }
     inline size_t getOffset() const { return offset; }
     bool none() const;
     bool all() const;

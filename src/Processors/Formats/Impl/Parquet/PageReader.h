@@ -13,8 +13,8 @@ class LazyPageReader
 {
 public:
     LazyPageReader(
-        const std::shared_ptr<ReadBufferFromMemory> & stream_, const parquet::ReaderProperties & properties_, size_t total_num_values_, parquet::Compression::type codec)
-        : stream(stream_), properties(properties_), total_num_values(total_num_values_)
+        std::unique_ptr<ReadBufferFromMemory> stream_, const parquet::ReaderProperties & properties_, size_t total_num_values_, parquet::Compression::type codec)
+        : stream(std::move(stream_)), properties(properties_), total_num_values(total_num_values_)
     {
         decompressor = parquet::GetCodec(codec);
     }
@@ -26,7 +26,7 @@ public:
 private:
     std::shared_ptr<arrow::Buffer> decompressIfNeeded(const uint8_t * data, size_t compressed_size, size_t uncompressed_size);
 
-    std::shared_ptr<ReadBufferFromMemory> stream;
+    std::unique_ptr<ReadBufferFromMemory> stream = nullptr   ;
     parquet::format::PageHeader current_page_header;
     std::shared_ptr<parquet::Page> current_page;
     const parquet::ReaderProperties properties;

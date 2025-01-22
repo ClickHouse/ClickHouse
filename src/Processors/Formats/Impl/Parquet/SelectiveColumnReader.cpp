@@ -31,10 +31,12 @@ extern const int PARQUET_EXCEPTION;
 template <typename T, typename S>
 static void decodeFixedValueInternal(PaddedPODArray<T> & data, const S * start, const OptionalRowSet & row_set, size_t rows_to_read)
 {
-    if (!row_set.has_value())
+    if (!row_set)
     {
         if constexpr (std::is_same_v<T, S>)
-            data.insert_assume_reserved(start, start + rows_to_read);
+        {
+            data.insert(start, start + rows_to_read);
+        }
         else
         {
             auto old_size = data.size();
@@ -232,9 +234,9 @@ void NumberColumnDirectReader<DataType, SerializedType>::read(MutableColumnPtr &
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         plain_decoder->decodeFixedValue<typename DataType::FieldType, SerializedType>(data, row_set, rows_can_read);
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -261,9 +263,9 @@ void NumberColumnDirectReader<DataType, SerializedType>::readSpace(
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         plain_decoder->decodeFixedValueSpace<typename DataType::FieldType, SerializedType>(data, row_set, null_map, rows_can_read);
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -414,8 +416,6 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
     {
         readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
 
@@ -442,6 +442,8 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
             batch_buffer.resize(0);
             state.offsets.consume(rows_can_read);
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -455,8 +457,6 @@ void NumberDictionaryReader<DataType, SerializedType>::readSpace(
     {
         readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
         if (plain)
@@ -466,6 +466,8 @@ void NumberDictionaryReader<DataType, SerializedType>::readSpace(
             nextIdxBatchIfEmpty(rows_can_read - null_count);
             dict_decoder->decodeFixedValueSpace(batch_buffer, data, row_set, null_map, rows_can_read);
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -609,8 +611,6 @@ void FixedLengthColumnDirectReader<DataType>::read(MutableColumnPtr & column, Op
     {
         readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
         {
             auto * number_column = static_cast<ColumnFixedString *>(column.get());
@@ -623,6 +623,8 @@ void FixedLengthColumnDirectReader<DataType>::read(MutableColumnPtr & column, Op
             auto & data = number_column->getData();
             plain_decoder->decodeFixedLengthData<typename DataType::FieldType>(data, row_set, rows_can_read, element_size, getConverter());
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -636,8 +638,6 @@ void FixedLengthColumnDirectReader<DataType>::readSpace(
     {
         readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
         {
             auto * number_column = static_cast<ColumnFixedString *>(column.get());
@@ -650,6 +650,8 @@ void FixedLengthColumnDirectReader<DataType>::readSpace(
             auto & data = number_column->getData();
             plain_decoder->decodeFixedLengthDataSpace(data, row_set, null_map, rows_can_read, element_size, getConverter());
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -821,8 +823,6 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readSpace(
     {
         readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         if (plain)
         {
             if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
@@ -852,6 +852,8 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readSpace(
                 dict_decoder->decodeFixedLengthDataSpace(dict, data, row_set, null_map, rows_can_read);
             }
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -865,8 +867,6 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::read(
     {
         readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         if (plain)
         {
             if constexpr (std::is_same_v<DictValueType, String>)
@@ -896,6 +896,8 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::read(
                 dict_decoder->decodeFixedLengthData(dict, data, row_set, rows_can_read);
             }
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -969,11 +971,12 @@ void OptionalColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_
     auto & null_data = nullable_column->getNullMapData();
     while (rows_read < rows_to_read)
     {
+        child->readAndDecodePage();
         auto rows_can_read = std::min(rows_to_read - rows_read, child->availableRows());
-        if (row_set)
-            row_set.value().setOffset(rows_read);
+        if (!rows_can_read) break;
+        auto original_filter_offset = row_set? row_set->getOffset() : 0;
         nextBatchNullMapIfNeeded(rows_can_read);
-        if (row_set.has_value())
+        if (row_set)
         {
             const auto & sets = row_set.value();
             for (size_t i = 0; i < rows_can_read; i++)
@@ -995,9 +998,15 @@ void OptionalColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_
             child->read(nested_column, row_set, rows_can_read);
         }
         cleanNullMap();
+        // reset filter offset, child reader may modify filter offset
+        if (row_set)
+        {
+            row_set->setOffset(original_filter_offset);
+            row_set->addOffset(rows_can_read);
+        }
         rows_read += rows_can_read;
+        chassert(nested_column->size() == null_data.size());
     }
-    chassert(nested_column->size() == null_data.size());
 }
 
 size_t OptionalColumnReader::skipValuesInCurrentPage(size_t rows)
@@ -1030,9 +1039,16 @@ DataTypePtr OptionalColumnReader::getResultType()
 void OptionalColumnReader::applyLazySkip()
 {
     skipPageIfNeed();
-    child->readAndDecodePage();
-    state.lazy_skip_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
-    chassert(!state.lazy_skip_rows);
+    while (state.lazy_skip_rows)
+    {
+        child->readAndDecodePage();
+        auto remain_skipped_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
+        if (remain_skipped_rows == state.lazy_skip_rows)
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "skip values failed. need skip {} rows, but child reader is exhausted", state.lazy_skip_rows);
+        }
+        state.lazy_skip_rows = remain_skipped_rows;
+    }
 }
 void OptionalColumnReader::skipPageIfNeed()
 {
@@ -1194,8 +1210,6 @@ void StringDictionaryReader::readSpace(
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         readAndDecodePage();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         if (plain)
@@ -1211,6 +1225,8 @@ void StringDictionaryReader::readSpace(
             nextIdxBatchIfEmpty(nonnull_count);
             dict_decoder->decodeStringSpace(dict, string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -1221,8 +1237,6 @@ void StringDictionaryReader::read(MutableColumnPtr & column, OptionalRowSet & ro
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         readAndDecodePage();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         if (plain)
@@ -1237,6 +1251,8 @@ void StringDictionaryReader::read(MutableColumnPtr & column, OptionalRowSet & ro
             nextIdxBatchIfEmpty(rows_can_read);
             dict_decoder->decodeString(dict, string_column->getChars(), string_column->getOffsets(), row_set, rows_can_read);
         }
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -1339,14 +1355,15 @@ void StringDirectReader::readSpace(
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
+
         readAndDecodePage();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.data, row_set, null_map, rows_to_read - null_count);
         string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
         string_column->getChars().reserve(string_column->getChars().size() + total_size);
         plain_decoder->decodeStringSpace(string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -1357,14 +1374,14 @@ void StringDirectReader::read(MutableColumnPtr & column, OptionalRowSet & row_se
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        if (row_set)
-            row_set.value().setOffset(rows_read);
         readAndDecodePage();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         size_t total_size = plain_decoder->calculateStringTotalSize(state.data, row_set, rows_can_read);
         string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_can_read);
         string_column->getChars().reserve(string_column->getChars().size() + total_size);
         plain_decoder->decodeString(string_column->getChars(), string_column->getOffsets(), row_set, rows_can_read);
+        if (row_set)
+            row_set->addOffset(rows_can_read);
         rows_read += rows_can_read;
     }
 }
@@ -1999,7 +2016,7 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                     rows_read += finished;
                     if (has_filter)
                     {
-                        auto valid = row_set->get(rows_read - finished);
+                        auto valid = row_set->get(rows_read - (finished || rows_read));
                         if (valid)
                         {
                             insertManyToFilter(child_filter, true, array_size);
@@ -2020,13 +2037,14 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                         break;
                 }
 
-                if (has_def_level && dl < def_level)
+                 if (has_def_level && dl < def_level)
                 {
                     // skip empty record in parent level
                     if (rl != rep_level && (!parent || (parent && dl <= parent_dl)))
                     {
                         count++;
                         last_row_level_idx = count;
+                        tail_empty_rows ++;
                         continue;
                     }
                     // value is null
@@ -2064,7 +2082,7 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
         {
             if (has_filter)
             {
-                auto valid = row_set->get(rows_read);
+                auto valid = row_set->get(rows_read - (!finished && rows_read));
                 rows_read += finished;
                 if (valid)
                 {
@@ -2113,7 +2131,7 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
             }
 
         // check last row finished
-        auto & next_rep_levels = getRepetitionLevels();
+        const auto & next_rep_levels = getRepetitionLevels();
         if (last_row_level_idx < min_count || next_rep_levels.empty() || next_rep_levels[levelsOffset()] <= rep_level) [[likely]]
             finished = true;
         else
@@ -2249,11 +2267,14 @@ void StructColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_se
     ColumnTuple * tuple_column = static_cast<ColumnTuple *>(column.get());
     const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(structType.get());
     auto names = tuple_type->getElementNames();
+    auto original_offset = row_set ? row_set->getOffset() : 0;
     for (size_t i = 0; i < names.size(); i++)
     {
         auto nested_column = tuple_column->getColumn(i).assumeMutable();
         auto & nested_reader = children.at(names.at(i));
         nested_reader->read(nested_column, row_set, rows_to_read);
+        if (row_set)
+            row_set->setOffset(original_offset);
     }
 }
 
@@ -2401,9 +2422,10 @@ void BooleanColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_s
             chassert(count == rows_can_read);
             auto * number_column = static_cast<ColumnUInt8 *>(column.get());
             auto & data = number_column->getData();
-            if (row_set)
-                row_set.value().setOffset(rows_read);
             plain_decoder->decodeBoolean(data, buffer, row_set, rows_can_read);
+            buffer.resize(0);
+            if (row_set)
+                row_set->addOffset(rows_can_read);
             rows_read += rows_can_read;
         }
     }
@@ -2432,9 +2454,10 @@ void BooleanColumnReader::readSpace(
             chassert(count == rows_can_read - null_count);
             auto * number_column = static_cast<ColumnUInt8 *>(column.get());
             auto & data = number_column->getData();
-            if (row_set)
-                row_set.value().setOffset(rows_read);
             plain_decoder->decodeBooleanSpace(data, buffer, row_set, null_map, rows_can_read);
+            buffer.resize(0);
+            if (row_set)
+                row_set->addOffset(rows_can_read);
             rows_read += rows_can_read;
         }
     }
@@ -2455,6 +2478,7 @@ size_t BooleanColumnReader::skipValuesInCurrentPage(size_t rows_to_skip)
     }
     else
     {
+        initBitReader();
         if (!bit_reader->Advance(skipped))
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "skip rows failed. don't have enough data");
         state.idx_buffer.clear();

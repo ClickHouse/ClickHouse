@@ -917,7 +917,7 @@ ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePt
                 data = context.prefetch->readRange(column_range);
             }
             auto page_reader = std::make_unique<LazyPageReader>(
-                std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
+                std::make_unique<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
                 context.parquet_reader->readerProperties(),
                 context.row_group_meta->num_rows(),
                 context.row_group_meta->ColumnChunk(column_idx)->compression());
