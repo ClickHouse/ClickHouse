@@ -159,7 +159,7 @@ toInt8('-8'): -8
 **See also**
 
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toint8ornull).
+- [`toInt8OrNull`](#toInt8OrNull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrZero
@@ -219,10 +219,10 @@ toInt8OrZero('abc'): 0
 **See also**
 
 - [`toInt8`](#toint8).
-- [`toInt8OrNull`](#toint8ornull).
+- [`toInt8OrNull`](#toInt8OrNull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
-## toInt8OrNull
+## toInt8OrNull {#toInt8OrNull}
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -344,7 +344,7 @@ toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 
 - [`toInt8`](#toint8).
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toint8orNull).
+- [`toInt8OrNull`](#toInt8OrNull).
 
 ## toInt16
 
@@ -1830,7 +1830,7 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 - [`toUInt8`](#touint8).
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#touint8orNull).
+- [`toUInt8OrNull`](#touint8ornull).
 
 ## toUInt16
 
@@ -3491,6 +3491,158 @@ toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
 - [`toFloat64`](#tofloat64).
 - [`toFloat64OrZero`](#tofloat64orzero).
 - [`toFloat64OrNull`](#tofloat64ornull).
+
+## toBFloat16
+
+Converts an input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16). 
+Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toBFloat16(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+**Returned value**
+
+- 16-bit brain-float value. [BFloat16](../data-types/float.md/#bfloat16).
+
+**Example**
+
+```sql
+SELECT toBFloat16(toFloat32(42.7))
+
+42.5
+
+SELECT toBFloat16(toFloat32('42.7'));
+
+42.5
+
+SELECT toBFloat16('42.7');
+
+42.5
+```
+
+**See also**
+
+- [`toBFloat16OrZero`](#tobfloat16orzero).
+- [`toBFloat16OrNull`](#tobfloat16ornull).
+
+## toBFloat16OrZero
+
+Converts a String input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16).
+If the string does not represent a floating point value, the function returns zero.
+
+**Syntax**
+
+```sql
+toBFloat16OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+
+- String representations of numeric values.
+
+Unsupported arguments (return `0`):
+
+- String representations of binary and hexadecimal values.
+- Numeric values.
+
+**Returned value**
+
+- 16-bit brain-float value, otherwise `0`. [BFloat16](../data-types/float.md/#bfloat16).
+
+:::note
+The function allows a silent loss of precision while converting from the string representation.
+:::
+
+**Example**
+
+```sql
+SELECT toBFloat16OrZero('0x5E'); -- unsupported arguments
+
+0
+
+SELECT toBFloat16OrZero('12.3'); -- typical use
+
+12.25
+
+SELECT toBFloat16OrZero('12.3456789');
+
+12.3125 -- silent loss of precision
+```
+
+**See also**
+
+- [`toBFloat16`](#tobfloat16).
+- [`toBFloat16OrNull`](#tobfloat16ornull).
+
+## toBFloat16OrNull
+
+Converts a String input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16) 
+but if the string does not represent a floating point value, the function returns `NULL`.
+
+**Syntax**
+
+```sql
+toBFloat16OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+
+- String representations of numeric values.
+
+Unsupported arguments (return `NULL`):
+
+- String representations of binary and hexadecimal values.
+- Numeric values.
+
+**Returned value**
+
+- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](../data-types/float.md/#bfloat16).
+
+:::note
+The function allows a silent loss of precision while converting from the string representation.
+:::
+
+**Example**
+
+```sql
+SELECT toBFloat16OrNull('0x5E'); -- unsupported arguments
+
+\N
+
+SELECT toBFloat16OrNull('12.3'); -- typical use
+
+12.25
+
+SELECT toBFloat16OrNull('12.3456789');
+
+12.3125 -- silent loss of precision
+```
+
+**See also**
+
+- [`toBFloat16`](#tobfloat16).
+- [`toBFloat16OrZero`](#tobfloat16orzero).
 
 ## toDate
 

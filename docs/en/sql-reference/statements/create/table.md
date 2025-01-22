@@ -7,6 +7,8 @@ keywords: [compression, codec, schema, DDL]
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 Creates a new table. This query can have various syntax forms depending on a use case.
 
@@ -548,25 +550,39 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 
 ## REPLACE TABLE
 
-'REPLACE' query allows you to update the table atomically.
+The `REPLACE` statement allows you to update a table [atomically](/docs/en/concepts/glossary#atomicity).
 
 :::note
-This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines, 
+which are the default database engines for ClickHouse and ClickHouse Cloud respectively.
 :::
 
-If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
+Ordinarily, if you need to delete some data from a table, 
+you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, 
+then drop the old table and rename the new one. 
+This approach is demonstrated in the example below:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
-INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
+
+INSERT INTO myNewTable
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
 DROP TABLE myOldTable;
+
 RENAME TABLE myNewTable TO myOldTable;
 ```
 
-Instead of above, you can use the following:
+Instead of the approach above, it is also possible to use `REPLACE` (given you are using the default database engines) to achieve the same result:
 
 ```sql
-REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FROM myOldTable WHERE CounterID <12345;
+REPLACE TABLE myOldTable
+ENGINE = MergeTree()
+ORDER BY CounterID 
+AS
+SELECT * FROM myOldTable
+WHERE CounterID <12345;
 ```
 
 ### Syntax
@@ -575,56 +591,133 @@ REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FRO
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 ```
 
-All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
+:::note
+All syntax forms for the `CREATE` statement also work for this statement. Invoking `REPLACE` for a non-existent table will cause an error.
+:::
 
 ### Examples:
 
-Consider the table:
+<Tabs>
+<TabItem value="clickhouse_replace_example" label="Local" default>
+
+Consider the following table:
 
 ```sql
-CREATE DATABASE base ENGINE = Atomic;
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (1, 'test');
-SELECT * FROM base.t1;
-```
+CREATE DATABASE base 
+ENGINE = Atomic;
 
-```text
+CREATE OR REPLACE TABLE base.t1
+(
+    n UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (1, 'test');
+
+SELECT * FROM base.t1;
+
 ┌─n─┬─s────┐
 │ 1 │ test │
 └───┴──────┘
 ```
 
-Using `REPLACE` query to clear all data:
+We can use the `REPLACE` statement to clear all the data:
 
 ```sql
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (2, null);
-SELECT * FROM base.t1;
-```
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64,
+    s Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY n;
 
-```text
+INSERT INTO base.t1 VALUES (2, null);
+
+SELECT * FROM base.t1;
+
 ┌─n─┬─s──┐
 │ 2 │ \N │
 └───┴────┘
 ```
 
-Using `REPLACE` query to change table structure:
+Or we can use the `REPLACE` statement to change the table structure:
 
 ```sql
-REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (3);
-SELECT * FROM base.t1;
-```
+REPLACE TABLE base.t1 (n UInt64) 
+ENGINE = MergeTree 
+ORDER BY n;
 
-```text
+INSERT INTO base.t1 VALUES (3);
+
+SELECT * FROM base.t1;
+
 ┌─n─┐
 │ 3 │
 └───┘
+```  
+</TabItem>
+<TabItem value="cloud_replace_example" label="Cloud">
+
+Consider the following table on ClickHouse Cloud: 
+
+```sql
+CREATE DATABASE base;
+
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (1, 'test');
+
+SELECT * FROM base.t1;
+
+1	test
 ```
+
+We can use the `REPLACE` statement to clear all the data:
+
+```sql
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64, 
+    s Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (2, null);
+
+SELECT * FROM base.t1;
+
+2	
+```
+
+Or we can use the `REPLACE` statement to change the table structure:
+
+```sql
+REPLACE TABLE base.t1 (n UInt64) 
+ENGINE = MergeTree 
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (3);
+
+SELECT * FROM base.t1;
+
+3
+```    
+</TabItem>
+</Tabs>
 
 ## COMMENT Clause
 
-You can add a comment to the table when you creating it.
+You can add a comment to the table when creating it.
 
 **Syntax**
 

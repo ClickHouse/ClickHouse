@@ -201,21 +201,10 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(info.engine);
 
-        if (part->isStoredOnDisk())
-        {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-        }
-        else
-        {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insertDefault();
-            if (columns_mask[src_index++])
-                columns[res_index++]->insertDefault();
-        }
-
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
         {
             MinimalisticDataPartChecksums helper;
