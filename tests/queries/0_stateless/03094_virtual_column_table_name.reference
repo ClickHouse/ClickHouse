@@ -44,3 +44,12 @@ d1	1	10
 d1	2	20
 d2	3	30
 d2	4	40
+SELECT _table, key FROM view1;
+d1	1
+d1	2
+SELECT _table, key, value FROM buffer1;
+buffer1	9	90
+buffer1	8	80
+buffer1	7	70
+SELECT _table, key, value FROM mv1;
+mv1	10	2

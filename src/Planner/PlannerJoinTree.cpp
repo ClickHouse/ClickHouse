@@ -43,7 +43,6 @@
 #include <Parsers/parseQuery.h>
 
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/AddingTableNameVirtualColumnStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -74,6 +73,7 @@
 #include <Planner/CollectTableExpressionData.h>
 
 #include <Common/logger_useful.h>
+#include "Storages/StorageView.h"
 #include <ranges>
 
 namespace DB
@@ -682,6 +682,9 @@ bool extractRequiredNonTableColumnsFromStorage(
     if (std::dynamic_pointer_cast<StorageDistributed>(storage))
         return false;
 
+    if (std::dynamic_pointer_cast<StorageView>(storage))
+        return false;
+
     bool has_table_virtual_column = false;
     for (const auto & column_name : columns_names)
     {
@@ -1138,18 +1141,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (has_table_virtual_column && query_plan.isInitialized())
                 {
                     const auto & data_header = query_plan.getCurrentHeader();
                     if (!data_header.findByName("_table"))
                     {
                         const auto & table_name = storage->getStorageID().getTableName();
-                        auto adding_table_name_virtual_column_step = std::make_unique<AddingTableNameVirtualColumnStep>(data_header, table_name);
-                        query_plan.addStep(std::move(adding_table_name_virtual_column_step));
+                        ColumnWithTypeAndName column;
+                        column.name = "_table";
+                        column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                        column.column = column.type->createColumnConst(0, Field(table_name));
+
+                        auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                        auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        query_plan.addStep(std::move(expression_step));
                     }
                 }
 
+                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
                     auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());

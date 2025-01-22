@@ -30,7 +30,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/QueryPlan/AddingTableNameVirtualColumnStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
@@ -44,6 +43,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include "Storages/IStorage.h"
 #include "Storages/StorageDistributed.h"
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -489,7 +489,8 @@ static void validateUpdateColumns(
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
 
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
-    const auto & virtual_columns = *storage_snapshot->all_virtual_columns;
+    const auto & virtual_columns = *storage_snapshot->virtual_columns;
+    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     for (const auto & column_name : updated_columns)
     {
@@ -521,7 +522,7 @@ static void validateUpdateColumns(
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
-            else if (virtual_columns.tryGet(column_name))
+            else if (virtual_columns.tryGet(column_name) || common_virtual_columns.tryGet(column_name))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
             }
@@ -1331,8 +1332,14 @@ void MutationsInterpreter::Source::read(
         if (has_table_virtual_column && plan.isInitialized())
         {
             const auto & table_name = storage->getStorageID().getTableName();
-            auto adding_table_name_virtual_column_step = std::make_unique<AddingTableNameVirtualColumnStep>(plan.getCurrentHeader(), table_name);
-            plan.addStep(std::move(adding_table_name_virtual_column_step));
+            ColumnWithTypeAndName column;
+            column.name = "_table";
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            column.column = column.type->createColumnConst(0, Field(table_name));
+
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto expression_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(adding_column_dag));
+            plan.addStep(std::move(expression_step));
         }
 
         if (!plan.isInitialized())

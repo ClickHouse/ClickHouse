@@ -165,10 +165,21 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
-            auto virtuals = table->getAllVirtualsPtr();
+            auto virtuals = table->getVirtualsPtr();
+            NameSet column_names;
             for (const auto & column : *virtuals)
             {
                 if (!column_descriptions.has(column.name))
+                {
+                    virtual_columns.push_back(column);
+                    column_names.insert(column.name);
+                }
+            }
+
+            const auto & common_virtuals = IStorage::getCommonVirtuals();
+            for (const auto & column : common_virtuals)
+            {
+                if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                     virtual_columns.push_back(column);
             }
         }
@@ -194,10 +205,21 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     if (settings[Setting::describe_include_virtual_columns])
     {
-        auto virtuals = table->getAllVirtualsPtr();
+        auto virtuals = table->getVirtualsPtr();
+        NameSet column_names;
         for (const auto & column : *virtuals)
         {
             if (!column_descriptions.has(column.name))
+            {
+                virtual_columns.push_back(column);
+                column_names.insert(column.name);
+            }
+        }
+
+        const auto & common_virtuals = IStorage::getCommonVirtuals();
+        for (const auto & column : common_virtuals)
+        {
+            if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                 virtual_columns.push_back(column);
         }
     }

@@ -365,10 +365,8 @@ StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & m
         }
     }
 
-    auto all_virtuals = virtuals;
     auto virtuals_ptr = std::make_shared<VirtualColumnsDescription>(std::move(virtuals));
-    auto all_virtuals_ptr = std::make_shared<VirtualColumnsDescription>(std::move(all_virtuals));
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals_ptr), std::move(all_virtuals_ptr));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals_ptr));
 }
 
 void StorageMerge::read(

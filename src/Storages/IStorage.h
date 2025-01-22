@@ -225,13 +225,7 @@ public:
 
     void setVirtuals(VirtualColumnsDescription virtuals_)
     {
-        // StorageMerge handles _table virtual column by itself.
-        VirtualColumnsDescription tmp_all_virtuals = virtuals_;
-        if (!virtuals_.tryGet("_table"))
-            tmp_all_virtuals.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
-
         virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
-        all_virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(tmp_all_virtuals)));
     }
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
@@ -248,7 +242,7 @@ public:
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
-    VirtualsDescriptionPtr getAllVirtualsPtr() const { return all_virtuals.get(); }
+    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
 
     Names getAllRegisteredNames() const override;
 
@@ -312,8 +306,10 @@ private:
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
 
-    /// Description of all virtual columns, include common virtual columns.
-    MultiVersionVirtualsDescriptionPtr all_virtuals;
+    /// Description of common virtual columns.
+    static const VirtualColumnsDescription common_virtuals;
+
+    static VirtualColumnsDescription createCommonVirtuals();
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
