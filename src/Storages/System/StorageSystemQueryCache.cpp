@@ -21,7 +21,8 @@ ColumnsDescription StorageSystemQueryCache::getColumnsDescription()
         {"shared", std::make_shared<DataTypeUInt8>(), "If the query cache entry is shared between multiple users."},
         {"compressed", std::make_shared<DataTypeUInt8>(), "If the query cache entry is compressed."},
         {"expires_at", std::make_shared<DataTypeDateTime>(), "When the query cache entry becomes stale."},
-        {"key_hash", std::make_shared<DataTypeUInt64>(), "A hash of the query string, used as a key to find query cache entries."}
+        {"key_hash", std::make_shared<DataTypeUInt64>(), "A hash of the query string, used as a key to find query cache entries."},
+        {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
     };
 }
 
@@ -59,6 +60,7 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
         res_columns[5]->insert(key.is_compressed);
         res_columns[6]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
         res_columns[7]->insert(key.ast_hash.low64); /// query cache considers aliases (issue #56258)
+        res_columns[8]->insert(key.query_id);
     }
 }
 

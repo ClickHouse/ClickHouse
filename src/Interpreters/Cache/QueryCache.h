@@ -93,12 +93,16 @@ public:
         /// compute the tag from the query AST.
         const String tag;
 
+        /// Query id of the query.
+        const String query_id;
+
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             Block header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const String & query_id_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
@@ -107,7 +111,8 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const String & query_id_);
 
         bool operator==(const Key & other) const;
     };

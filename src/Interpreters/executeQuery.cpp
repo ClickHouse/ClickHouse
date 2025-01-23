@@ -1354,7 +1354,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(
+                        ast,
+                        context->getCurrentDatabase(),
+                        *settings_copy,
+                        context->getUserID(),
+                        context->getCurrentRoles(),
+                        context->getCurrentQueryId());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1479,8 +1485,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
-                                context->getUserID(), context->getCurrentRoles(),
+                                ast,
+                                context->getCurrentDatabase(),
+                                *settings_copy,
+                                res.pipeline.getHeader(),
+                                context->getUserID(),
+                                context->getCurrentRoles(),
+                                context->getCurrentQueryId(),
                                 settings[Setting::query_cache_share_between_users],
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
                                 settings[Setting::query_cache_compress_entries]);

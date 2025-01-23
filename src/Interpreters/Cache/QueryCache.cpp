@@ -264,6 +264,7 @@ QueryCache::Key::Key(
     Block header_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
+    const String & query_id_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
@@ -276,6 +277,7 @@ QueryCache::Key::Key(
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
     , tag(settings[Setting::query_cache_tag])
+    , query_id(query_id_)
 {
 }
 
@@ -284,8 +286,18 @@ QueryCache::Key::Key(
     const String & current_database,
     const Settings & settings,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    const std::vector<UUID> & current_user_roles_,
+    const String & query_id_)
+    : QueryCache::Key(ast_,
+          current_database,
+          settings,
+          {},
+          user_id_,
+          current_user_roles_,
+          query_id_,
+          false,
+          std::chrono::system_clock::from_time_t(1),
+          false)
     /// ^^ dummy values for everything != AST, current database, user name/roles
 {
 }
