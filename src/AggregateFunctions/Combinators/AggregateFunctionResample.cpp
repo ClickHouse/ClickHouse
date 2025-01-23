@@ -47,7 +47,9 @@ public:
     {
         WhichDataType which{arguments.back()};
 
-        chassert(params.size() > 3);
+        if (params.size() < 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of parameters for aggregate function with {} suffix", getName());
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
