@@ -1,6 +1,5 @@
 #include <Processors/ResizeProcessor.h>
 #include <Interpreters/Squashing.h>
-#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -664,7 +663,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
         Int64 free_mem = getFreeMemory();
 
         size_t desired_active = calculateDesiredActiveOutputs(
-            free_mem, 
+            free_mem,
             outputs.size(),
             /* chunk_size_estimate = */ chunk_size, // or 0 if unknown
             /* concurrency_factor  = */ 1.5
