@@ -18,10 +18,27 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
-#include <unordered_map>
+#    include <unordered_map>
+#    include "PositionalDeleteFileInfo.h"
+#    include "PositionalDeleteTransform.h"
+
 
 namespace DB
 {
+
+
+struct PositionalDeletesTransformHolder
+{
+    std::vector<std::shared_ptr<IInputFormat>> delete_sources;
+    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf;
+    std::vector<Block> delete_block;
+};
+
+struct PositionalDeleteFileInfo
+{
+    String path;
+    String metadata;
+};
 
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
@@ -92,6 +109,8 @@ public:
 
     bool supportsPartitionPruning() override { return true; }
 
+    std::shared_ptr<PositionalDeleteTransform> getPositionalDeleteTransform(const String & data_path) const;
+
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
 
@@ -110,6 +129,8 @@ private:
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
     mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
+
+    mutable std::vector<PositionalDeleteFileInfo> positional_delete_files_for_current_query;
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 

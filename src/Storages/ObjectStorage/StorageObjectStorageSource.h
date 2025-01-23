@@ -62,15 +62,8 @@ public:
         std::function<void(FileProgress)> file_progress_callback = {});
 
     static std::string getUniqueStoragePathIdentifier(
-        const Configuration & configuration,
-        const ObjectInfo & object_info,
-        bool include_connection_info = true);
+        const Configuration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
-    static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-        ObjectInfo & object_info,
-        const ObjectStoragePtr & object_storage,
-        const ContextPtr & context_,
-        const LoggerPtr & log);
 protected:
     const String name;
     ObjectStoragePtr object_storage;
