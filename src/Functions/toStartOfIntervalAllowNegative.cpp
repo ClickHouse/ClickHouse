@@ -404,6 +404,7 @@ private:
         }
         else // Overload: Default
         {
+            for (size_t i = 0; i != size; ++i)
                 result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }
 
