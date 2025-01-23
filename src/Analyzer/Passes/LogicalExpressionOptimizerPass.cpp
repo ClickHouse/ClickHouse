@@ -1069,11 +1069,11 @@ private:
         };
 
         /// Step 1: identify constants, and store comparing pairs in hash
-        QueryTreeNodes greater_constants;
-        QueryTreeNodes less_constants;
+        QueryTreeNodePtrWithHashSet greater_constants;
+        QueryTreeNodePtrWithHashSet less_constants;
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
         using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, CompareType>>;
-        using ComparePairs = std::unordered_map<QueryTreeNodePtr, QueryTreeNodeWithEquals>;
+        using ComparePairs = QueryTreeNodePtrWithHashMap<QueryTreeNodeWithEquals>;
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
 
@@ -1093,53 +1093,53 @@ private:
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
-                    greater_constants.push_back(rhs);
+                    greater_constants.insert(rhs);
                 greater_pairs[rhs].push_back({lhs, CompareType::less});
                 if (lhs->as<ConstantNode>())
-                    less_constants.push_back(lhs);
+                    less_constants.insert(lhs);
                 less_pairs[lhs].push_back({rhs, CompareType::greater});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
-                    greater_constants.push_back(lhs);
+                    greater_constants.insert(lhs);
                 greater_pairs[lhs].push_back({rhs, CompareType::less});
                 if (rhs->as<ConstantNode>())
-                    less_constants.push_back(rhs);
+                    less_constants.insert(rhs);
                 less_pairs[rhs].push_back({lhs, CompareType::greater});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
-                    greater_constants.push_back(rhs);
+                    greater_constants.insert(rhs);
                 greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals});
                 if (lhs->as<ConstantNode>())
-                    less_constants.push_back(lhs);
+                    less_constants.insert(lhs);
                 less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
-                    greater_constants.push_back(lhs);
+                    greater_constants.insert(lhs);
                 greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals});
                 if (rhs->as<ConstantNode>())
-                    less_constants.push_back(rhs);
+                    less_constants.insert(rhs);
                 less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals});
             }
             else if (function_name == "equals")
             {
                 if (rhs->as<ConstantNode>())
                 {
-                    greater_constants.push_back(rhs);
+                    greater_constants.insert(rhs);
                     greater_pairs[rhs].push_back({lhs, CompareType::equals});
-                    less_constants.push_back(rhs);
+                    less_constants.insert(rhs);
                     less_pairs[rhs].push_back({lhs, CompareType::equals});
                 }
                 else if (lhs->as<ConstantNode>())
                 {
-                    greater_constants.push_back(lhs);
+                    greater_constants.insert(lhs);
                     greater_pairs[lhs].push_back({rhs, CompareType::equals});
-                    less_constants.push_back(lhs);
+                    less_constants.insert(lhs);
                     less_pairs[lhs].push_back({rhs, CompareType::equals});
                 }
                 else
@@ -1155,7 +1155,7 @@ private:
 
         /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5,
         /// also avoid duplicate such as a>3 AND b>a AND c>b AND c>a.
-        std::unordered_set<QueryTreeNodePtr> visited;
+        QueryTreeNodePtrWithHashSet visited;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         std::set<std::pair<QueryTreeNodePtr, const ConstantNode *>> equal_funcs;
 
@@ -1207,14 +1207,14 @@ private:
         for (const auto & constant : greater_constants)
         {
             visited.clear();
-            findPairs(greater_pairs, constant, nullptr, CompareType::equals);
+            findPairs(greater_pairs, constant.node, nullptr, CompareType::equals);
         }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
         {
             visited.clear();
-            findPairs(less_pairs, constant, nullptr, CompareType::equals);
+            findPairs(less_pairs, constant.node, nullptr, CompareType::equals);
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());

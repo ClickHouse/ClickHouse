@@ -97,5 +97,5 @@ TEST(OptimizeAndCompareChain, compare)
     test_f("c > 0 AND c < 5", "(c > 0) AND (c < 5)");
     test_f("a = b AND b = c AND c = 5", "(a = b) AND (b = c) AND (c = 5) AND (b = 5) AND (a = 5)");
     test_f("c < b AND a < 5 AND b < 6 AND b < 5", "(c < b) AND (a < 5) AND (b < 6) AND (b < 5) AND (c < 6) AND (c < 5)");
-    test_f("a = b AND a > 3 AND b > 0", "(a = b) AND (a > 3) AND (b > 0) AND (b > 3) AND (a > 0)");
+    test_f("a = b AND a > 3 AND b > 0", "(a = b) AND (a > 3) AND (b > 0) AND (a > 0) AND (b > 3)");
 }
