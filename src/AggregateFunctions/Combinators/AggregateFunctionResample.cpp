@@ -47,6 +47,8 @@ public:
     {
         WhichDataType which{arguments.back()};
 
+        chassert(params.size() > 3);
+
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();
