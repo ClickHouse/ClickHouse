@@ -185,6 +185,7 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
+add_contrib (ggml-cmake ggml)
 
 if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
     option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})

@@ -131,6 +131,8 @@ try
     addCommonOptions(options_description);
     addSettingsToProgramOptionsAndSubscribeToChanges(options_description);
 
+    namespace po = boost::program_options;
+
     po::variables_map options;
     auto parser = po::command_line_parser(arguments)
                       .options(options_description.main_description.value())
