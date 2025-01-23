@@ -2279,7 +2279,7 @@ def test_alter_settings(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
+            "s3queue_processing_threads_num": 10,
             "s3queue_tracked_files_limit": 2000,
             "s3queue_polling_max_timeout_ms": 1000,
         },
