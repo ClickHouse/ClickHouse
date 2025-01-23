@@ -288,7 +288,7 @@
                 }
             })
           .merge(bands)
-            .attr("class", d => "bar " + (filter != '' && !d.text.includes(filter) ? " bar-u" : " bar-f"))
+            .attr("class", d => "bar " + (filter != '' && !d.text.toLowerCase().includes(filter) ? " bar-u" : " bar-f"))
           .transition().duration(smooth? 250: 0)
             .attr("y", 0)
             .attr("transform", bandTransform)
@@ -446,7 +446,7 @@
     gantt.filter = function(pattern) {
         if (!arguments.length)
             return filter;
-        filter = pattern;
+        filter = pattern.toLowerCase();
         render();
         return gantt;
     }
