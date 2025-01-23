@@ -153,6 +153,7 @@ public:
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
+    StorageMetadataPtr getMetadataSnapshot() const;
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
@@ -350,16 +351,15 @@ public:
         {
         }
 
-        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        void load(const StorageMetadataPtr & metadata_snapshot, const PartMetadataManagerPtr & manager);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const StorageMetadataPtr & metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums) const;
         [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files);
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;

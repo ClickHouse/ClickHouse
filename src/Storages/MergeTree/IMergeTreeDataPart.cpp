@@ -108,9 +108,8 @@ String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storag
 }
 
 
-void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
+void IMergeTreeDataPart::MinMaxIndex::load(const StorageMetadataPtr & metadata_snapshot, const PartMetadataManagerPtr & manager)
 {
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
     auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
@@ -141,9 +140,8 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
-    const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & out_checksums) const
+    const StorageMetadataPtr & metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums) const
 {
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
     auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
@@ -233,20 +231,6 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
         }
     }
 }
-
-void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files)
-{
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-    size_t minmax_idx_size = minmax_column_names.size();
-    for (size_t i = 0; i < minmax_idx_size; ++i)
-    {
-        String file_name = "minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx";
-        files.push_back(file_name);
-    }
-}
-
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
@@ -548,6 +532,15 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     columns_description = ColumnsDescription(columns);
     columns_description_with_collected_nested = ColumnsDescription(Nested::collect(columns));
+}
+
+StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (parent_part)
+        return metadata_snapshot->projections.get(name).metadata;
+
+    return metadata_snapshot;
 }
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
@@ -993,11 +986,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
-
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & primary_key = getMetadataSnapshot()->getPrimaryKey();
     size_t key_size = primary_key.column_names.size();
 
     if (!key_size)
@@ -1273,20 +1262,17 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
     else
     {
-        //String path = getRelativePath();
-        if (!parent_part)
-            partition.load(storage, metadata_manager);
+        if (parent_part)
+        {
+            /// Projection parts don't have minmax_idx, and it's always initialized
+            minmax_idx->initialized = !isEmpty();
+            return;
+        }
+
+        partition.load(getMetadataSnapshot(), metadata_manager, storage.getContext());
 
         if (!isEmpty())
-        {
-            if (parent_part)
-                // projection parts don't have minmax_idx, and it's always initialized
-                minmax_idx->initialized = true;
-            else
-                minmax_idx->load(storage, metadata_manager);
-        }
-        if (parent_part)
-            return;
+            minmax_idx->load(getMetadataSnapshot(), metadata_manager);
     }
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
@@ -1590,9 +1576,6 @@ void IMergeTreeDataPart::loadUUID()
 void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = fs::path(getDataPartStorage().getRelativePath()) / "columns.txt";
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
 
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
@@ -1611,8 +1594,9 @@ void IMergeTreeDataPart::loadColumns(bool require)
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on drive {}",
                 name, path, getDataPartStorage().getDiskName());
 
+        auto metadata_snapshot = getMetadataSnapshot();
         /// If there is no file with a list of columns, write it down.
-        for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
+        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
@@ -1640,7 +1624,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     }
     else
     {
-        loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+        auto storage_metdata_snapshot = storage.getInMemoryMetadataPtr();
+        loaded_metadata_version = storage_metdata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
     }
 
@@ -2109,18 +2094,11 @@ UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
 
 void IMergeTreeDataPart::checkConsistencyBase() const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-    {
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
-    }
-    else
-    {
-        // No need to check projections here because we already did consistent checking when loading projections if necessary.
-    }
+    auto metadata_snapshot = getMetadataSnapshot();
 
     const auto & pk = metadata_snapshot->getPrimaryKey();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
+
     if (!checksums.empty())
     {
         if (!pk.column_names.empty()

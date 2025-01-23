@@ -2822,10 +2822,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.partition_id;
-            {
-                WriteBufferFromString out(part_log_elem.partition);
-                part->partition.serializeText(part->storage, out, {});
-            }
+            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -6274,11 +6271,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            WriteBufferFromOwnString buf;
-            partition.serializeText(*this, buf, FormatSettings{});
+            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
                             "doesn't match partition value for an existing part with the same partition ID: {}",
-                            buf.str(), existing_part_in_partition->name);
+                            partition_str, existing_part_in_partition->name);
         }
     }
 
@@ -8123,18 +8119,10 @@ try
     part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
 
-    {
-        const DataPart * result_or_source_data_part = nullptr;
-        if (result_part)
-            result_or_source_data_part = result_part.get();
-        else if (!source_parts.empty())
-            result_or_source_data_part = source_parts.at(0).get();
-        if (result_or_source_data_part)
-        {
-            WriteBufferFromString out(part_log_elem.partition);
-            result_or_source_data_part->partition.serializeText(*this, out, {});
-        }
-    }
+    if (result_part)
+        part_log_elem.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
+    else if (!source_parts.empty())
+        part_log_elem.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
 
     part_log_elem.part_name = new_part_name;
 
