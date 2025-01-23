@@ -102,6 +102,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
+            {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
