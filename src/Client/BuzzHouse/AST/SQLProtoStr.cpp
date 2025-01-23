@@ -4041,47 +4041,31 @@ CONV_FN(SQLQueryInner, query)
 
 CONV_FN(ExplainQuery, explain)
 {
-    ret += "EXPLAIN";
+    ret += "EXPLAIN ";
     if (explain.has_expl())
     {
+        String nexplain = ExplainQuery_ExplainValues_Name(explain.expl());
+
+        std::replace(nexplain.begin(), nexplain.end(), '_', ' ');
+        ret += nexplain;
         ret += " ";
-        ret += ExplainQuery_ExplainValues_Name(explain.expl());
-        std::replace(ret.begin(), ret.end(), '_', ' ');
     }
-    if (explain.has_expl() && explain.expl() <= ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE && explain.opts_size())
+    if (explain.opts_size())
     {
-        ret += " ";
         for (int i = 0; i < explain.opts_size(); i++)
         {
-            String ostr;
             const ExplainOption & eopt = explain.opts(i);
 
             if (i != 0)
             {
                 ret += ", ";
             }
-            switch (explain.expl())
-            {
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
-                    ostr += ExpPlanOpt_Name(static_cast<ExpPlanOpt>((eopt.opt() % 5) + 1));
-                    break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    ostr += ExpPipelineOpt_Name(static_cast<ExpPipelineOpt>((eopt.opt() % 3) + 1));
-                    break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
-                    ostr += ExpQueryTreeOpt_Name(static_cast<ExpQueryTreeOpt>((eopt.opt() % 3) + 1));
-                    break;
-                default:
-                    assert(0);
-            }
-            ostr = ostr.substr(5);
-            std::transform(ostr.begin(), ostr.end(), ostr.begin(), [](unsigned char c) { return std::tolower(c); });
-            ret += ostr;
+            ret += ExplainOption_ExplainOpt_Name(eopt.opt());
             ret += " = ";
             ret += std::to_string(eopt.val());
         }
+        ret += " ";
     }
-    ret += " ";
     SQLQueryInnerToString(ret, explain.inner_query());
 }
 

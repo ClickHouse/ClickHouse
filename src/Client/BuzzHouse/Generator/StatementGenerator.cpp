@@ -2819,82 +2819,116 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     }
 }
 
-struct TestSetting
+struct ExplainOptValues
 {
-    const String tsetting;
-    const std::unordered_set<String> options;
+    const ExplainOption_ExplainOpt opt;
+    const std::function<uint32_t(RandomGenerator &)> random_func;
 
-    TestSetting(const String & sett, const std::unordered_set<String> & noptions) : tsetting(sett), options(noptions) { }
+    ExplainOptValues(const ExplainOption_ExplainOpt & e, const std::function<uint32_t(RandomGenerator &)> & rf)
+        : opt(e), random_func(rf) { }
 };
 
-static const std::vector<TestSetting> explain_settings{//QUERY TREE
-                                                       TestSetting("run_passes", {"0", "1"}),
-                                                       TestSetting("dump_passes", {"0", "1"}),
-                                                       TestSetting("passes", {"-1", "0", "1", "2", "3", "4"}),
-                                                       //PLAN
-                                                       TestSetting("header", {"0", "1"}),
-                                                       TestSetting("description", {"0", "1"}),
-                                                       TestSetting("indexes", {"0", "1"}),
-                                                       TestSetting("actions", {"0", "1"}),
-                                                       TestSetting("json", {"0", "1"}),
-                                                       //PIPELINE
-                                                       TestSetting("header", {"0", "1"}),
-                                                       TestSetting("graph", {"0", "1"}),
-                                                       TestSetting("compact", {"0", "1"})};
+static const std::function<uint32_t(RandomGenerator &)> trueOrFalseInt = [](RandomGenerator & rg) { return rg.nextBool() ? 1 : 0; };
+
+static const std::vector<ExplainOptValues> explain_settings{
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_graph, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_optimize, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_oneline, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_dump_ast, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_dump_passes, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_dump_tree, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_run_passes, trueOrFalseInt),
+    ExplainOptValues(
+        ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_passes, [](RandomGenerator & rg) { return rg.randomInt<uint32_t>(0, 32); }),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_distributed, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_sorting, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_json, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_description, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_indexes, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_keep_logical_steps, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_actions, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_header, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact, trueOrFalseInt)};
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery * eq)
 {
-    if (rg.nextSmallNumber() < 10)
+    std::optional<ExplainQuery_ExplainValues> val = std::nullopt;
+
+    if (rg.nextSmallNumber() < 9)
     {
-        ExplainQuery_ExplainValues val
-            = static_cast<ExplainQuery_ExplainValues>((rg.nextRandomUInt32() % static_cast<uint32_t>(ExplainQuery::ExplainValues_MAX)) + 1);
+        val = std::optional<ExplainQuery_ExplainValues>(
+            static_cast<ExplainQuery_ExplainValues>((rg.nextRandomUInt32() % static_cast<uint32_t>(ExplainQuery::ExplainValues_MAX)) + 1));
 
-        if (rg.nextBool())
+        eq->set_expl(val.value());
+    }
+    if (rg.nextBool())
+    {
+        assert(this->ids.empty());
+        if (val.has_value())
         {
-            uint32_t offset = 0;
-
-            assert(this->ids.empty());
-            switch (val)
+            switch (val.value())
             {
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST:
                     this->ids.push_back(0);
                     this->ids.push_back(1);
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
                     this->ids.push_back(2);
                     break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
-                    offset = 3;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
                     this->ids.push_back(3);
                     this->ids.push_back(4);
                     this->ids.push_back(5);
                     this->ids.push_back(6);
                     this->ids.push_back(7);
                     break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    offset = 8;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ESTIMATE:
+                    this->ids.push_back(1);
                     this->ids.push_back(8);
                     this->ids.push_back(9);
                     this->ids.push_back(10);
+                    this->ids.push_back(11);
+                    this->ids.push_back(12);
+                    this->ids.push_back(13);
+                    this->ids.push_back(14);
+                    this->ids.push_back(15);
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
+                    this->ids.push_back(0);
+                    this->ids.push_back(15);
+                    this->ids.push_back(16);
                     break;
                 default:
                     break;
             }
-            if (!this->ids.empty())
-            {
-                const size_t noptions = (static_cast<size_t>(rg.nextMediumNumber()) % this->ids.size()) + 1;
-                std::shuffle(ids.begin(), ids.end(), rg.generator);
-
-                for (size_t i = 0; i < noptions; i++)
-                {
-                    const uint32_t nopt = this->ids[i];
-                    ExplainOption * eopt = eq->add_opts();
-
-                    eopt->set_opt(nopt - offset);
-                    eopt->set_val(std::stoi(rg.pickRandomlyFromSet(explain_settings[nopt].options)));
-                }
-                this->ids.clear();
-            }
         }
-        eq->set_expl(val);
+        else
+        {
+            this->ids.push_back(1);
+            this->ids.push_back(9);
+            this->ids.push_back(10);
+            this->ids.push_back(11);
+            this->ids.push_back(12);
+            this->ids.push_back(13);
+            this->ids.push_back(14);
+            this->ids.push_back(15);
+        }
+        if (!this->ids.empty())
+        {
+            const size_t noptions = (static_cast<size_t>(rg.nextRandomUInt32()) % this->ids.size()) + 1;
+            std::shuffle(ids.begin(), ids.end(), rg.generator);
+
+            for (size_t i = 0; i < noptions; i++)
+            {
+                const auto & nopt = explain_settings[this->ids[i]];
+                ExplainOption * eopt = eq->add_opts();
+
+                eopt->set_opt(nopt.opt);
+                eopt->set_val(nopt.random_func(rg));
+            }
+            this->ids.clear();
+        }
     }
     generateNextQuery(rg, eq->mutable_inner_query());
 }

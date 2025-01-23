@@ -3115,30 +3115,6 @@ message Truncate {
     optional SettingValues setting_values = 5;
 }
 
-enum ExpPlanOpt {
-    VAL1_HEADER = 1;
-    VAL1_DESCRIPTION = 2;
-    VAL1_INDEXES = 3;
-    VAL1_ACTIONS = 4;
-    VAL1_JSON = 5;
-}
-
-enum ExpPipelineOpt {
-    VAL2_HEADER = 1;
-    VAL2_GRAPH = 2;
-    VAL2_COMPACT = 3;
-}
-
-enum ExpQueryTreeOpt {
-    VAL3_RUN_PASSES = 1;
-    VAL3_DUMP_PASSES = 2;
-    VAL3_PASSES = 3;
-}
-
-message ExplainOption {
-    required uint32 opt = 1;
-    required int32 val = 2;
-}
 
 message SelectIntoFile {
     enum SelectIntoFileStep {
@@ -3542,6 +3518,30 @@ message SQLQueryInner {
         CreateFunction create_function = 17;
         SystemCommand system_cmd = 18;
     }
+}
+
+message ExplainOption {
+    enum ExplainOpt {
+        graph = 1;
+        optimize = 2;
+        oneline = 3;
+        dump_ast = 4;
+        dump_passes = 5;
+        dump_tree = 6;
+        run_passes = 7;
+        passes = 8;
+        distributed = 9;
+        sorting = 10;
+        json = 11;
+        description = 12;
+        indexes = 13;
+        keep_logical_steps = 14;
+        actions = 15;
+        header = 16;
+        compact = 17;
+    }
+    required ExplainOpt opt = 1;
+    required uint32 val = 2;
 }
 
 message ExplainQuery {
