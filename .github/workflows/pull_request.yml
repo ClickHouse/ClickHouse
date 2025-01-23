@@ -109,7 +109,7 @@ jobs:
       stage: Builds_1
       data: ${{ needs.RunConfig.outputs.data }}
   Builds_2:
-    needs: [RunConfig, Builds_1, Builds_0]
+    needs: [RunConfig, StyleCheck, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_2') }}
     uses: ./.github/workflows/reusable_build_stage.yml
     with:

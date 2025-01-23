@@ -637,7 +637,6 @@ class CI:
             else:
                 stage_type = WorkflowStages.BUILDS_2
             if job_name in (
-                BuildNames.BINARY_TIDY,
                 BuildNames.PACKAGE_RELEASE,
                 BuildNames.PACKAGE_AARCH64,
             ):

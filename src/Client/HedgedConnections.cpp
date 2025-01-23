@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 HedgedConnections::HedgedConnections(
@@ -339,6 +340,11 @@ Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
     return receivePacketUnlocked({});
+}
+
+UInt64 HedgedConnections::receivePacketTypeUnlocked(AsyncCallback)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'receivePacketTypeUnlocked()' not implemented for HedgedConnections");
 }
 
 Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)

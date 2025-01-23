@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import json
+import urllib
 from typing import Optional
 
 import requests
@@ -35,16 +36,30 @@ class CIDB:
         test_duration_ms: Optional[int]
         test_context_raw: str
 
-    def __init__(self, url, passwd):
+    def __init__(self, url, user, passwd):
         self.url = url
         self.auth = {
-            "X-ClickHouse-User": "default",
+            "X-ClickHouse-User": user,
             "X-ClickHouse-Key": passwd,
         }
 
     @classmethod
+    def _get_sub_result_with_test_cases(cls, result: Result) -> Result:
+        if len(result.results) > 20:
+            return result
+        for sub_result in result.results:
+            if sub_result.name.lower() in [
+                n.lower() for n in Settings.SUB_RESULT_NAMES_WITH_TESTS
+            ]:
+                return sub_result
+        return result
+
+    @classmethod
     def json_data_generator(cls, result: Result):
+        """Generates JSON data records for the result and its test cases."""
         env = _Environment.get()
+
+        # Create the base record
         base_record = cls.TableRecord(
             pull_request_number=env.PR_NUMBER,
             commit_sha=env.SHA,
@@ -58,11 +73,11 @@ class CIDB:
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
-            # TODO: remove from table?
-            head_repo=env.REPOSITORY,
-            # TODO: remove from table?
+            head_repo=env.REPOSITORY,  # TODO: remove from table?
             task_url="",
-            instance_type=",".join([env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE]),
+            instance_type=",".join(
+                filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])
+            ),
             instance_id=env.INSTANCE_ID,
             test_name="",
             test_status="",
@@ -70,13 +85,20 @@ class CIDB:
             test_context_raw=result.info,
         )
         yield json.dumps(dataclasses.asdict(base_record))
-        for result_ in result.results:
-            record = copy.deepcopy(base_record)
+
+        test_cases_result = cls._get_sub_result_with_test_cases(result)
+        for result_ in test_cases_result.results:
+            record = copy.copy(base_record)
             record.test_name = result_.name
+            record.report_url = (
+                record.report_url
+                + f"&name_1={urllib.parse.quote(result.name, safe='')}"
+            )
             if result_.start_time:
-                record.check_start_time = (Utils.timestamp_to_str(result.start_time),)
+                record.check_start_time = Utils.timestamp_to_str(result_.start_time)
             record.test_status = result_.status
-            record.test_duration_ms = int(result_.duration * 1000)
+            if result_.duration:
+                record.test_duration_ms = int(result_.duration * 1000)
             record.test_context_raw = result_.info
             yield json.dumps(dataclasses.asdict(record))
 
@@ -90,10 +112,9 @@ class CIDB:
         }
 
         session = requests.Session()
-
         for json_str in self.json_data_generator(result):
             try:
-                response1 = session.post(
+                session.post(
                     url=self.url,
                     params=params,
                     data=json_str,
@@ -102,7 +123,6 @@ class CIDB:
                 )
             except Exception as ex:
                 raise ex
-
         session.close()
 
     def check(self):
@@ -133,5 +153,5 @@ class CIDB:
                 )
         except Exception as ex:
             print(f"ERROR: Exception [{ex}]")
-            return False, "CIDB: ERROR: Exception [{ex}]"
+            return False, f"CIDB: ERROR: Exception [{ex}]"
         return True, ""
