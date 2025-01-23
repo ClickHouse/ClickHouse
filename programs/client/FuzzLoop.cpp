@@ -333,10 +333,10 @@ bool Client::processWithFuzzing(const String & full_query)
 
 #if USE_BUZZHOUSE
 
-void Client::processQueryAndLog(std::ofstream & outf, const String & full_query)
+bool Client::logAndProcessQuery(std::ofstream & outf, const String & full_query)
 {
-    processTextAsSingleQuery(full_query);
     outf << full_query << std::endl;
+    return processTextAsSingleQuery(full_query);
 }
 
 bool Client::processBuzzHouseQuery(const String & full_query)
@@ -426,8 +426,8 @@ bool Client::buzzHouse()
         String full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool first = true;
-        bool replica_setup = false;
-        bool has_cloud_features = false;
+        bool replica_setup = true;
+        bool has_cloud_features = true;
         BuzzHouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
         BuzzHouse::SQLQuery sq1;
@@ -443,15 +443,15 @@ bool Client::buzzHouse()
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-        processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
-        processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
-        has_cloud_features |= !have_error;
+        has_cloud_features &= processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        has_cloud_features &= processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
-        processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
-        replica_setup |= !have_error;
+        replica_setup &= processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
         std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
-        processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
-        processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        auto u = processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
+        UNUSED(u);
+        auto v = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        UNUSED(v);
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
         std::vector<String> defaultSettings
@@ -541,7 +541,8 @@ bool Client::buzzHouse()
             first = false;
         }
         full_query += ";";
-        processQueryAndLog(outf, full_query);
+        auto w = logAndProcessQuery(outf, full_query);
+        UNUSED(w);
         if (ei.hasClickHouseExtraServerConnection())
         {
             ei.setDefaultSettings(BuzzHouse::PeerTableDatabase::ClickHouse, defaultSettings);

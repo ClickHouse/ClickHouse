@@ -435,8 +435,16 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_in_set",
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},*/
-    {"max_bytes_ratio_before_external_group_by", CHSetting(probRange, {"0", "0.1", "0.5", "0.9", "1.0"}, false)},
-    {"max_bytes_ratio_before_external_sort", CHSetting(probRange, {"0", "0.1", "0.5", "0.9", "1.0"}, false)},
+    {"max_bytes_ratio_before_external_group_by",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); },
+         {"0", "0.1", "0.5", "0.99"},
+         false)},
+    {"max_bytes_ratio_before_external_sort",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 0.99)); },
+         {"0", "0.1", "0.5", "0.99"},
+         false)},
     /*{"max_bytes_to_read",
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_to_read_leaf",

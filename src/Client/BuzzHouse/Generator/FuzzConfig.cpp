@@ -179,13 +179,12 @@ bool FuzzConfig::processServerQuery(const String & input) const
 {
     try
     {
-        this->cb->processTextAsSingleQuery(input);
+        return this->cb->processTextAsSingleQuery(input);
     }
     catch (...)
     {
         return false;
     }
-    return true;
 }
 
 void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col) const
