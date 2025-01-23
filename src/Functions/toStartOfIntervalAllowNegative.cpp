@@ -26,20 +26,20 @@ namespace ErrorCodes
 }
 
 
-class FunctionToStartOfInterval : public IFunction
+class FunctionToStartOfIntervalAllowNegative : public IFunction
 {
 private:
     enum class Overload
     {
-        Default,    /// toStartOfInterval(time, interval) or toStartOfInterval(time, interval, timezone)
-        Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
+        Default,    /// toStartOfIntervalAllowNegative(time, interval) or toStartOfIntervalAllowNegative(time, interval, timezone)
+        Origin      /// toStartOfIntervalAllowNegative(time, interval, origin) or toStartOfIntervalAllowNegative(time, interval, origin, timezone)
     };
     mutable Overload overload;
 
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfIntervalAllowNegative>(); }
 
-    static constexpr auto name = "toStartOfInterval";
+    static constexpr auto name = "toStartOfIntervalAllowNegative";
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -66,9 +66,7 @@ public:
 
         enum class ResultType : uint8_t
         {
-            Date,
             Date32,
-            DateTime,
             DateTime64
         };
 
@@ -91,19 +89,17 @@ public:
                 case IntervalKind::Kind::Nanosecond:
                 case IntervalKind::Kind::Microsecond:
                 case IntervalKind::Kind::Millisecond:
-                    result_type = ResultType::DateTime64;
-                    break;
                 case IntervalKind::Kind::Second:
                 case IntervalKind::Kind::Minute:
                 case IntervalKind::Kind::Hour:
-                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
-                    result_type = ResultType::DateTime;
+                case IntervalKind::Kind::Day:
+                    result_type = ResultType::DateTime64;
                     break;
                 case IntervalKind::Kind::Week:
                 case IntervalKind::Kind::Month:
                 case IntervalKind::Kind::Quarter:
                 case IntervalKind::Kind::Year:
-                    result_type = ResultType::Date;
+                    result_type = ResultType::Date32;
                     break;
             }
         };
@@ -113,7 +109,7 @@ public:
             const DataTypePtr & type_arg3 = arguments[2].type;
             if (isString(type_arg3))
             {
-                if (value_is_date && result_type == ResultType::Date)
+                if (value_is_date && result_type == ResultType::Date32)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
                         getName(), interval_type->getKind().toString());
@@ -123,11 +119,11 @@ public:
                 overload = Overload::Origin;
                 const DataTypePtr & type_arg1 = arguments[0].type;
                 if (isDate(type_arg1) && isDate(type_arg3))
-                    result_type = ResultType::Date;
+                    result_type = ResultType::Date32;
                 else if (isDate32(type_arg1) && isDate32(type_arg3))
                     result_type = ResultType::Date32;
                 else if (isDateTime(type_arg1) && isDateTime(type_arg3))
-                    result_type = ResultType::DateTime;
+                    result_type = ResultType::DateTime64;
                 else if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
                     result_type = ResultType::DateTime64;
                 else
@@ -151,7 +147,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 4th argument of function {}. "
                     "This argument is optional and must be a constant String with timezone name",
                     type_arg4->getName(), getName());
-            if (value_is_date && result_type == ResultType::Date)
+            if (value_is_date && result_type == ResultType::Date32)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
                     getName(), interval_type->getKind().toString());
@@ -184,15 +180,8 @@ public:
 
         switch (result_type)
         {
-            case ResultType::Date:
-                return std::make_shared<DataTypeDate>();
             case ResultType::Date32:
                 return std::make_shared<DataTypeDate32>();
-            case ResultType::DateTime:
-            {
-                const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, time_zone_arg_num, 0, false));
-            }
             case ResultType::DateTime64:
             {
                 UInt32 scale = 0;
@@ -228,7 +217,7 @@ public:
 
         const DateLUTImpl * time_zone_tmp;
 
-        if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
+        if (isDateTimeOrDateTime64(time_column.type) || isDateTime64(result_type))
         {
             const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
@@ -239,12 +228,8 @@ public:
         const DateLUTImpl & time_zone = *time_zone_tmp;
 
         ColumnPtr result_column;
-        if (isDate(result_type))
-            result_column = dispatchForTimeColumn<DataTypeDate>(time_column, interval_column, origin_column, result_type, time_zone);
-        else if (isDate32(result_type))
+        if (isDate32(result_type))
             result_column = dispatchForTimeColumn<DataTypeDate32>(time_column, interval_column, origin_column, result_type, time_zone);
-        else if (isDateTime(result_type))
-            result_column = dispatchForTimeColumn<DataTypeDateTime>(time_column, interval_column, origin_column, result_type, time_zone);
         else if (isDateTime64(result_type))
             result_column = dispatchForTimeColumn<DataTypeDateTime64>(time_column, interval_column, origin_column, result_type, time_zone);
         return result_column;
@@ -370,7 +355,7 @@ private:
         if (origin_column.column) // Overload: Origin
         {
             const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
-            const bool is_result_date = isDateOrDate32(result_type);
+            const bool is_result_date = isDate32(result_type);
 
             Int64 result_scale = scale_multiplier;
             Int64 origin_scale = 1;
@@ -419,7 +404,6 @@ private:
         }
         else // Overload: Default
         {
-            for (size_t i = 0; i != size; ++i)
                 result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }
 
@@ -427,11 +411,11 @@ private:
     }
 };
 
-REGISTER_FUNCTION(ToStartOfInterval)
+REGISTER_FUNCTION(toStartOfIntervalAllowNegative)
 {
-    factory.registerFunction<FunctionToStartOfInterval>();
-    factory.registerAlias("time_bucket", "toStartOfInterval", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("date_bin", "toStartOfInterval", FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionToStartOfIntervalAllowNegative>();
+    factory.registerAlias("time_bucket_allow_negative", "toStartOfIntervalAllowNegative", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("date_bin_allow_negative", "toStartOfIntervalAllowNegative", FunctionFactory::Case::Insensitive);
 }
 
 }
