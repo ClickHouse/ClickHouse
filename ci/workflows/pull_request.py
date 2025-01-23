@@ -14,6 +14,7 @@ workflow = Workflow.Config(
         *Jobs.build_jobs,
         *Jobs.stateless_tests_jobs,
         *Jobs.stateful_tests_jobs,
+        *Jobs.integration_test_jobs,
         *Jobs.stress_test_jobs,
         *Jobs.upgrade_test_jobs,
         *Jobs.performance_comparison_head_jobs,
@@ -24,12 +25,15 @@ workflow = Workflow.Config(
         Jobs.sqltest_job,
         Jobs.sqlancer_job,
         *Jobs.install_check_job,
+        *Jobs.ast_fuzzer_jobs,
+        *Jobs.buzz_fuzzer_jobs,
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
+    enable_cidb=True,
     enable_merge_ready_status=True,
 )
 

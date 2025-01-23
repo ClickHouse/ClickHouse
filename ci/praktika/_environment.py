@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Type
 
 from . import Workflow
 from .settings import Settings
-from .utils import MetaClasses, T
+from .utils import MetaClasses, Shell, T
 
 
 @dataclasses.dataclass
@@ -30,10 +30,12 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
     PR_BODY: str
+    PR_TITLE: str
     USER_LOGIN: str
     FORK_NAME: str
     PR_LABELS: str
     LOCAL_RUN: bool = False
+    PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
@@ -94,6 +96,7 @@ class _Environment(MetaClasses.Serializable):
         USER_LOGIN = os.getenv("GITHUB_ACTOR")
         FORK_NAME = ""
         PR_BODY = ""
+        PR_TITLE = ""
         PR_LABELS = []
 
         if EVENT_FILE_PATH:
@@ -107,6 +110,7 @@ class _Environment(MetaClasses.Serializable):
                 CHANGE_URL = github_event["pull_request"]["html_url"]
                 COMMIT_URL = CHANGE_URL + f"/commits/{SHA}"
                 PR_BODY = github_event["pull_request"]["body"]
+                PR_TITLE = github_event["pull_request"]["title"]
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
@@ -118,6 +122,17 @@ class _Environment(MetaClasses.Serializable):
                 COMMIT_URL = CHANGE_URL
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
+                SHA = os.getenv(
+                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
+                )
+                PR_NUMBER = 0
+                CHANGE_URL = (
+                    github_event["repository"]["html_url"] + "/commit/" + SHA
+                )  # commit url
+                COMMIT_URL = CHANGE_URL
+            elif "inputs" in github_event:
+                # assume this is a dispatch
+                EVENT_TYPE = Workflow.Event.DISPATCH
                 SHA = os.getenv(
                     "GITHUB_SHA", "0000000000000000000000000000000000000000"
                 )
@@ -138,19 +153,19 @@ class _Environment(MetaClasses.Serializable):
 
         INSTANCE_TYPE = (
             os.getenv("INSTANCE_TYPE", None)
-            # or Shell.get_output("ec2metadata --instance-type")
+            or Shell.get_output("ec2metadata --instance-type")
             or ""
         )
         INSTANCE_ID = (
             os.getenv("INSTANCE_ID", None)
-            # or Shell.get_output("ec2metadata --instance-id")
+            or Shell.get_output("ec2metadata --instance-id")
             or ""
         )
         INSTANCE_LIFE_CYCLE = (
             os.getenv("INSTANCE_LIFE_CYCLE", None)
-            # or Shell.get_output(
-            #     "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-            # )
+            or Shell.get_output(
+                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+            )
             or ""
         )
 
@@ -172,6 +187,7 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_TYPE=INSTANCE_TYPE,
             INSTANCE_ID=INSTANCE_ID,
             PR_BODY=PR_BODY,
+            PR_TITLE=PR_TITLE,
             USER_LOGIN=USER_LOGIN,
             FORK_NAME=FORK_NAME,
             PR_LABELS=PR_LABELS,

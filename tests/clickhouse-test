@@ -2817,6 +2817,7 @@ def do_run_tests(
         len(test_suite.sequential_tests),
         "sequential tests",
     )
+    total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -2903,7 +2904,7 @@ def do_run_tests(
             )
         )
 
-    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
+    return total_tests
 
 
 def is_test_from_dir(suite_dir, case):
@@ -3253,7 +3254,7 @@ def main(args):
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
 
-    if args.parallel_replicas is True:
+    if args.no_parallel_replicas is True:
         skip_list_parallel_replicas = try_get_skip_list(
             base_dir, "../parallel_replicas_blacklist.txt"
         )
@@ -3428,12 +3429,6 @@ def parse_args():
         default="clickhouse",
         type=find_binary,
         help="Path to clickhouse binary or name of binary in PATH",
-    )
-    parser.add_argument(
-        "-c",
-        "--client",
-        help="Path to clickhouse-client, this option is useless"
-        "name of binary in PATH",
     )
 
     parser.add_argument("--extract_from_config", help="extract-from-config program")
@@ -3749,12 +3744,6 @@ def parse_args():
         default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
-    parser.add_argument(
-        "--parallel-replicas",
-        action="store_true",
-        default=False,
-        help="Skip certain tests specific to the parallel replicas configuration",
-    )
 
     parser.add_argument(
         "--client-log",
@@ -3844,12 +3833,6 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
-
-    if args.client:
-        print(
-            "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
-            file=sys.stderr,
-        )
 
     args.client = find_clickhouse_command(args.binary, "client")
 
