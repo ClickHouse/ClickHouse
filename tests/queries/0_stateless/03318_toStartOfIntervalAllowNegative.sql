@@ -18,3 +18,6 @@ SELECT toStartOfIntervalAllowNegative(toDate32('1960-03-03'), INTERVAL 1 Month);
 SELECT toStartOfIntervalAllowNegative(toDate32('1960-03-03'), INTERVAL 1 Week);
 SELECT toDayOfWeek(toStartOfIntervalAllowNegative(toDate32('1960-03-03'), INTERVAL 1 Week));
 SELECT toStartOfIntervalAllowNegative(toDate32('1960-03-03'), INTERVAL 1 Day);
+
+SELECT '--- Non-const arguments';
+SELECT toStartOfIntervalAllowNegative(number % 2 = 0 ? toDate32('1970-03-03') : toDate32('1960-03-03'), INTERVAL 1 Week) from numbers(5);
