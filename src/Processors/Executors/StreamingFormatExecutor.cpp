@@ -56,18 +56,16 @@ void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes, const Chunk
     if (total_bytes && num_bytes)
     {
         size_t factor = total_bytes / num_bytes;
-        if (factor > 4) /// we expect significat number of chunks - preallocation makes sence
+        if (factor > 4) /// we expect significant number of chunks - preallocation makes sense
         {
             const auto & reference_columns = chunk.getColumns();
 
-            /// assume that all chunks are identical, use first one to predict
 
             ++factor; /// a bit more space just in case
 
+            /// assume that all chunks are identical, use first one to predict
             for (size_t i = 0; i < result_columns.size(); ++i)
-            {
                 result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
-            }
         }
     }
 }
