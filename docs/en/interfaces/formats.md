@@ -582,233 +582,25 @@ See [ArrowStream](formats/Arrow/ArrowStream.md)
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
-
-### Data Types Matching {#data-types-matching-orc}
-
-The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
-
-| ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
-|---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)                                                            | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/docs/en/sql-reference/data-types/int-uint.md)/[Enum8](/docs/en/sql-reference/data-types/enum.md)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/docs/en/sql-reference/data-types/int-uint.md)/[Enum16](/docs/en/sql-reference/data-types/enum.md) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/docs/en/sql-reference/data-types/int-uint.md)                                                     | `Int`                    |
-| `Bigint`                              | [Int64/UInt32](/docs/en/sql-reference/data-types/int-uint.md)                                                     | `Bigint`                 |
-| `Float`                               | [Float32](/docs/en/sql-reference/data-types/float.md)                                                             | `Float`                  |
-| `Double`                              | [Float64](/docs/en/sql-reference/data-types/float.md)                                                             | `Double`                 |
-| `Decimal`                             | [Decimal](/docs/en/sql-reference/data-types/decimal.md)                                                           | `Decimal`                |
-| `Date`                                | [Date32](/docs/en/sql-reference/data-types/date32.md)                                                             | `Date`                   |
-| `Timestamp`                           | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)                                                     | `Timestamp`              |
-| `String`, `Char`, `Varchar`, `Binary` | [String](/docs/en/sql-reference/data-types/string.md)                                                             | `Binary`                 |
-| `List`                                | [Array](/docs/en/sql-reference/data-types/array.md)                                                               | `List`                   |
-| `Struct`                              | [Tuple](/docs/en/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
-| `Map`                                 | [Map](/docs/en/sql-reference/data-types/map.md)                                                                   | `Map`                    |
-| `Int`                                 | [IPv4](/docs/en/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/docs/en/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/docs/en/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
-| `Binary`                              | [Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
-
-Other types are not supported.
-
-Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-
-The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
-
-### Inserting Data {#inserting-data-orc}
-
-You can insert ORC data from a file into ClickHouse table by the following command:
-
-``` bash
-$ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
-```
-
-### Selecting Data {#selecting-data-orc}
-
-You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
-
-``` bash
-$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
-```
-
-### Arrow format settings {#parquet-format-settings}
-
-- [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
-- [output_format_orc_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_orc_compression_method) - compression method used in output ORC format. Default value - `none`.
-- [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
-- [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
-- [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
-
-
-To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/table-engines/integrations/hdfs.md).
+See [ORC](formats/ORC.md)
 
 ## One {#data-format-one}
 
-Special input format that doesn't read any data from file and returns only one row with column of type `UInt8`, name `dummy` and value `0` (like `system.one` table).
-Can be used with virtual columns `_file/_path`  to list all files without reading actual data.
-
-Example:
-
-Query:
-```sql
-SELECT _file FROM file('path/to/files/data*', One);
-```
-
-Result:
-```text
-┌─_file────┐
-│ data.csv │
-└──────────┘
-┌─_file──────┐
-│ data.jsonl │
-└────────────┘
-┌─_file────┐
-│ data.tsv │
-└──────────┘
-┌─_file────────┐
-│ data.parquet │
-└──────────────┘
-```
+See [One](formats/One.md)
 
 ## Npy {#data-format-npy}
 
-This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
-
-| Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
-|--------------------------|-----------------------------------------------------------------|--------------------------|
-| `i1`                     | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `i1`                     |
-| `i2`                     | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `i2`                     |
-| `i4`                     | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `i4`                     |
-| `i8`                     | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `i8`                     |
-| `u1`, `b1`               | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `u1`                     |
-| `u2`                     | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `u2`                     |
-| `u4`                     | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `u4`                     |
-| `u8`                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `u8`                     |
-| `f2`, `f4`               | [Float32](/docs/en/sql-reference/data-types/float.md)           | `f4`                     |
-| `f8`                     | [Float64](/docs/en/sql-reference/data-types/float.md)           | `f8`                     |
-| `S`, `U`                 | [String](/docs/en/sql-reference/data-types/string.md)           | `S`                      |
-|                          | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `S`                      |
-
-**Example of saving an array in .npy format using Python**
-
-
-```Python
-import numpy as np
-arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
-np.save('example_array.npy', arr)
-```
-
-**Example of reading a NumPy file in ClickHouse**
-
-Query:
-```sql
-SELECT *
-FROM file('example_array.npy', Npy)
-```
-
-Result:
-```
-┌─array─────────┐
-│ [[1],[2],[3]] │
-│ [[4],[5],[6]] │
-└───────────────┘
-```
-
-**Selecting Data**
-
-You can select data from a ClickHouse table and save them into some file in the Npy format by the following command:
-
-```bash
-$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
-```
+See [Npy](formats/Npy.md)
 
 ## LineAsString {#lineasstring}
 
-In this format, every line of input data is interpreted as a single string value. This format can only be parsed for table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted.
+See [LineAsString](formats/LineAsString/LineAsString.md)
 
-**Example**
-
-Query:
-
-``` sql
-DROP TABLE IF EXISTS line_as_string;
-CREATE TABLE line_as_string (field String) ENGINE = Memory;
-INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
-SELECT * FROM line_as_string;
-```
-
-Result:
-
-``` text
-┌─field─────────────────────────────────────────────┐
-│ "I love apple", "I love banana", "I love orange"; │
-└───────────────────────────────────────────────────┘
-```
+See also: [LineAsStringWithNames](formats/LineAsString/LineAsStringWithNames.md), [LineAsStringWithNamesAndTypes](formats/LineAsString/LineAsStringWithNamesAndTypes.md)
 
 ## Regexp {#data-format-regexp}
 
-Each line of imported data is parsed according to the regular expression.
-
-When working with the `Regexp` format, you can use the following settings:
-
-- `format_regexp` — [String](/docs/en/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
-
-- `format_regexp_escaping_rule` — [String](/docs/en/sql-reference/data-types/string.md). The following escaping rules are supported:
-
-    - CSV (similarly to [CSV](#csv))
-    - JSON (similarly to [JSONEachRow](#jsoneachrow))
-    - Escaped (similarly to [TSV](#tabseparated))
-    - Quoted (similarly to [Values](#data-format-values))
-    - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
-
-- `format_regexp_skip_unmatched` — [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
-
-**Usage**
-
-The regular expression from [format_regexp](/docs/en/operations/settings/settings-formats.md/#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
-
-Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
-
-The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_regexp_escaping_rule) setting.
-
-If the regular expression does not match the line and [format_regexp_skip_unmatched](/docs/en/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
-
-**Example**
-
-Consider the file data.tsv:
-
-```text
-id: 1 array: [1,2,3] string: str1 date: 2020-01-01
-id: 2 array: [1,2,3] string: str2 date: 2020-01-02
-id: 3 array: [1,2,3] string: str3 date: 2020-01-03
-```
-and the table:
-
-```sql
-CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
-```
-
-Import command:
-
-```bash
-$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
-```
-
-Query:
-
-```sql
-SELECT * FROM imp_regex_table;
-```
-
-Result:
-
-```text
-┌─id─┬─array───┬─string─┬───────date─┐
-│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
-│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
-│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
-└────┴─────────┴────────┴────────────┘
-```
+See [Regexp](formats/Regexp.md)
 
 ## Format Schema {#formatschema}
 
@@ -837,48 +629,7 @@ Limitations:
 
 ## RawBLOB {#rawblob}
 
-In this format, all input data is read to a single value. It is possible to parse only a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md) or similar.
-The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
-
-Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparatedraw).
-
-`RawBLOB`:
-- data is output in binary format, no escaping;
-- there are no delimiters between values;
-- no newline at the end of each value.
-
-`TabSeparatedRaw`:
-- data is output without escaping;
-- the rows contain values separated by tabs;
-- there is a line feed after the last value in every row.
-
-The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
-
-`RawBLOB`:
-- String fields are output without being prefixed by length.
-
-`RowBinary`:
-- String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
-
-When an empty data is passed to the `RawBLOB` input, ClickHouse throws an exception:
-
-``` text
-Code: 108. DB::Exception: No data to insert
-```
-
-**Example**
-
-``` bash
-$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
-$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
-$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
-```
-
-Result:
-
-``` text
-f9725a22f9191e064120d718e26862a9  -
-```
+See [RawBLOB](formats/RawBLOB.md)
 
 ## MsgPack {#msgpack}
 
