@@ -414,7 +414,22 @@ private:
 
 REGISTER_FUNCTION(toStartOfIntervalAllowNegative)
 {
-    factory.registerFunction<FunctionToStartOfIntervalAllowNegative>();
+    factory.registerFunction<FunctionToStartOfIntervalAllowNegative>
+    (FunctionDocumentation{
+        .description=R"(This function generalizes other toStartOf*() functions with toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone]) 
+                     syntax (does pretty much the same as toStartOfInterval, but returns Date32/DateTime64))",
+        .syntax=R"(toStartOfInterval(value, INTERVAL x unit[, time_zone])
+                toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]]))",
+        .arguments={{"input_datetime", "Date or datetime, from which the start of interval will be taken from."},
+                    {"interval", "Interval, for which start of it will be applied"},
+                    {"time_zone/origin_datetime", "Either Timezone for input_datetime or date/datetime, starting from which the interval will be started (optional)"},
+                    {"time_zone", "Timezone for input_datetime (optional)"}},
+        .examples{
+            {"typical",
+            "SELECT toStartOfIntervalAllowNegative(toDateTime64('1960-03-03 12:55:55', 2), INTERVAL 1 Hour);",
+            R"(1960-03-03 12:00:00)"
+        }}
+    });
     factory.registerAlias("time_bucket_allow_negative", "toStartOfIntervalAllowNegative", FunctionFactory::Case::Insensitive);
     factory.registerAlias("date_bin_allow_negative", "toStartOfIntervalAllowNegative", FunctionFactory::Case::Insensitive);
 }
