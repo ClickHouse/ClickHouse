@@ -187,7 +187,9 @@ try
     if (!read_result.num_rows)
         return {};
 
-    chassert(read_result.num_rows <= current_rows_to_read);
+    if (read_result.num_rows > current_rows_to_read)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read {} rows, more than requested to read: {}", read_result.num_rows, current_rows_to_read);
+
     current_rows_to_read -= read_result.num_rows;
 
     if (!current_rows_to_read)
@@ -254,27 +256,28 @@ Pipe createMergeTreeSequentialSource(
     bool read_with_direct_io,
     bool prefetch)
 {
-    MergeTreeReadTaskInfo info;
-    info.data_part = data_part;
-    info.alter_conversions = alter_conversions;
+    auto info = std::make_shared<MergeTreeReadTaskInfo>();
+    info->data_part = data_part;
+    info->alter_conversions = alter_conversions;
 
     OnFlyMutationsInfo on_fly_mutations_info;
 
     /// The part might have some rows masked by lightweight deletes
-    const bool need_to_filter_deleted_rows = apply_deleted_mask && info.hasLightweightDelete();
+    const bool need_to_filter_deleted_rows = apply_deleted_mask && info->hasLightweightDelete();
     const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
     if (need_to_filter_deleted_rows)
         on_fly_mutations_info.lightweight_delete_filter_step = createLightweightDeleteStep(!has_filter_column);
 
-    LoadedMergeTreeDataPartInfoForReader info_for_reader(info.data_part, info.alter_conversions);
-    info.task_columns = getReadTaskColumnsForSequentialSource(info_for_reader, storage_snapshot, columns_to_read, on_fly_mutations_info);
-    info.task_columns.moveAllColumnsFromPrewhere();
+    LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
+    info->task_columns = getReadTaskColumnsForSequentialSource(info_for_reader, storage_snapshot, columns_to_read, on_fly_mutations_info);
+    info->task_columns.moveAllColumnsFromPrewhere();
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-        type, storage,
+        type,
+        storage,
         storage_snapshot,
-        std::make_shared<MergeTreeReadTaskInfo>(std::move(info)),
+        std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
         prefetch);

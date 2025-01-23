@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -296,7 +297,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 
     ASTPtr query_ast_copy = nullptr;
     /// Respect the _row_exists column.
-    if (block.findByName("_row_exists"))
+    if (block.has(RowExistsColumn::name))
     {
         query_ast_copy = query_ast->clone();
         auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
@@ -305,16 +306,14 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>("_row_exists"), std::make_shared<ASTLiteral>(1)));
+            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
     auto builder = InterpreterSelectQuery(
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
-                       SelectQueryOptions{
-                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                       : QueryProcessingStage::WithMergeableState}
+                       SelectQueryOptions{QueryProcessingStage::WithMergeableState}
                            .ignoreASTOptimizations()
                            .ignoreSettingConstraints())
                        .buildQueryPipeline();
