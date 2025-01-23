@@ -590,6 +590,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node.use_count() > 1)
+            node = node->clone();
+
         auto * function_node = node->as<FunctionNode>();
 
         QueryTreeNodePtr new_node = nullptr;
