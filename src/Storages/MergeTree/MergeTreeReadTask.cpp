@@ -30,6 +30,11 @@ void MergeTreeReadTaskColumns::moveAllColumnsFromPrewhere()
     pre_columns.clear();
 }
 
+bool MergeTreeReadTaskInfo::hasLightweightDelete() const
+{
+    return data_part->hasLightweightDelete();
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -65,10 +70,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     };
 
     new_readers.main = create_reader(read_info->task_columns.columns);
-
-    /// Add lightweight delete filtering step
-    if (extras.reader_settings.apply_deleted_mask && read_info->data_part->hasLightweightDelete())
-        new_readers.prewhere.push_back(create_reader({{RowExistsColumn::name, RowExistsColumn::type}}));
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step));

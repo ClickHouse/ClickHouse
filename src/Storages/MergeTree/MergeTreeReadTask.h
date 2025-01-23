@@ -56,6 +56,8 @@ struct MergeTreeReadTaskColumns
 
 struct MergeTreeReadTaskInfo
 {
+    bool hasLightweightDelete() const;
+
     /// Data part which should be read while performing this task
     DataPartPtr data_part;
     /// Parent part of the projection part

@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsBool apply_deleted_mask;
 }
 
 namespace ErrorCodes
@@ -155,14 +157,23 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 
+        OnFlyMutationsInfo on_fly_mutations_info;
+
+        if (reader_settings.apply_deleted_mask && read_task_info.hasLightweightDelete())
+        {
+            bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
+            on_fly_mutations_info.lightweight_delete_filter_step = createLightweightDeleteStep(remove_filter_column);
+        }
+
         read_task_info.task_columns = getReadTaskColumns(
             part_info,
             storage_snapshot,
             column_names,
             prewhere_info,
+            on_fly_mutations_info,
             actions_settings,
             reader_settings,
-            /*with_subcolumns=*/true);
+            /*with_subcolumns=*/ true);
 
         read_task_info.const_virtual_fields = shared_virtual_fields;
         read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);

@@ -23,14 +23,29 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+struct OnFlyMutationsInfo
+{
+    PrewhereExprStepPtr lightweight_delete_filter_step;
+    PrewhereExprSteps mutation_steps;
+};
+
+PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
+
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
+    const OnFlyMutationsInfo & on_fly_mutations_info,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
+
+MergeTreeReadTaskColumns getReadTaskColumnsForSequentialSource(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & required_columns,
+    const OnFlyMutationsInfo & on_fly_mutations_info);
 
 struct MergeTreeBlockSizePredictor
 {

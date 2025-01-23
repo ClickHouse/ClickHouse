@@ -98,17 +98,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 {
     if (reader_settings.apply_deleted_mask)
     {
-        PrewhereExprStep step
-        {
-            .type = PrewhereExprStep::Filter,
-            .actions = nullptr,
-            .filter_column_name = RowExistsColumn::name,
-            .remove_filter_column = true,
-            .need_filter = true,
-            .perform_alter_conversions = true,
-        };
-
-        lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
+        bool remove_filter_column = !result_header.has(RowExistsColumn::name);
+        lightweight_delete_filter_step = createLightweightDeleteStep(remove_filter_column);
     }
 
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
@@ -224,7 +215,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 void MergeTreeSelectProcessor::initializeRangeReaders()
 {
     PrewhereExprInfo all_prewhere_actions;
-    if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
+
+    if (lightweight_delete_filter_step && task->getInfo().hasLightweightDelete())
         all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
     for (const auto & step : prewhere_actions.steps)
