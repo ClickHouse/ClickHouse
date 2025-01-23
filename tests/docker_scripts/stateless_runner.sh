@@ -352,6 +352,11 @@ function run_tests()
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--no-stateful')
     fi
+    if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        # Multiple stateful tests fail with this logical error in s3 storage configuration
+        # https://github.com/ClickHouse/ClickHouse/issues/74943
+        ADDITIONAL_OPTIONS+=('--no-stateful')
+    fi
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
