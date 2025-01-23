@@ -190,11 +190,8 @@ HDFSFileInfo HDFSObjectStorage::hdfsListDirectoryWrapper(const std::string & pat
     {
         // ignore file not found exception, keep throw other exception,
         // libhdfs3 doesn't have function to get exception type, so use errno.
-        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
-        {
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
-                        path, String(hdfsGetLastError()));
-        }
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
+                    path, String(hdfsGetLastError()));
     }
 
     return ls;
