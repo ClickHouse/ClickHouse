@@ -1157,7 +1157,7 @@ private:
         /// also avoid duplicate such as a>3 AND b>a AND c>b AND c>a.
         QueryTreeNodePtrWithHashSet visited;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
-        std::set<std::pair<QueryTreeNodePtr, const ConstantNode *>> equal_funcs;
+        QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
         std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
@@ -1175,8 +1175,7 @@ private:
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
                     if (constant && !left.first->as<ConstantNode>()
-                        && (compare_type != CompareType::equals
-                            || equal_funcs.insert({left.first, constant}).second))
+                        && (compare_type != CompareType::equals || equal_funcs[left.first].insert(constant).second))
                     {
                         String compare_function_name;
                         if (compare_type == CompareType::less)
