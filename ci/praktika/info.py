@@ -28,6 +28,14 @@ class Info:
         return self.env.PR_TITLE
 
     @property
+    def pr_url(self):
+        return self.env.CHANGE_URL
+
+    @property
+    def commit_url(self):
+        return self.env.COMMIT_URL
+
+    @property
     def git_branch(self):
         return self.env.BRANCH
 
