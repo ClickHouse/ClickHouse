@@ -33,6 +33,7 @@ workflow = Workflow.Config(
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
+    enable_cidb=True,
     enable_merge_ready_status=True,
 )
 
