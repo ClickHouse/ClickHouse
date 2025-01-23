@@ -137,6 +137,10 @@ def _build_dockers(workflow, job_name):
 
 
 def _config_workflow(workflow: Workflow.Config, job_name):
+
+    # debug info
+    GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
+
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         stop_watch = Utils.Stopwatch()
@@ -195,6 +199,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         stop_watch = Utils.Stopwatch()
         res, info = CIDB(
             workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
+            workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
             workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD).get_value(),
         ).check()
         return Result(
@@ -223,10 +228,10 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         cache_jobs={},
     ).dump()
 
-    if Settings.PIPELINE_PRECHECKS:
+    if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
-        for pre_check in Settings.PIPELINE_PRECHECKS:
+        for pre_check in workflow.pre_hooks:
             if callable(pre_check):
                 name = pre_check.__name__
             else:
@@ -331,11 +336,11 @@ def _finish_workflow(workflow, job_name):
 
     update_final_report = False
     results = []
-    if Settings.PIPELINE_POSTCHECKS:
+    if workflow.post_hooks:
         sw_ = Utils.Stopwatch()
         res_ = workflow_result.results
         update_final_report = True
-        for check in Settings.PIPELINE_POSTCHECKS:
+        for check in workflow.post_hooks:
             if callable(check):
                 name = check.__name__
             else:

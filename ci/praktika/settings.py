@@ -21,8 +21,6 @@ class _Settings:
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
-    PIPELINE_PRECHECKS: Optional[List[Union[str, callable]]] = None
-    PIPELINE_POSTCHECKS: Optional[List[Union[str, callable]]] = None
     DISABLED_WORKFLOWS: Optional[List[str]] = None
 
     ######################################
@@ -81,11 +79,15 @@ class _Settings:
     ######################################
     #        CI DB Settings              #
     ######################################
-    SECRET_CI_DB_URL: str = "CI_DB_URL"
-    SECRET_CI_DB_PASSWORD: str = "CI_DB_PASSWORD"
+    SECRET_CI_DB_URL: str = ""
+    SECRET_CI_DB_USER: str = ""
+    SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 5
+    SUB_RESULT_NAMES_WITH_TESTS = [
+        "Tests",
+    ]
 
     DISABLE_MERGE_COMMIT = True
 
@@ -114,16 +116,15 @@ _USER_DEFINED_SETTINGS = [
     "DOCKERHUB_SECRET",
     "READY_FOR_MERGE_STATUS_NAME",
     "SECRET_CI_DB_URL",
+    "SECRET_CI_DB_USER",
     "SECRET_CI_DB_PASSWORD",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SECRET_GH_APP_PEM_KEY",
+    "SUB_RESULT_NAMES_WITH_TESTS" "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_ID",
     "MAIN_BRANCH",
     "DISABLE_MERGE_COMMIT",
-    "PIPELINE_PRECHECKS",
-    "PIPELINE_POSTCHECKS",
     "DISABLED_WORKFLOWS",
 ]
 
