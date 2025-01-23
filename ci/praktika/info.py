@@ -16,16 +16,16 @@ class Info:
         return self.env.SHA
 
     @property
+    def pr_number(self):
+        return self.env.PR_NUMBER
+
+    @property
     def pr_body(self):
         return self.env.PR_BODY
 
     @property
     def pr_title(self):
         return self.env.PR_TITLE
-
-    @property
-    def pr_number(self):
-        return self.env.PR_NUMBER
 
     @property
     def git_branch(self):
