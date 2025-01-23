@@ -732,7 +732,7 @@ def test_streaming_to_many_views(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
-    for i in range(3):
+    for i in range(10):
         table = f"{table_name}_{i + 1}"
         create_table(
             started_cluster,
@@ -2319,6 +2319,13 @@ def test_alter_settings(started_cluster):
         time.sleep(1)
     assert expected_rows == get_count()
 
+    assert (
+        "true"
+        == node1.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE name = 'enable_hash_ring_filtering' and table = '{table_name}'"
+        ).strip()
+    )
+
     node1.query(
         f"""
         ALTER TABLE r.{table_name}
@@ -2333,7 +2340,9 @@ def test_alter_settings(started_cluster):
         max_processed_files_before_commit=444,
         s3queue_max_processed_rows_before_commit=555,
         max_processed_bytes_before_commit=666,
-        max_processing_time_sec_before_commit=777
+        max_processing_time_sec_before_commit=777,
+        enable_hash_ring_filtering=false,
+        list_objects_batch_size=1234
     """
     )
 
@@ -2349,6 +2358,8 @@ def test_alter_settings(started_cluster):
         "max_processed_rows_before_commit": 555,
         "max_processed_bytes_before_commit": 666,
         "max_processing_time_sec_before_commit": 777,
+        "enable_hash_ring_filtering": "false",
+        "list_objects_batch_size": 1234,
     }
     string_settings = {"after_processing": "delete"}
 

@@ -5,6 +5,7 @@ from typing import List
 
 from ._environment import _Environment
 from .gh import GH
+from .info import Info
 from .parser import WorkflowConfigParser
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
@@ -135,6 +136,7 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
+        summary_result.set_info(Info().pr_title)
 
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         page_url = env.get_report_url(settings=Settings, latest=True)
@@ -148,7 +150,7 @@ class HtmlRunnerHooks:
         )
         res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [",
+            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         if not (res1 or res2):
             Utils.raise_with_error(
@@ -172,7 +174,7 @@ class HtmlRunnerHooks:
     @classmethod
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
-        _ResultS3.upload_result_files_to_s3(result)
+        _ResultS3.upload_result_files_to_s3(result).dump()
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()

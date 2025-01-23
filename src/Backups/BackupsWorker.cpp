@@ -221,7 +221,7 @@ public:
             {
                 metric_threads = CurrentMetrics::BackupsThreads;
                 metric_active_threads = CurrentMetrics::BackupsThreadsActive;
-                metric_active_threads = CurrentMetrics::BackupsThreadsScheduled;
+                metric_scheduled_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
                 use_queue = (thread_pool_id != ThreadPoolId::BACKUP);
@@ -236,7 +236,7 @@ public:
             {
                 metric_threads = CurrentMetrics::RestoreThreads;
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
-                metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
+                metric_scheduled_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
                 use_queue = true;
                 break;

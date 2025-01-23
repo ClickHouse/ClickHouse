@@ -50,6 +50,8 @@ class WorkflowStages(metaclass=WithIter):
     TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
     TESTS_2 = "Tests_2"
+    BUILDS_0 = "Builds_0"
+    TESTS_0 = "Tests_0"
 
 
 class Runners(metaclass=WithIter):
