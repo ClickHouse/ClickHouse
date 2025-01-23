@@ -157,6 +157,7 @@ public:
 
     String getName() const override { return "MemoryDependentResize"; }
 
+    Status prepare() override;
     Status prepare(const PortNumbers &, const PortNumbers &) override;
 
     size_t countActiveOutputs() const;
