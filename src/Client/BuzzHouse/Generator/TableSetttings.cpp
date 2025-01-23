@@ -179,12 +179,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"replicated_can_become_leader", CHSetting(trueOrFalse, {}, false)},
     {"replicated_max_mutations_in_one_entry",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 0, 10000)); }, {}, false)},
-    {"shared_merge_tree_disable_merges_and_mutations_assignment", CHSetting(trueOrFalse, {}, false)}, /* ClickHouse cloud */
+    /// ClickHouse cloud setting
+    {"shared_merge_tree_disable_merges_and_mutations_assignment", CHSetting(trueOrFalse, {}, false)},
+    /// ClickHouse cloud setting
     {"shared_merge_tree_parts_load_batch_size",
-     CHSetting(
-         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); },
-         {},
-         false)}, /* ClickHouse cloud */
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }, {}, false)},
     {"simultaneous_parts_removal_limit",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }, {}, false)},
     {"ttl_only_drop_parts", CHSetting(trueOrFalse, {}, false)},

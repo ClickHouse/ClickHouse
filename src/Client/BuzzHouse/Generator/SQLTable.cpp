@@ -17,7 +17,7 @@ void collectColumnPaths(
     JSONType * jt = nullptr;
 
     checkStackSize();
-    // Append this node to the path
+    /// Append this node to the path
     next.path.push_back(ColumnPathChainEntry(cname, tp));
     if (((flags & skip_nested_node) == 0 || tp->getTypeClass() != SQLTypeClass::NESTED)
         && ((flags & skip_tuple_node) == 0 || tp->getTypeClass() != SQLTypeClass::TUPLE))
@@ -469,7 +469,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
     {
         if (rg.nextSmallNumber() < 3)
         {
-            //generate a random key
+            /// Generate a random key
             const uint32_t nkeys = (rg.nextMediumNumber() % UINT32_C(3)) + UINT32_C(1);
 
             for (uint32_t i = 0; i < nkeys; i++)
@@ -490,8 +490,8 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             if (teng != TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 3)
             {
-                //Use a single expression for the entire table
-                //See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
+                /// Use a single expression for the entire table
+                /// See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
                 TableKeyExpr * tke = tkey->add_exprs();
                 Expr * expr = tke->mutable_expr();
                 SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
@@ -517,7 +517,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
 
                     if ((hasType<DateType>(false, true, false, tp) || hasType<DateTimeType>(false, true, false, tp)) && rg.nextBool())
                     {
-                        //Use date functions for partitioning/keys
+                        /// Use date functions for partitioning/keys
                         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
                         func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(dates_hash));
@@ -525,7 +525,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                     }
                     else if (hasType<IntType>(true, true, false, tp) && rg.nextBool())
                     {
-                        //Use modulo function for partitioning/keys
+                        /// Use modulo function for partitioning/keys
                         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
                         columnPathRef(entry, bexpr->mutable_lhs());
@@ -535,7 +535,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                     }
                     else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
                     {
-                        //Use hash
+                        /// Use hash
                         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
                         func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
@@ -609,7 +609,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
     if (te->has_order() && add_pkey && rg.nextSmallNumber() < 5)
     {
-        //pkey is a subset of order by
+        /// Pkey is a subset of order by
         TableKey * tkey = te->mutable_primary_key();
 
         if (te->order().exprs_size())
@@ -637,7 +637,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     const int npkey = te->primary_key().exprs_size();
     if (npkey && rg.nextSmallNumber() < 5)
     {
-        //try to add sample key
+        /// Try to add sample key
         assert(this->ids.empty());
         for (const auto & entry : this->entries)
         {
@@ -648,7 +648,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             {
                 const TableKey & tpk = te->primary_key();
 
-                //must be in pkey
+                /// Must be in pkey
                 for (int j = 0; j < npkey; j++)
                 {
                     if (tpk.exprs(j).expr().has_comp_expr() && tpk.exprs(j).expr().comp_expr().has_expr_stc()
@@ -807,26 +807,26 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->add_params()->mutable_database()->set_database("d" + std::to_string(v.db->dname));
             te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
         }
-        //num_layers
+        /// num_layers
         te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 101));
-        //min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
+        /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
         for (int i = 0; i < 6; i++)
         {
             te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
         }
         if (rg.nextSmallNumber() < 7)
         {
-            //flush_time
+            /// flush_time
             te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 61));
         }
         if (rg.nextSmallNumber() < 7)
         {
-            //flush_rows
+            /// flush_rows
             te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
         }
         if (rg.nextSmallNumber() < 7)
         {
-            //flush_bytes
+            /// flush_bytes
             te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
         }
     }
@@ -934,7 +934,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             }
             if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
             {
-                //requires keeper storage
+                /// Requires keeper storage
                 bool found = false;
                 const auto & ovals = svs->other_values();
 
@@ -987,7 +987,8 @@ void StatementGenerator::addTableColumn(
             | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
-            this->next_type_mask &= ~(set_any_datetime_precision); //datetime must have 6 digits precision
+            /// Datetime must have 6 digits precision
+            this->next_type_mask &= ~(set_any_datetime_precision);
         }
     }
     if (t.isSQLiteEngine() || t.hasSQLitePeer())
@@ -997,8 +998,8 @@ void StatementGenerator::addTableColumn(
             | allow_nested | allow_geo);
         if (t.hasSQLitePeer())
         {
-            //for bool it maps to int type, then it outputs 0 as default instead of false
-            // for decimal it prints as text
+            /// For bool it maps to int type, then it outputs 0 as default instead of false
+            /// For decimal it prints as text
             this->next_type_mask &= ~(allow_bool | allow_decimals);
         }
     }
@@ -1008,7 +1009,7 @@ void StatementGenerator::addTableColumn(
     }
     if (t.hasDatabasePeer())
     {
-        //ClickHouse's UUID sorting order is different from other databases
+        /// ClickHouse's UUID sorting order is different from other databases
         this->next_type_mask &= ~(allow_uuid);
     }
 
@@ -1331,10 +1332,10 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
         if (connections.hasMinIOConnection())
         {
             this->ids.push_back(S3);
-            //this->ids.push_back(S3Queue);
+            /// this->ids.push_back(S3Queue);
             this->ids.push_back(Hudi);
             this->ids.push_back(DeltaLake);
-            //this->ids.push_back(IcebergS3);
+            /// this->ids.push_back(IcebergS3);
         }
     }
 
@@ -1410,7 +1411,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
             { return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.is_temp; })
         || rg.nextSmallNumber() < 9)
     {
-        //create table with definition
+        /// Create table with definition
         TableDef * colsdef = ct->mutable_table_def();
 
         next.teng = getNextTableEngine(rg, true);
@@ -1525,7 +1526,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     }
     else
     {
-        //create table as
+        /// Create table as
         CreateTableAs * cta = ct->mutable_table_as();
         ExprSchemaTable * aest = cta->mutable_est();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(

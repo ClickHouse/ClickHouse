@@ -69,7 +69,7 @@ private:
                                             "]",    ",",     ".",     ";",     ":",    "\\\\", "/",    "_",    "%",   "*",
                                             "\\0",  "{}",    "[]",    "()",    "null", "NULL", "TRUE", "FALSE"};
 
-    /* use bad_utf8 on x' strings! */
+    /// Use bad_utf8 on x' strings!
     const std::vector<String> bad_utf8{
         "FF",
         "C328",
@@ -145,16 +145,16 @@ public:
 
     bool nextBool();
 
-    //range [1970-01-01, 2149-06-06]
+    /// Range [1970-01-01, 2149-06-06]
     String nextDate();
 
-    //range [1900-01-01, 2299-12-31]
+    /// Range [1900-01-01, 2299-12-31]
     String nextDate32();
 
-    //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
+    /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
     String nextDateTime();
 
-    //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
+    /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
     String nextDateTime64();
 
     template <typename T>

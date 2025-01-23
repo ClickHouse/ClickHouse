@@ -66,10 +66,10 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     const CreateTable * ct,
     std::vector<ColumnPathChain> & entries)
 {
-    //drop table if exists in other db
+    /// Drop table if exists in other db
     bool res = dropPeerTableOnRemote(t);
 
-    //create table on other server
+    /// Create table on other db
     if (res && is_clickhouse_integration)
     {
         if (t.db)
@@ -791,7 +791,8 @@ void MongoDBIntegration::documentAppendArray(
 {
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
     const uint64_t limit = nested_rows_dist(rg.generator);
-    auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
+    /// Array
+    auto array = document << cname << bsoncxx::builder::stream::open_array;
     SQLType * tp = at->subtype;
     Nullable * nl;
     VariantType * vtp;
@@ -803,19 +804,23 @@ void MongoDBIntegration::documentAppendArray(
 
         if (nopt < 31)
         {
-            array << bsoncxx::types::b_null{}; // Null Value
+            /// Null Value
+            array << bsoncxx::types::b_null{};
         }
         else if (nopt < 41)
         {
-            array << bsoncxx::oid{}; // Oid Value
+            /// Oid Value
+            array << bsoncxx::oid{};
         }
         else if (nopt < 46)
         {
-            array << bsoncxx::types::b_maxkey{}; // Max-Key Value
+            /// Max-Key Value
+            array << bsoncxx::types::b_maxkey{};
         }
         else if (nopt < 51)
         {
-            array << bsoncxx::types::b_minkey{}; // Min-Key Value
+            /// Min-Key Value
+            array << bsoncxx::types::b_minkey{};
         }
         else if (
             dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
@@ -848,7 +853,8 @@ void MongoDBIntegration::documentAppendArray(
         {
             if (vtp->subtypes.empty())
             {
-                array << bsoncxx::types::b_null{}; // Null Value
+                /// Null Value
+                array << bsoncxx::types::b_null{};
             }
             else
             {
@@ -870,19 +876,23 @@ void MongoDBIntegration::documentAppendAnyValue(
 
     if (nopt < 31)
     {
-        document << cname << bsoncxx::types::b_null{}; // Null Value
+        /// Null Value
+        document << cname << bsoncxx::types::b_null{};
     }
     else if (nopt < 41)
     {
-        document << cname << bsoncxx::oid{}; // Oid Value
+        /// Oid Value
+        document << cname << bsoncxx::oid{};
     }
     else if (nopt < 46)
     {
-        document << cname << bsoncxx::types::b_maxkey{}; // Max-Key Value
+        /// Max-Key Value
+        document << cname << bsoncxx::types::b_maxkey{};
     }
     else if (nopt < 51)
     {
-        document << cname << bsoncxx::types::b_minkey{}; // Min-Key Value
+        /// Min-Key Value
+        document << cname << bsoncxx::types::b_minkey{};
     }
     else if (
         dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
@@ -908,7 +918,8 @@ void MongoDBIntegration::documentAppendAnyValue(
     {
         if (vtp->subtypes.empty())
         {
-            document << cname << bsoncxx::types::b_null{}; // Null Value
+            /// Null Value
+            document << cname << bsoncxx::types::b_null{};
         }
         else
         {
@@ -948,17 +959,19 @@ bool MongoDBIntegration::performIntegration(
             {
                 if (miss_cols && rg.nextSmallNumber() < 4)
                 {
-                    //sometimes the column is missing
+                    /// Sometimes the column is missing
                     documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
                     assert(entry.path.size() == 1);
                 }
             }
             documents.push_back(document << bsoncxx::builder::stream::finalize);
         }
-        out_file << str_tname << std::endl; //collection name
+        /// Collection name
+        out_file << str_tname << std::endl;
         for (const auto & doc : documents)
         {
-            out_file << bsoncxx::to_json(doc.view()) << std::endl; // Write each JSON document on a new line
+            /// Write each JSON document on a new line
+            out_file << bsoncxx::to_json(doc.view()) << std::endl;
         }
         coll.insert_many(documents);
         documents.clear();
@@ -1014,7 +1027,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
         }
         return false;
     }
-    /* Loop through results */
+    /// Loop through results
     for (const struct addrinfo * p = result; p; p = p->ai_next)
     {
         if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)

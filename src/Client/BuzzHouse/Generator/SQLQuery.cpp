@@ -328,12 +328,12 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         {
             if (noption < 4)
             {
-                //1 arg
+                /// 1 arg
                 limit = gsf->mutable_expr1();
             }
             else
             {
-                //2 args
+                /// 2 args
                 if (rg.nextBool())
                 {
                     gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
@@ -345,7 +345,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
                 limit = gsf->mutable_expr2();
                 if (noption >= 8)
                 {
-                    //3 args
+                    /// 3 args
                     if (rg.nextBool())
                     {
                         gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
@@ -427,7 +427,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
     }
     if (rg.nextSmallNumber() < 4)
     {
-        //swap
+        /// Swap relations
         const SQLRelation * rel3 = rel1;
         rel1 = rel2;
         rel2 = rel3;
@@ -469,7 +469,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
 
         if (allow_using && rg.nextSmallNumber() < 3)
         {
-            //using clause
+            /// Using clause
             const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
             std::vector<std::vector<String>> cols1;
@@ -512,7 +512,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         }
         if (!generated)
         {
-            //joining clause
+            /// Joining clause
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 3) + UINT32_C(1);
             BinaryExpr * bexpr = jc->mutable_on_expr()->mutable_comp_expr()->mutable_binary_expr();
 
@@ -533,7 +533,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
     }
     else
     {
-        //random clause
+        /// Random clause
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
@@ -563,7 +563,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
     if (noption < 761)
     {
-        //binary expr
+        /// Binary expr
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
         Expr * lexpr = bexpr->mutable_lhs();
         Expr * rexpr = bexpr->mutable_rhs();
@@ -585,7 +585,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     }
     else if (noption < 901)
     {
-        //between expr
+        /// Between expr
         const uint32_t noption2 = rg.nextMediumNumber();
         ExprBetween * bexpr = expr->mutable_comp_expr()->mutable_expr_between();
         Expr * expr1 = bexpr->mutable_expr1();
@@ -614,7 +614,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     }
     else if (noption < 971)
     {
-        //is null expr
+        /// Is null expr
         ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
 
         enull->set_not_(rg.nextBool());
@@ -622,7 +622,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     }
     else if (noption < 981)
     {
-        //like expr
+        /// Like expr
         ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
         Expr * expr2 = elike->mutable_expr2();
 
@@ -641,7 +641,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     }
     else if (noption < 991)
     {
-        //in expr
+        /// In expr
         const uint32_t nclauses = rg.nextSmallNumber();
         ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
         ExprList * elist = ein->mutable_exprs();
@@ -656,7 +656,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     }
     else
     {
-        //any predicate
+        /// Any predicate
         generatePredicate(rg, expr);
     }
 }
@@ -709,12 +709,12 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
     }
     else if (noption < 10)
     {
-        //predicate
+        /// Predicate
         generatePredicate(rg, expr);
     }
     else
     {
-        //random clause
+        /// Random clause
         generateExpression(rg, expr);
     }
     this->depth--;
@@ -847,7 +847,7 @@ bool StatementGenerator::generateGroupBy(
 
         if (no_grouping_sets)
         {
-            //group list
+            /// Group list
             ExprList * elist = (!allow_settings || next_opt < 51) ? gbl->mutable_exprs()
                                                                   : ((next_opt < 71) ? gbl->mutable_rollup() : gbl->mutable_cube());
 
@@ -860,7 +860,7 @@ bool StatementGenerator::generateGroupBy(
         }
         else
         {
-            //grouping sets
+            /// Grouping sets
             bool has_global = false;
             GroupingSets * gsets = gbl->mutable_sets();
 
@@ -1267,7 +1267,7 @@ void StatementGenerator::generateSelect(
             }
         }
     }
-    // this doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
+    // This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
     if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, sel->mutable_setting_values());

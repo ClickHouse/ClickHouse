@@ -403,7 +403,7 @@ bool Client::buzzHouse()
     BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
     BuzzHouse::ExternalIntegrations ei(fc);
 
-    //set time to run, but what if a query runs for too long?
+    /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
     if (fc.time_to_run > 0)
     {
@@ -548,7 +548,7 @@ bool Client::buzzHouse()
             ei.setDefaultSettings(BuzzHouse::PeerTableDatabase::ClickHouse, defaultSettings);
         }
 
-        //Load server configurations for the fuzzer
+        /// Load server configurations for the fuzzer
         fc.loadServerConfigurations();
         loadFuzzerServerSettings(fc);
         loadFuzzerTableSettings(fc);
@@ -607,7 +607,7 @@ bool Client::buzzHouse()
                 }
                 if (correctness_oracle && nopt < (correctness_oracle + 1))
                 {
-                    //correctness test query
+                    /// Correctness test query
                     qo.generateCorrectnessTestFirstQuery(rg, gen, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
@@ -624,7 +624,7 @@ bool Client::buzzHouse()
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
-                    //test running query with different settings
+                    /// Test running query with different settings
                     qo.generateFirstSetting(rg, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
@@ -656,7 +656,7 @@ bool Client::buzzHouse()
                     const BuzzHouse::SQLTable & t
                         = rg.pickRandomlyFromVector(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
 
-                    //test in and out formats
+                    /// Test in and out formats
                     full_query2.resize(0);
                     qo.dumpTableContent(rg, gen, t, sq1);
                     BuzzHouse::SQLQueryToString(full_query2, sq1);
@@ -693,7 +693,7 @@ bool Client::buzzHouse()
                 }
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
-                    //test results with peer tables
+                    /// Test results with peer tables
                     bool has_success = false;
                     BuzzHouse::PeerQuery nquery
                         = ((!ei.hasMySQLConnection() && !ei.hasPostgreSQLConnection() && !ei.hasSQLiteConnection()) || rg.nextBool())

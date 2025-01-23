@@ -75,7 +75,6 @@ bool RandomGenerator::nextBool()
     return dist4(generator) == 2;
 }
 
-//range [1970-01-01, 2149-06-06]
 String RandomGenerator::nextDate()
 {
     const uint32_t month = months(generator);
@@ -90,7 +89,6 @@ String RandomGenerator::nextDate()
         std::to_string(day));
 }
 
-//range [1900-01-01, 2299-12-31]
 String RandomGenerator::nextDate32()
 {
     const uint32_t month = months(generator);
@@ -105,7 +103,6 @@ String RandomGenerator::nextDate32()
         std::to_string(day));
 }
 
-//range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
 String RandomGenerator::nextDateTime()
 {
     const uint32_t month = months(generator);
@@ -129,7 +126,6 @@ String RandomGenerator::nextDateTime()
         std::to_string(second));
 }
 
-//range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
 String RandomGenerator::nextDateTime64()
 {
     const uint32_t month = months(generator);
@@ -189,7 +185,7 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
     {
         ret += pick;
-        /* A few times, generate a large string */
+        /// A few times, generate a large string
         if (this->nextLargeNumber() < 4)
         {
             uint32_t i = 0;

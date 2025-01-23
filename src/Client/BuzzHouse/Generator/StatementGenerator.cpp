@@ -105,7 +105,7 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
     next.nargs = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % (rg.nextBool() ? 4 : 10)));
     if ((next.is_deterministic = rg.nextBool()))
     {
-        //if this function is later called by an oracle, then don't call it
+        /// If this function is later called by an oracle, then don't call it
         this->setAllowNotDetermistic(false);
         this->enforceFinal(true);
     }
@@ -591,7 +591,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 }
                 else if (entry.path.size() > 1)
                 {
-                    //make sure all nested entries have the same number of rows
+                    /// Make sure all nested entries have the same number of rows
                     ArrayType atp(entry.getBottomType());
 
                     buf += atp.appendRandomRawValue(rg, *this, next_nested_rows);
@@ -1103,7 +1103,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
 
                         if (rg.nextSmallNumber() < 9)
                         {
-                            //set constant value
+                            /// Set constant value
                             String buf;
                             LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1820,7 +1820,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     const uint32_t flush_logs = 3;
     const uint32_t reload_config = 3;
     const uint32_t reload_users = 3;
-    //for merge trees
+    /// For merge trees
     const uint32_t stop_merges = 0 * has_merge_tree;
     const uint32_t start_merges = 0 * has_merge_tree;
     const uint32_t stop_ttl_merges = 8 * has_merge_tree;
@@ -1828,7 +1828,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     const uint32_t stop_moves = 8 * has_merge_tree;
     const uint32_t start_moves = 8 * has_merge_tree;
     const uint32_t wait_loading_parts = 8 * has_merge_tree;
-    //for replicated merge trees
+    /// For replicated merge trees
     const uint32_t stop_fetches = 8 * has_merge_tree;
     const uint32_t start_fetches = 8 * has_merge_tree;
     const uint32_t stop_replicated_sends = 8 * has_merge_tree;
@@ -1844,12 +1844,12 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     const uint32_t restart_replicas = 3;
     const uint32_t drop_filesystem_cache = 3;
     const uint32_t sync_file_cache = 1;
-    //for merge trees
+    /// For merge trees
     const uint32_t load_pks = 3;
     const uint32_t load_pk = 8 * has_merge_tree;
     const uint32_t unload_pks = 3;
     const uint32_t unload_pk = 8 * has_merge_tree;
-    //for refreshable views
+    /// for refreshable views
     const uint32_t refresh_views = 3;
     const uint32_t refresh_view = 8 * has_refreshable_view;
     const uint32_t stop_views = 3;

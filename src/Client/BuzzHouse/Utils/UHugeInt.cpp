@@ -185,12 +185,12 @@ static UHugeInt multiply(UHugeInt lhs, UHugeInt rhs)
     result.upper = uint64_t(result_u128 >> 64);
     result.lower = uint64_t(result_u128 & 0xffffffffffffffff);
 #else
-    // split values into 4 32-bit parts
+    /// Split values into 4 32-bit parts
     uint64_t top[4] = {lhs.upper >> 32, lhs.upper & 0xffffffff, lhs.lower >> 32, lhs.lower & 0xffffffff};
     uint64_t bottom[4] = {rhs.upper >> 32, rhs.upper & 0xffffffff, rhs.lower >> 32, rhs.lower & 0xffffffff};
     uint64_t products[4][4];
 
-    // multiply each component of the values
+    /// Multiply each component of the values
     for (int y = 3; y > -1; y--)
     {
         for (int x = 3; x > -1; x--)
@@ -199,36 +199,36 @@ static UHugeInt multiply(UHugeInt lhs, UHugeInt rhs)
         }
     }
 
-    // first row
+    /// First row
     uint64_t fourth32 = (products[0][3] & 0xffffffff);
     uint64_t third32 = (products[0][2] & 0xffffffff) + (products[0][3] >> 32);
     uint64_t second32 = (products[0][1] & 0xffffffff) + (products[0][2] >> 32);
     uint64_t first32 = (products[0][0] & 0xffffffff) + (products[0][1] >> 32);
 
-    // second row
+    /// Second row
     third32 += (products[1][3] & 0xffffffff);
     second32 += (products[1][2] & 0xffffffff) + (products[1][3] >> 32);
     first32 += (products[1][1] & 0xffffffff) + (products[1][2] >> 32);
 
-    // third row
+    /// Third row
     second32 += (products[2][3] & 0xffffffff);
     first32 += (products[2][2] & 0xffffffff) + (products[2][3] >> 32);
 
-    // fourth row
+    /// Fourth row
     first32 += (products[3][3] & 0xffffffff);
 
-    // move carry to next digit
+    /// Move carry to next digit
     third32 += fourth32 >> 32;
     second32 += third32 >> 32;
     first32 += second32 >> 32;
 
-    // remove carry from current digit
+    //. Remove carry from current digit
     fourth32 &= 0xffffffff;
     third32 &= 0xffffffff;
     second32 &= 0xffffffff;
     first32 &= 0xffffffff;
 
-    // combine components
+    /// Combine components
     result.lower = (third32 << 32) | fourth32;
     result.upper = (first32 << 32) | second32;
 #endif
@@ -411,7 +411,7 @@ String UHugeInt::toString() const
         input = divMod(input, UHugeInt(10), remainder);
         res.insert(0, String(1, static_cast<char>('0' + remainder.lower)));
     }
-    // if empty then value is zero
+    /// If empty then value is zero
     return res.empty() ? "0" : res;
 }
 

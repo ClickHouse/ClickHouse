@@ -157,7 +157,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
 
         if (noption < 21)
         {
-            //hugeint
+            /// Hugeint
             HugeIntLiteral * huge = il->mutable_huge_lit();
 
             huge->set_upper(rg.nextRandomInt64());
@@ -169,7 +169,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         }
         else if (noption < 41)
         {
-            //uhugeint
+            /// UHugeint
             UHugeIntLiteral * uhuge = il->mutable_uhuge_lit();
 
             uhuge->set_upper(rg.nextRandomUInt64());
@@ -556,7 +556,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     const uint32_t nopt = next_dist(rg.generator);
     if (!nallow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
-        //aggregate
+        /// Aggregate
         const uint32_t next_off
             = rg.nextSmallNumber() < 2 ? (rg.nextLargeNumber() % 5) : (nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0));
         const CHAggregate & agg = CHAggrs[next_off];
@@ -655,7 +655,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     }
     else
     {
-        //function
+        /// Function
         uint32_t n_lambda = 0;
         uint32_t min_args = 0;
         uint32_t max_args = 0;
@@ -665,7 +665,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             && (this->allow_not_deterministic || collectionHas<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }))
             && rg.nextSmallNumber() < 3)
         {
-            //use a function from the user
+            /// Use a function from the user
             const std::reference_wrapper<const SQLFunction> & func = this->allow_not_deterministic
                 ? std::ref<const SQLFunction>(rg.pickValueRandomlyFromMap(this->functions))
                 : rg.pickRandomlyFromVector(filterCollection<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }));
@@ -675,7 +675,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         }
         else
         {
-            //use a default catalog function
+            /// Use a default catalog function
             const CHFunction & func = rg.nextMediumNumber() < 5 ? materialize : CHFuncs[nopt];
             const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
 
@@ -715,9 +715,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     this->width -= generated_params;
 }
 
-/*
-Don't forget to clear levels!
-*/
+/// Don't forget to clear levels!
 void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
 {
     const size_t funcs_size = CHTableFuncs.size();
@@ -952,7 +950,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else if (!this->levels[this->current_level].allow_window_funcs || this->levels[this->current_level].inside_aggregate || noption < 951)
     {
-        //func
+        /// Func
         const bool allow_aggr = !this->levels[this->current_level].inside_aggregate && this->levels[this->current_level].allow_aggregates
             && (!this->levels[this->current_level].gcols.empty() || this->levels[this->current_level].global_aggregate);
 
@@ -962,7 +960,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        //window func
+        /// Window func
         WindowFuncCall * sfc = expr->mutable_comp_expr()->mutable_window_call();
         WindowDefn * wdf = sfc->mutable_win_defn();
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;

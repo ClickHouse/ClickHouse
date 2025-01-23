@@ -8,7 +8,7 @@
 namespace BuzzHouse
 {
 
-// Forward declaration to allow conversion between hugeint and uhugeint
+/// Forward declaration to allow conversion between hugeint and uhugeint
 struct HugeInt;
 
 struct UHugeInt
@@ -27,7 +27,7 @@ public:
 
     String toString() const;
 
-    // comparison operators
+    /// Comparison operators
     bool operator==(const UHugeInt & rhs) const;
     bool operator!=(const UHugeInt & rhs) const;
     bool operator<=(const UHugeInt & rhs) const;
@@ -35,7 +35,7 @@ public:
     bool operator>(const UHugeInt & rhs) const;
     bool operator>=(const UHugeInt & rhs) const;
 
-    // arithmetic operators
+    /// Arithmetic operators
     UHugeInt operator+(const UHugeInt & rhs) const;
     UHugeInt operator-(const UHugeInt & rhs) const;
     UHugeInt operator*(const UHugeInt & rhs) const;
@@ -43,7 +43,7 @@ public:
     UHugeInt operator%(const UHugeInt & rhs) const;
     UHugeInt operator-() const;
 
-    // bitwise operators
+    /// Bitwise operators
     UHugeInt operator>>(const UHugeInt & rhs) const;
     UHugeInt operator<<(const UHugeInt & rhs) const;
     UHugeInt operator&(const UHugeInt & rhs) const;
@@ -51,7 +51,7 @@ public:
     UHugeInt operator^(const UHugeInt & rhs) const;
     UHugeInt operator~() const;
 
-    // in-place operators
+    /// In-place operators
     UHugeInt & operator+=(const UHugeInt & rhs);
     UHugeInt & operator-=(const UHugeInt & rhs);
     UHugeInt & operator*=(const UHugeInt & rhs);
@@ -63,7 +63,7 @@ public:
     UHugeInt & operator|=(const UHugeInt & rhs);
     UHugeInt & operator^=(const UHugeInt & rhs);
 
-    // boolean operators
+    /// Boolean operators
     explicit operator bool() const;
     bool operator!() const;
 };

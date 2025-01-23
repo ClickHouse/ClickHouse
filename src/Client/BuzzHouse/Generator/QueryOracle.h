@@ -42,22 +42,22 @@ public:
     void processFirstOracleQueryResult(bool success, ExternalIntegrations & ei);
     void processSecondOracleQueryResult(bool success, ExternalIntegrations & ei, const String & oracle_name);
 
-    /* Correctness query oracle */
+    /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
-    /* Dump and read table oracle */
+    /// Dump and read table oracle
     void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
     void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
     void generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
 
-    /* Run query with different settings oracle */
+    /// Run query with different settings oracle
     void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
     void generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
-    /* Replace query with peer tables */
+    /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen) const;
     void optimizePeerTables(const StatementGenerator & gen) const;
     void replaceQueryWithTablePeers(

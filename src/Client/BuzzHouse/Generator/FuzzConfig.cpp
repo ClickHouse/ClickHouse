@@ -279,7 +279,7 @@ FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partit
     const String & detached_tbl = detached ? "detached_parts" : "parts";
     const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
 
-    //system.parts doesn't support sampling, so pick up a random part with a window function
+    /// The system.parts table doesn't support sampling, so pick up a random part with a window function
     processServerQuery(fmt::format(
         "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
         "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE {}\"table\" = "

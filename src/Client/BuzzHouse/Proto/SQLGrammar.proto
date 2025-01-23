@@ -1773,7 +1773,7 @@ enum BinaryOperator {
     BINOP_LEGR = 8;
     BINOP_AND = 9;
     BINOP_OR = 10;
-    BINOP_CONCAT = 11;    // double pipe
+    BINOP_CONCAT = 11;
     BINOP_STAR = 12;
     BINOP_SLASH = 13;
     BINOP_PERCENT = 14;
@@ -1908,7 +1908,7 @@ message SQLFuncCall {
         OrNull = 7;
         ArgMin = 8;
         ArgMax = 9;
-        //Not deterministic maybe?
+        /// Not deterministic maybe?
         SimpleState = 10;
         State = 11;
         Merge = 12;
@@ -2051,7 +2051,7 @@ message IntervalExpr {
     required Expr expr = 2;
 }
 
-// Separate this out to inflate the probability of having a literal value
+/// Separate this out to inflate the probability of having a literal value
 message ComplicatedExpr {
     oneof complicated_expr_oneof {
         ExprSchemaTableColumn expr_stc = 1;
@@ -2462,7 +2462,8 @@ message TableOrSubquery {
 }
 
 message JoinedQuery {
-    repeated TableOrSubquery tos_list = 1;    // if empty, use the join clause
+    /// If empty, use the join clause
+    repeated TableOrSubquery tos_list = 1;
     required JoinClause join_clause = 2;
 }
 
@@ -2551,7 +2552,6 @@ message SelectStatementCore {
     optional WhereStatement pre_where = 4;
     optional WhereStatement where = 5;
     optional GroupByStatement groupby = 6;
-    //optional WindowStatement window = 6;
     optional OrderByStatement orderby = 7;
     oneof limit_oneof {
         LimitStatement limit = 8;
@@ -2678,7 +2678,8 @@ message EnumDefValue {
 }
 
 message EnumDef {
-    optional bool bits = 1; //false for 8 or true for 16
+    /// False for 8 or true for 16
+    optional bool bits = 1;
     required EnumDefValue first_value = 2;
     repeated EnumDefValue other_values = 3;
 }
@@ -3342,7 +3343,7 @@ message MovePartition {
 
 message AlterTableItem {
     oneof alter_oneof {
-        //for tables
+        /// For tables
         HeavyDelete del = 1;
         Update update = 2;
         TableKey order = 3;
@@ -3390,7 +3391,7 @@ message AlterTableItem {
         string comment = 45;
         TTLExpr modify_ttl  = 46;
         bool remove_ttl = 47;
-        //for views
+        /// For views
         Select modify_query = 48;
         RefreshableView refresh = 49;
     }
@@ -3442,7 +3443,8 @@ message SystemCommand {
         bool drop_uncompressed_cache = 9;
         bool drop_compiled_expression_cache = 10;
         bool drop_query_cache = 11;
-        bool drop_format_schema_cache = 12; //bool is used here
+        /// The bool value is used here
+        bool drop_format_schema_cache = 12;
         bool flush_logs = 13;
         bool reload_config = 14;
         bool reload_users = 15;

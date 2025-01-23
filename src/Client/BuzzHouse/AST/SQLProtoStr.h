@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 
-/* Protobuf generated files give lots of warnings, disable them */
+/// Protobuf generated files give lots of warnings, disable them
 #if defined(__clang__)
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Weverything"

@@ -1244,7 +1244,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
 
 std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg) const
 {
-    const uint32_t nopt = (rg.nextSmallNumber() % 3) + 1; //1 to 3
+    const uint32_t nopt = (rg.nextSmallNumber() % 3) + 1;
     return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
 }
 
@@ -1647,7 +1647,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
 
     if (non_nullable_type && nopt < (non_nullable_type + 1))
     {
-        //non nullable
+        /// Non nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         SQLType * res
             = bottomType(rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
@@ -1655,7 +1655,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else if (nullable_type && nopt < (non_nullable_type + nullable_type + 1))
     {
-        //nullable
+        /// Nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         SQLType * res = new Nullable(bottomType(
             rg,
@@ -1666,7 +1666,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))
     {
-        //array
+        /// Array
         TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
 
         this->depth++;
@@ -1676,7 +1676,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else if (map_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + 1))
     {
-        //map
+        /// Map
         MapTypeDef * mt = tp ? tp->mutable_map() : nullptr;
 
         this->depth++;
@@ -1690,7 +1690,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else if (tuple_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + 1))
     {
-        //tuple
+        /// Tuple
         std::vector<SubType> subtypes;
         const bool with_names = rg.nextBool();
         TupleTypeDef * tt = tp ? tp->mutable_tuple() : nullptr;
@@ -1722,7 +1722,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else if (variant_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + 1))
     {
-        //variant
+        /// Variant
         std::vector<SQLType *> subtypes;
         TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
         const uint32_t ncols
@@ -1743,7 +1743,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     else if (
         nested_type && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + 1))
     {
-        //nested
+        /// Nested
         std::vector<NestedSubType> subtypes;
         NestedTypeDef * nt = tp ? tp->mutable_nested() : nullptr;
         const uint32_t ncols = (rg.nextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
@@ -1769,7 +1769,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         geo_type
         && nopt < (nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type + 1))
     {
-        //geo
+        /// Geo
         const GeoTypes gt = static_cast<GeoTypes>((rg.nextRandomUInt32() % static_cast<uint32_t>(GeoTypes_MAX)) + 1);
 
         if (tp)
@@ -1931,13 +1931,16 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
         {
             switch (jopt(rg.generator))
             {
-                case 1: //object
+                case 1:
+                    /// Object
                     ret += strBuildJSON(rg, jdepth - 1, next_width);
                     break;
-                case 2: //array
+                case 2:
+                    /// Array
                     ret += strBuildJSONArray(rg, jdepth - 1, next_width);
                     break;
-                case 3: //others
+                case 3:
+                    /// Others
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
@@ -1970,21 +1973,25 @@ String strBuildJSONElement(RandomGenerator & rg)
         case 3:
             ret = "null";
             break;
-        case 4: //large number
+        case 4:
+            /// Large number
             ret = std::to_string(rg.nextRandomInt64());
             break;
-        case 5: //large unsigned number
+        case 5:
+            /// Large unsigned number
             ret = std::to_string(rg.nextRandomUInt64());
             break;
         case 6:
         case 7:
-        case 8: { //small number
+        case 8: {
+            /// Small number
             std::uniform_int_distribution<int> numbers(-1000, 1000);
             ret = std::to_string(numbers(rg.generator));
         }
         break;
         case 9:
-        case 10: { //decimal
+        case 10: {
+            /// Decimal
             std::uniform_int_distribution<uint32_t> next_dist(0, 8);
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
@@ -1994,28 +2001,36 @@ String strBuildJSONElement(RandomGenerator & rg)
         break;
         case 11:
         case 12:
-        case 13: //string
+        case 13:
+            /// String
             ret = rg.nextString("\"", false, rg.nextRandomUInt32() % 1009);
             break;
-        case 14: //date
+        case 14:
+            /// Date
             ret = '"' + rg.nextDate() + '"';
             break;
-        case 15: //date32
+        case 15:
+            /// Date32
             ret = '"' + rg.nextDate32() + '"';
             break;
-        case 16: //datetime
+        case 16:
+            /// Datetime
             ret = '"' + rg.nextDateTime() + '"';
             break;
-        case 17: //datetime64
+        case 17:
+            /// Datetime64
             ret = '"' + rg.nextDateTime64() + '"';
             break;
-        case 18: //uuid
+        case 18:
+            /// UUID
             ret = '"' + rg.nextUUID() + '"';
             break;
-        case 19: //ipv4
+        case 19:
+            /// IPv4
             ret = '"' + rg.nextIPv4() + '"';
             break;
-        case 20: //ipv6
+        case 20:
+            /// IPv6
             ret = '"' + rg.nextIPv6() + '"';
             break;
         default:
@@ -2046,13 +2061,16 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
             ret += "\":";
             switch (jopt(rg.generator))
             {
-                case 1: //object
+                case 1:
+                    /// Object
                     ret += strBuildJSON(rg, jdepth - 1, jwidth);
                     break;
-                case 2: //array
+                case 2:
+                    /// Array
                     ret += strBuildJSONArray(rg, jdepth - 1, jwidth);
                     break;
-                case 3: //others
+                case 3:
+                    /// Others
                     ret += strBuildJSONElement(rg);
                     break;
                 default:

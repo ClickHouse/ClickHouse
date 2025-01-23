@@ -1586,8 +1586,6 @@ CONV_FN(Expr, expr)
     }
 }
 
-// ~~~~SELECT~~~~
-
 CONV_FN(ResultColumn, rc)
 {
     if (rc.has_etc())

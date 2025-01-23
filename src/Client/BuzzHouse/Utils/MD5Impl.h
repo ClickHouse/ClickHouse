@@ -11,7 +11,8 @@ namespace BuzzHouse
 class MD5Impl
 {
 private:
-    static const constexpr size_t input_buffer_size = 8192; // 8 KB buffer
+    /// 8 KB buffer
+    static const constexpr size_t input_buffer_size = 8192;
 
     Poco::MD5Engine ctx;
     uint8_t input_buffer[input_buffer_size];

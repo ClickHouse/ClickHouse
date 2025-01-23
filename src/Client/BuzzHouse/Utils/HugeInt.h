@@ -8,7 +8,7 @@
 namespace BuzzHouse
 {
 
-// Forward declaration to allow conversion between hugeint and uhugeint
+/// Forward declaration to allow conversion between hugeint and uhugeint
 struct UHugeInt;
 
 struct HugeInt
@@ -27,7 +27,7 @@ public:
 
     String toString() const;
 
-    // comparison operators
+    /// Comparison operators
     bool operator==(const HugeInt & rhs) const;
     bool operator!=(const HugeInt & rhs) const;
     bool operator<=(const HugeInt & rhs) const;
@@ -35,7 +35,7 @@ public:
     bool operator>(const HugeInt & rhs) const;
     bool operator>=(const HugeInt & rhs) const;
 
-    // arithmetic operators
+    /// Arithmetic operators
     HugeInt operator+(const HugeInt & rhs) const;
     HugeInt operator-(const HugeInt & rhs) const;
     HugeInt operator*(const HugeInt & rhs) const;
@@ -43,7 +43,7 @@ public:
     HugeInt operator%(const HugeInt & rhs) const;
     HugeInt operator-() const;
 
-    // bitwise operators
+    /// Bitwise operators
     HugeInt operator>>(const HugeInt & rhs) const;
     HugeInt operator<<(const HugeInt & rhs) const;
     HugeInt operator&(const HugeInt & rhs) const;
@@ -51,7 +51,7 @@ public:
     HugeInt operator^(const HugeInt & rhs) const;
     HugeInt operator~() const;
 
-    // in-place operators
+    /// In-place operators
     HugeInt & operator+=(const HugeInt & rhs);
     HugeInt & operator-=(const HugeInt & rhs);
     HugeInt & operator*=(const HugeInt & rhs);
@@ -63,7 +63,7 @@ public:
     HugeInt & operator|=(const HugeInt & rhs);
     HugeInt & operator^=(const HugeInt & rhs);
 
-    // boolean operators
+    /// Boolean operators
     explicit operator bool() const;
     bool operator!() const;
 };
