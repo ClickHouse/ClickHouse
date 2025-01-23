@@ -103,7 +103,7 @@ std::string generateCSR(std::string pkey, std::vector<std::string> domain_names)
         std::string other_domain_names;
         for (auto it = domain_names.begin() + 1; it != domain_names.end(); ++it)
         {
-            if (it->size() == 0)
+            if (it->empty())
                 continue;
             other_domain_names += fmt::format("DNS:{}, ", *it);
         }
@@ -680,7 +680,8 @@ ACMEOrder ACMEClient::describeOrder(const std::string & order_url)
     LOG_DEBUG(log, "DescribeOrder response: {}", read_buffer);
 
     auto status = json->getValue<std::string>("status");
-    auto expires = json->getValue<std::string>("expires");
+    /// TODO check expiration
+    // auto expires = json->getValue<std::string>("expires");
 
     auto identifiers = json->getArray("identifiers");
     auto authorizations = json->getArray("authorizations");
@@ -741,7 +742,7 @@ void ACMEClient::processAuthorization(const std::string & auth_url)
 
     for (const auto & challenge : *challenges)
     {
-        auto ch = challenge.extract<Poco::JSON::Object::Ptr>();
+        const auto & ch = challenge.extract<Poco::JSON::Object::Ptr>();
 
         if (ch->has("validated"))
         {
