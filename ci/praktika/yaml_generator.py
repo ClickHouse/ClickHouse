@@ -108,7 +108,7 @@ jobs:
           rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
           mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.
+          export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
           cat > {WORKFLOW_STATUS_FILE} << 'EOF'
           ${{{{ toJson(needs) }}}}
@@ -320,6 +320,7 @@ class PullRequestPushYamlGen:
                 TEMP_DIR=Settings.TEMP_DIR,
                 INPUT_DIR=Settings.INPUT_DIR,
                 OUTPUT_DIR=Settings.OUTPUT_DIR,
+                PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)
 

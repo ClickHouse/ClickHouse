@@ -65,14 +65,22 @@ class Result(MetaClasses.Serializable):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
-            Utils.raise_with_error(
-                f"Either .results ({results}) or .status ({status}) must be provided"
-            )
+            status = Result.Status.ERROR
         if not name:
             name = _Environment.get().JOB_NAME
             if not name:
                 print("ERROR: Failed to guess the .name")
                 raise
+        if not stopwatch:
+            start_time = Result.from_fs(name=name).start_time
+            duration = (
+                datetime.datetime.now().timestamp()
+                - Result.from_fs(name=name).start_time
+            )
+        else:
+            start_time = stopwatch.start_time
+            duration = stopwatch.duration
+
         result_status = status or Result.Status.SUCCESS
         infos = []
         if info:
@@ -102,8 +110,8 @@ class Result(MetaClasses.Serializable):
         return Result(
             name=name,
             status=result_status,
-            start_time=stopwatch.start_time if stopwatch else None,
-            duration=stopwatch.duration if stopwatch else None,
+            start_time=start_time,
+            duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],

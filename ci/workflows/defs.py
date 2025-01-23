@@ -309,6 +309,8 @@ class JobNames:
     ASTFUZZER = "AST Fuzzer"
     BUZZHOUSE = "BuzzHouse"
 
+    BUILDOCKER = "BuildDockers"
+
 
 class ToolSet:
     COMPILER_C = "clang-19"
@@ -1102,4 +1104,48 @@ class Jobs:
             [ArtifactNames.CH_AMD_MSAN],
             [ArtifactNames.CH_AMD_UBSAN],
         ],
+    )
+
+
+class LegacyJobs:
+    docker_build_jobs = Job.Config(
+        name=JobNames.BUILDOCKER,
+        runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+        command="python3 ./tests/ci/docker_tests_images.py --arch {PARAMETER}",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./tests/ci/docker_tests_images.py", "./docker"],
+        ),
+    ).parametrize(
+        parameter=["arm", "amd", "multi"],
+        runs_on=[
+            [RunnerLabels.STYLE_CHECK_ARM],
+            [RunnerLabels.STYLE_CHECK_AMD],
+            [RunnerLabels.STYLE_CHECK_ARM],
+        ],
+        requires=[
+            [],
+            [],
+            [JobNames.BUILDOCKER + " (amd)", JobNames.BUILDOCKER + " (arm)"],
+        ],
+    )
+    style_check = Job.Config(
+        name=JobNames.STYLE_CHECK,
+        runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+        command="cd ./tests/ci && python3 style_check.py --no-push",
+    )
+    fast_test = Job.Config(
+        name=JobNames.FAST_TEST,
+        runs_on=[RunnerLabels.BUILDER_AMD],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/queries/0_stateless/",
+                "./tests/docker_scripts/",
+                "./tests/config/",
+                "./tests/clickhouse-test",
+                "./tests/ci/fast_test_check.py",
+                "./docker",
+            ]
+        ),
+        timeout=2400,
+        command="cd ./tests/ci && python3 fast_test_check.py",
     )

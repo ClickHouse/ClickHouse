@@ -23,14 +23,14 @@ from typing import (
 
 from build_download_helper import APIException, get_gh_api
 from ci_config import CI
-from ci_utils import Shell
+from ci_utils import Shell, cd
 from env_helper import (
     GITHUB_JOB,
     GITHUB_REPOSITORY,
     GITHUB_RUN_ID,
     GITHUB_RUN_URL,
     GITHUB_WORKSPACE,
-    REPORT_PATH,
+    REPORT_PATH, REPO_COPY,
 )
 
 logger = logging.getLogger(__name__)
@@ -489,7 +489,7 @@ class JobReport:
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
-        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
+        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING), f"Invalid status [{self.status}]"
 
     @classmethod
     def exist(cls) -> bool:
@@ -525,7 +525,8 @@ class JobReport:
         # temporary WA to ease integration with praktika
         check_name = os.getenv("JOB_NAME", "")
         if check_name:
-            self.to_praktika_result(job_name=check_name).dump()
+            with cd(REPO_COPY):
+                self.to_praktika_result(job_name=check_name).dump()
 
         return self
 

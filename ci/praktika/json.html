@@ -739,7 +739,7 @@
                     const runLink = JSON.parse(localStorage.getItem('run_link'));
                     const commitLink = JSON.parse(localStorage.getItem('commit_link'));
                     if (prLink) createLinkElement(prLink, 'PR', footerRight);
-                    if (commitLink) createLinkElement(commitLink, 'PR', footerRight);
+                    if (commitLink && PR === 0) createLinkElement(commitLink, 'Commit', footerRight);
                     if (runLink) createLinkElement(runLink, 'Run', footerRight);
                 }
 

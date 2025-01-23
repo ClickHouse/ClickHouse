@@ -26,3 +26,6 @@ SECRET_CI_DB_USER = "clickhouse-test-stat-login"
 SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
+
+DISABLED_WORKFLOWS = ["pull_request.py"]
+PYTHONPATHS = ""

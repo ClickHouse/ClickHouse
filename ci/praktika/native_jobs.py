@@ -1,4 +1,6 @@
+import json
 import sys
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -216,18 +218,6 @@ def _config_workflow(workflow: Workflow.Config, job_name):
     info_lines = []
     job_status = Result.Status.SUCCESS
 
-    env = _Environment.get()
-    workflow_config = RunConfig(
-        name=workflow.name,
-        digest_jobs={},
-        digest_dockers={},
-        sha=env.SHA,
-        cache_success=[],
-        cache_success_base64=[],
-        cache_artifacts={},
-        cache_jobs={},
-    ).dump()
-
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
@@ -268,6 +258,27 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             job_status = Result.Status.ERROR
             info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
+
+    if Path(Settings.CUSTOM_DATA_FILE).is_file():
+        with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+            custom_data = json.load(f)
+        print(f"Custom data: [{custom_data}]")
+    else:
+        custom_data = {}
+        print(f"Custom data has not been provided")
+
+    env = _Environment.get()
+    workflow_config = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={},
+        sha=env.SHA,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        custom_data=custom_data,
+    ).dump()
 
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"

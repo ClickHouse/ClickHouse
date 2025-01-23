@@ -60,6 +60,7 @@ class Runner:
             cache_success_base64=[],
             cache_artifacts={},
             cache_jobs={},
+            custom_data={},
         )
         for docker in workflow.dockers:
             workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
@@ -90,6 +91,7 @@ class Runner:
         env = _Environment.from_env()
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
+        os.environ["CHECK_NAME"] = job.name
         env.dump()
         print(env)
 
@@ -165,10 +167,12 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if workflow.dockers and job.name != Settings.CI_CONFIG_JOB_NAME:
+        if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).digest_dockers
+                    RunConfig.from_fs(workflow.name).custom_data[
+                        "docker_legacy_digests"
+                    ]
                 )
             except Exception as e:
                 traceback.print_exc()

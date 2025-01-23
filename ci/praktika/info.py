@@ -1,7 +1,11 @@
 import json
+import os
 import urllib
 from pathlib import Path
 from typing import Optional
+
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
 
 
 class Info:
@@ -11,6 +15,7 @@ class Info:
 
         self.env = _Environment.get()
 
+
     @property
     def sha(self):
         return self.env.SHA
@@ -18,6 +23,10 @@ class Info:
     @property
     def pr_number(self):
         return self.env.PR_NUMBER
+
+    @property
+    def workflow_name(self):
+        return self.env.WORKFLOW_NAME
 
     @property
     def pr_body(self):
@@ -99,3 +108,20 @@ class Info:
         except Exception as e:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
+
+    def store_custom_data(self, key, value):
+        assert (
+            self.env.JOB_NAME == "Config Workflow"
+        ), "Custom data can be stored only in Config Workflow Job"
+        custom_data = {key: value}
+        if Path(Settings.CUSTOM_DATA_FILE).is_file():
+            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+                custom_data = json.load(f)
+                custom_data[key] = value
+        with open(Settings.CUSTOM_DATA_FILE, "w", encoding="utf8") as f:
+            json.dump(custom_data, f, indent=4)
+
+    def get_custom_data(self, key=None):
+        if key:
+            return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data.get(key, None)
+        return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
