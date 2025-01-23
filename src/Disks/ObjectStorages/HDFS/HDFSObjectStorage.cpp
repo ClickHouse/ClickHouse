@@ -168,7 +168,8 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) co
     return metadata;
 }
 
-HDFSFileInfo HDFSObjectStorage::hdfsListDirectoryWrapper(const std::string & path) const {
+HDFSFileInfo HDFSObjectStorage::hdfsListDirectoryWrapper(const std::string & path) const
+{
     HDFSFileInfo ls;
 
     ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
