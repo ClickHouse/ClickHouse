@@ -12,6 +12,10 @@ class Info:
         self.env = _Environment.get()
 
     @property
+    def sha(self):
+        return self.env.SHA
+
+    @property
     def pr_body(self):
         return self.env.PR_BODY
 
@@ -46,6 +50,18 @@ class Info:
     @property
     def pr_labels(self):
         return self.env.PR_LABELS
+
+    @property
+    def instance_type(self):
+        return self.env.INSTANCE_TYPE
+
+    @property
+    def instance_id(self):
+        return self.env.INSTANCE_ID
+
+    @property
+    def is_local_run(self):
+        return self.env.LOCAL_RUN
 
     def get_report_url(self, latest=False):
         from praktika.settings import Settings

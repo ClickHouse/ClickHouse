@@ -1,10 +1,14 @@
 import argparse
 import os
+import traceback
+from pathlib import Path
 
+from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.log_cluster import LogClusterBuildProfileQueries
 from ci.workflows.defs import BuildTypes, CIFiles, ToolSet
 from ci.workflows.pull_request import S3_BUILDS_BUCKET
 
@@ -60,6 +64,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     BUILD = "build"
     PACKAGE = "package"
     UNIT = "unit"
+    UPLOAD_PROFILE_DATA = "profile"
 
 
 def parse_args():
@@ -227,7 +232,64 @@ def main():
 
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    profile_result = None
+    if (
+        res
+        and JobStages.UPLOAD_PROFILE_DATA in stages
+        and "release" in build_type
+        and not Info().is_local_run
+    ):
+        sw_ = Utils.Stopwatch()
+        print("Prepare build profile data")
+        profiles_dir = Path(temp_dir) / "profiles_source"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        is_success = True
+        try:
+            Shell.check(
+                "./utils/prepare-time-trace/prepare-time-trace.sh "
+                f"{build_dir} {profiles_dir.absolute()}",
+                strict=True,
+                verbose=True,
+            )
+            profile_data_file = Path(temp_dir) / "profile.json"
+            with open(profile_data_file, "wb") as profile_fd:
+                for profile_source in profiles_dir.iterdir():
+                    if profile_source.name not in (
+                        "binary_sizes.txt",
+                        "binary_symbols.txt",
+                    ):
+                        with open(profiles_dir / profile_source, "rb") as ps_fd:
+                            profile_fd.write(ps_fd.read())
+            LogClusterBuildProfileQueries().insert_profile_data(
+                build_name=build_type,
+                start_time=stop_watch.start_time,
+                file=profile_data_file,
+            )
+            LogClusterBuildProfileQueries().insert_build_size_data(
+                build_name=build_type,
+                start_time=stop_watch.start_time,
+                file=profiles_dir / "binary_sizes.txt",
+            )
+            LogClusterBuildProfileQueries().insert_binary_symbol_data(
+                build_name=build_type,
+                start_time=stop_watch.start_time,
+                file=profiles_dir / "binary_symbols.txt",
+            )
+        except Exception as e:
+            is_success = False
+            traceback.print_exc()
+            print(f"ERROR: Failed to upload build profile data. ex: [{e}]")
+        profile_result = Result.create_from(
+            name="Build Profile", status=is_success, stopwatch=sw_
+        )
+
+    R = Result.create_from(results=results, stopwatch=stop_watch)
+
+    if profile_result:
+        # append profile sub result after R is created to not affect overall job status
+        R.results.append(profile_result)
+
+    R.complete_job()
 
 
 if __name__ == "__main__":
