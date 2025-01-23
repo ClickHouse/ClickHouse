@@ -371,7 +371,7 @@ public:
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
-    String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & fc, uint32_t limit) const;
+    String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, uint32_t limit) const;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::ARRAY; }
 
