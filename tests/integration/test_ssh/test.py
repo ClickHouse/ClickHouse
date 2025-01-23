@@ -88,7 +88,7 @@ def test_no_selects_into_outfile(started_cluster):
 
 def test_no_inserts_from_infile(started_cluster):
     # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
-    ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "INSERT INTO function null(\'x UInt64\') FROM INFILE \'/etc/passwd\';"'
+    ssh_command = f"ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv=\"max_threads=9999 format=JSONEachRow\" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 \"INSERT INTO function null('x UInt64') FROM INFILE '/etc/passwd';\""
 
     completed_process = subprocess.run(
         ssh_command,
