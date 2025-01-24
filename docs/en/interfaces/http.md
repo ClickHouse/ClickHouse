@@ -24,6 +24,11 @@ Sometimes, `curl` command is not available on user operating systems. On Ubuntu 
 
 Web UI can be accessed here: `http://localhost:8123/play`.
 
+The Web UI supports displaying progress during query runtime, query cancellation, and streaming results.
+It has a secret feature for displaying charts and graphs for query pipelines.
+
+Web UI is designed for professionals like you.
+
 ![Web UI](../images/play.png)
 
 In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
@@ -283,7 +288,9 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section “SET”.
 
-Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
+## Using ClickHouse sessions in the HTTP protocol 
+
+You can also use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout (in seconds), modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
 You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#send_progress_in_http_headers). Example of the header sequence:
 

@@ -10,7 +10,7 @@ keywords : [TabSeparatedWithNamesAndTypes]
 
 ## Description
 
-Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
+Differs from the [`TabSeparated`](./TabSeparated.md) format in that the column names are written to the first row, while the column types are in the second row.
 
 :::note
 - If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,

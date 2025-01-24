@@ -166,6 +166,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
+    extern const SettingsBool apply_mutations_on_fly;
 }
 
 namespace ErrorCodes
@@ -223,16 +224,21 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (!comment.empty())
             comment = fmt::format(" (comment: {})", comment);
 
+        String line_info;
+        if (client_info.script_line_number)
+            line_info = fmt::format(" (query {}, line {})", client_info.script_query_number, client_info.script_line_number);
+
         String transaction_info;
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
+            line_info,
             toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
@@ -278,17 +284,24 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string = elem.exception_format_string;
     message.format_string_args = elem.exception_format_string_args;
 
+    const auto & client_info = context->getClientInfo();
+    String line_info;
+    if (client_info.script_line_number)
+        line_info = fmt::format(" (query {}, line {})", client_info.script_query_number, client_info.script_line_number);
+
     if (elem.stack_trace.empty() || !log_error)
-        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+        message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
+                        line_info,
                         toOneLineQuery(elem.query));
     else
         message.text = fmt::format(
-            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
+            "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
+            line_info,
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
@@ -1342,7 +1355,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1382,6 +1395,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+                    if (query_settings[Setting::apply_mutations_on_fly])
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
@@ -1468,6 +1484,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             QueryCache::Key key(
                                 ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                                context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),

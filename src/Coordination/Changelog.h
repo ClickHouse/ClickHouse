@@ -118,7 +118,8 @@ struct LogLocation
 {
     ChangelogFileDescriptionPtr file_description;
     size_t position;
-    size_t size;
+    size_t entry_size;
+    size_t size_in_file;
 };
 
 struct PrefetchedCacheEntry
