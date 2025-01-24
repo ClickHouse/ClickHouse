@@ -74,34 +74,33 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     auto [name_to_index, name_to_data_type, manifest_file_header] = getColumnsAndTypesFromAvroByNames(
         root_node, {"status", "data_file", "sequence_number"}, {avro::Type::AVRO_INT, avro::Type::AVRO_RECORD, avro::Type::AVRO_LONG});
 
-    if (name_to_index.left.find("status") == name_to_index.left.end())
+    if (name_to_index.find("status") == name_to_index.end())
         throw Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: status");
-    if (name_to_index.left.find("data_file") == name_to_index.left.end())
+    if (name_to_index.find("data_file") == name_to_index.end())
         throw Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: data_file");
-    if (format_version_ > 1 && name_to_index.left.find("sequence_number") == name_to_index.left.end())
-        throw Exception(
-            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: sequence_number");
+    if (format_version_ > 1 && name_to_index.find("sequence_number") == name_to_index.end())
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: sequence_number");
 
     auto columns = parseAvro(*manifest_file_reader_, manifest_file_header, format_settings);
-    if (columns.at(name_to_index.left.at("status"))->getDataType() != TypeIndex::Int32)
+    if (columns.at(name_to_index.at("status"))->getDataType() != TypeIndex::Int32)
     {
         throw Exception(
             DB::ErrorCodes::ILLEGAL_COLUMN,
             "The parsed column from Avro file of `status` field should be Int32 type, got {}",
-            columns.at(name_to_index.left.at("status"))->getFamilyName());
+            columns.at(name_to_index.at("status"))->getFamilyName());
     }
-    if (columns.at(name_to_index.left.at("data_file"))->getDataType() != TypeIndex::Tuple)
+    if (columns.at(name_to_index.at("data_file"))->getDataType() != TypeIndex::Tuple)
     {
         throw Exception(
             DB::ErrorCodes::ILLEGAL_COLUMN,
             "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
-            columns.at(name_to_index.left.at("data_file"))->getFamilyName());
+            columns.at(name_to_index.at("data_file"))->getFamilyName());
     }
 
-    const auto * status_int_column = assert_cast<DB::ColumnInt32 *>(columns.at(name_to_index.left.at("status")).get());
+    const auto * status_int_column = assert_cast<DB::ColumnInt32 *>(columns.at(name_to_index.at("status")).get());
 
     const auto & data_file_tuple_type = assert_cast<const DataTypeTuple &>(*name_to_data_type.at("data_file").get());
-    const auto * data_file_tuple_column = assert_cast<DB::ColumnTuple *>(columns.at(name_to_index.left.at("data_file")).get());
+    const auto * data_file_tuple_column = assert_cast<DB::ColumnTuple *>(columns.at(name_to_index.at("data_file")).get());
 
     if (status_int_column->size() != data_file_tuple_column->size())
     {
@@ -179,17 +178,17 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
     }
 
-    if (columns.at(name_to_index.left.at("sequence_number"))->getDataType() != TypeIndex::Nullable)
+    if (columns.at(name_to_index.at("sequence_number"))->getDataType() != TypeIndex::Nullable)
     {
         throw Exception(
             DB::ErrorCodes::ILLEGAL_COLUMN,
             "The parsed column from Avro file of `sequence_number` field should be Int64 type, got {}",
-            columns.at(name_to_index.left.at("sequence_number"))->getFamilyName());
+            columns.at(name_to_index.at("sequence_number"))->getFamilyName());
     }
     std::optional<const ColumnNullable *> sequence_number_column = std::nullopt;
     if (format_version_ > 1)
     {
-        sequence_number_column = assert_cast<const ColumnNullable *>(columns.at(name_to_index.left.at("sequence_number")).get());
+        sequence_number_column = assert_cast<const ColumnNullable *>(columns.at(name_to_index.at("sequence_number")).get());
     }
 
     for (size_t i = 0; i < data_file_tuple_column->size(); ++i)
@@ -198,8 +197,9 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         if (format_version_ > 1)
         {
             content_type = FileContentType(content_int_column->getElement(i));
-            if (content_type == FileContentType::EQUALITY_DELETES)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: equality deletes are not supported");
+            if (content_type != FileContentType::DATA)
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(status_int_column->getInt(i));
 
@@ -221,8 +221,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
                     partition_columns[j],
                     schema_processor.getFieldCharacteristics(schema_id, source_id).type));
         }
-        FileEntry file = (content_type == FileContentType::DATA) ? FileEntry{DataFileEntry{file_path}}
-                                                                 : FileEntry{PositionalDeleteFileEntry{file_path, std::nullopt}};
+        FileEntry file = FileEntry{DataFileEntry{file_path}};
 
         Int64 added_sequence_number = 0;
         if (format_version_ > 1)

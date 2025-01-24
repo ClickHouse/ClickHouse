@@ -340,27 +340,27 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
         {"manifest_path", "sequence_number"},
         {avro::Type::AVRO_STRING, avro::Type::AVRO_LONG});
 
-    if (name_to_index.left.find("manifest_path") == name_to_index.left.end())
+    if (name_to_index.find("manifest_path") == name_to_index.end())
         throw Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: manifest_path");
-    if (format_version > 1 && name_to_index.left.find("sequence_number") == name_to_index.left.end())
+    if (format_version > 1 && name_to_index.find("sequence_number") == name_to_index.end())
         throw Exception(
             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: sequence_number");
 
 
     auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));
-    const auto & manifest_path_col = columns.at(name_to_index.left.at("manifest_path"));
+    const auto & manifest_path_col = columns.at(name_to_index.at("manifest_path"));
 
     std::optional<const ColumnInt64 *> sequence_number_column = std::nullopt;
     if (format_version > 1)
     {
-        if (columns.at(name_to_index.left.at("sequence_number"))->getDataType() != TypeIndex::Int64)
+        if (columns.at(name_to_index.at("sequence_number"))->getDataType() != TypeIndex::Int64)
         {
             throw Exception(
                 DB::ErrorCodes::ILLEGAL_COLUMN,
                 "The parsed column from Avro file of `sequence_number` field should be Int64 type, got {}",
-                columns.at(name_to_index.left.at("sequence_number"))->getFamilyName());
+                columns.at(name_to_index.at("sequence_number"))->getFamilyName());
         }
-        sequence_number_column = assert_cast<const ColumnInt64 *>(columns.at(name_to_index.left.at("sequence_number")).get());
+        sequence_number_column = assert_cast<const ColumnInt64 *>(columns.at(name_to_index.at("sequence_number")).get());
     }
 
     if (manifest_path_col->getDataType() != TypeIndex::String)

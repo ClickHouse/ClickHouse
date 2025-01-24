@@ -34,13 +34,7 @@ struct DataFileEntry
     String file_name;
 };
 
-struct PositionalDeleteFileEntry
-{
-    String positional_delete_file_name;
-    std::optional<String> corresponding_data_file_name;
-};
-
-using FileEntry = std::variant<DataFileEntry, PositionalDeleteFileEntry>;
+using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
 
 struct ManifestFileEntry
 {

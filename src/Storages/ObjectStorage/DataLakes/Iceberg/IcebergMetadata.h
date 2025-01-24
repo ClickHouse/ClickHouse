@@ -13,15 +13,9 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
-
-
-#    include <unordered_map>
-#    include "PositionalDeleteFileInfo.h"
-#    include "PositionalDeleteTransform.h"
+#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#    include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
+#    include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
 
 namespace DB
@@ -99,12 +93,9 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
-
     Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
 
     bool supportsPartitionPruning() override { return true; }
-
-    std::shared_ptr<PositionalDeleteTransform> getPositionalDeleteTransform(const String & data_path) const;
 
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileIterator>;
