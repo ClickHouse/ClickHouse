@@ -54,7 +54,7 @@
 * Reduce critical section in `MergeTreeReadPool`. [#74202](https://github.com/ClickHouse/ClickHouse/pull/74202) ([Guo Wangyang](https://github.com/guowangy)).
 * Optimized function `indexHint`. Now, columns that are only used as arguments of function `indexHint` are not read from the table. [#74314](https://github.com/ClickHouse/ClickHouse/pull/74314) ([Anton Popov](https://github.com/CurtizJ)).
 * Parallel replicas performance improvement. Packets deserialization on query initiator, for packets not related to parallel replicas protocol, now always happens in pipeline thread. Before, it could happen in a thread responsible for pipeline scheduling, which could make initiator less responsive and delay pipeline execution. [#74398](https://github.com/ClickHouse/ClickHouse/pull/74398) ([Igor Nikonov](https://github.com/devcrafter)).
-* Support `predicate-push-down` optimization on the query plan level for the `MergingAggregated` step. It improves performance for some queries with the new analyzer. [#74073](https://github.com/ClickHouse/ClickHouse/pull/74073) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Support `predicate-push-down` optimization on the query plan level for the `MergingAggregated` step. It improves performance for some queries with the analyzer. [#74073](https://github.com/ClickHouse/ClickHouse/pull/74073) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Improve performance of larger multi requests in Keeper. [#74849](https://github.com/ClickHouse/ClickHouse/pull/74849) ([Antonio Andelic](https://github.com/antonio2368)).
 
 #### Improvement
