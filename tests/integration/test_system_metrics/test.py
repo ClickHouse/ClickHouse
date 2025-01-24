@@ -173,9 +173,6 @@ def test_metrics_storage_buffer_size(start_cluster):
             """
         )
 
-    node1.query("DROP TABLE test.test_mem_table")
-    node1.query("DROP TABLE test.buffer_table")
-
 
 def test_attach_without_zk_incr_readonly_metric(start_cluster):
     assert (
