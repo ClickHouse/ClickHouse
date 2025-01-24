@@ -31,6 +31,7 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
@@ -416,6 +417,9 @@ public:
         std::lock_guard lock{mutex};
         return database_name;
     }
+
+    // Alter comment of database.
+    virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
