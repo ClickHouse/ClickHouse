@@ -3130,25 +3130,30 @@ void ClientBase::runInteractive()
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
-    if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+    const bool embedded_mode = global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT;
+    if (!embedded_mode)
         actual_history_file_path = history_file;
 
-    lr = std::make_unique<ReplxxLineReader>(
-        *suggest,
-        actual_history_file_path,
-        history_max_entries,
-        getClientConfiguration().has("multiline"),
-        getClientConfiguration().getBool("ignore_shell_suspend", true),
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        highlight_callback,
-        input_stream,
-        output_stream,
-        stdin_fd,
-        stdout_fd,
-        stderr_fd
-    );
+    auto options = ReplxxLineReader::Options
+    {
+        .suggest = *suggest,
+        .history_file_path = actual_history_file_path,
+        .history_max_entries = history_max_entries,
+        .multiline = getClientConfiguration().has("multiline"),
+        .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
+        .embedded_mode = embedded_mode,
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = highlight_callback,
+        .input_stream = input_stream,
+        .output_stream = output_stream,
+        .in_fd = stdin_fd,
+        .out_fd = stdout_fd,
+        .err_fd = stderr_fd,
+    };
+
+    lr = std::make_unique<ReplxxLineReader>(std::move(options));
 #else
     lr = LineReader(
         history_file,
