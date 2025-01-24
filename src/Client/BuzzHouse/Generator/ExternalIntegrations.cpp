@@ -11,6 +11,7 @@
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
 #include <IO/copyData.h>
+#include <base/scope_guard.h>
 #include <Common/ShellCommand.h>
 
 namespace BuzzHouse
