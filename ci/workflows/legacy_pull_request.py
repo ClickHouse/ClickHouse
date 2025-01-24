@@ -11,9 +11,13 @@ workflow = Workflow.Config(
     jobs=[
         LegacyJobs.style_check,
         LegacyJobs.fast_test,
+        Jobs.build_jobs[0].set_dependency(
+            [LegacyJobs.fast_test, LegacyJobs.style_check]
+        ),
+        *LegacyJobs.stateless_tests_jobs,
     ],
-    # artifacts=ARTIFACTS,
-    # dockers=DOCKERS,
+    artifacts=ARTIFACTS,
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,

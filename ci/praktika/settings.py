@@ -23,6 +23,8 @@ class _Settings:
     VALIDATE_FILE_PATHS: bool = True
     DISABLED_WORKFLOWS: Optional[List[str]] = None
 
+    ENABLE_ARTIFACTS_REPORT: bool = False
+
     ######################################
     #    Runtime Settings                #
     ######################################

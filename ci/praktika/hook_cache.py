@@ -69,6 +69,10 @@ class CacheRunnerHooks:
                         workflow_config.cache_artifacts[artifact_name] = (
                             workflow_config.cache_jobs[job.name]
                         )
+                    if Settings.ENABLE_ARTIFACTS_REPORT:
+                        workflow_config.cache_artifacts[job.name] = (
+                            workflow_config.cache_jobs[job.name]
+                        )
 
         print(f"Write config to GH's job output")
         with open(_Environment.get().JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:

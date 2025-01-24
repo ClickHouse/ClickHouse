@@ -15,7 +15,6 @@ class Info:
 
         self.env = _Environment.get()
 
-
     @property
     def sha(self):
         return self.env.SHA

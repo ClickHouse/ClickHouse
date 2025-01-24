@@ -363,17 +363,25 @@ class PullRequestPushYamlGen:
                 "EVENT": self.workflow_config.event,
             }
             if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
-                ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
+                ENV_CHECKOUT_REFERENCE = (
+                    YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
+                )
             else:
-                ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+                ENV_CHECKOUT_REFERENCE = (
+                    YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+                )
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {"CRON_TEMPLATES": cron_items}
-            ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+            ENV_CHECKOUT_REFERENCE = (
+                YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+            )
         elif self.workflow_config.event in (Workflow.Event.DISPATCH,):
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
             format_kwargs = {"DISPATCH_INPUTS": dispatch_inputs}
-            ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+            ENV_CHECKOUT_REFERENCE = (
+                YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+            )
         else:
             assert (
                 False

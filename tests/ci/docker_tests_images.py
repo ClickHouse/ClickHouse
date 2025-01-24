@@ -67,7 +67,7 @@ def main():
 
     aarch_suffix = f"-{args.arch}" if args.arch in ("aarch64", "amd64") else ""
     images_build_list = get_images_oredered_list()
-    docker_digests = Info().get_custom_data("docker_legacy_digests")
+    docker_digests = Info().get_custom_data("digest_dockers")
 
     res = True
     if res:

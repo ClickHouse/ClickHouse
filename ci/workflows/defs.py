@@ -716,31 +716,6 @@ class Jobs:
         ],
     )
 
-    # # TODO: non-refactored (legacy) stateless tests
-    # stateless_tests_jobs = Job.Config(
-    #     name=JobNames.STATELESS,
-    #     runs_on=[RunnerLabels.FUNC_TESTER_AMD],
-    #     command="python3 ./tests/ci/functional_test_check.py {PARAMETER}",
-    #     digest_config=Job.CacheDigestConfig(
-    #         include_paths=[
-    #             "./tests/ci/functional_test_check.py",
-    #             "./tests/queries/0_stateless/",
-    #             "./tests/clickhouse-test",
-    #             "./tests/config",
-    #             "./tests/*.txt",
-    #             "./tests/docker_scripts/",
-    #         ],
-    #     ),
-    # ).parametrize(
-    #     parameter=[
-    #         "amd_release",
-    #     ],
-    #     runs_on=[
-    #         [RunnerLabels.FUNC_TESTER_AMD],
-    #     ],
-    #     requires=[[ArtifactNames.DEB_AMD_RELEASE]],
-    # )
-
     stateful_tests_jobs = Job.Config(
         name=JobNames.STATEFUL,
         runs_on=[RunnerLabels.FUNC_TESTER_AMD],
@@ -1148,4 +1123,27 @@ class LegacyJobs:
         ),
         timeout=2400,
         command="cd ./tests/ci && python3 fast_test_check.py",
+    )
+    stateless_tests_jobs = Job.Config(
+        name=JobNames.STATELESS,
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
+        command="python3 ./tests/ci/functional_test_check.py {PARAMETER}",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/functional_test_check.py",
+                "./tests/queries/0_stateless/",
+                "./tests/clickhouse-test",
+                "./tests/config",
+                "./tests/*.txt",
+                "./tests/docker_scripts/",
+            ],
+        ),
+    ).parametrize(
+        parameter=[
+            "amd_debug",
+        ],
+        runs_on=[
+            [RunnerLabels.FUNC_TESTER_AMD],
+        ],
+        requires=[[JobNames.BUILD + " (amd_debug)"]],
     )

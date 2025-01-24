@@ -61,9 +61,47 @@ jobs:
             python3 -m praktika run 'Config Workflow' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
+  docker_builds:
+    runs-on: [style-checker]
+    needs: [config_workflow]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIEJ1aWxkcw==') }}
+    name: "Docker Builds"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Docker Builds' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Docker Builds' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
   style_check:
     runs-on: [style-checker-aarch64]
-    needs: [config_workflow]
+    needs: [config_workflow, docker_builds]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3R5bGUgQ2hlY2s=') }}
     name: "Style Check"
     outputs:
@@ -101,7 +139,7 @@ jobs:
 
   fast_test:
     runs-on: [builder]
-    needs: [config_workflow]
+    needs: [config_workflow, docker_builds]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
     outputs:
@@ -137,9 +175,85 @@ jobs:
             python3 -m praktika run 'Fast test' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
+  build_amd_debug:
+    runs-on: [builder]
+    needs: [config_workflow, docker_builds, style_check, fast_test]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
+    name: "Build (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_debug:
+    runs-on: [func-tester]
+    needs: [config_workflow, docker_builds, build_amd_debug]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfZGVidWcp') }}
+    name: "Stateless tests (amd_debug)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_debug)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+          fi
+
   finish_workflow:
     runs-on: [style-checker-aarch64]
-    needs: [config_workflow, style_check, fast_test]
+    needs: [config_workflow, docker_builds, style_check, fast_test, build_amd_debug, stateless_tests_amd_debug]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

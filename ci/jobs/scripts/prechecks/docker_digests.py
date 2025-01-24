@@ -11,4 +11,4 @@ from digest_helper import DockerDigester
 
 if __name__ == "__main__":
     image_to_digest_map = DockerDigester().get_all_digests()
-    Info().store_custom_data(key="docker_legacy_digests", value=image_to_digest_map)
+    Info().store_custom_data(key="digest_dockers", value=image_to_digest_map)
