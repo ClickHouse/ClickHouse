@@ -20,11 +20,13 @@ on_exit() {
 
 trap on_exit EXIT
 
-set -e
+set -eu
 
 REMOVAL_STATE_CONDITION="(
     removal_state='Part was selected to be removed but then it had been rollbacked. The remove will be retried.'
     OR removal_state='Retry to remove part.')"
+
+STATE_CONDITION="_state in ['Deleting', 'Outdated']"
 
 function wait_for_part_remove_rollbacked()
 {
@@ -34,7 +36,8 @@ function wait_for_part_remove_rollbacked()
 
     local query="
         SELECT count() > 0 FROM system.parts
-        WHERE database='$database' AND table='$table' AND not active
+        WHERE database='$database' AND table='$table'
+        AND $STATE_CONDITION
         AND $REMOVAL_STATE_CONDITION"
 
     while [[ timeout -gt 0 ]]
@@ -100,6 +103,10 @@ SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;
 
 
 # cheche that parts aren't stuck in Deleting state when excpetion at patrs remove occurs
+
+# It is important to select _state column from system.parts,
+# otherway parts with Deleting state are omitted in the select results
+
 active_count=$(${CLICKHOUSE_CLIENT} --query "
 select countIf(active) from system.parts
 where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'")
@@ -114,23 +121,23 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT storage_merge_tree_backgro
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE test_s3_mt_fault;"
 
 inactive_count=$(${CLICKHOUSE_CLIENT} --query "
-select countIf(active = 0) from system.parts
-where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'")
+select count() from system.parts
+where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $STATE_CONDITION")
 if [[ $inactive_count -eq 0 ]]
 then
     echo "At least one inactive part is expected"
     exit 2
 fi
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
-
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 
 wait_for_part_remove_rollbacked test_s3_mt_fault
 
 inactive_count=$(${CLICKHOUSE_CLIENT} --query "
 select count() from system.parts
-where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $REMOVAL_STATE_CONDITION")
+where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $STATE_CONDITION and $REMOVAL_STATE_CONDITION")
 if [[ $inactive_count -eq 0 ]]
 then
     echo "At least one inactive part which has been rollbacked from remove is expected"
