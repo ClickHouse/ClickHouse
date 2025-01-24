@@ -46,9 +46,15 @@
 #include <Common/escapeForFileName.h>
 #include <IO/SharedThreadPools.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ActiveDataMutations;
+    extern const Metric ActiveMetadataMutations;
+}
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
@@ -238,6 +244,9 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
+
+    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
+    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
 
 void StorageMergeTree::read(
@@ -611,8 +620,6 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_fail_error_code_name.clear();
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
-
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
                 }
             }
             else
@@ -891,15 +898,12 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
+
         auto it = current_mutations_by_version.find(mutation_version);
         if (it != current_mutations_by_version.end())
         {
-            if (std::optional<Int64> min_version = getMinPartDataVersion())
-            {
-                bool mutation_finished = *min_version > static_cast<Int64>(mutation_version);
-                if (!mutation_finished)
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
-            }
+            if (!it->second.is_done)
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
@@ -1543,27 +1547,30 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        if (current_mutations_by_version.size() <= finished_mutations_to_keep)
-            return 0;
-
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
 
         if (std::optional<Int64> min_version = getMinPartDataVersion())
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
-        size_t done_count = std::distance(begin_it, end_it);
-
-        if (done_count <= finished_mutations_to_keep)
-            return 0;
-
+        size_t done_count = 0;
         for (auto it = begin_it; it != end_it; ++it)
         {
-            if (!it->second.tid.isPrehistoric())
+            auto & entry = it->second;
+
+            if (!entry.tid.isPrehistoric())
             {
-                done_count = std::distance(begin_it, it);
+                end_it = it;
                 break;
             }
+
+            if (!entry.is_done)
+            {
+                entry.is_done = true;
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
+            }
+
+            ++done_count;
         }
 
         if (done_count <= finished_mutations_to_keep)
@@ -1578,6 +1585,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!tid.isPrehistoric() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
+
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
         }
@@ -2632,7 +2640,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
 
     bool need_data_mutations = res->hasDataMutations();
-    bool need_metadata_mutations = num_metadata_mutations_to_apply > 0;
+    bool need_metadata_mutations = res->hasMetadataMutations();
 
     if (!need_data_mutations && !need_metadata_mutations)
         return res;

@@ -36,6 +36,8 @@ class Workflow:
         enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
+        pre_hooks: List[str] = field(default_factory=list)
+        post_hooks: List[str] = field(default_factory=list)
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST

@@ -165,12 +165,13 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if workflow.dockers:
+        if workflow.dockers and job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
                     RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
+                traceback.print_exc()
                 print(f"WARNING: Failed to set DOCKER_TAG, ex [{e}]")
 
         if param:
@@ -335,11 +336,13 @@ class Runner:
             try:
                 CIDB(
                     url=workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
+                    user=workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
                     passwd=workflow.get_secret(
                         Settings.SECRET_CI_DB_PASSWORD
                     ).get_value(),
                 ).insert(result)
             except Exception as ex:
+                traceback.print_exc()
                 error = f"ERROR: Failed to insert data into CI DB, exception [{ex}]"
                 print(error)
                 info_errors.append(error)

@@ -147,6 +147,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric ActiveDataMutations;
+    extern const Metric ActiveMetadataMutations;
 }
 
 
@@ -9190,6 +9192,8 @@ static void updateMutationsCounters(
 
             if (num_data_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
+
+            CurrentMetrics::add(CurrentMetrics::ActiveDataMutations, increment);
         }
 
         if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
@@ -9199,6 +9203,8 @@ static void updateMutationsCounters(
 
             if (num_metadata_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
+
+            CurrentMetrics::add(CurrentMetrics::ActiveMetadataMutations, increment);
         }
     }
 }

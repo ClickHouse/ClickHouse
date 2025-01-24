@@ -309,7 +309,7 @@
         /* Will be displayed when user specified custom format. */
         #data-unparsed
         {
-            width: 100%;
+            width: fit-content;
             background-color: var(--element-background-color);
             margin-top: 0rem;
             padding: 0.25rem 0.5rem;
@@ -774,7 +774,7 @@ async function postImpl(posted_request_num, query)
         response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
             /*headers: { 'Authorization': 'never' }*/ });
 
-        format = response.headers.get('X-ClickHouse-Format');
+        format = response.headers.get('X-ClickHouse-Format') ?? default_format;
 
         if (!response.ok) {
             is_error = true;
