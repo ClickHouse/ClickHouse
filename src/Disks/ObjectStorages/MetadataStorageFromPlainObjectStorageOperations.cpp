@@ -194,9 +194,11 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
 
     auto write_buf = createWriteBuf(path_from, path_to, validate_content);
     writeString(path_to.string(), *write_buf);
+
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
     });
+
     write_buf->finalize();
 
     /// parent_path() removes the trailing '/'.

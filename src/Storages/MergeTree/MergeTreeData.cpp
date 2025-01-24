@@ -2730,7 +2730,10 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 || force
                 || (part->version.creation_csn == Tx::RolledBackCSN && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
             {
-                part->removal_state.store(DataPartRemovalState::REMOVED, std::memory_order_relaxed);
+                if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLBACKED)
+                    part->removal_state.store(DataPartRemovalState::REMOVE_RETRY, std::memory_order_relaxed);
+                else
+                    part->removal_state.store(DataPartRemovalState::REMOVE, std::memory_order_relaxed);
                 parts_to_delete.emplace_back(it);
             }
             else
@@ -2768,6 +2771,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
         modifyPartState(part, DataPartState::Outdated);
+        part->removal_state.store(DataPartRemovalState::REMOVE_ROLLBACKED, std::memory_order_relaxed);
     }
 }
 
@@ -3105,7 +3109,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
- size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type)
+size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type)
 {
     NameSet parts_failed_to_delete;
     clearPartsFromFilesystemImpl(parts_to_delete, false, &parts_failed_to_delete);
@@ -3132,8 +3136,11 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     try
     {
-        removePartsFinally(finally_remove_parts);
-        LOG_DEBUG(log, "Removed {} {} parts", finally_remove_parts.size(), parts_type);
+        if (!finally_remove_parts.empty())
+        {
+            removePartsFinally(finally_remove_parts);
+            LOG_DEBUG(log, "Removed {} {} parts", finally_remove_parts.size(), parts_type);
+        }
     }
     catch (...)
     {
