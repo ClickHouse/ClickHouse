@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
-#include <algorithm>
 #include <memory>
 
 #include <Access/Common/AccessFlags.h>
@@ -23,16 +22,15 @@
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTSetQuery.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/IInflatingTransform.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -108,7 +106,7 @@ public:
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
         chassert(context);
-        context->checkAccess(AccessType::SHOW_TABLES, table_id);
+        context->checkAccess(AccessType::CHECK, table_id);
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
@@ -116,7 +114,7 @@ public:
         , check_data_tasks(table->getCheckTaskList({}, context))
     {
         chassert(context);
-        context->checkAccess(AccessType::SHOW_TABLES, table_->getStorageID());
+        context->checkAccess(AccessType::CHECK, table_->getStorageID());
     }
 
     TableCheckTask(const TableCheckTask & other)

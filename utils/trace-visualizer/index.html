@@ -23,7 +23,9 @@
             <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
                 <form class="navbar-form navbar-left">
                     <button type="button" class="btn btn-primary" id="toolbar-load" data-toggle="modal" data-target="#loadModal">Load</button>
+                    <button type="button" class="btn btn-primary" id="toolbar-find" data-toggle="modal" data-target="#findModal">Find</button>
                 </form>
+                <p class="navbar-text" id="status-text"></p>
             </div>
         </div>
     </nav>
@@ -44,6 +46,26 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" id="btnDoLoad">Load</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="findModal" tabindex="-1" role="dialog" aria-labelledby="findModalLabel">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span
+                            aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="findModalLabel">Span Filter</h4>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="filterPattern" value="" class="form-control"/>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnDoFindClear">Clear</button>
+                    <button type="button" class="btn btn-primary" id="btnDoFind">Find</button>
                 </div>
             </div>
         </div>
@@ -83,6 +105,7 @@
             .timeDomain([0, parsed.max_time_ms])
         ;
         chart(data);
+        $("#status-text").text(`${chart.data().length} spans total`);
     }
 
     $("<div id='errmsg'></div>").css({
@@ -136,6 +159,27 @@
         $('#loadModal').modal('hide');
     });
 
+    function doFindPattern() {
+        if (chart) {
+            const pattern = document.getElementById('filterPattern').value;
+            chart.filter(pattern);
+            if (pattern != '')
+                $("#status-text").text(`${chart.filteredCount()}/${chart.data().length} spans matching`);
+            else
+                $("#status-text").text(`${chart.data().length} spans total`);
+        }
+        $('#findModal').modal('hide');
+    }
+
+    $("#btnDoFindClear").click(function(){
+        document.getElementById('filterPattern').value = '';
+        doFindPattern();
+    });
+
+    $("#btnDoFind").click(function(){
+        doFindPattern();
+    });
+
     function parseClickHouseTrace(json) {
         let min_time_us = Number.MAX_VALUE;
         for (let i = 0; i < json.data.length; i++) {
@@ -173,7 +217,7 @@
                 t1: convertTime(+span.start_time_us),
                 t2: convertTime(+span.finish_time_us),
                 band,
-                color: d3.interpolateRainbow((strHash(span.color) % 256) / 256),
+                color: d3.interpolateRainbow((strHash(span.color) % 1024) / 1024),
                 text: span.operation_name
             });
         }

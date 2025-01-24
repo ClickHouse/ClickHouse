@@ -42,11 +42,13 @@ public:
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             ObjectStoragePtr object_storage_,
             ConfigurationPtr configuration_,
+            const StorageID & storage_id_,
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
             const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             LoggerPtr logger_,
+            bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_);
 
@@ -76,6 +78,8 @@ public:
         const NamesAndTypesList virtual_columns;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
+        const bool enable_hash_ring_filtering;
+        const StorageID storage_id;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -83,11 +87,13 @@ public:
         bool recursive{false};
 
         Source::ObjectInfos object_infos;
+        std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
-        Source::ObjectInfoPtr next();
+        std::pair<Source::ObjectInfoPtr, FileMetadataPtr> next();
+        void filterProcessableFiles(Source::ObjectInfos & objects);
         void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;

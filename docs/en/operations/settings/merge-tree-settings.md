@@ -1186,3 +1186,15 @@ Default value: false.
 When enabled, min-max (skipping) indices are added for all string columns of the table.
 
 Default value: false.
+
+## materialize_skip_indexes_on_merge
+
+When enabled, merges build and store skip indices for new parts.
+
+Default: true
+
+## assign_part_uuids
+
+When enabled, unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.
+
+Default: 0.
