@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .cache import Cache
+from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
@@ -275,8 +276,12 @@ class Result(MetaClasses.Serializable):
             duration=None,
             results=results or [],
             files=[],
-            links=[],
-            info=f"from cache: sha [{cache_record.sha}], pr/branch [{cache_record.pr_number or cache_record.branch}]",
+            links=[
+                Info().get_specific_report_url(
+                    pr_number=cache_record.pr_number, sha=cache_record.sha
+                )
+            ],
+            info=f"from cache",
         )
 
     @classmethod

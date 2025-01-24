@@ -1082,7 +1082,7 @@ class Jobs:
     )
 
 
-class LegacyJobs:
+class OldStyleJobs:
     docker_build_jobs = Job.Config(
         name=JobNames.BUILDOCKER,
         runs_on=[RunnerLabels.STYLE_CHECK_ARM],
@@ -1121,13 +1121,13 @@ class LegacyJobs:
                 "./docker",
             ]
         ),
-        timeout=2400,
-        command="cd ./tests/ci && python3 fast_test_check.py",
+        timeout=3000,
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
     )
-    stateless_tests_jobs = Job.Config(
-        name=JobNames.STATELESS,
+    stateless_tests_debug_job = Job.Config(
+        name="Stateless tests (debug)",
         runs_on=[RunnerLabels.FUNC_TESTER_AMD],
-        command="python3 ./tests/ci/functional_test_check.py {PARAMETER}",
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/ci/functional_test_check.py",
@@ -1138,12 +1138,5 @@ class LegacyJobs:
                 "./tests/docker_scripts/",
             ],
         ),
-    ).parametrize(
-        parameter=[
-            "amd_debug",
-        ],
-        runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD],
-        ],
-        requires=[[JobNames.BUILD + " (amd_debug)"]],
+        requires=["Build (amd_debug)"]
     )

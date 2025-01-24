@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS, Jobs
+from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS, Jobs, OldStyleJobs
 
 S3_BUILDS_BUCKET = "clickhouse-builds"
 
@@ -9,24 +9,12 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        Jobs.style_check_job.copy(),
-        Jobs.fast_test_job,
-        *Jobs.build_jobs,
-        *Jobs.stateless_tests_jobs,
-        *Jobs.stateful_tests_jobs,
-        *Jobs.integration_test_jobs,
-        *Jobs.stress_test_jobs,
-        *Jobs.upgrade_test_jobs,
-        *Jobs.performance_comparison_head_jobs,
-        *Jobs.compatibility_test_jobs,
-        Jobs.docs_job,
-        *Jobs.clickbench_jobs,
-        Jobs.docker_job,
-        Jobs.sqltest_job,
-        Jobs.sqlancer_job,
-        *Jobs.install_check_job,
-        *Jobs.ast_fuzzer_jobs,
-        *Jobs.buzz_fuzzer_jobs,
+        OldStyleJobs.style_check,
+        OldStyleJobs.fast_test,
+        Jobs.build_jobs[0].set_dependency(
+            [OldStyleJobs.fast_test, OldStyleJobs.style_check]
+        ),
+        OldStyleJobs.stateless_tests_debug_job,
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
@@ -38,7 +26,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/prechecks/pr_description.py",
         "python3 ./ci/jobs/scripts/prechecks/trusted.py",
-        "python3 ./ci/jobs/scripts/prechecks/version_log.py",
+        "python3 ./ci/jobs/scripts/prechecks/docker_digests.py",
     ],
     post_hooks=[],
 )

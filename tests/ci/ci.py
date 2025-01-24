@@ -1441,6 +1441,7 @@ def main() -> int:
 
         # post
         try:
+            job_report = JobReport.load()
             gh = GitHub(get_best_robot_token(), per_page=100)
             commit = get_commit(gh, pr_info.sha)
             if not job_report.dummy:
@@ -1451,14 +1452,14 @@ def main() -> int:
                     pr_info.head_ref,
                     job_report.test_results,
                     job_report.additional_files,
-                    check_name, # TODO: make with batch
+                    check_name,  # TODO: make with batch
                 )
                 post_commit_status(
                     commit,
                     job_report.status,
                     check_url,
                     format_description(job_report.description),
-                    check_name, # TODO: make with batch
+                    check_name,  # TODO: make with batch
                     pr_info,
                     dump_to_file=True,
                 )
@@ -1489,14 +1490,14 @@ def main() -> int:
                         pr_info.head_ref,
                         job_report.test_results,
                         job_report.additional_files,
-                        check_name, # TODO: make with batch,
+                        check_name,  # TODO: make with batch,
                     )
                 post_commit_status(
                     commit,
                     ERROR,
                     check_url,
                     "Error: " + error_description,
-                    check_name, # TODO: make with batch
+                    check_name,  # TODO: make with batch
                     pr_info,
                     dump_to_file=True,
                 )

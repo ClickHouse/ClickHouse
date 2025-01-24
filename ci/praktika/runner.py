@@ -136,7 +136,8 @@ class Runner:
                             Artifact.Config(
                                 name=requires_artifact_name,
                                 type=Artifact.Type.PHONY,
-                                path=f"build_report_{Utils.normalize_string(requires_artifact_name)}.json",
+                                path=f"artifact_report_{Utils.normalize_string(requires_artifact_name)}.json",
+                                _provided_by=requires_artifact_name,
                             )
                         )
 
@@ -356,7 +357,10 @@ class Runner:
                             result.set_status(Result.Status.ERROR)
                 if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
                     artifact_report = {"build_urls": artifact_links}
-                    artifact_report_file = f"{Settings.TEMP_DIR}/build_report_{Utils.normalize_string(env.JOB_NAME)}"
+                    print(
+                        f"Artifact report enabled and will be uploaded: [{artifact_report}]"
+                    )
+                    artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}"
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
                         json.dump(artifact_report, f)
                     link = S3.copy_file_to_s3(

@@ -17,7 +17,7 @@ from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import IS_NEW_CI, REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (
@@ -290,13 +290,12 @@ def main():
     run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
 
     docker_image = get_docker_image(get_image_name(check_name))
-    if IS_NEW_CI:
-        docker_image.version = "latest"
-        for option in check_name.split(","):
-            if "/" in option:
-                run_by_hash_num = int(option.split("/")[0]) - 1
-                run_by_hash_total = int(option.split("/")[1])
-                break
+
+    for option in check_name.split(","):
+        if "/" in option:
+            run_by_hash_num = int(option.split("/")[0]) - 1
+            run_by_hash_total = int(option.split("/")[1])
+            break
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)

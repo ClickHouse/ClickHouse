@@ -542,6 +542,7 @@ class CI:
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
+            run_command="fast_test_check.py",
             timeout=2400,
             runner_type=Runners.BUILDER,
         ),
