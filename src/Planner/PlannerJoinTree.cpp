@@ -1141,7 +1141,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                if (has_table_virtual_column && query_plan.isInitialized())
+                if (has_table_virtual_column && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
                     const auto & data_header = query_plan.getCurrentHeader();
                     if (!data_header.findByName("_table"))
