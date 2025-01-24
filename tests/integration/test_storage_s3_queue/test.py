@@ -2280,6 +2280,7 @@ def test_alter_settings(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 10,
+            "s3queue_loading_retries": 20,
             "s3queue_tracked_files_limit": 2000,
             "s3queue_polling_max_timeout_ms": 1000,
         },
@@ -2419,7 +2420,7 @@ def test_alter_settings(started_cluster):
         "processing_threads_num": 5,
         "loading_retries": 10,
         "tracked_files_ttl_sec": 0,
-        "tracked_files_limit": 1000,
+        "tracked_files_limit": 2000,
     }
     string_settings = {"after_processing": "keep"}
 
