@@ -100,6 +100,20 @@ def test_no_inserts_from_infile(started_cluster):
     assert "SUPPORT_IS_DISABLED" in completed_process.stderr
 
 
+def test_no_inserts_from_infile(started_cluster):
+    # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+    ssh_command = f"ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv=\"server_logs_file='logs.log'\" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 \"SELECT * FROM system.numbers;\""
+
+    completed_process = subprocess.run(
+        ssh_command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert "SUPPORT_IS_DISABLED" in completed_process.stderr
+
+
 def test_create_table(started_cluster):
     def execute_command_and_get_output(command):
         # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
