@@ -203,7 +203,7 @@ QueryTreeNodePtr replaceStorageIfNeeded(QueryTreeNodePtr query_tree, const Conte
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
 
-    return std::move(query_tree);
+    return query_tree;
 }
 
 }
