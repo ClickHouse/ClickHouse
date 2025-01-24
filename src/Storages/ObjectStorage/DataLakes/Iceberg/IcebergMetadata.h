@@ -18,6 +18,7 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
+
 #    include <unordered_map>
 #    include "PositionalDeleteFileInfo.h"
 #    include "PositionalDeleteTransform.h"
@@ -32,12 +33,6 @@ struct PositionalDeletesTransformHolder
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf;
     std::vector<Block> delete_block;
-};
-
-struct PositionalDeleteFileInfo
-{
-    String path;
-    String metadata;
 };
 
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
@@ -112,16 +107,16 @@ public:
     std::shared_ptr<PositionalDeleteTransform> getPositionalDeleteTransform(const String & data_path) const;
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
+    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileIterator>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable Iceberg::ManifestFilesByName manifest_files_by_name;
-    mutable Iceberg::ManifestListsByName manifest_lists_by_name;
-    mutable ManifestEntryByDataFile manifest_entry_by_data_file;
+    mutable Iceberg::ManifestFilesStorage manifest_files_by_name;
+    mutable Iceberg::ManifestListsStorage manifest_lists_by_name;
+    mutable ManifestEntryByDataFile manifest_file_by_data_file;
 
     Int32 current_metadata_version;
     Int32 format_version;
@@ -130,17 +125,19 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 
-    mutable std::vector<PositionalDeleteFileInfo> positional_delete_files_for_current_query;
+    mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
-    Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
+    Iceberg::ManifestList initializeManifestList(const String & filename) const;
 
-    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
+    Iceberg::ManifestListIterator getManifestList(const String & filename) const;
+
+    Iceberg::IcebergSnapshot getSnapshot(const String & filename) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    Iceberg::ManifestFileEntry getManifestFile(const String & manifest_file) const;
+    Iceberg::ManifestFileContent initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
-    Iceberg::ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
+    Iceberg::ManifestFileIterator getManifestFile(const String & filename) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 

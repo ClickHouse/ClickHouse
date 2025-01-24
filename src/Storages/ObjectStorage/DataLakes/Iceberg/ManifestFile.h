@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
-class PositionalDeleteFileInfo;
+#    include "IteratorWrapper.h"
 
 namespace Iceberg
 {
@@ -20,10 +20,9 @@ enum class ManifestEntryStatus : uint8_t
     EXISTING = 0,
     ADDED = 1,
     DELETED = 2,
-
 };
 
-enum class DataFileContent : uint8_t
+enum class FileContentType : uint8_t
 {
     DATA = 0,
     POSITION_DELETES = 1,
@@ -32,11 +31,24 @@ enum class DataFileContent : uint8_t
 
 struct DataFileEntry
 {
-    String data_file_name;
+    String file_name;
+};
+
+struct PositionalDeleteFileEntry
+{
+    String positional_delete_file_name;
+    std::optional<String> corresponding_data_file_name;
+};
+
+using FileEntry = std::variant<DataFileEntry, PositionalDeleteFileEntry>;
+
+struct ManifestFileEntry
+{
     ManifestEntryStatus status;
-    DataFileContent content;
+    Int64 added_sequence_number;
     std::unordered_map<Int32, DB::Range> partition_ranges;
-    std::vector<PositionalDeleteFileInfo *> positional_delete_file_info;
+
+    FileEntry file;
 
     std::vector<DB::Range> getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const;
 };
@@ -53,9 +65,10 @@ class ManifestFileContent
 public:
     explicit ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_);
 
-    const std::vector<DataFileEntry> & getDataFiles() const;
+    const std::vector<ManifestFileEntry> & getFiles() const;
     Int32 getSchemaId() const;
     const std::vector<PartitionColumnInfo> & getPartitionColumnInfos() const;
+    Int32 getPartitionSpecId() const;
 
 
 private:
@@ -63,19 +76,8 @@ private:
 };
 
 
-using ManifestFilesByName = std::map<String, ManifestFileContent>;
-
-struct ManifestFileEntry
-{
-    explicit ManifestFileEntry(const ManifestFilesByName::const_iterator & reference_) : reference(reference_) { }
-    const ManifestFileContent & getContent() const { return reference->second; }
-    const String & getName() const { return reference->first; }
-
-
-private:
-    ManifestFilesByName::const_iterator reference;
-};
-
+using ManifestFilesStorage = std::map<String, ManifestFileContent>;
+using ManifestFileIterator = IteratorWrapper<ManifestFileContent>;
 }
 
 #endif

@@ -25,7 +25,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
 #include "Processors/Formats/ISchemaReader.h"
-#include "Storages/ObjectStorage/StorageObjectStorageSourceUtils.h"
+// #include "Storages/ObjectStorage/StorageObjectStorageSourceUtils.h"
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -385,7 +385,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        auto input_format = StorageObjectStorageSourceUtils::getInputFormat(
+        auto input_format = getInputFormat(
             read_buf,
             read_buf_schema,
             initial_header,
@@ -448,7 +448,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 }
 
 
-std::shared_ptr<IInputFormat> StorageObjectStorageSourceUtils::getInputFormat(
+std::shared_ptr<IInputFormat> StorageObjectStorageSource::getInputFormat(
     std::unique_ptr<ReadBuffer> & read_buf,
     std::unique_ptr<ReadBuffer> & read_buf_schema,
     Block & initial_header,
@@ -529,7 +529,7 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
 
-std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSourceUtils::createReadBuffer(
+std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBuffer(
     ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
     const auto & settings = context_->getSettingsRef();
@@ -982,7 +982,7 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         /* path_to_archive */
         object_info->getPath(),
         /* archive_read_function */ [=, this]()
-        { return StorageObjectStorageSourceUtils::createReadBuffer(*object_info, object_storage, getContext(), logger); },
+        { return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger); },
         /* archive_size */ size);
 }
 
