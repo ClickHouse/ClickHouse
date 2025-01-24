@@ -225,29 +225,25 @@ public:
 
         const DateLUTImpl * time_zone_tmp;
 
-        if (isDateTimeOrDateTime64(time_column.type) || isDateTime64(result_type))
+        if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
             const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, time_zone_arg_num, 0);
         }
-        else
-        {
-            // As we convert date to datetime and perform calculation,
-            // we don't need to take the timezone into account, so set it to default
+        else /// As we convert date to datetime and perform calculation, we don't need to take the timezone into account, so we set it to default
             time_zone_tmp = &DateLUT::instance("UTC");
-        }
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
 
         ColumnPtr result_column;
-        if (isDate32(result_type))
-            result_column = dispatchForTimeColumn<DataTypeDate32>(time_column, interval_column, origin_column, result_type, time_zone);
-        else if (isDateTime64(result_type))
-            result_column = dispatchForTimeColumn<DataTypeDateTime64>(time_column, interval_column, origin_column, result_type, time_zone);
-        else if (isDate(result_type))
+        if (isDate(result_type))
             result_column = dispatchForTimeColumn<DataTypeDate>(time_column, interval_column, origin_column, result_type, time_zone);
+        else if (isDate32(result_type))
+            result_column = dispatchForTimeColumn<DataTypeDate32>(time_column, interval_column, origin_column, result_type, time_zone);
         else if (isDateTime(result_type))
             result_column = dispatchForTimeColumn<DataTypeDateTime>(time_column, interval_column, origin_column, result_type, time_zone);
+        else if (isDateTime64(result_type))
+            result_column = dispatchForTimeColumn<DataTypeDateTime64>(time_column, interval_column, origin_column, result_type, time_zone);
 
         return result_column;
     }
@@ -266,22 +262,19 @@ protected:
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDate>(&time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDate, ColumnDate>(
-                    assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDate, ColumnDate>(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDate32(time_column_type))
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(&time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDate32, ColumnDate32>(
-                    assert_cast<const DataTypeDate32 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDate32, ColumnDate32>(assert_cast<const DataTypeDate32 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDateTime(time_column_type))
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(&time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime, ColumnDateTime>(
-                    assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime, ColumnDateTime>(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDateTime64(time_column_type))
         {
@@ -289,19 +282,15 @@ protected:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(
-                    assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
-                        getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
-        const TimeDataType & time_data_type, const TimeColumnType & time_column,
-        const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
+        const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
         const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
@@ -310,7 +299,7 @@ protected:
                             "Illegal column for 2nd argument of function {}, must be a time interval",
                             getName());
 
-        switch (interval_type->getKind())
+        switch (interval_type->getKind())  // NOLINT(bugprone-switch-missing-default-case)
         {
             case IntervalKind::Kind::Nanosecond:
             case IntervalKind::Kind::Microsecond:
@@ -373,9 +362,7 @@ protected:
     }
 
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
-    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units,
-                      const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type,
-                      const DateLUTImpl & time_zone, UInt16 scale) const
+    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
 
@@ -392,25 +379,22 @@ protected:
         if (origin_column.column) // Overload::Origin
         {
             const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
-            const bool is_result_date = isDate32(result_type) || isDate(result_type);
+            const bool is_result_date = isDateOrDate32(result_type);
 
             Int64 result_scale = scale_multiplier;
             Int64 origin_scale = 1;
 
-            if (isDateTime64(result_type)) // We have origin scale only in case if arguments are DateTime64
-            {
+            if (isDateTime64(result_type)) /// We have origin scale only in case if arguments are DateTime64.
                 origin_scale = assert_cast<const DataTypeDateTime64 &>(*origin_column.type).getScaleMultiplier();
-            }
-            else if (!is_small_interval)
-            {
-                // In case of large intervals, we should not have scale in result
+            else if (!is_small_interval) /// In case of large interval and arguments are not DateTime64, we should not have scale in result.
                 result_scale = 1;
-            }
 
-            if (is_small_interval && isDateTime64(result_type))
-            {
+            if (is_small_interval)
                 result_scale = assert_cast<const DataTypeDateTime64 &>(*result_type).getScaleMultiplier();
-            }
+
+            /// In case if we have a difference between time arguments and Interval, we need to calculate the difference between them
+            /// to get the right precision for the result. In case of large intervals, we should not have scale difference.
+            Int64 scale_diff = is_small_interval ? std::max(result_scale / origin_scale, origin_scale / result_scale) : 1;
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
@@ -421,7 +405,7 @@ protected:
                 if (origin > static_cast<size_t>(time_arg))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
-                if (is_result_date)
+                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
                 {
                     time_arg *= SECONDS_PER_DAY;
                     origin *= SECONDS_PER_DAY;
@@ -429,32 +413,20 @@ protected:
 
                 Int64 offset = ToStartOfInterval<unit>::execute(time_arg - origin, num_units, time_zone, result_scale, origin);
 
-                if (!is_small_interval)
-                    offset *= result_scale;
+                /// In case if arguments are DateTime64 with large interval, we should apply scale on it.
+                offset *= (!is_small_interval) ? result_scale : 1;
 
-                if (is_result_date)
+                if (is_result_date) /// Convert back to date after calculations.
                 {
                     offset /= SECONDS_PER_DAY;
                     origin /= SECONDS_PER_DAY;
                 }
 
-                // scale diff calculation
-                Int64 scale_diff = 1;
-                if (result_scale < origin_scale)
-                    scale_diff = origin_scale / result_scale;
-                else if (result_scale > origin_scale)
-                    scale_diff = result_scale / origin_scale;
-
-                UInt64 final_val = 0;
-                if (result_scale < origin_scale)
-                    final_val = (origin + offset) / scale_diff;
-                else
-                    final_val = (origin + offset) * scale_diff;
-
-                result_data[i] = static_cast<typename ResultDataType::FieldType>(final_val);
+                result_data[i] = 0;
+                result_data[i] += (result_scale < origin_scale) ? (origin + offset) / scale_diff : (origin + offset) * scale_diff;
             }
         }
-        else // Overload::Default
+        else // Overload: Default
         {
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
