@@ -1245,14 +1245,14 @@ If true then data can be parsed directly to columns with custom serialization (e
     DECLARE(Bool, merge_tree_use_v1_object_and_dynamic_serialization, false, R"(
 When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
 )", 0) \
-    DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), R"(
+    DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read, (16 * 8192), R"(
 If the number of rows to be read from a file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
 Possible values:
 
 - Positive integer.
 )", 0) \
-    DECLARE(UInt64, merge_tree_min_bytes_for_concurrent_read, (24 * 10 * 1024 * 1024), R"(
+    DECLARE(UInt64, merge_tree_min_bytes_for_concurrent_read, (16 * 10 * 1024 * 1024), R"(
 If the number of bytes to read from one file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
 
 Possible value:

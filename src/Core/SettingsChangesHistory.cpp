@@ -66,6 +66,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            {"merge_tree_min_rows_for_concurrent_read", 163840, 131072, "Tune the min_marks_for_concurrent_read to get better performance in high core count system"},
+            {"merge_tree_min_bytes_for_concurrent_read", 251658240, 167772160, "Tune the min_marks_for_concurrent_read to get better performance in high core count system"},
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
             {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},

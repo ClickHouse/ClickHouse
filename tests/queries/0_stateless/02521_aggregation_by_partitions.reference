@@ -8,14 +8,14 @@ ExpressionTransform × 16
       (Expression)
       ExpressionTransform × 4
         (ReadFromMergeTree)
-        Resize 3 → 1
-          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 3 0 → 1
-            Resize 3 → 1
-              MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 3 0 → 1
-                Resize 3 → 1
-                  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 3 0 → 1
-                    Resize 3 → 1
-                      MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 3 0 → 1
+        Resize 4 → 1
+          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+            Resize 4 → 1
+              MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+                Resize 4 → 1
+                  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+                    Resize 4 → 1
+                      MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
 1000000
 -- { echoOn }
 explain pipeline select a from t2 group by a;
