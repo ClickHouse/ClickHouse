@@ -18,7 +18,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
@@ -819,6 +818,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        String database_engine_name = DatabaseCatalog::instance().getDatabase(as_database_name)->getEngineName();
+
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -832,9 +833,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
         {
+            /// For `CREATE TABLE AS` queries involving `*MergeTree` engines in `Replicated` databases, we should drop the engine arguments explicitly.
+            /// When using the table structure of t1 to create t2, if engine arguments are not dropped, the table creation will fail when
+            /// running with `database_replicated_allow_replicated_engine_arguments=0` as the create query for t2 will have engine arguments.
+            if (database_engine_name == "Replicated")
+                create.storage->engine->arguments.reset();
+
             properties.indices = as_storage_metadata->getSecondaryIndices();
             properties.projections = as_storage_metadata->getProjections().clone();
-
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
             if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
