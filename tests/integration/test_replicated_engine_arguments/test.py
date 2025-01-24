@@ -47,5 +47,8 @@ def test_replicated_engine_with_arguments(start_cluster):
     node1.query(
         "SET database_replicated_allow_replicated_engine_arguments=0; CREATE TABLE r.t2 AS r.t1"
     )  # should not fail
+    expected = "CREATE TABLE r.t2\\n(\\n    `x` UInt8,\\n    `y` String\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY x\\nSETTINGS index_granularity = 8192\n"
+    # ensure that t2 was created with the correct default engine args
+    assert node1.query("SHOW CREATE TABLE r.t2") == expected
     node1.query("DROP TABLE IF EXISTS r.t1")
     node1.query("DROP TABLE IF EXISTS r.t2")
