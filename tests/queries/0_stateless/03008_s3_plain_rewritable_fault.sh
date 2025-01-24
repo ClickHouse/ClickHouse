@@ -129,9 +129,9 @@ then
     exit 2
 fi
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
-
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
 
 wait_for_part_remove_rollbacked test_s3_mt_fault
 
