@@ -15,9 +15,17 @@ public:
     /// `in_` should be seekable and should be able to read the whole file from 0 to in_->getFileSize();
     /// in particular, don't call setReadUntilPosition() on `in_` directly, call
     /// CachedInMemoryReadBufferFromFile::setReadUntilPosition().
-    CachedInMemoryReadBufferFromFile(PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_, bool restricted_seek_);
+    CachedInMemoryReadBufferFromFile(PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_);
 
     String getFileName() const override;
+    String getInfoForLog() override;
+    bool isSeekCheap() override;
+
+    /// Should we override isContentCached to do a cache lookup? It would save ThreadPoolRemoteFSReader
+    /// the overhead of passing the task to another thread and back, but will add overhead of doing
+    /// cache lookup twice.
+    /// bool isContentCached(size_t offset, size_t size) override;
+
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
     size_t getFileOffsetOfBufferEnd() const override;
@@ -39,8 +47,6 @@ private:
     size_t inner_read_until_position;
 
     PageCache::MappedPtr chunk;
-
-    bool restricted_seek;
 
     bool nextImpl() override;
 };

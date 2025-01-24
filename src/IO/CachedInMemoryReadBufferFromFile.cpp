@@ -14,12 +14,12 @@ namespace ErrorCodes
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
-    PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_, bool restricted_seek_)
+    PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_)
     , block_size(cache->defaultBlockSize())
     , lookahead_blocks(std::max(cache->defaultLookaheadBlocks(), size_t(1))), settings(settings_)
     , in(std::move(in_)), read_until_position(file_size.value())
-    , inner_read_until_position(read_until_position), restricted_seek(restricted_seek_)
+    , inner_read_until_position(read_until_position)
 {
     cache_key.offset = 0;
 }
@@ -29,19 +29,23 @@ String CachedInMemoryReadBufferFromFile::getFileName() const
     return in->getFileName();
 }
 
+String CachedInMemoryReadBufferFromFile::getInfoForLog()
+{
+    return "CachedInMemoryReadBufferFromFile(" + in->getInfoForLog() + ")";
+}
+
+bool CachedInMemoryReadBufferFromFile::isSeekCheap()
+{
+    /// This is a weird method. Seek to what offset? If the target offset is in cache then the seek
+    /// is cheap. Let's assume that the caller means a short seek that would stay within
+    /// working_buffer if it's not empty.
+    return available() == 0;
+}
+
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
 {
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
-
-    if (chunk && restricted_seek)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-            "Seek is allowed only before first read attempt from the buffer (current offset: "
-            "{}, new offset: {}, reading until position: {}, available: {})",
-            getPosition(), off, read_until_position, available());
-    }
 
     size_t offset = static_cast<size_t>(off);
     if (offset > file_size.value())
