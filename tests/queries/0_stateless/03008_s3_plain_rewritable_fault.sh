@@ -14,10 +14,13 @@ on_exit() {
     ${CLICKHOUSE_CLIENT} -m --query "
     SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_create;
     SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;
+    SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;
 "
 }
 
 trap on_exit EXIT
+
+set -e
 
 REMOVAL_STATE_CONDITION="(
     removal_state='Part was selected to be removed but then it had been rollbacked. The remove will be retried.'
@@ -100,23 +103,39 @@ SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;
 active_count=$(${CLICKHOUSE_CLIENT} --query "
 select countIf(active) from system.parts
 where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'")
-[[ $active_count -gt 0 ]] || echo "At least one active part is expected"
+if [[ $active_count -eq 0 ]]
+then
+    echo "At least one active part is expected"
+    return 2
+fi
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
 
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE test_s3_mt_fault;"
-
-${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 
 inactive_count=$(${CLICKHOUSE_CLIENT} --query "
 select countIf(active = 0) from system.parts
 where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'")
-[[ $inactive_count -gt 0 ]] || echo "At least one inactive part is expected"
+if [[ $inactive_count -eq 0 ]]
+then
+    echo "At least one inactive part is expected"
+    return 2
+fi
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
 
 wait_for_part_remove_rollbacked test_s3_mt_fault
 
 inactive_count=$(${CLICKHOUSE_CLIENT} --query "
 select count() from system.parts
 where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $REMOVAL_STATE_CONDITION")
-[[ $inactive_count -gt 0 ]] || echo "At least one inactive part which has been rollbacked from remove is expected"
+if [[ $inactive_count -eq 0 ]]
+then
+    echo "At least one inactive part which has been rollbacked from remove is expected"
+    return 2
+fi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 

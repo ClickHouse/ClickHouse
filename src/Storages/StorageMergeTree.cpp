@@ -41,6 +41,7 @@
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
@@ -55,6 +56,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char storage_merge_tree_background_clear_old_parts_pause[];
+};
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
@@ -1509,6 +1516,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
             [this, shared_lock] ()
             {
+                FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
+
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
                 size_t cleared_count = 0;
