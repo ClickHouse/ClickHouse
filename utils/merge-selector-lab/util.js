@@ -13,6 +13,20 @@ export function parseHumanReadableSize(str) {
     } else if (sizeInput.endsWith('PB')) {
         return parseFloat(sizeInput) * 1024 * 1024 * 1024 * 1024 * 1024;
     } else {
-        return parseInt(sizeInput);
+        return parseFloat(sizeInput);
+    }
+}
+
+export async function fetchText(uri) {
+    try {
+        const response = await fetch(uri);
+        if (!response.ok) {
+            throw { message: `HTTP error! Status: ${response.status}` };
+        }
+        const text = await response.text();
+        return text;
+    } catch (error) {
+        console.error(`Failed to fetch from URI: ${uri}`, error);
+        throw error;
     }
 }

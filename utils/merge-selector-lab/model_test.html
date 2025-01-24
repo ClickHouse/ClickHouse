@@ -102,7 +102,7 @@
             import { mergeModel } from './mergeModel.js';
             import { projectedGradientDescent, nesterovAcceleratedPGD, subgradientMethod } from './gradientDescent.js';
             import { ModelSolver } from './ModelSolver.js';
-            import { delayMs, parseHumanReadableSize } from './util.js';
+            import { delayMs, parseHumanReadableSize, fetchText } from './util.js';
 
             function readPartSize() {
                 return parseHumanReadableSize(document.getElementById('insertPartSize').value);
@@ -111,21 +111,6 @@
             function readMaxPartSize() {
                 const str = document.getElementById('maxPartSize').value;
                 return str ? parseHumanReadableSize(str) : null; // No limit
-            }
-
-            // Fetches a JSON file from URI and returns a string
-            async function fetchText(uri) {
-                try {
-                    const response = await fetch(uri);
-                    if (!response.ok) {
-                        throw { message: `HTTP error! Status: ${response.status}` };
-                    }
-                    const text = await response.text();
-                    return text;
-                } catch (error) {
-                    console.error(`Failed to fetch JSON from URI: ${uri}`, error);
-                    throw error;
-                }
             }
 
             async function loadSolver(modelName) {

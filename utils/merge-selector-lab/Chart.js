@@ -4,7 +4,7 @@ export class Chart {
     constructor(selection = d3.select("body"), xTitle = "", yTitle = "", description = "")
     {
         // Set up dimensions and margins
-        this.width = 1000;
+        this.width = document.documentElement.clientWidth;
         this.height = 300;
         this.margin = { top: 20, right: 30, bottom: 60, left: 50 };
 
@@ -90,7 +90,8 @@ export class Chart {
         // Add legend container inside the chart area (upper right corner)
         this.legend = this.svg.append("g")
             .attr("class", "legend")
-            .attr("transform", `translate(${this.innerWidth / 2}, 10)`); // Position inside the upper right corner
+            // .attr("transform", `translate(${this.innerWidth / 2}, 10)`); // Position inside the upper right corner
+            .attr("transform", `translate(10, 10)`);
     }
 
     removeChart()
@@ -170,8 +171,7 @@ export class Chart {
             this.svg.select(".y-axis")
                 .call(d3.axisLeft(this.yScale));
 
-            if (this.min_track)
-            {
+            if (this.min_track) {
                 // Indicate point with minimum y value
                 const minPoint = newSeries.data.reduce((min, d) => d.y < min.y ? d : min, newSeries.data[0]);
                 if (newSeries.arrow)
@@ -197,8 +197,7 @@ export class Chart {
                     .text(`x: ${minPoint.x.toFixed(1)}, y: ${minPoint.y.toFixed(1)}`);
 
                 // Track global min Y value and auto-click it
-                if (on_click && this.minY > newPoint.y)
-                {
+                if (on_click && this.minY > newPoint.y) {
                     this.minY = newPoint.y;
                     on_click(newPoint, true);
                 }
@@ -215,12 +214,29 @@ export class Chart {
             .attr("y", 0)
             .attr("width", 18)
             .attr("height", 18)
-            .style("fill", this.colors[colorIndex]);
+            .style("fill", this.colors[colorIndex])
+            .style("opacity", 1.0)
+            .style("cursor", "pointer")
+            .on("click", (event, d) => {
+                function toggleVisibility(selection) {
+                    selection.style("visibility", (d, i, nodes) =>
+                        d3.select(nodes[i]).style("visibility") === "hidden" ? "visible" : "hidden"
+                    );
+                }
+                function toggleOpacity(element) {
+                    element.style("opacity", (d, i, nodes) =>
+                        d3.select(nodes[i]).style("opacity") === "1" ? 0.2 : 1.0
+                    );
+                }
+                toggleVisibility(this.svg.selectAll(`.point-series-${newSeries.seriesIndex}`));
+                toggleVisibility(newSeries.path);
+                toggleOpacity(d3.select(event.target));
+            });
 
         legendItem.append("text")
             .attr("x", 24)
             .attr("y", 9)
-            .attr("dy", "0.35em")
+            .attr("dy", "0.15em")
             .text(name)
             .style("font-size", "12px")
             .style("alignment-baseline", "middle");
@@ -251,10 +267,10 @@ export class Chart {
         const series1 = chart.addSeries('Series 1', (data) => console.log('Clicked on:', data));
         const series2 = chart.addSeries('Series 2');
 
-        series1.addPoint(1, 10, { info: 'Point A' });
-        series1.addPoint(2, 15, { info: 'Point B' });
-        series2.addPoint(1, 5, { info: 'Point C' });
-        series2.addPoint(2, 8, { info: 'Point D' });
+        series1.addPoint({x: 1, y: 10, info: 'Point A' });
+        series1.addPoint({x: 2, y: 15, info: 'Point B' });
+        series2.addPoint({x: 1, y: 5,  info: 'Point C' });
+        series2.addPoint({x: 2, y: 8,  info: 'Point D' });
     </script>
 </body>
 </html>
