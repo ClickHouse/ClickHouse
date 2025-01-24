@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -161,6 +162,11 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
         {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
+        {"parametrized_view_paramters",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+             DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
+         "Parameters of parametrized view."
+        },
         {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
@@ -241,6 +247,38 @@ public:
     String getName() const override { return "Tables"; }
 
 protected:
+    NameToNameMap getSelectParamters(const StorageMetadataPtr & metadata_snapshot)
+    {
+        const SelectQueryDescription & query_description = metadata_snapshot->getSelectQuery();
+        ASTPtr inner_query = query_description.inner_query;
+        if (!inner_query || !inner_query->as<ASTSelectWithUnionQuery>())
+            return {};
+
+        return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
+    }
+
+    void FillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index, size_t & src_index)
+    {
+        if (src_index == 14 && columns_mask[src_index++])
+        {
+            if (table)
+            {
+                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+
+                NameToNameMap query_params = getSelectParamters(metadata_snapshot);
+                if (!query_params.empty())
+                {
+                    Array changes;
+                    for (const auto & [key, value] : query_params)
+                        changes.push_back(Tuple{key, value});
+                    columns[res_index++]->insert(changes);
+                }
+                else
+                    columns[res_index++]->insertDefault();
+            }
+        }
+    }
+
     Chunk generate() override
     {
         if (done)
@@ -344,8 +382,11 @@ protected:
                         const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
                         {
+                            // parametrized view parameters
+                            FillParametralizedViewData(res_columns, table.second, res_index, src_index);
+
                             // total_rows
-                            if (src_index == 19 && columns_mask[src_index])
+                            if (src_index == 20 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -362,7 +403,7 @@ protected:
                                 }
                             }
                             // total_bytes
-                            else if (src_index == 20 && columns_mask[src_index])
+                            else if (src_index == 21 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -545,6 +586,9 @@ protected:
                 }
                 else
                     src_index += 3;
+
+                // parametrized view parameters
+                FillParametralizedViewData(res_columns, table, res_index, src_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])

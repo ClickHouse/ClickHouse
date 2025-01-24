@@ -1,0 +1,2 @@
+parametrized_view_one_param	View	[('id','UInt32')]
+parametrized_view_multiple_params	View	[('id_from','UInt32'),('id_to','UInt32')]
