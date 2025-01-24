@@ -284,12 +284,10 @@ def main():
     #         name="Build Profile", status=is_success, stopwatch=sw_
     #     )
     #
-    # R = Result.create_from(results=results, stopwatch=stop_watch)
-    #
+    R = Result.create_from(results=results, stopwatch=stop_watch)
     # if profile_result:
     #     # append profile sub result after R is created to not affect overall job status
     #     R.results.append(profile_result)
-
     R.complete_job()
 
 
