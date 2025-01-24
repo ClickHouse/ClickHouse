@@ -220,7 +220,7 @@ SELECT bitTest(43, 2);
 
 ## bitTestAll {#bittestall}
 
-返回给定位置所有位的 [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) 进行与操作的结果。位值从右到左数，从0开始计数。
+返回给定位置所有位的 [logical conjunction](https://en.wikipedia.org/wiki/Logical_conjunction) 进行与操作的结果。位值从右到左数，从0开始计数。
 
 与运算的结果：
 

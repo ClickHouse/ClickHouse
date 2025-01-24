@@ -1,7 +1,8 @@
-#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
-#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 
 namespace DB
 {

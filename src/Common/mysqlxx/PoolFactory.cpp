@@ -70,31 +70,30 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
 {
 
     std::lock_guard lock(impl->mutex);
-    if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
+    auto entry = impl->pools.find(config_name);
+    if (entry != impl->pools.end())
     {
         return *(entry->second);
     }
-    else
-    {
-        std::string entry_name = getPoolEntryName(config, config_name);
-        if (auto id = impl->pools_by_ids.find(entry_name); id != impl->pools_by_ids.end())
-        {
-            entry = impl->pools.find(id->second);
-            std::shared_ptr<PoolWithFailover> pool = entry->second;
-            impl->pools.insert_or_assign(config_name, pool);
-            return *pool;
-        }
 
-        auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
-        // Check the pool will be shared
-        if (!entry_name.empty())
-        {
-            // Store shared pool
-            impl->pools.insert_or_assign(config_name, pool);
-            impl->pools_by_ids.insert_or_assign(entry_name, config_name);
-        }
+    std::string entry_name = getPoolEntryName(config, config_name);
+    if (auto id = impl->pools_by_ids.find(entry_name); id != impl->pools_by_ids.end())
+    {
+        entry = impl->pools.find(id->second);
+        std::shared_ptr<PoolWithFailover> pool = entry->second;
+        impl->pools.insert_or_assign(config_name, pool);
         return *pool;
     }
+
+    auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
+    // Check the pool will be shared
+    if (!entry_name.empty())
+    {
+        // Store shared pool
+        impl->pools.insert_or_assign(config_name, pool);
+        impl->pools_by_ids.insert_or_assign(entry_name, config_name);
+    }
+    return *pool;
 }
 
 void PoolFactory::reset()

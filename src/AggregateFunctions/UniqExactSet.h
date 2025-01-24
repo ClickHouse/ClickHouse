@@ -101,6 +101,13 @@ public:
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
+        /// If the size is large, we may convert the singleLevelHash to twoLevelHash and merge in parallel.
+        if (other.size() > 40000)
+        {
+            if (isSingleLevel())
+                convertToTwoLevel();
+        }
+
         if (isSingleLevel() && other.isTwoLevel())
             convertToTwoLevel();
 

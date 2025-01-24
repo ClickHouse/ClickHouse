@@ -151,6 +151,15 @@ Names NamesAndTypesList::getNames() const
     return res;
 }
 
+NameSet NamesAndTypesList::getNameSet() const
+{
+    NameSet res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.insert(column.name);
+    return res;
+}
+
 DataTypes NamesAndTypesList::getTypes() const
 {
     DataTypes res;

@@ -1,15 +1,16 @@
-import pytest
 import time
-from helpers.cluster import ClickHouseCluster
-from helpers import keeper_utils
-from kazoo.client import KazooClient, KazooState
-from kazoo.security import ACL, make_digest_acl, make_acl
+
+import pytest
 from kazoo.exceptions import (
     AuthFailedError,
     InvalidACLError,
-    NoAuthError,
     KazooException,
+    NoAuthError,
 )
+from kazoo.security import make_acl
+
+from helpers import keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -36,11 +37,7 @@ def started_cluster():
 
 
 def get_fake_zk(timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, "node", timeout=timeout)
 
 
 def get_genuine_zk():

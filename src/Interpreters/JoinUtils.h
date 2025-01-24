@@ -5,6 +5,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/Joins.h>
 
 namespace DB
 {

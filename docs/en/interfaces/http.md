@@ -11,7 +11,7 @@ The HTTP interface lets you use ClickHouse on any platform from any programming 
 By default, `clickhouse-server` listens for HTTP on port 8123 (this can be changed in the config).
 HTTPS can be enabled as well with port 8443 by default.
 
-If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
+If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#http_server_default_response) default value “Ok.” (with a line feed at the end)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -23,6 +23,11 @@ Also see: [HTTP response codes caveats](#http_response_codes_caveats).
 Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
 
 Web UI can be accessed here: `http://localhost:8123/play`.
+
+The Web UI supports displaying progress during query runtime, query cancellation, and streaming results.
+It has a secret feature for displaying charts and graphs for query pipelines.
+
+Web UI is designed for professionals like you.
 
 ![Web UI](../images/play.png)
 
@@ -58,7 +63,7 @@ Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
 X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds": "0"}
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 
 1
 ```
@@ -283,7 +288,9 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section “SET”.
 
-Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
+## Using ClickHouse sessions in the HTTP protocol 
+
+You can also use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout (in seconds), modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
 You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#send_progress_in_http_headers). Example of the header sequence:
 
@@ -472,7 +479,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -668,7 +675,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 Say Hi!%
@@ -708,7 +715,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -766,7 +773,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -785,13 +792,13 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=10
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334", "real_time_microseconds":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
 
-## Valid JSON/XML response on exception during HTTP streaming {valid-output-on-exception-http-streaming} 
+## Valid JSON/XML response on exception during HTTP streaming {#valid-output-on-exception-http-streaming}
 
 While query execution over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text
 even if some specific data format was used to output data and the output may become invalid in terms of specified data format.

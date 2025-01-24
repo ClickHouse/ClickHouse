@@ -24,6 +24,10 @@ extern const Event SleepFunctionElapsedMicroseconds;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 function_sleep_max_microseconds_per_block;
+}
 
 namespace ErrorCodes
 {
@@ -59,8 +63,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef().function_sleep_max_microseconds_per_block,
-            context->getProcessListElementSafe());
+            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
     }
 
     FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)

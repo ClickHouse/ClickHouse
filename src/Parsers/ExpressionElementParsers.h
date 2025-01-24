@@ -61,6 +61,16 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
+    {
+    }
+
+    /// Checks if the identirier is actually a pair of a special delimiter and the identifier in back quotes.
+    /// For example: :`UInt64` or ^`path` from special JSON subcolumns.
+    static std::optional<std::pair<char, String>> splitSpecialDelimiterAndIdentifierIfAny(const String & name);
+
+protected:
     enum class SpecialDelimiter : char
     {
         NONE = '\0',
@@ -68,12 +78,6 @@ public:
         JSON_PATH_PREFIX = '^',
     };
 
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
-    {
-    }
-
-protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
@@ -432,6 +436,19 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Element of storage ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
+  */
+class ParserStorageOrderByElement : public IParserBase
+{
+public:
+    explicit ParserStorageOrderByElement(bool allow_order_) : allow_order(allow_order_) {}
+
+protected:
+    bool allow_order;
+
+    const char * getName() const override { return "element of storage ORDER BY expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
   *  and optionally, NULLS LAST|FIRST

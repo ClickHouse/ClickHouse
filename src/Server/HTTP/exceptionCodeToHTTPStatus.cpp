@@ -75,79 +75,58 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
     {
         return HTTPResponse::HTTP_UNAUTHORIZED;
     }
-    else if (exception_code == ErrorCodes::UNKNOWN_USER ||
-             exception_code == ErrorCodes::WRONG_PASSWORD ||
-             exception_code == ErrorCodes::AUTHENTICATION_FAILED ||
-             exception_code == ErrorCodes::SET_NON_GRANTED_ROLE)
+    if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD
+        || exception_code == ErrorCodes::AUTHENTICATION_FAILED || exception_code == ErrorCodes::SET_NON_GRANTED_ROLE)
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
-    else if (exception_code == ErrorCodes::BAD_ARGUMENTS ||
-             exception_code == ErrorCodes::CANNOT_COMPILE_REGEXP ||
-             exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
-             exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
-             exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
-             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING ||
-             exception_code == ErrorCodes::CANNOT_PARSE_IPV4 ||
-             exception_code == ErrorCodes::CANNOT_PARSE_IPV6 ||
-             exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
-             exception_code == ErrorCodes::CANNOT_PARSE_UUID ||
-             exception_code == ErrorCodes::DUPLICATE_COLUMN ||
-             exception_code == ErrorCodes::ILLEGAL_COLUMN ||
-             exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
-             exception_code == ErrorCodes::THERE_IS_NO_COLUMN ||
-             exception_code == ErrorCodes::TOO_DEEP_AST ||
-             exception_code == ErrorCodes::TOO_BIG_AST ||
-             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
-             exception_code == ErrorCodes::SYNTAX_ERROR ||
-             exception_code == ErrorCodes::INCORRECT_DATA ||
-             exception_code == ErrorCodes::TYPE_MISMATCH ||
-             exception_code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+    if (exception_code == ErrorCodes::BAD_ARGUMENTS || exception_code == ErrorCodes::CANNOT_COMPILE_REGEXP
+        || exception_code == ErrorCodes::CANNOT_PARSE_TEXT || exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
+        || exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING || exception_code == ErrorCodes::CANNOT_PARSE_DATE
+        || exception_code == ErrorCodes::CANNOT_PARSE_DATETIME || exception_code == ErrorCodes::CANNOT_PARSE_NUMBER
+        || exception_code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING || exception_code == ErrorCodes::CANNOT_PARSE_IPV4
+        || exception_code == ErrorCodes::CANNOT_PARSE_IPV6 || exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
+        || exception_code == ErrorCodes::CANNOT_PARSE_UUID || exception_code == ErrorCodes::DUPLICATE_COLUMN
+        || exception_code == ErrorCodes::ILLEGAL_COLUMN || exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST
+        || exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE || exception_code == ErrorCodes::THERE_IS_NO_COLUMN
+        || exception_code == ErrorCodes::TOO_DEEP_AST || exception_code == ErrorCodes::TOO_BIG_AST
+        || exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE || exception_code == ErrorCodes::SYNTAX_ERROR
+        || exception_code == ErrorCodes::INCORRECT_DATA || exception_code == ErrorCodes::TYPE_MISMATCH
+        || exception_code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
     {
         return HTTPResponse::HTTP_BAD_REQUEST;
     }
-    else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
-             exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
-             exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE ||
-             exception_code == ErrorCodes::UNKNOWN_STORAGE ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE ||
-             exception_code == ErrorCodes::UNKNOWN_SETTING ||
-             exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
-             exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
-             exception_code == ErrorCodes::UNKNOWN_FORMAT ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY ||
-             exception_code == ErrorCodes::UNKNOWN_ROLE)
+    if (exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_FUNCTION
+        || exception_code == ErrorCodes::UNKNOWN_IDENTIFIER || exception_code == ErrorCodes::UNKNOWN_TYPE
+        || exception_code == ErrorCodes::UNKNOWN_STORAGE || exception_code == ErrorCodes::UNKNOWN_DATABASE
+        || exception_code == ErrorCodes::UNKNOWN_SETTING || exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING
+        || exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION || exception_code == ErrorCodes::UNKNOWN_FORMAT
+        || exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE || exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY
+        || exception_code == ErrorCodes::UNKNOWN_ROLE)
     {
         return HTTPResponse::HTTP_NOT_FOUND;
     }
-    else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
+    if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
     {
         return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
     }
-    else if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
+    if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
     {
         return HTTPResponse::HTTP_NOT_IMPLEMENTED;
     }
-    else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
-             exception_code == ErrorCodes::CANNOT_OPEN_FILE)
+    if (exception_code == ErrorCodes::SOCKET_TIMEOUT || exception_code == ErrorCodes::CANNOT_OPEN_FILE)
     {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
-    else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
+    if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
     {
         return HTTPResponse::HTTP_LENGTH_REQUIRED;
     }
-    else if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
+    if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
     {
         return HTTPResponse::HTTP_REQUEST_TIMEOUT;
     }
-    else if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
+    if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
     {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }

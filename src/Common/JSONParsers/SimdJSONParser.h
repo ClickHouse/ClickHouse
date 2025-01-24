@@ -124,7 +124,7 @@ public:
 
         // At least for long strings, the following should be fast. We could
         // do better by integrating the checks and the insertion.
-        buffer.insert(unescaped.data(), unescaped.data() + i);
+        buffer.insert(unescaped.data(), unescaped.data() + i);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         // We caught a control character if we enter this loop (slow).
         // Note that we are do not restart from the beginning, but rather we continue
         // from the point where we encountered something that requires escaping.

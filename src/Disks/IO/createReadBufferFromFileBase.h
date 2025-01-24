@@ -1,13 +1,13 @@
 #pragma once
 
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadSettings.h>
-#include <string>
 #include <memory>
+#include <string>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
 {
+struct ReadSettings;
 
 /** Create an object to read data from a file.
   *

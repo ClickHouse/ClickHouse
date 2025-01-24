@@ -16,7 +16,7 @@
 namespace DB
 {
 
-class HiveSettings;
+struct HiveSettings;
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.

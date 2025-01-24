@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool cast_keep_nullable;
+}
 
 namespace ErrorCodes
 {
@@ -44,8 +48,7 @@ public:
             return "accurateCastOrNull";
         if (internal)
             return "_CAST";
-        else
-            return "CAST";
+        return "CAST";
     }
 
     String getName() const override
@@ -70,14 +73,11 @@ public:
     static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
-        {
             return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
-        }
-        else
-        {
-            const auto & settings_ref = context->getSettingsRef();
-            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
-        }
+
+        const auto & settings_ref = context->getSettingsRef();
+        return std::make_unique<CastOverloadResolverImpl>(
+            context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
     static FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)

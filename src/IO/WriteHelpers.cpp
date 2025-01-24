@@ -1,12 +1,21 @@
 #include <IO/WriteHelpers.h>
-#include <cinttypes>
-#include <utility>
-#include <Common/formatIPv6.h>
+#include <base/DecomposedFloat.h>
 #include <base/hex.h>
+#include <Common/formatIPv6.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#include <dragonbox/dragonbox_to_chars.h>
+#pragma clang diagnostic pop
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+}
 
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
@@ -127,4 +136,38 @@ String fourSpaceIndent(size_t indent)
 {
     return std::string(indent * 4, ' ');
 }
+
+template <typename T>
+requires is_floating_point<T>
+size_t writeFloatTextFastPath(T x, char * buffer)
+{
+    Int64 result = 0;
+
+    if constexpr (std::is_same_v<T, Float64>)
+    {
+        /// The library dragonbox has low performance on integers.
+        /// This workaround improves performance 6..10 times.
+
+        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
+            result = itoa(Int64(x), buffer) - buffer;
+        else
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+    }
+    else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
+    {
+        Float32 f32 = Float32(x);
+        if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
+            result = itoa(Int32(f32), buffer) - buffer;
+        else
+            result = jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
+    }
+
+    if (result <= 0)
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
+    return result;
+}
+
+template size_t writeFloatTextFastPath(Float64 x, char * buffer);
+template size_t writeFloatTextFastPath(Float32 x, char * buffer);
+template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
 }

@@ -86,7 +86,11 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    unsigned client_tcp_protocol_version = 0;
+    UInt32 client_tcp_protocol_version = 0;
+
+    /// Numbers are starting from 1. Zero means unset.
+    UInt32 script_query_number = 0;
+    UInt32 script_line_number = 0;
 
     /// In case of distributed query, client info for query is actually a client info of client.
     /// In order to get a version of server-initiator, use connection_ values.
@@ -94,7 +98,7 @@ public:
     UInt64 connection_client_version_major = 0;
     UInt64 connection_client_version_minor = 0;
     UInt64 connection_client_version_patch = 0;
-    unsigned connection_tcp_protocol_version = 0;
+    UInt32 connection_tcp_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
@@ -110,13 +114,26 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
-    String getLastForwardedFor() const
+    std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const
     {
         if (forwarded_for.empty())
             return {};
         String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
         boost::trim(last);
-        return last;
+        try
+        {
+            return Poco::Net::SocketAddress{last};
+        }
+        catch (const Poco::InvalidArgumentException &)
+        {
+            return Poco::Net::SocketAddress{last, 0};
+        }
+    }
+
+    String getLastForwardedForHost() const
+    {
+        auto addr = getLastForwardedFor();
+        return addr ? addr->host().toString() : "";
     }
 
     /// Common
@@ -166,5 +183,5 @@ private:
 };
 
 String toString(ClientInfo::Interface interface);
-
+String toString(ClientInfo::HTTPMethod method);
 }

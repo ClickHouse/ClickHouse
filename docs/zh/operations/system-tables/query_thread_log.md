@@ -59,7 +59,7 @@ ClickHouse不会自动从表中删除数据。 欲了解更多详情，请参照
 -   `http_user_agent` ([字符串](../../sql-reference/data-types/string.md)) — `UserAgent` HTTP请求中传递的UA表头。
 -   `quota_key` ([字符串](../../sql-reference/data-types/string.md)) —  “quota key” 在 [配额](../../operations/quotas.md) 设置内（详见 `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse 修订版本号.
--   `ProfileEvents` ([数组（字符串, UInt64)](../../sql-reference/data-types/array.md)) — 对于该线程的多个指标计数器。这一项可以参考 [system.events](#system_tables-events).
+-   `ProfileEvents` ([数组（字符串, UInt64)](../../sql-reference/data-types/array.md)) — 对于该线程的多个指标计数器。这一项可以参考 [system.events](/docs/zh/operations/system-tables/events).
 
 **示例**
 

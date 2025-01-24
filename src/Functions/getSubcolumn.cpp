@@ -23,6 +23,8 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForDynamic() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -60,7 +62,7 @@ Receives the expression or identifier and constant string with the name of subco
 Returns requested subcolumn extracted from the expression.
 )",
         .examples{{"getSubcolumn", "SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')", ""}},
-        .categories{"OtherFunctions"}
+        .category{"Other"}
     });
 }
 

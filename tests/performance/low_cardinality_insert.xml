@@ -1,0 +1,11 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS test_lc_insert</create_query>
+    <create_query>
+        CREATE TABLE test_lc_insert (k1 LowCardinality(String), k2 LowCardinality(String)) ENGINE = MergeTree order by (k1, k2)
+    </create_query>
+
+    <!-- INSERT will do sorting on k1 and k2 LowCardinality columns -->
+    <query>INSERT INTO test_lc_insert(k1, k2) SELECT number%1000 AS k1, number%1001 AS k2 FROM numbers(2000000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_lc_insert</drop_query>
+</test>

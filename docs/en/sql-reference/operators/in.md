@@ -259,4 +259,4 @@ Therefore adding the [max_parallel_replicas](#distributed-subqueries-and-max_par
 
 One workaround if `local_table_2` does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
 
-If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.
+If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](/docs/en/operations/settings/settings#parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.

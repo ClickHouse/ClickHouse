@@ -24,17 +24,17 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
+namespace SetSetting
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const SetSettingsString disk;
+    extern const SetSettingsBool persistent;
 }
-
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 class SetOrJoinSink : public SinkToStorage, WithContext
 {
@@ -43,12 +43,15 @@ public:
         ContextPtr ctx, StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
+    ~SetOrJoinSink() override;
 
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
+    void cancelBuffers() noexcept;
+
     StorageSetOrJoinBase & table;
     StorageMetadataPtr metadata_snapshot;
     String backup_path;
@@ -83,6 +86,20 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
+SetOrJoinSink::~SetOrJoinSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void SetOrJoinSink::cancelBuffers() noexcept
+{
+    compressed_backup_buf.cancel();
+    if (backup_buf)
+        backup_buf->cancel();
+}
+
+
 void SetOrJoinSink::consume(Chunk & chunk)
 {
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
@@ -102,6 +119,10 @@ void SetOrJoinSink::onFinish()
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+    }
+    else
+    {
+        cancelBuffers();
     }
 }
 
@@ -214,7 +235,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -237,9 +258,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->existsDirectory(fs::path(path) / "tmp"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
 
@@ -253,7 +274,7 @@ void StorageSetOrJoinBase::restore()
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
 
-        if (disk->isFile(file_path)
+        if (disk->existsFile(file_path)
             && endsWith(name, file_suffix)
             && disk->getFileSize(file_path) > 0)
         {
@@ -280,7 +301,7 @@ void StorageSetOrJoinBase::restore()
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ContextPtr ctx = nullptr;
-    auto backup_buf = disk->readFile(file_path);
+    auto backup_buf = disk->readFile(file_path, getReadSettings());
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
@@ -322,10 +343,10 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
+        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
 
 

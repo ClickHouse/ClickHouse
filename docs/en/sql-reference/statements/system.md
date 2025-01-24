@@ -4,6 +4,8 @@ sidebar_position: 36
 sidebar_label: SYSTEM
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # SYSTEM Statements
 
 ## RELOAD EMBEDDED DICTIONARIES
@@ -15,7 +17,7 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## RELOAD DICTIONARIES
 
 Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
 **Syntax**
@@ -146,7 +148,7 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path).
+Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
 Supported formats:
 
@@ -182,6 +184,8 @@ SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 ```
 
 ## SHUTDOWN
+
+<CloudNotSupportedBadge/>
 
 Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
 
@@ -255,6 +259,8 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 
 ### STOP MERGES
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
@@ -266,6 +272,8 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 :::
 
 ### START MERGES
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background merges for tables in the MergeTree family:
 
@@ -331,6 +339,8 @@ ClickHouse can manage background replication related processes in [ReplicatedMer
 
 ### STOP FETCHES
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
@@ -339,6 +349,8 @@ SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family
 ```
 
 ### START FETCHES
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
@@ -506,6 +518,18 @@ Will do sync syscall.
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
+### LOAD PRIMARY KEY
+
+Load the primary keys for the given table or for all tables.
+
+```sql
+SYSTEM LOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM LOAD PRIMARY KEY
+```
+
 ### UNLOAD PRIMARY KEY
 
 Unload the primary keys for the given table or for all tables.
@@ -564,4 +588,14 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name
+```
+
+### SYSTEM WAIT VIEW
+
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+
+Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
 ```

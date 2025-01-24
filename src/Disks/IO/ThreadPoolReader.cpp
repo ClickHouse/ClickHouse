@@ -111,9 +111,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// RWF_NOWAIT flag may return 0 even when not at end of file.
     /// It can't be distinguished from the real eof, so we have to
     /// disable pread with nowait.
-    static std::atomic<bool> has_pread_nowait_support = !hasBugInPreadV2();
+    static const bool has_pread_nowait_support = !hasBugInPreadV2();
 
-    if (has_pread_nowait_support.load(std::memory_order_relaxed))
+    if (has_pread_nowait_support)
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -161,32 +161,29 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
                     /// No support for the syscall or the flag in the Linux kernel.
-                    has_pread_nowait_support.store(false, std::memory_order_relaxed);
+                    /// It shouldn't happen because we check the kernel version but let's
+                    /// fallback to the thread pool.
                     break;
                 }
-                else if (errno == EAGAIN)
+                if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-                else if (errno == EINTR)
+                if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
                     continue;
                 }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                    promise.set_exception(std::make_exception_ptr(
-                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
-                    return future;
-                }
+
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                promise.set_exception(
+                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                return future;
             }
-            else
-            {
-                bytes_read += res;
-                __msan_unpoison(request.buf, res);
-            }
+
+            bytes_read += res;
+            __msan_unpoison(request.buf, res);
         }
 
         if (bytes_read)

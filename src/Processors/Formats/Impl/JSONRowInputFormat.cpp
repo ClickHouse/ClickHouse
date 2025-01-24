@@ -96,11 +96,9 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
         peekable_buf->rollbackToCheckpoint(true);
         return JSONEachRowSchemaReader::readSchema();
     }
-    else
-    {
-        JSONUtils::skipObjectStart(*peekable_buf);
-        return JSONUtils::readMetadata(*peekable_buf, format_settings.json);
-    }
+
+    JSONUtils::skipObjectStart(*peekable_buf);
+    return JSONUtils::readMetadata(*peekable_buf, format_settings.json);
 }
 
 void registerInputFormatJSON(FormatFactory & factory)

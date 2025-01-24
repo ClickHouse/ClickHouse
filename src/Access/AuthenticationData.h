@@ -31,17 +31,17 @@ public:
     AuthenticationType getType() const { return type; }
 
     /// Sets the password and encrypt it using the authentication type set in the constructor.
-    void setPassword(const String & password_);
+    void setPassword(const String & password_, bool validate);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
 
     /// Sets the password as a string of hexadecimal digits.
-    void setPasswordHashHex(const String & hash);
+    void setPasswordHashHex(const String & hash, bool validate);
     String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
-    void setPasswordHashBinary(const Digest & hash);
+    void setPasswordHashBinary(const Digest & hash, bool validate);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
     /// Sets the salt in String form.
@@ -49,7 +49,7 @@ public:
     String getSalt() const;
 
     /// Sets the password using bcrypt hash with specified workfactor
-    void setPasswordBcrypt(const String & password_, int workfactor_);
+    void setPasswordBcrypt(const String & password_, int workfactor_, bool validate);
 
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }
@@ -74,10 +74,13 @@ public:
     const String & getHTTPAuthenticationServerName() const { return http_auth_server_name; }
     void setHTTPAuthenticationServerName(const String & name) { http_auth_server_name = name; }
 
+    time_t getValidUntil() const { return valid_until; }
+    void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
+
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
-    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules);
+    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
     std::shared_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util
@@ -106,6 +109,7 @@ private:
     /// HTTP authentication properties
     String http_auth_server_name;
     HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
+    time_t valid_until = 0;
 };
 
 }

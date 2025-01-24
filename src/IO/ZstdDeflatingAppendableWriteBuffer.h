@@ -38,8 +38,6 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    ~ZstdDeflatingAppendableWriteBuffer() override;
-
     void sync() override
     {
         next();
@@ -62,6 +60,8 @@ private:
     void finalizeBefore();
     void finalizeAfter();
     void finalizeZstd();
+
+    void cancelImpl() noexcept override;
 
     /// Read three last bytes from non-empty compressed file and compares them with
     /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.

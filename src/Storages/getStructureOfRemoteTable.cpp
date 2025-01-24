@@ -19,6 +19,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+}
 
 namespace ErrorCodes
 {
@@ -66,8 +73,8 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     /// since this is a service query and should not lead to query failure.
     {
         Settings new_settings = new_context->getSettingsCopy();
-        new_settings.max_result_rows = 0;
-        new_settings.max_result_bytes = 0;
+        new_settings[Setting::max_result_rows] = 0;
+        new_settings[Setting::max_result_bytes] = 0;
         new_context->setSettings(new_settings);
     }
 
@@ -114,7 +121,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
                 String expr_str = (*default_expr)[i].safeGet<const String &>();
                 column.default_desc.expression = parseQuery(
                     expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression",
-                    0, settings.max_parser_depth, settings.max_parser_backtracks);
+                    0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             }
 
             res.add(column);

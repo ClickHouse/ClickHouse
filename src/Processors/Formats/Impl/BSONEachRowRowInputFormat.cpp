@@ -71,20 +71,17 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     {
         return prev_positions[key_index]->second;
     }
-    else
+
+    const auto it = name_map.find(name);
+
+    if (it != name_map.end())
     {
-        const auto it = name_map.find(name);
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
 
-        if (it != name_map.end())
-        {
-            if (key_index < prev_positions.size())
-                prev_positions[key_index] = it;
-
-            return it->second;
-        }
-        else
-            return UNKNOWN_FIELD;
+        return it->second;
     }
+    return UNKNOWN_FIELD;
 }
 
 /// Read the field name. Resulting StringRef is valid only before next read from buf.
@@ -417,11 +414,11 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
             auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
             if (!try_get_index)
                 throw Exception(
-                                ErrorCodes::INCORRECT_DATA,
-                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                                "tuple doesn't have element with name \"{}\"",
-                                data_type->getName(),
-                                name);
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                    "tuple doesn't have element with name \"{}\"",
+                    data_type->getName(),
+                    name.toView());
             index = *try_get_index;
         }
 
@@ -806,7 +803,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
@@ -825,8 +822,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             const auto & type = header.getByPosition(i).type;
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at index {}", type->getName(), i);
-            else
-                type->insertDefaultInto(*columns[i]);
+            type->insertDefaultInto(*columns[i]);
         }
 
     if (format_settings.defaults_for_omitted_fields)

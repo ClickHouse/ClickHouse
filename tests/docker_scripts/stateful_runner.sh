@@ -105,7 +105,7 @@ setup_logs_replication
 
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < /repo/tests/docker_scripts/create.sql
+clickhouse-client < /repo/tests/docker_scripts/create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -224,6 +224,9 @@ function run_tests()
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
+    if [[ -n "$USE_PARALLEL_REPLICAS" ]] && [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--no-parallel-replicas' )
+    fi
 
     set +e
 
@@ -241,12 +244,6 @@ function run_tests()
         "${ADDITIONAL_OPTIONS[@]}"
         "$SKIP_TESTS_OPTION"
     )
-    if [[ -n "$USE_PARALLEL_REPLICAS" ]] && [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
-        TEST_ARGS+=(
-            --client="clickhouse-client --allow_experimental_parallel_reading_from_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --max_parallel_replicas=100 --cluster_for_parallel_replicas='parallel_replicas'"
-            --no-parallel-replicas
-        )
-    fi
     clickhouse-test "${TEST_ARGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
     set -e
 }

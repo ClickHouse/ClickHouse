@@ -50,13 +50,13 @@ UInt32 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) 
 {
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
         return static_cast<UInt32>(date_lut.fromDayNum(DayNum(column_date->getData()[index])));
-    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+    if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
         return column_date_time->getData()[index];
-    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
             return static_cast<UInt32>(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
-        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
+        if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
             return column_const->getValue<UInt32>();
     }
 

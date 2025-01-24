@@ -112,7 +112,7 @@ Example:
 ```
 
 The NATS server configuration can be added using the ClickHouse config file.
- More specifically you can add Redis password for NATS engine:
+More specifically you can add Redis password for NATS engine:
 
 ``` xml
 <nats>
@@ -167,7 +167,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 - `_subject` - NATS message subject. Data type: `String`.
 
-Additional virtual columns when `kafka_handle_error_mode='stream'`:
+Additional virtual columns when `nats_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.

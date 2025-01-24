@@ -21,12 +21,12 @@ ClickHouse server中发现了一个堆缓冲区溢出问题。攻击者可发送
 
 ## 修复于ClickHouse 21.10.2.15，2021-10-18
 ### CVE-2021-43304
-在对恶意查询做语法分析时，ClickHouse的LZ4压缩编码会堆缓冲区溢出。LZ4:decompressImpl循环尤其是wildCopy<copy_amount>(op, ip, copy_end)中的随意复制操作没有验证是否会导致超出目标缓冲区限制。
+在对恶意查询做语法分析时，ClickHouse的LZ4压缩编码会堆缓冲区溢出。LZ4:decompressImpl循环尤其是`wildCopy<copy_amount>(op, ip, copy_end)`中的随意复制操作没有验证是否会导致超出目标缓冲区限制。
 
 作者：JFrog 安全研究团队
 
 ### CVE-2021-43305
-在对恶意查询做语法分析时，ClickHouse的LZ4压缩编码会堆缓冲区溢出。LZ4:decompressImpl循环尤其是wildCopy<copy_amount>(op, ip, copy_end)中的随意复制操作没有验证是否会导致超出目标缓冲区限制。
+在对恶意查询做语法分析时，ClickHouse的LZ4压缩编码会堆缓冲区溢出。LZ4:decompressImpl循环尤其是`wildCopy<copy_amount>(op, ip, copy_end)`中的随意复制操作没有验证是否会导致超出目标缓冲区限制。
 该问题于CVE-2021-43304非常相似，但是无保护的copy操作存在于不同的wildCopy调用里。
 
 作者：JFrog 安全研究团队
@@ -132,4 +132,4 @@ deb包中的错误配置可能导致未经授权使用数据库。
 
 作者：英国国家网络安全中心（NCSC）
 
-{## [Original article](https://clickhouse.com/docs/en/security_changelog/) ##}
+[Original article](/docs/en/whats-new/security-changelog)

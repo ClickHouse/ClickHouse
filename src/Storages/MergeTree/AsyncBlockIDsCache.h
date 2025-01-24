@@ -2,8 +2,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-
-#include <chrono>
+#include <Core/Types_fwd.h>
 
 namespace DB
 {

@@ -1,5 +1,5 @@
 A
-CREATE USER test_user_01073
+CREATE USER test_user_01073 IDENTIFIED WITH no_password
 B
 C
 GRANT INSERT, ALTER DELETE ON *.* TO test_user_01073

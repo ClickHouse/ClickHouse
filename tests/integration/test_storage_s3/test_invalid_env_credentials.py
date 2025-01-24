@@ -1,11 +1,12 @@
 import json
-import os
 import logging
+import os
+
+import pytest
 
 import helpers.client
-from helpers.mock_servers import start_mock_servers
-import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.mock_servers import start_mock_servers
 
 MINIO_INTERNAL_PORT = 9001
 

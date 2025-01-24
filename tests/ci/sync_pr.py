@@ -5,12 +5,12 @@
 import argparse
 import sys
 
+from ci_config import CI
 from commit_status_helper import get_commit, post_commit_status
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from pr_info import PRInfo
 from report import SUCCESS
-from ci_config import CI
 
 
 def parse_args() -> argparse.Namespace:

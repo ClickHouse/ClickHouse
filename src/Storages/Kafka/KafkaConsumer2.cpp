@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 
 #include <algorithm>
 #include <iterator>
@@ -255,17 +256,15 @@ ReadBufferPtr KafkaConsumer2::consume(const TopicPartition & topic_partition, co
             LOG_TRACE(log, "Stalled");
             return nullptr;
         }
-        else
-        {
-            messages = std::move(new_messages);
-            current = messages.begin();
-            LOG_TRACE(
-                log,
-                "Polled batch of {} messages. Offsets position: {}",
-                messages.size(),
-                consumer->get_offsets_position(consumer->get_assignment()));
-            break;
-        }
+
+        messages = std::move(new_messages);
+        current = messages.begin();
+        LOG_TRACE(
+            log,
+            "Polled batch of {} messages. Offsets position: {}",
+            messages.size(),
+            consumer->get_offsets_position(consumer->get_assignment()));
+        break;
     }
 
     filterMessageErrors();
@@ -381,4 +380,13 @@ void KafkaConsumer2::resetIfStopped()
         stalled_status = StalledStatus::CONSUMER_STOPPED;
     }
 }
+
+std::size_t KafkaConsumer2::OnlyTopicNameAndPartitionIdHash::operator()(const TopicPartition & tp) const
+{
+    SipHash s;
+    s.update(tp.topic);
+    s.update(tp.partition_id);
+    return s.get64();
+}
+
 }

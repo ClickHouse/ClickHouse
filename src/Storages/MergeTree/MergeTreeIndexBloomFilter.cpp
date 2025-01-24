@@ -85,6 +85,14 @@ bool MergeTreeIndexGranuleBloomFilter::empty() const
     return !total_rows;
 }
 
+size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & bloom_filter : bloom_filters)
+        sum += bloom_filter->memoryUsageBytes();
+    return sum;
+}
+
 void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
@@ -185,17 +193,9 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
                                                         hash_functions);
                            });
     }
-    else
-    {
-        return std::any_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
-    }
+
+    return std::any_of(
+        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
 }
 
 }
@@ -593,9 +593,8 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
     {
         return true;
     }
-    else if (function_name == "equals" /// notEquals is not applicable
-        || function_name == "greater" || function_name == "greaterOrEquals"
-        || function_name == "less" || function_name == "lessOrEquals")
+    if (function_name == "equals" /// notEquals is not applicable
+        || function_name == "greater" || function_name == "greaterOrEquals" || function_name == "less" || function_name == "lessOrEquals")
     {
         size_t function_arguments_size = function.getArgumentsSize();
         if (function_arguments_size != 2)
@@ -631,17 +630,18 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
             /// indexOf(...) = c, c != 0
             return true;
         }
-        else if (function_name == "notEquals" && constant_equal_zero)
+        if (function_name == "notEquals" && constant_equal_zero)
         {
             /// indexOf(...) != c, c = 0
             return true;
         }
-        else if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
+        if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
         {
             /// indexOf(...) > c, c >= 0
             return true;
         }
-        else if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals") && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
+        if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals")
+            && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
         {
             /// indexOf(...) >= c, c > 0
             return true;

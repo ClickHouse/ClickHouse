@@ -70,7 +70,9 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t recovery_time_column_idx = columns_mask.size() - 1, replication_lag_column_idx = columns_mask.size() - 2, is_active_column_idx = columns_mask.size() - 3;
+    size_t recovery_time_column_idx = columns_mask.size() - 1;
+    size_t replication_lag_column_idx = columns_mask.size() - 2;
+    size_t is_active_column_idx = columns_mask.size() - 3;
     ReplicasInfo replicas_info;
     if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_active_column_idx]))
         replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second);
@@ -84,7 +86,8 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
 
         for (size_t replica_index = 0; replica_index < shard_addresses.size(); ++replica_index)
         {
-            size_t src_index = 0, res_index = 0;
+            size_t src_index = 0;
+            size_t res_index = 0;
             const auto & address = shard_addresses[replica_index];
 
             if (columns_mask[src_index++])

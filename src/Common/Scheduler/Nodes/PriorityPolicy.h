@@ -19,7 +19,7 @@ namespace ErrorCodes
  * Scheduler node that implements priority scheduling policy.
  * Requests are scheduled in order of priorities.
  */
-class PriorityPolicy : public ISchedulerNode
+class PriorityPolicy final : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item
@@ -39,11 +39,28 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
+    explicit PriorityPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & node_info)
+        : ISchedulerNode(event_queue_, node_info)
+    {}
+
+    ~PriorityPolicy() override
+    {
+        // We need to clear `parent` in all children to avoid dangling references
+        while (!children.empty())
+            removeChild(children.begin()->second.get());
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("priority");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<PriorityPolicy *>(other))
+        if (auto * _ = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
     }
@@ -96,8 +113,7 @@ public:
     {
         if (auto iter = children.find(child_name); iter != children.end())
             return iter->second.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override

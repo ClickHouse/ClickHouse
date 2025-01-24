@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# The row ordering is not guaranteed with parallel replicas and a limit
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

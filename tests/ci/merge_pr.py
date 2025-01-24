@@ -14,19 +14,19 @@ from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
 
+from ci_config import CI
 from commit_status_helper import (
-    get_commit_filtered_statuses,
     get_commit,
+    get_commit_filtered_statuses,
     trigger_mergeable_check,
     update_upstream_sync_status,
 )
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
 from report import SUCCESS
-from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
 from synchronizer_utils import SYNC_BRANCH_PREFIX
-from ci_config import CI
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")

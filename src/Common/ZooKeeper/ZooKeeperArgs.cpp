@@ -99,6 +99,11 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
         if (auto session_timeout_key = coordination_key + ".session_timeout_ms";
             config.has(session_timeout_key))
             session_timeout_ms = config.getInt(session_timeout_key);
+
+        if (auto use_xid_64_key = coordination_key + ".use_xid_64";
+            config.has(use_xid_64_key))
+            use_xid_64 = config.getBool(use_xid_64_key);
+
     }
 
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -171,6 +176,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             connection_timeout_ms = config.getInt(config_name + "." + key);
         }
+        else if (key == "num_connection_retries")
+        {
+            num_connection_retries = config.getInt(config_name + "." + key);
+        }
         else if (key == "enable_fault_injections_during_startup")
         {
             enable_fault_injections_during_startup = config.getBool(config_name + "." + key);
@@ -241,9 +250,19 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             use_compression = config.getBool(config_name + "." + key);
         }
+        else if (key == "use_xid_64")
+        {
+            use_xid_64 = config.getBool(config_name + "." + key);
+        }
         else if (key == "availability_zone_autodetect")
         {
             availability_zone_autodetect = config.getBool(config_name + "." + key);
+        }
+        else if (key == "password")
+        {
+            password = config.getString(config_name + "." + key);
+            if (password.size() > Coordination::PASSWORD_LENGTH)
+                throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
         }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);

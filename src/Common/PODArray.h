@@ -115,11 +115,6 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-#if USE_GWP_ASAN
-        if (unlikely(GWPAsan::shouldForceSample()))
-            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
-#endif
-
         char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
         c_start = allocated + pad_left;
@@ -148,11 +143,6 @@ protected:
             alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
         }
-
-#if USE_GWP_ASAN
-        if (unlikely(GWPAsan::shouldForceSample()))
-            gwp_asan::getThreadLocals()->NextSampleCounter = 1;
-#endif
 
         unprotect();
 
@@ -631,12 +621,12 @@ public:
         {
             return;
         }
-        else if (!this->isInitialized() && rhs.isInitialized())
+        if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
             return;
         }
-        else if (this->isInitialized() && !rhs.isInitialized())
+        if (this->isInitialized() && !rhs.isInitialized())
         {
             do_move(*this, rhs);
             return;

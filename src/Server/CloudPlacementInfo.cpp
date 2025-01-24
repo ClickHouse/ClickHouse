@@ -53,6 +53,9 @@ PlacementInfo & PlacementInfo::instance()
 void PlacementInfo::initialize(const Poco::Util::AbstractConfiguration & config)
 try
 {
+    if (initialized)
+        return;
+
     if (!config.has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
     {
         availability_zone = "";

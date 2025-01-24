@@ -220,9 +220,9 @@ private:
         size_t columns = block.columns();
         for (size_t col = 0; col < columns; ++col)
         {
-            MutableColumns splitted_columns = block.getByPosition(col).column->scatter(shards, selector);
+            MutableColumns split_columns = block.getByPosition(col).column->scatter(shards, selector);
             for (size_t shard = 0; shard < shards; ++shard)
-                out_blocks[shard].getByPosition(col).column = std::move(splitted_columns[shard]);
+                out_blocks[shard].getByPosition(col).column = std::move(split_columns[shard]);
         }
 
         return out_blocks;

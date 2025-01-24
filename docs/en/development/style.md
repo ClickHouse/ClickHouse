@@ -1,27 +1,23 @@
 ---
 slug: /en/development/style
-sidebar_position: 71
-sidebar_label: C++ Guide
-description: A list of recommendations regarding coding style, naming convention, formatting and more
+sidebar_position: 70
+sidebar_label: C++ Style Guide
 ---
 
-# How to Write C++ Code
+# C++ Style Guide
 
 ## General Recommendations {#general-recommendations}
 
-**1.** The following are recommendations, not requirements.
-
-**2.** If you are editing code, it makes sense to follow the formatting of the existing code.
-
-**3.** Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
-
-**4.** Many of the rules do not have logical reasons; they are dictated by established practices.
+The following are recommendations, not requirements.
+If you are editing code, it makes sense to follow the formatting of the existing code.
+Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
+Many of the rules do not have logical reasons; they are dictated by established practices.
 
 ## Formatting {#formatting}
 
-**1.** Most of the formatting will be done automatically by `clang-format`.
+**1.** Most of the formatting is done automatically by `clang-format`.
 
-**2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
+**2.** Indents is 4 spaces. Configure your development environment so that a tab adds four spaces.
 
 **3.** Opening and closing curly brackets must be on a separate line.
 

@@ -133,11 +133,9 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                 i += num_regular_chars;
                 break;
             }
-            else
-            {
-                i += 16;
-                width += 16;
-            }
+
+            i += 16;
+            width += 16;
         }
 #endif
 

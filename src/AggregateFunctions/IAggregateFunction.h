@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <IO/ReadBuffer.h>
 #include "config.h"
 
 #include <cstddef>
@@ -73,7 +74,7 @@ public:
     virtual DataTypePtr getStateType() const;
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
-    virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
+    virtual DataTypePtr getNormalizedStateType() const;
 
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
@@ -145,6 +146,8 @@ public:
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 
+    constexpr static bool parallelizeMergeWithKey() { return false; }
+
     virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
@@ -169,13 +172,19 @@ public:
 
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
-    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, Arena * arena) const = 0;
+    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
+    /// Devirtualize serialize call.
+    virtual void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
+
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
+
+    /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
+    virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -469,6 +478,43 @@ public:
         }
     }
 
+    void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const override // NOLINT
+    {
+        for (size_t i = start; i < size; ++i)
+            static_cast<const Derived *>(this)->serialize(data[i], buf, version);
+    }
+
+    void createAndDeserializeBatch(
+        PaddedPODArray<AggregateDataPtr> & data,
+        AggregateDataPtr __restrict place,
+        size_t total_size_of_state,
+        size_t limit,
+        ReadBuffer & buf,
+        std::optional<size_t> version,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < limit; ++i)
+        {
+            if (buf.eof())
+                break;
+
+            static_cast<const Derived *>(this)->create(place);
+
+            try
+            {
+                static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+            }
+            catch (...)
+            {
+                static_cast<const Derived *>(this)->destroy(place);
+                throw;
+            }
+
+            data.push_back(place);
+            place += total_size_of_state;
+        }
+    }
+
     void addBatchSparse(
         size_t row_begin,
         size_t row_end,
@@ -499,11 +545,15 @@ public:
                 static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
     }
 
-    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, Arena * arena) const override
+    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         for (size_t i = 0; i < size; ++i)
         {
-            static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            if constexpr (Derived::parallelizeMergeWithKey())
+                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+            else
+                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+
             static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
         }
     }
@@ -688,7 +738,7 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:

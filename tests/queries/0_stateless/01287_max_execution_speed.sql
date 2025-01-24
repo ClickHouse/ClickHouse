@@ -1,4 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-debug, no-tsan, no-msan, no-asan
+
+SET max_rows_to_read=0;
+SET max_bytes_to_read=0;
 
 SET min_execution_speed = 100000000000, timeout_before_checking_execution_speed = 0;
 SELECT count() FROM system.numbers; -- { serverError TOO_SLOW }

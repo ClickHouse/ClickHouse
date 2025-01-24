@@ -1,7 +1,6 @@
 #pragma once
 
 #include "MaterializedPostgreSQLConsumer.h"
-#include "MaterializedPostgreSQLSettings.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -10,6 +9,7 @@
 namespace DB
 {
 
+struct MaterializedPostgreSQLSettings;
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
 
@@ -57,6 +57,8 @@ public:
 
     void setSetting(const SettingChange & setting);
 
+    Strings getTableAllowedColumns(const std::string & table_name) const;
+
     void cleanupFunc();
 
 private:
@@ -94,7 +96,8 @@ private:
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
-    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
+    template<typename T>
+    PostgreSQLTableStructurePtr fetchTableStructure(T & tx, const String & table_name) const;
 
     String doubleQuoteWithSchema(const String & table_name) const;
 

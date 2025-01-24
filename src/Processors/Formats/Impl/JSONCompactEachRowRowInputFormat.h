@@ -75,7 +75,6 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }
 
     bool yieldStrings() const { return yield_strings; }
 private:

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest, no-shared-merge-tree
+# no-fasttest: Long sleep
+# no-shared-merge-tree: doesn't rely on max_replicated_mutations_in_queue
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

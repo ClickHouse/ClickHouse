@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool storage_metadata_write_full_object_key;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
@@ -222,7 +227,7 @@ ObjectKeyWithMetadata DiskObjectStorageMetadata::popLastObject()
 
 bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()
 {
-    return Context::getGlobalContextInstance()->getServerSettings().storage_metadata_write_full_object_key;
+    return Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::storage_metadata_write_full_object_key];
 }
 
 }

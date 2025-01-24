@@ -149,30 +149,42 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 
 [//]: # (<details open>)
 <details>
-    <summary><font color="white">
-    DDL详情
-    </font></summary>
-    <p><font color="white">
-
-为了简化本文后面的讨论，并使图和结果可重现，使用DDL语句有如下说明：
-<ul>
-<li>通过ORDER BY子句指定表的复合排序键</li>
-<br/>
-<li>通过设置配置控制主索引有多少索引项：</li>
-<br/>
-<ul>
-<li><font face = "monospace">index_granularity</font>: 显式设置为其默认值8192。这意味着对于每一组8192行，主索引将有一个索引条目，例如，如果表包含16384行，那么索引将有两个索引条目。
-</li>
-<br/>
-<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="white">自适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
-<ul>
-<li>如果n小于8192，但n行的合并行数据大小大于或等于10MB (index_granularity_bytes的默认值)或</li>
-<li>n达到8192</li>
-</ul>
-</li>
-</ul>
-</ul>
-</font></p>
+  <summary style={{ color: "white" }}>DDL详情</summary>
+  <p style={{ color: "white" }}>
+    为了简化本文后面的讨论，并使图和结果可重现，使用DDL语句有如下说明：
+    <ul>
+      <li>通过 <code>ORDER BY</code> 子句指定表的复合排序键</li>
+      <br />
+      <li>
+        通过设置配置控制主索引有多少索引项：
+        <ul>
+          <li>
+            <code>index_granularity</code>: 显式设置为其默认值 8192。这意味着对于每一组 8192
+            行，主索引将有一个索引条目，例如，如果表包含 16384 行，那么索引将有两个索引条目。
+          </li>
+          <br />
+          <li>
+            <code>index_granularity_bytes</code>: 设置为 0 表示禁止
+            <a
+              href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1"
+              target="_blank"
+              style={{ color: "white" }}
+            >
+              自适应索引粒度
+            </a>
+            。自适应索引粒度意味着 ClickHouse 自动为一组 n 行创建一个索引条目：
+            <ul>
+              <li>
+                如果 n 小于 8192，但 n 行的合并行数据大小大于或等于 10MB (
+                <code>index_granularity_bytes</code> 的默认值)
+              </li>
+              <li>n 达到 8192</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </p>
 </details>
 
 

@@ -4,6 +4,7 @@
 #include <random>
 #include <pcg_random.hpp>
 
+#include <absl/container/inlined_vector.h>
 
 namespace LZ4
 {
@@ -82,8 +83,7 @@ struct PerformanceStatistics
 
             if (adjustedCount() < 2)
                 return adjustedCount() - 1;
-            else
-                return std::normal_distribution<>(mean(), sigma())(stat_rng);
+            return std::normal_distribution<>(mean(), sigma())(stat_rng);
         }
     };
 
@@ -110,16 +110,15 @@ struct PerformanceStatistics
     {
         if (choose_method < 0)
         {
-            double samples[max_method];
+            absl::InlinedVector<double, NUM_ELEMENTS> samples(max_method);
             for (size_t i = 0; i < max_method; ++i)
                 samples[i] = choose_method == -1
                     ? data[i].sample(rng)
                     : data[i].adjustedCount();
 
-            return std::min_element(samples, samples + max_method) - samples;
+            return std::min_element(samples.begin(), samples.end()) - samples.begin();
         }
-        else
-            return choose_method;
+        return choose_method;
     }
 
     PerformanceStatistics() = default;

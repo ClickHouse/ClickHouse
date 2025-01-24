@@ -20,7 +20,7 @@ ProtobufListOutputFormat::ProtobufListOutputFormat(
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+          ProtobufSchemas::instance().getMessageTypeForFormatSchema(
               schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
@@ -60,6 +60,7 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.output_nullables_with_google_wrappers,
                 settings.protobuf.google_protos_path);
         });
+    factory.markOutputFormatNotTTYFriendly("ProtobufList");
 }
 
 }

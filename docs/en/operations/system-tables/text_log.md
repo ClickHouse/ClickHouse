@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/text_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # text_log
+
+<SystemTableCloud/>
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 

@@ -3,6 +3,8 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/StorageView.h>
+#include <Common/quoteString.h>
+
 #include <sparsehash/dense_hash_set>
 
 namespace DB

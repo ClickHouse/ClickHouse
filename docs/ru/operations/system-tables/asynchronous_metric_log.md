@@ -33,5 +33,5 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 ```
 
 **Смотрите также**
-- [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — Содержит метрики, которые периодически вычисляются в фоновом режиме.
-- [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
+- [system.asynchronous_metrics](/docs/ru/operations/system-tables/asynchronous_metrics) — Содержит метрики, которые периодически вычисляются в фоновом режиме.
+- [system.metric_log](/docs/ru/operations/system-tables/metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.

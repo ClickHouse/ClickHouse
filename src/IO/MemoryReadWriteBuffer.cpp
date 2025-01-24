@@ -112,7 +112,7 @@ void MemoryWriteBuffer::addChunk()
         if (0 == next_chunk_size)
         {
             set(position(), 0);
-            throw MemoryWriteBuffer::CurrentBufferExhausted();
+            throw WriteBuffer::CurrentBufferExhausted();
         }
     }
 

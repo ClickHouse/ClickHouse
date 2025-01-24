@@ -75,7 +75,7 @@ FROM t_null_big
 └────────────────────┴─────────────────────┘
 ```
 
-Also you can use [Tuple](/docs/en/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
+Also you can use [Tuple](/docs/en/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. A `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
 
 ```sql
 SELECT
@@ -110,7 +110,7 @@ GROUP BY v
 └──────┴─────────┴──────────┘
 ```
 
-And here is an example of of first_value with `RESPECT NULLS` where we can see that NULL inputs are respected and it will return the first value read, whether it's NULL or not:
+And here is an example of first_value with `RESPECT NULLS` where we can see that NULL inputs are respected and it will return the first value read, whether it's NULL or not:
 
 ```sql
 SELECT

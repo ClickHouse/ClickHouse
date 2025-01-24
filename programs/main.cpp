@@ -1,41 +1,41 @@
-#include <unistd.h>
-#include <fcntl.h>
+#include <base/phdr_cache.h>
+#include <base/scope_guard.h>
+#include <Common/EnvironmentChecks.h>
+#include <Common/StringUtils.h>
+#include <Common/getHashOfLoadedBinary.h>
 
-#include <new>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <string_view>
-#include <utility> /// pair
-
-#include <fmt/format.h>
+#if defined(SANITIZE_COVERAGE)
+#    include <Common/Coverage.h>
+#endif
 
 #include "config.h"
 #include "config_tools.h"
 
-#include <Common/EnvironmentChecks.h>
-#include <Common/Coverage.h>
-#include <Common/StringUtils.h>
-#include <Common/getHashOfLoadedBinary.h>
-#include <Common/IO.h>
-
-#include <base/phdr_cache.h>
-#include <base/coverage.h>
-
+#include <filesystem>
+#include <iostream>
+#include <new>
+#include <string>
+#include <string_view>
+#include <utility> /// pair
+#include <vector>
 
 /// Universal executable for various clickhouse applications
-int mainEntryClickHouseServer(int argc, char ** argv);
-int mainEntryClickHouseClient(int argc, char ** argv);
-int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseCheckMarks(int argc, char ** argv);
+int mainEntryClickHouseChecksumForCompressedBlock(int, char **);
+int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
-int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseObfuscator(int argc, char ** argv);
-int mainEntryClickHouseGitImport(int argc, char ** argv);
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
+int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseGitImport(int argc, char ** argv);
+int mainEntryClickHouseLocal(int argc, char ** argv);
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseServer(int argc, char ** argv);
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
+int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
@@ -54,6 +54,12 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
 int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 #endif
+#if USE_RAPIDJSON && USE_NURAFT
+int mainEntryClickHouseKeeperBench(int argc, char ** argv);
+#endif
+#if USE_NURAFT
+int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
+#endif
 
 // install
 int mainEntryClickHouseInstall(int argc, char ** argv);
@@ -67,7 +73,10 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
-/// Add an item here to register new application
+/// Add an item here to register new application.
+/// This list has a "priority" - e.g. we need to disambiguate clickhouse --format being
+/// either clickouse-format or clickhouse-{local, client} --format.
+/// Currently we will prefer the latter option.
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
@@ -83,6 +92,10 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
+    {"check-marks", mainEntryClickHouseCheckMarks},
+    {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
+    {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
+    {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
@@ -94,7 +107,12 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
-
+#if USE_RAPIDJSON && USE_NURAFT
+    {"keeper-bench", mainEntryClickHouseKeeperBench},
+#endif
+#if USE_NURAFT
+    {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
+#endif
     // install
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
@@ -238,9 +256,12 @@ int main(int argc_, char ** argv_)
     ///     clickhouse # spawn local
     ///     clickhouse local # spawn local
     ///     clickhouse "select ..." # spawn local
+    ///     clickhouse /tmp/repro --enable-analyzer
     ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'
-        || std::string_view(argv[1]).contains(' ')))
+    std::error_code ec;
+    if (main_func == printHelp && !argv.empty()
+        && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
+            || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
     {
         main_func = mainEntryClickHouseLocal;
     }

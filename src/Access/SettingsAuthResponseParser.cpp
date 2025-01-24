@@ -28,7 +28,7 @@ SettingsAuthResponseParser::parse(const Poco::Net::HTTPResponse & response, std:
     try
     {
         Poco::Dynamic::Var json = parser.parse(*body_stream);
-        Poco::JSON::Object::Ptr obj = json.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & obj = json.extract<Poco::JSON::Object::Ptr>();
         Poco::JSON::Object::Ptr settings_obj = obj->getObject(settings_key);
 
         if (settings_obj)

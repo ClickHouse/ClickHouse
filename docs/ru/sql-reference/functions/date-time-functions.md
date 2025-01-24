@@ -468,6 +468,52 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 `toStartOfInterval(t, INTERVAL 1 day)` возвращает то же самое, что и `toStartOfDay(t)`,
 `toStartOfInterval(t, INTERVAL 15 minute)` возвращает то же самое, что и `toStartOfFifteenMinutes(t)`, и т.п.
 
+Вычисление происхожит относительно конкретного времени:
+
+| Interval    | Start                  |
+|-------------|------------------------|
+| YEAR        | year 0                 |
+| QUARTER     | 1900 Q1                |
+| MONTH       | 1900 January           |
+| WEEK        | 1970, 1st week (01-05) |
+| DAY         | 1970-01-01             |
+| HOUR        | (*)                    |
+| MINUTE      | 1970-01-01 00:00:00    |
+| SECOND      | 1970-01-01 00:00:00    |
+| MILLISECOND | 1970-01-01 00:00:00    |
+| MICROSECOND | 1970-01-01 00:00:00    |
+| NANOSECOND  | 1970-01-01 00:00:00    |
+
+(*) часовые интервалы особенные: Вычисления всегда происходят относительно 00:00:00 (полночь) текущего дня. В результате, только
+    часовые значения полезны только между 1 и 23.
+
+Если была указана единица измерения `WEEK`, то `toStartOfInterval` предполагает, что неделя начинается в понедельник. Важно, что это поведение отдичается от поведения функции `toStartOfWeek` в которой неделя по умолчанию начинается у воскресенье.
+
+**Синтаксис**
+
+```sql
+toStartOfInterval(value, INTERVAL x unit[, time_zone])
+toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
+```
+Синонимы: `time_bucket`, `date_bin`.
+
+Вторая перегрузка эмулирует функцию `time_bucket()` из TimescaleDB, и функцию `date_bin()` из PostgreSQL, например:
+
+``` SQL
+SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));
+```
+
+Результат:
+
+``` reference
+┌───toStartOfInterval(...)─┐
+│      2023-01-01 14:44:30 │
+└──────────────────────────┘
+```
+
+**См. также**
+- [date_trunc](#date_trunc)
+
 ## toTime {#totime}
 
 Переводит дату-с-временем на некоторую фиксированную дату, сохраняя при этом время.

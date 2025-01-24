@@ -28,13 +28,14 @@ TEST(FST, SimpleTest)
     };
 
     std::vector<UInt8> buffer;
-    DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-    DB::FST::FstBuilder builder(wbuf);
+    {
+        DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
+        DB::FST::FstBuilder builder(wbuf);
 
-    for (auto & [term, output] : indexed_data)
-        builder.add(term, output);
-    builder.build();
-    wbuf.finalize();
+        for (auto & [term, output] : indexed_data)
+            builder.add(term, output);
+        builder.build();
+    }
 
     DB::FST::FiniteStateTransducer fst(buffer);
     for (auto & [term, output] : indexed_data)
@@ -61,14 +62,15 @@ TEST(FST, TestForLongTerms)
     DB::FST::Output output2 = 200;
 
     std::vector<UInt8> buffer;
-    DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
-    DB::FST::FstBuilder builder(wbuf);
+    {
+        DB::WriteBufferFromVector<std::vector<UInt8>> wbuf(buffer);
+        DB::FST::FstBuilder builder(wbuf);
 
-    builder.add(term1, output1);
-    builder.add(term2, output2);
+        builder.add(term1, output1);
+        builder.add(term2, output2);
 
-    builder.build();
-    wbuf.finalize();
+        builder.build();
+    }
 
     DB::FST::FiniteStateTransducer fst(buffer);
 

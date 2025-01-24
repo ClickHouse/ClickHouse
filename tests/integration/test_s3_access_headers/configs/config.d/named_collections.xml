@@ -1,0 +1,9 @@
+<clickhouse>
+  <named_collections>
+    <s3_mock>
+        <url>http://resolver:8081/root/test_named_colections.csv</url>
+        <access_key_id>minio</access_key_id>
+        <secret_access_key>minio123</secret_access_key>
+    </s3_mock>
+  </named_collections>
+</clickhouse>

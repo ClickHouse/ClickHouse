@@ -43,6 +43,9 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
     for (const auto & [_, type] : name_to_type)
         variants.push_back(type);
 
+    if (variants.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type should have at least one nested type");
+
     if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
 }

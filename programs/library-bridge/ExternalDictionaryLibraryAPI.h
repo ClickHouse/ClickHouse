@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#define CLICKHOUSE_DICTIONARY_LIBRARY_API 1
+constexpr int CLICKHOUSE_DICTIONARY_LIBRARY_API = 1;
 
 struct ExternalDictionaryLibraryAPI
 {
@@ -68,7 +68,7 @@ struct ExternalDictionaryLibraryAPI
     using LibrarySettings = CStrings *;
     using LibraryData = void *;
     using RawClickHouseLibraryTable = void *;
-    /// Can be safely casted into const Table * with static_cast<const ClickHouseLibrary::Table *>
+    /// Can be safely cast into const Table * with static_cast<const ClickHouseLibrary::Table *>
     using RequestedColumnsNames = CStrings *;
     using RequestedIds = const VectorUInt64 *;
     using RequestedKeys = Table *;

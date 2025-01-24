@@ -978,7 +978,7 @@ namespace
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
-            if (auto * string_buf = dynamic_cast<ReadBufferFromString *>(&buf))
+            if (auto * /*string_buf*/ _ = dynamic_cast<ReadBufferFromString *>(&buf))
             {
                 /// Remember the pointer to the start of the number to rollback to it.
                 /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
@@ -1349,7 +1349,7 @@ namespace
                     return std::make_shared<DataTypeNothing>();
                 return makeNullable(std::make_shared<DataTypeNothing>());
             }
-            else if (checkStringCaseInsensitive("an", buf))
+            if (checkStringCaseInsensitive("an", buf))
                 return std::make_shared<DataTypeFloat64>();
         }
 

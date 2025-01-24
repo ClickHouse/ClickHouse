@@ -3,8 +3,17 @@ slug: /en/engines/database-engines/materialized-postgresql
 sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
 ---
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# [experimental] MaterializedPostgreSQL
+# MaterializedPostgreSQL
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::note
+ClickHouse Cloud users are recommended to use [ClickPipes](/docs/en/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+:::
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
@@ -154,6 +163,12 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
     Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+
+    Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
+
+    ``` sql
+    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+    ```
 
     Default value: empty list — means whole PostgreSQL database will be replicated.
 

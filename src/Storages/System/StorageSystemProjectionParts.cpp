@@ -109,7 +109,8 @@ void StorageSystemProjectionParts::processNextStorage(
         ColumnSize columns_size = part->getTotalColumnsSize();
         ColumnSize parent_columns_size = parent_part->getTotalColumnsSize();
 
-        size_t src_index = 0, res_index = 0;
+        size_t src_index = 0;
+        size_t res_index = 0;
         if (columns_mask[src_index++])
         {
             WriteBufferFromOwnString out;
@@ -200,21 +201,10 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(info.engine);
 
-        if (part->isStoredOnDisk())
-        {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-        }
-        else
-        {
-            if (columns_mask[src_index++])
-                columns[res_index++]->insertDefault();
-            if (columns_mask[src_index++])
-                columns[res_index++]->insertDefault();
-        }
-
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
         {
             MinimalisticDataPartChecksums helper;

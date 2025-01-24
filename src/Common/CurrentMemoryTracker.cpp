@@ -59,12 +59,10 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
                 current_thread->untracked_memory = 0;
                 return res;
             }
-            else
-            {
-                /// Update after successful allocations,
-                /// since failed allocations should not be take into account.
-                current_thread->untracked_memory = will_be;
-            }
+
+            /// Update after successful allocations,
+            /// since failed allocations should not be take into account.
+            current_thread->untracked_memory = will_be;
         }
         /// total_memory_tracker only, ignore untracked_memory
         else

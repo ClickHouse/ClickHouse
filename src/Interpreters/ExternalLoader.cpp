@@ -731,10 +731,9 @@ private:
         {
             if (object)
                 return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
-            else if (exception)
+            if (exception)
                 return isLoading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
-            else
-                return isLoading() ? Status::LOADING : Status::NOT_LOADED;
+            return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
         Duration loadingDuration() const
@@ -1193,12 +1192,10 @@ private:
             LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), to_string(result), error_count);
             return result;
         }
-        else
-        {
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
-            return result;
-        }
+
+        auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+        LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
+        return result;
     }
 
     const String type_name;

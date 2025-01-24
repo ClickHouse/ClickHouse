@@ -3,11 +3,12 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Chunk.h>
 #include <Poco/Logger.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
-#include <Processors/Chunk.h>
 
 #include <future>
 #include <shared_mutex>
@@ -117,8 +118,7 @@ private:
         {
             if (std::holds_alternative<Block>(*this))
                 return DataKind::Preprocessed;
-            else
-                return DataKind::Parsed;
+            return DataKind::Parsed;
         }
 
         bool empty() const

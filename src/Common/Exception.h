@@ -3,10 +3,9 @@
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <base/int8_to_string.h>
-#include <base/scope_guard.h>
-#include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
+#include <Core/LogsLevel.h>
 
 #include <cerrno>
 #include <exception>
@@ -17,7 +16,15 @@
 #include <Poco/Exception.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco
+{
+class Channel;
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;
+}
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
+using LoggerRawPtr = Poco::Logger *;
 
 namespace DB
 {
@@ -26,18 +33,6 @@ class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
-
-/// This flag controls if error statistics should be updated when an exception is thrown. These
-/// statistics are shown for example in system.errors. Defaults to true. If the error is internal,
-/// non-critical, and handled otherwise it is useful to disable the statistics update and not
-/// alarm the user needlessly.
-extern thread_local bool update_error_statistics;
-
-/// Disable the update of error statistics
-#define DO_NOT_UPDATE_ERROR_STATISTICS() \
-    update_error_statistics = false; \
-    SCOPE_EXIT({ update_error_statistics = true; })
-
 
 class Exception : public Poco::Exception
 {
@@ -150,10 +145,7 @@ public:
         addMessage(MessageMasked(message));
     }
 
-    void addMessage(const MessageMasked & msg_masked)
-    {
-        extendedMessage(msg_masked.msg);
-    }
+    void addMessage(const MessageMasked & msg_masked);
 
     /// Used to distinguish local exceptions from the one that was received from remote node.
     void setRemoteException(bool remote_ = true) { remote = remote_; }
@@ -172,6 +164,9 @@ private:
     StackTrace trace;
 #endif
     bool remote = false;
+
+    /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
+    size_t error_index = static_cast<size_t>(-1);
 
     const char * className() const noexcept override { return "DB::Exception"; }
 
@@ -276,10 +271,10 @@ using Exceptions = std::vector<std::exception_ptr>;
   * Can be used in destructors in the catch-all block.
   */
 /// TODO: Logger leak constexpr overload
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
-void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 
 
 /** Prints current exception in canonical format.
@@ -329,7 +324,7 @@ void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const st
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 
 
 template <typename T>

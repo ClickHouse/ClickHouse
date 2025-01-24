@@ -6,6 +6,7 @@
 
 #    include <Columns/ColumnString.h>
 #    include <Functions/LowerUpperImpl.h>
+#    include <base/scope_guard.h>
 #    include <unicode/ucasemap.h>
 #    include <unicode/unistr.h>
 #    include <unicode/urename.h>
@@ -48,6 +49,11 @@ struct LowerUpperUTF8Impl
         UCaseMap * case_map = ucasemap_open("", U_FOLD_CASE_DEFAULT, &error_code);
         if (U_FAILURE(error_code))
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Error calling ucasemap_open: {}", u_errorName(error_code));
+
+        SCOPE_EXIT(
+        {
+            ucasemap_close(case_map);
+        });
 
         size_t curr_offset = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)

@@ -6,9 +6,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from env_helper import ROOT_DIR, DOCKER_TAG
-from get_robot_token import get_parameter_from_ssm
 from ci_utils import Shell
+from env_helper import DOCKER_TAG, ROOT_DIR
+from get_robot_token import get_parameter_from_ssm
 
 IMAGES_FILE_PATH = Path("docker/images.json")
 
@@ -38,6 +38,9 @@ class DockerImage:
     def __str__(self):
         return f"{self.name}:{self.version}"
 
+    def __repr__(self):
+        return f"DockerImage({self.name}:{self.version})"
+
 
 def pull_image(image: DockerImage) -> DockerImage:
     try:
@@ -56,11 +59,10 @@ def get_docker_image(image_name: str) -> DockerImage:
         tags_map = json.loads(DOCKER_TAG)
         assert (
             image_name in tags_map
-        ), "Image name does not exist in provided DOCKER_TAG json string"
+        ), f"Image name [{image_name}] does not exist in provided DOCKER_TAG json string"
         return DockerImage(image_name, tags_map[image_name])
-    else:
-        # DOCKER_TAG is a tag itself
-        return DockerImage(image_name, DOCKER_TAG)
+    # DOCKER_TAG is a tag itself
+    return DockerImage(image_name, DOCKER_TAG)
 
 
 class DockerImageData:

@@ -32,7 +32,7 @@ Timezone agnostic Unix timestamp is stored in tables, and the timezone is used t
 
 A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
 
-You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
+You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn’t set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
 The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn’t explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
@@ -149,7 +149,7 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 - [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
 - [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
-- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [The `Date` data type](../../sql-reference/data-types/date.md)

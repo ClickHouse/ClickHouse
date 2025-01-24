@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: Slow async_insert_busy_timeout_ms
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT stringvalue FROM 02810_async_insert_dedup_collap
 ${CLICKHOUSE_CLIENT} -q "SELECT '------------'"
 
 # trigger same collaps algorithm but also deduplication
-${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO 02810_async_insert_dedup_collapsing VALUES ('string1', 1)" & 
+${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO 02810_async_insert_dedup_collapsing VALUES ('string1', 1)" &
 ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO 02810_async_insert_dedup_collapsing VALUES ('string1', 1)" &
 
 wait

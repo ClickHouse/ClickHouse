@@ -7,7 +7,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
-#include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 
@@ -522,7 +521,7 @@ public:
 TEST_P(CodecTest, TranscodingWithDataType)
 {
     /// Gorilla can only be applied to floating point columns
-    bool codec_is_gorilla = std::get<0>(GetParam()).codec_statement.find("Gorilla") != std::string::npos;
+    bool codec_is_gorilla = std::get<0>(GetParam()).codec_statement.contains("Gorilla");
     WhichDataType which(std::get<1>(GetParam()).data_type.get());
     bool data_is_float = which.isFloat();
     if (codec_is_gorilla && !data_is_float)
@@ -702,7 +701,7 @@ struct MonotonicGenerator // NOLINT
     explicit MonotonicGenerator(T stride_ = 1, T max_step = 10) // NOLINT
         : prev_value(0),
           stride(stride_),
-          random_engine(0),
+          random_engine(0), /// NOLINT
           distribution(0, max_step)
     {}
 

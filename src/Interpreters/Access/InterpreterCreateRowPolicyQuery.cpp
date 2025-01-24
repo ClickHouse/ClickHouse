@@ -88,7 +88,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     Strings names = query.names->toStrings();
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_policy = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
             updateRowPolicyFromQueryImpl(*updated_policy, query, {}, roles_from_query);

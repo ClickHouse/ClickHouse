@@ -3,7 +3,6 @@
 #include <Core/Types.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CacheBase.h>
-#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <IO/MMappedFile.h>
 
@@ -31,15 +30,7 @@ public:
         : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file, size_t offset, ssize_t length = -1)
-    {
-        SipHash hash;
-        hash.update(path_to_file.data(), path_to_file.size() + 1);
-        hash.update(offset);
-        hash.update(length);
-
-        return hash.get128();
-    }
+    static UInt128 hash(const String & path_to_file, size_t offset, ssize_t length = -1);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

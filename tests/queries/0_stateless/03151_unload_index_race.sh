@@ -42,8 +42,8 @@ function thread_alter_settings()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CLICKHOUSE_CLIENT -n --query "ALTER TABLE t MODIFY SETTING primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns=0.$RANDOM"
-        $CLICKHOUSE_CLIENT -n --query "SYSTEM UNLOAD PRIMARY KEY t"
+        $CLICKHOUSE_CLIENT --query "ALTER TABLE t MODIFY SETTING primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns=0.$RANDOM"
+        $CLICKHOUSE_CLIENT --query "SYSTEM UNLOAD PRIMARY KEY t"
         sleep 0.0$RANDOM
     done
 }
@@ -52,7 +52,7 @@ function thread_query_table()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        COUNT=$($CLICKHOUSE_CLIENT -n --query "SELECT count() FROM t where not ignore(*);")
+        COUNT=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM t where not ignore(*);")
         if [ "$COUNT" -ne "2000" ];  then
           echo "$COUNT"
         fi

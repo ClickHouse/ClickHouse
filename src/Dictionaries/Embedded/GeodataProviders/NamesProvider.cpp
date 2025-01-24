@@ -46,8 +46,7 @@ ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsN
     const auto data_file = getDataFilePath(language);
     if (fs::exists(data_file))
         return std::make_unique<LanguageRegionsNamesDataSource>(data_file, language);
-    else
-        return {};
+    return {};
 }
 
 std::string RegionsNamesDataProvider::getDataFilePath(const std::string & language) const

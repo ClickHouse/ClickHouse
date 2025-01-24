@@ -4,10 +4,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_named_columns_in_function_tuple;
+}
 
 FunctionPtr FunctionTuple::create(DB::ContextPtr context)
 {
-    return std::make_shared<FunctionTuple>(context->getSettingsRef().enable_named_columns_in_function_tuple);
+    return std::make_shared<FunctionTuple>(context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
 }
 
 REGISTER_FUNCTION(Tuple)
@@ -22,7 +26,7 @@ Tuples are normally used as intermediate values for an argument of IN operators,
 The function implements the operator `(x, y, ...)`.
 )",
         .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
-        .categories{"Miscellaneous"}});
+        .category{"Tuples"}});
 }
 
 }

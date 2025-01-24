@@ -7,8 +7,8 @@ concurrency:
   group: autoreleases
 
 on:
-  #  schedule:
-  #    - cron: '0 9 * * *'
+  schedule:
+    - cron: '45 11 * * 2,4'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -52,7 +52,7 @@ jobs:
               echo 'EOF'
           } >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            echo "DRY_RUN=true" >> "$GITHUB_OUTPUT"
+            echo "DRY_RUN=false" >> "$GITHUB_OUTPUT"
           else
             echo "DRY_RUN=${{ github.event.inputs.dry-run }}" >> "$GITHUB_OUTPUT"
           fi

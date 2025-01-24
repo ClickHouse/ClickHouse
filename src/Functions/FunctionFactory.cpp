@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/Context.h>
 
@@ -15,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
@@ -77,8 +82,7 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
         auto hints = this->getHints(name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
     }
 
     return res;
@@ -133,7 +137,7 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     if (CurrentThread::isInitialized())
     {
         auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
+        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
     }
 

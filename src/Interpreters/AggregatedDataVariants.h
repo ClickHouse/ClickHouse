@@ -1,7 +1,7 @@
 #pragma once
-#include <Common/ColumnsHashing.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
+#include <Common/ColumnsHashingImpl.h>
 
 #include <memory>
 #include <boost/noncopyable.hpp>

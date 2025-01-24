@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-shared-merge-tree
+# no-shared-merge-tree: no fetches in shared merge tree
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,7 +35,7 @@ ${CLICKHOUSE_CLIENT} --query="ATTACH TABLE fetches_r2"
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA fetches_r2"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Check data after fetch of merged part ***'"
-${CLICKHOUSE_CLIENT} --query="SELECT _part, * FROM fetches_r2 ORDER BY x"
+${CLICKHOUSE_CLIENT} --query="SELECT substring(_part, 5, 3) as block_range, x FROM fetches_r2 ORDER BY x"
 
 ${CLICKHOUSE_CLIENT} --query="DETACH TABLE fetches_r2"
 
@@ -49,7 +50,7 @@ ${CLICKHOUSE_CLIENT} --query="ATTACH TABLE fetches_r2"
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA fetches_r2"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Check data after fetch/clone of mutated part ***'"
-${CLICKHOUSE_CLIENT} --query="SELECT _part, * FROM fetches_r2 ORDER BY x"
+${CLICKHOUSE_CLIENT} --query="SELECT substring(_part, 5, 3) as block_range, substring(_part, 11, 2) as mutation_version, x FROM fetches_r2 ORDER BY x"
 
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE fetches_r1 SYNC;

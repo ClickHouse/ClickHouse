@@ -23,6 +23,9 @@ std::string formatReadableSizeWithDecimalSuffix(double value, int precision = 2)
 void formatReadableQuantity(double value, DB::WriteBuffer & out, int precision = 2);
 std::string formatReadableQuantity(double value, int precision = 2);
 
+/// Prints the passed time in nanoseconds as 123.45 ms.
+void formatReadableTime(double ns, DB::WriteBuffer & out, int precision = 2);
+std::string formatReadableTime(double ns, int precision = 2);
 
 /// Wrapper around value. If used with fmt library (e.g. for log messages),
 ///  value is automatically formatted as size with binary suffix.

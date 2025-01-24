@@ -38,8 +38,10 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例:
 
+```sql
     visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
     visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
+```
 
 ## visitParamExtractString(参数，名称) {#visitparamextractstringparams-name}
 
@@ -47,10 +49,12 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例:
 
+```sql
     visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
     visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
     visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
     visitParamExtractString('{"abc":"hello}', 'abc') = ''
+```
 
 目前不支持`\uXXXX\uYYYY`这些字符编码，这些编码不在基本多文种平面中（它们被转化为CESU-8而不是UTF-8）。
 
@@ -64,8 +68,10 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例：
 
+```sql
     select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
     select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
+```
 
 `indices_or_keys`可以是零个或多个参数的列表，每个参数可以是字符串或整数。
 
@@ -77,11 +83,13 @@ slug: /zh/sql-reference/functions/json-functions
 
 例如：
 
+```sql
     select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
     select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
     select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
     select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
     select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
+```
 
 ## JSONLength(json\[, indices_or_keys\]...) {#jsonlengthjson-indices-or-keys}
 
@@ -91,8 +99,10 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例：
 
+```sql
     select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
     select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
+```
 
 ## JSONType(json\[, indices_or_keys\]...) {#jsontypejson-indices-or-keys}
 
@@ -102,9 +112,11 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例：
 
+```sql
     select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
     select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
     select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+```
 
 ## JSONExtractUInt(json\[, indices_or_keys\]...) {#jsonextractuintjson-indices-or-keys}
 
@@ -120,9 +132,11 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例:
 
+```sql
     select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
     select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
     select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+```
 
 ## JSONExtractString(json\[, indices_or_keys\]...) {#jsonextractstringjson-indices-or-keys}
 
@@ -134,11 +148,13 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例:
 
+```sql
     select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
     select JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
     select JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
     select JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
     select JSONExtractString('{"abc":"hello}', 'abc') = ''
+```
 
 ## JSONExtract(json\[, indices_or_keys...\], Return_type) {#jsonextractjson-indices-or-keys-return-type}
 
@@ -148,6 +164,7 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例:
 
+```sql
     SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
     SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
     SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
@@ -155,6 +172,7 @@ slug: /zh/sql-reference/functions/json-functions
     SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
     SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Thursday'
     SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
+```
 
 ## JSONExtractKeysAndValues(json\[, indices_or_keys...\], Value_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
@@ -162,7 +180,9 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例：
 
+```sql
     SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+```
 
 ## JSONExtractRaw(json\[, indices_or_keys\]...) {#jsonextractrawjson-indices-or-keys}
 
@@ -172,4 +192,6 @@ slug: /zh/sql-reference/functions/json-functions
 
 示例:
 
+```sql
     select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+```

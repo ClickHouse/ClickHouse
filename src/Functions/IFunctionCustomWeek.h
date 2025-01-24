@@ -55,13 +55,26 @@ public:
                 ? is_monotonic
                 : is_not_monotonic;
         }
-        else
+
+        if (checkAndGetDataType<DataTypeDateTime64>(&type))
         {
-            return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
-                    == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+
+            const auto & left_date_time = left.safeGet<DateTime64>();
+            TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
+
+            const auto & right_date_time = right.safeGet<DateTime64>();
+            TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
+
+            return transformer_left.execute(left_date_time.getValue(), date_lut)
+                    == transformer_right.execute(right_date_time.getValue(), date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
+
+        return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+            ? is_monotonic
+            : is_not_monotonic;
     }
 
 protected:

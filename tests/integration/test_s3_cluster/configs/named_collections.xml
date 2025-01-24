@@ -6,5 +6,12 @@
             <secret_access_key>minio123</secret_access_key>
             <format>CSV</format>>
         </test_s3>
+        <test_s3_with_default>
+            <url>http://minio1:9001/root/data/data{1,2,3}</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+            <format>JSONEachRow</format>>
+            <structure>id UInt32, date Date DEFAULT 18262</structure>
+        </test_s3_with_default>
     </named_collections>
 </clickhouse>

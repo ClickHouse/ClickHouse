@@ -11,16 +11,16 @@ namespace ErrorCodes
 }
 
 
-void ASTRowPolicyName::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRowPolicyName::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     const String & database = full_name.database;
     const String & table_name = full_name.table_name;
     const String & short_name = full_name.short_name;
-    settings.ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+    ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                   << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
                   << backQuoteIfNeed(table_name);
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 }
 
 
@@ -36,7 +36,7 @@ String ASTRowPolicyNames::tableOrAsterisk(const String & table_name) const
 }
 
 
-void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRowPolicyNames::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (full_names.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No names of row policies in AST");
@@ -66,19 +66,19 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
     if (same_short_name)
     {
         const String & short_name = full_names[0].short_name;
-        settings.ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+        ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                       << (settings.hilite ? hilite_none : "");
 
         bool need_comma = false;
         for (const auto & full_name : full_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
+                ostr << ", ";
             const String & database = full_name.database;
             const String & table_name = full_name.table_name;
             if (!database.empty())
-                settings.ostr << backQuoteIfNeed(database) + ".";
-            settings.ostr << tableOrAsterisk(table_name);
+                ostr << backQuoteIfNeed(database) + ".";
+            ostr << tableOrAsterisk(table_name);
         }
     }
     else if (same_db_and_table_name)
@@ -87,17 +87,17 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
         for (const auto & full_name : full_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
+                ostr << ", ";
             const String & short_name = full_name.short_name;
-            settings.ostr << backQuoteIfNeed(short_name);
+            ostr << backQuoteIfNeed(short_name);
         }
 
         const String & database = full_names[0].database;
         const String & table_name = full_names[0].table_name;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
         if (!database.empty())
-            settings.ostr << backQuoteIfNeed(database) + ".";
-        settings.ostr << tableOrAsterisk(table_name);
+            ostr << backQuoteIfNeed(database) + ".";
+        ostr << tableOrAsterisk(table_name);
     }
     else
     {
@@ -105,19 +105,19 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
         for (const auto & full_name : full_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
+                ostr << ", ";
             const String & short_name = full_name.short_name;
             const String & database = full_name.database;
             const String & table_name = full_name.table_name;
-            settings.ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+            ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                           << (settings.hilite ? hilite_none : "");
             if (!database.empty())
-                settings.ostr << backQuoteIfNeed(database) + ".";
-            settings.ostr << tableOrAsterisk(table_name);
+                ostr << backQuoteIfNeed(database) + ".";
+            ostr << tableOrAsterisk(table_name);
         }
     }
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 }
 
 

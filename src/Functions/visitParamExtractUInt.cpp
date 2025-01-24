@@ -41,7 +41,7 @@ SELECT simpleJSONExtractUInt(json, 'foo') FROM jsons ORDER BY json;)",
 0
 3
 5)"}},
-        .categories{"JSON"}});
+        .category{"JSON"}});
     factory.registerAlias("visitParamExtractUInt", "simpleJSONExtractUInt");
 }
 

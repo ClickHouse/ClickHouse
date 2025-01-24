@@ -43,7 +43,7 @@ position(haystack, needle[, start_pos])
 - 如果 `start_pos >= 1` 且 `start_pos <= length(haystack) + 1`，则返回 `start_pos` 
 - 否则返回 `0` 
 
-以上规则同样在这些函数中生效: [locate](#locate), [positionCaseInsensitive](#positionCaseInsensitive), [positionUTF8](#positionUTF8), [positionCaseInsensitiveUTF8](#positionCaseInsensitiveUTF8)
+以上规则同样在这些函数中生效: [locate](#locate), [positionCaseInsensitive](#positioncaseinsensitive), [positionUTF8](#positionutf8), [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8)
 
 数据类型: `Integer`.
 
@@ -193,7 +193,7 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 
 ## multiSearchAllPositionsUTF8
 
-类似于 [multiSearchAllPositions](#multiSearchAllPositions) ,但假定 `haystack` 和 `needle`-s 是 UTF-8 编码的字符串。
+类似于 [multiSearchAllPositions](#multisearchallpositions) ,但假定 `haystack` 和 `needle`-s 是 UTF-8 编码的字符串。
 
 ## multiSearchFirstPosition
 
@@ -362,7 +362,7 @@ extractAll(haystack, pattern)
 
 返回一个元素为数组的数组，其中第一个数组包含与第一组匹配的所有片段，第二个数组包含与第二组匹配的所有片段，依此类推。
 
-这个函数相比 [extractAllGroupsVertical](#extractallgroups-vertical)更慢。
+这个函数相比 [extractAllGroupsVertical](#extractallgroupsvertical)更慢。
 
 **语法**
 
@@ -691,12 +691,12 @@ SELECT hasSubsequence('garbage', 'arg') ;
 ```
 
 ## hasSubsequenceCaseInsensitive
-类似于 [hasSubsequence](#hasSubsequence) 但是不区分大小写。
+类似于 [hasSubsequence](#hassubsequence) 但是不区分大小写。
 
 ## hasSubsequenceUTF8
 
-类似于 [hasSubsequence](#hasSubsequence) 但是假定 `haystack` 和 `needle` 是 UTF-8 编码的字符串。
+类似于 [hasSubsequence](#hassubsequence) 但是假定 `haystack` 和 `needle` 是 UTF-8 编码的字符串。
 
 ## hasSubsequenceCaseInsensitiveUTF8
 
-类似于 [hasSubsequenceUTF8](#hasSubsequenceUTF8) 但是不区分大小写。
+类似于 [hasSubsequenceUTF8](#hassubsequenceutf8) 但是不区分大小写。

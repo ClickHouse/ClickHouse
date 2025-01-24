@@ -9,10 +9,30 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+static const re2::RE2 range_regex(R"({([\d]+\.\.[\d]+)})"); /// regexp for {M..N}, where M and N - non-negative integers
+static const re2::RE2 enum_regex(R"({([^{}*,]+[^{}*]*[^{}*,])})"); /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
+
+bool containsRangeGlob(const std::string & input)
+{
+    return RE2::PartialMatch(input, range_regex);
+}
+
+bool containsOnlyEnumGlobs(const std::string & input)
+{
+    return input.find_first_of("*?") == String::npos && !containsRangeGlob(input);
+}
+
+bool hasExactlyOneBracketsExpansion(const std::string & input)
+{
+    return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
+}
+
 
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
  * with such steps:
@@ -35,19 +55,33 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     }
     std::string escaped_with_globs = buf_for_escaping.str();
 
-    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
-    std::string_view input(escaped_with_globs);
     std::string_view matched;
-    std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::string_view input(escaped_with_globs);
+    std::ostringstream oss_for_replacing; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
-    while (RE2::FindAndConsume(&input, enum_or_range, &matched))
-    {
-        std::string buffer(matched);
-        oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
-        if (buffer.find(',') == std::string::npos)
+    /// We may find range and enum globs in any order, let's look for both types on each iteration.
+    while (true)
+    {
+        std::string_view matched_range;
+        std::string_view matched_enum;
+
+        auto did_match_range = RE2::PartialMatch(input, range_regex, &matched_range);
+        auto did_match_enum = RE2::PartialMatch(input, enum_regex, &matched_enum);
+
+        /// Enum regex matches ranges, so if they both match and point to the same data,
+        /// it is a range.
+        if (did_match_range && did_match_enum && matched_range.data() == matched_enum.data())
+            did_match_enum = false;
+
+        /// We matched a range, and range comes earlier than enum
+        if (did_match_range && (!did_match_enum || matched_range.data() < matched_enum.data()))
         {
+            RE2::FindAndConsume(&input, range_regex, &matched);
+            std::string buffer(matched);
+            oss_for_replacing << escaped_with_globs.substr(current_index, matched_range.data() - escaped_with_globs.data() - current_index - 1) << '(';
+
             size_t range_begin = 0;
             size_t range_end = 0;
             char point;
@@ -59,14 +93,14 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             bool leading_zeros = buffer[0] == '0';
             size_t output_width = 0;
 
-            if (range_begin > range_end)    //Descending Sequence {20..15} {9..01}
+            if (range_begin > range_end) /// Descending Sequence {20..15} {9..01}
             {
                 std::swap(range_begin,range_end);
-                leading_zeros = buffer[buffer.find_last_of('.')+1]=='0';
+                leading_zeros = buffer[buffer.find_last_of('.') + 1] == '0';
                 std::swap(range_begin_width,range_end_width);
             }
             if (range_begin_width == 1 && leading_zeros)
-                output_width = 1;   ///Special Case: {0..10} {0..999}
+                output_width = 1; /// Special Case: {0..10} {0..999}
             else
                 output_width = std::max(range_begin_width, range_end_width);
 
@@ -81,15 +115,28 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                     oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
                 oss_for_replacing << i;
             }
+
+            oss_for_replacing << ")";
+            current_index = input.data() - escaped_with_globs.data();
+        }
+        /// We matched enum, and it comes earlier than range.
+        else if (did_match_enum && (!did_match_range || matched_enum.data() < matched_range.data()))
+        {
+            RE2::FindAndConsume(&input, enum_regex, &matched);
+            std::string buffer(matched);
+
+            oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
+            std::replace(buffer.begin(), buffer.end(), ',', '|');
+
+            oss_for_replacing << buffer;
+            oss_for_replacing << ")";
+
+            current_index = input.data() - escaped_with_globs.data();
         }
         else
-        {
-            std::replace(buffer.begin(), buffer.end(), ',', '|');
-            oss_for_replacing << buffer;
-        }
-        oss_for_replacing << ")";
-        current_index = input.data() - escaped_with_globs.data();
+            break;
     }
+
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     WriteBufferFromOwnString buf_final_processing;
@@ -102,7 +149,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         }
         else if ((letter == '?') || (letter == '*'))
         {
-            buf_final_processing << "[^/]";   /// '?' is any symbol except '/'
+            buf_final_processing << "[^/]"; /// '?' is any symbol except '/'
             if (letter == '?')
                 continue;
         }
@@ -125,7 +172,7 @@ void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> &
     std::string_view path_view(path);
     std::string_view matched;
 
-    // No (more) selector globs found, quit
+    /// No (more) selector globs found, quit
     if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
     {
         for_match_paths_expanded.push_back(path);
@@ -168,7 +215,7 @@ void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> &
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Invalid {{}} glob in path {}.", path);
 
-    // generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
+    /// generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
     std::string common_prefix = path.substr(0, anchor_positions.front());
     std::string common_suffix = path.substr(anchor_positions.back() + 1);
     for (size_t i = 1; i < anchor_positions.size(); ++i)

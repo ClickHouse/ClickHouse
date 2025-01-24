@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class WriteBufferFromPointer;
+class NullWriteBuffer;
 
 class NullOutputFormat final : public IOutputFormat
 {
@@ -17,7 +17,7 @@ protected:
     void consume(Chunk) override {}
 
 private:
-    static WriteBufferFromPointer empty_buffer;
+    static NullWriteBuffer empty_buffer;
 };
 
 }

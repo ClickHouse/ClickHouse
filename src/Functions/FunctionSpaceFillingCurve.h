@@ -70,6 +70,11 @@ public:
         }
         return std::make_shared<DataTypeUInt64>();
     }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
 };
 
 template <UInt8 max_dimensions, UInt8 min_ratio, UInt8 max_ratio>

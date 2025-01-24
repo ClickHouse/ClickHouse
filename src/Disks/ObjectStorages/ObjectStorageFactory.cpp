@@ -32,6 +32,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 hdfs_replication;
+}
+
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -71,7 +76,7 @@ ObjectStoragePtr createObjectStorage(
 {
     if (isPlainStorage(type, config, config_prefix))
         return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
-    else if (isPlainRewritableStorage(type, config, config_prefix))
+    if (isPlainRewritableStorage(type, config, config_prefix))
     {
         /// HDFS object storage currently does not support iteration and does not implement listObjects method.
         /// StaticWeb object storage is read-only and works with its dedicated metadata type.
@@ -89,8 +94,7 @@ ObjectStoragePtr createObjectStorage(
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
             std::move(metadata_storage_metrics), std::forward<Args>(args)...);
     }
-    else
-        return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
+    return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
 }
 }
 
@@ -154,21 +158,6 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     return uri;
 }
 
-void checkS3Capabilities(
-    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name)
-{
-    /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage))
-    {
-        LOG_WARNING(
-            getLogger("S3ObjectStorage"),
-            "Storage for disk {} does not support batch delete operations, "
-            "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
-            "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
-            name);
-        storage.setCapabilitiesSupportBatchDelete(false);
-    }
-}
 }
 
 static std::string getEndpoint(
@@ -188,7 +177,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool skip_access_check) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
@@ -199,10 +188,6 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 
         auto object_storage = createObjectStorage<S3ObjectStorage>(
             ObjectStorageType::S3, config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
-
-        /// NOTE: should we still perform this check for clickhouse-disks?
-        if (!skip_access_check)
-            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
 
         return object_storage;
     });
@@ -217,7 +202,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool skip_access_check) -> ObjectStoragePtr
+        bool /* skip_access_check */) -> ObjectStoragePtr
     {
         /// send_metadata changes the filenames (includes revision), while
         /// s3_plain do not care about this, and expect that the file name
@@ -237,10 +222,6 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
-        /// NOTE: should we still perform this check for clickhouse-disks?
-        if (!skip_access_check)
-            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
-
         return object_storage;
     });
 }
@@ -255,7 +236,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool skip_access_check) -> ObjectStoragePtr
+           bool /* skip_access_check */) -> ObjectStoragePtr
         {
             /// send_metadata changes the filenames (includes revision), while
             /// s3_plain_rewritable does not support file renaming.
@@ -272,10 +253,6 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
             auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<S3ObjectStorage, MetadataStorageType::PlainRewritable>();
             auto object_storage = std::make_shared<PlainRewritableObjectStorage<S3ObjectStorage>>(
                 std::move(metadata_storage_metrics), std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
-
-            /// NOTE: should we still perform this check for clickhouse-disks?
-            if (!skip_access_check)
-                checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
 
             return object_storage;
         });
@@ -300,8 +277,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
-                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-                context->getSettingsRef().hdfs_replication);
+                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
             return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
         });
@@ -331,7 +307,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
             ObjectStorageType::Azure, config, config_prefix, name,
             AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getEndpointWithoutContainer());
+            params.endpoint.getServiceEndpoint());
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);

@@ -2,9 +2,10 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -28,7 +29,6 @@ namespace DB
                                     ContextPtr global_context,
                                     const std::string & /* default_database */,
                                     bool /* created_from_ddl */) -> DictionarySourcePtr {
-
             auto redis_config_prefix = config_prefix + ".redis";
 
             auto host = config.getString(redis_config_prefix + ".host");

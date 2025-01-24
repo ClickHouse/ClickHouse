@@ -22,7 +22,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfoCloneable<AggregatedChunkInfo>
+class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;
@@ -107,7 +107,7 @@ struct ManyAggregatedData
                 if (variant->aggregator)
                 {
                     // variant is moved here and will be destroyed in the destructor of the lambda function.
-                    pool->trySchedule(
+                    pool->scheduleOrThrowOnError(
                         [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
                             SCOPE_EXIT_SAFE(
@@ -149,7 +149,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform : public IProcessor
+class AggregatingTransform final : public IProcessor
 {
 public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
@@ -215,6 +215,8 @@ private:
     bool is_consume_started = false;
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
+
+    std::list<TemporaryBlockStreamHolder> tmp_files;
 
     void initGenerate();
 };

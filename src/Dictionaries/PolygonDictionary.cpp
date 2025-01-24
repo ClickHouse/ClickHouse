@@ -62,8 +62,8 @@ void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & ke
 
         auto & key_column_to_cast = key_columns[key_type_index];
         ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-        auto casted_column = castColumnAccurate(column_to_cast, float_64_type);
-        key_column_to_cast = std::move(casted_column);
+        auto cast_column = castColumnAccurate(column_to_cast, float_64_type);
+        key_column_to_cast = std::move(cast_column);
         key_type = float_64_type;
     }
 }
@@ -291,6 +291,7 @@ void IPolygonDictionary::loadData()
     QueryPipeline pipeline(source_ptr->loadAll());
 
     DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
     Block block;
     while (executor.pull(block))
         blockToAttributes(block);

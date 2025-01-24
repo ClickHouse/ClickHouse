@@ -39,8 +39,6 @@ try
     if (argc >= 5)
         port = parse<uint16_t>(argv[4]);
 
-    WriteBufferFromFileDescriptor out(STDERR_FILENO);
-
     std::atomic_bool cancel{false};
     std::vector<std::thread> threads(num_threads);
     for (auto & thread : threads)

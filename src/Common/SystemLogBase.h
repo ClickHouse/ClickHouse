@@ -14,7 +14,6 @@
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
-    M(MetricLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
     M(QueryLogElement) \
@@ -32,7 +31,7 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(ErrorLogElement)
+    M(QueryMetricLogElement)
 
 namespace Poco
 {

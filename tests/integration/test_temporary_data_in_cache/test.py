@@ -1,12 +1,12 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
-import pytest
 import fnmatch
 
-from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
+import pytest
 
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 MB = 1024 * 1024
 
@@ -83,6 +83,8 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         q(
             "SELECT ignore(*) FROM numbers(10 * 1024 * 1024) ORDER BY sipHash64(number)",
             settings={
+                "max_bytes_ratio_before_external_group_by": 0,
+                "max_bytes_ratio_before_external_sort": 0,
                 "max_bytes_before_external_group_by": "4M",
                 "max_bytes_before_external_sort": "4M",
                 "temporary_files_codec": "ZSTD",

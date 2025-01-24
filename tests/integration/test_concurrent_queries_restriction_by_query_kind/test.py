@@ -2,8 +2,8 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
-from helpers.cluster import ClickHouseCluster
 
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node_insert = cluster.add_instance(

@@ -132,7 +132,7 @@ sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 
 ### `Docker`安装包 {#from-docker-image}
 
-要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/)上的指南。它是官方的`deb`安装包。
+要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/_/clickhouse)上的指南。它是官方的`deb`安装包。
 
 ### 其他环境安装包 {#from-other}
 

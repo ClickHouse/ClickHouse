@@ -13,6 +13,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_uniq_to_count;
+}
 
 namespace
 {
@@ -123,7 +127,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_uniq_to_count)
+        if (!getSettings()[Setting::optimize_uniq_to_count])
             return;
 
         auto * query_node = node->as<QueryNode>();

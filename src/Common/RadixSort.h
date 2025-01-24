@@ -599,16 +599,12 @@ public:
 
             if (destination)
                 return executeLSDWithTrySortInternal<true>(arr, size, reverse, GreaterComparator(), destination);
-            else
-                return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
+            return executeLSDWithTrySortInternal<false>(arr, size, reverse, GreaterComparator(), destination);
         }
-        else
-        {
-            if (destination)
-                return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
-            else
-                return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
-        }
+
+        if (destination)
+            return executeLSDWithTrySortInternal<true>(arr, size, reverse, LessComparator(), destination);
+        return executeLSDWithTrySortInternal<false>(arr, size, reverse, LessComparator(), destination);
     }
 
     /* Most significant digit radix sort

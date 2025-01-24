@@ -8,28 +8,34 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, WriteBuffer & ostr)
     {
-        settings.ostr << " ";
+        ostr << " ";
         bool need_comma = false;
         for (const String & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(name);
+                ostr << ", ";
+            ostr << backQuoteIfNeed(name);
         }
     }
 
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
                       << quoteString(new_name);
     }
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
-        settings.format(format);
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        settings.format(ostr, format);
+    }
+
+    void formatAlterSettings(const ASTAlterSettingsProfileElements & alter_settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
+    {
+        ostr << " ";
+        alter_settings.format(ostr, format);
     }
 }
 
@@ -47,43 +53,48 @@ ASTPtr ASTCreateRoleQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
+    if (alter_settings)
+        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+
     return res;
 }
 
 
-void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (format.hilite ? hilite_none : "");
     }
     else
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
+        ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
                       << (format.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
     else if (if_not_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
     else if (or_replace)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    formatNames(names, format);
+    formatNames(names, ostr);
 
     if (!storage_name.empty())
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "")
+        ostr << (format.hilite ? IAST::hilite_keyword : "")
                     << " IN " << (format.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(format);
+    formatOnCluster(ostr, format);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, format);
+        formatRenameTo(new_name, ostr, format);
 
-    if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, format);
+    if (alter_settings)
+        formatAlterSettings(*alter_settings, ostr, format);
+    else if (settings)
+        formatSettings(*settings, ostr, format);
 }
 
 }

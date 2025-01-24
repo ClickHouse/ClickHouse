@@ -1,6 +1,7 @@
 #pragma once
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+
+#include <base/types.h>
+#include <Core/Types_fwd.h>
 
 namespace DB
 {

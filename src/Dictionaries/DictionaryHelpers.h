@@ -274,10 +274,8 @@ public:
                 auto nested_column = array_type->getNestedType()->createColumn();
                 return ColumnArray::create(std::move(nested_column));
             }
-            else
-            {
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
-            }
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -602,6 +600,7 @@ void mergeBlockWithPipe(
     while (executor.pull(block))
     {
         convertToFullIfSparse(block);
+        block.checkNumberOfRows();
 
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
@@ -681,10 +680,8 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
         return backup_storage;
     }
-    else
-    {
-        return vector_col->getData();
-    }
+
+    return vector_col->getData();
 }
 
 template <typename T>

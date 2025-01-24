@@ -3,14 +3,16 @@
 
 namespace DB
 {
-JoinOnKeyColumns::JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
-    : key_names(key_names_)
-    , materialized_keys_holder(JoinCommon::materializeColumns(
-          block, key_names)) /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+JoinOnKeyColumns::JoinOnKeyColumns(
+    const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    : block(block_)
+    , key_names(key_names_)
+    /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+    , materialized_keys_holder(JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
     , null_map(nullptr)
     , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
-    , join_mask_column(JoinCommon::getColumnAsMask(block, cond_column_name))
+    , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
     , key_sizes(key_sizes_)
 {
 }
@@ -34,6 +36,23 @@ void AddedColumns<true>::buildOutput()
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
+        else if (join_data_sorted)
+        {
+            for (size_t i = 0; i < this->size(); ++i)
+            {
+                auto & col = columns[i];
+                for (auto row_ref_i : lazy_output.row_refs)
+                {
+                    if (row_ref_i)
+                    {
+                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                        col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+                    }
+                    else
+                        type_name[i].type->insertDefaultInto(*col);
+                }
+            }
+        }
         else
         {
             for (size_t i = 0; i < this->size(); ++i)

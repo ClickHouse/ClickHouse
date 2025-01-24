@@ -7,7 +7,7 @@ slug: /ru/operations/system-tables/query_thread_log
 
 Чтобы начать логирование:
 
-1. Настройте параметры [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) в конфигурации сервера.
+1. Настройте параметры [query_thread_log](/docs/ru/operations/server-configuration-parameters/settings#server_configuration_parameters-query_thread_log) в конфигурации сервера.
 2. Установите значение [log_query_threads](../settings/settings.md#settings-log-query-threads) равным 1.
 
 Интервал сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
@@ -62,7 +62,7 @@ ClickHouse не удаляет данные из таблицы автомати
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `UserAgent`.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events).
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](/docs/ru/operations/system-tables/events).
 
 **Пример**
 

@@ -147,10 +147,8 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     if (address.family() == Poco::Net::IPAddress::Family::IPv4)
     {
         return ptr_resolver->resolve(address.toString());
-    } else
-    {
-        return ptr_resolver->resolve_v6(address.toString());
     }
+    return ptr_resolver->resolve_v6(address.toString());
 }
 
 std::unordered_set<String> reverseResolveWithCache(
@@ -379,7 +377,7 @@ String DNSResolver::getHostName()
     return *impl->host_name;
 }
 
-static const String & cacheElemToString(const String & str) { return str; }
+static String cacheElemToString(String str) { return str; }
 static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr.toString(); }
 
 template <typename UpdateF, typename ElemsT>

@@ -218,7 +218,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 
         return true;
     }
-    else if (!literal_or_map_p.parse(pos, value, expected))
+    if (!literal_or_map_p.parse(pos, value, expected))
         return false;
 
     tryGetIdentifierNameInto(name, change.name);
@@ -279,7 +279,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
 
         return true;
     }
-    else if (!value_p.parse(pos, node, expected))
+    if (!value_p.parse(pos, node, expected))
         return false;
 
     change.name = name;

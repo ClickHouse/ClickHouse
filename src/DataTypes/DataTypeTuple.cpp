@@ -133,6 +133,14 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
     return s.str();
 }
 
+DataTypePtr DataTypeTuple::getNormalizedType() const
+{
+    DataTypes normalized_elems;
+    normalized_elems.reserve(elems.size());
+    for (const auto & elem : elems)
+        normalized_elems.emplace_back(elem->getNormalizedType());
+    return std::make_shared<DataTypeTuple>(normalized_elems);
+}
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
@@ -359,7 +367,7 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     for (const auto & elem : elems)
         infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
@@ -379,7 +387,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, SerializationInfo::Settings{});
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
@@ -415,10 +423,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
-    else if (names.size() != nested_types.size())
+    if (names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
-    else
-        return std::make_shared<DataTypeTuple>(nested_types, names);
+    return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 
