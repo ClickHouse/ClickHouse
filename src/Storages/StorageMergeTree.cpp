@@ -44,7 +44,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
-#include <Common/FailPoint.h>
 #include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
 
