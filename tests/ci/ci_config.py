@@ -548,7 +548,7 @@ class CI:
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
             runner_type=Runners.STYLE_CHECKER_AARCH64,
-            run_command="python3 ./style_check.py",
+            run_command="style_check.py",
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],

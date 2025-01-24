@@ -9,7 +9,7 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1414,13 +1414,15 @@ def main() -> int:
 
     ### RUN action for migration to praktika: start
     elif args.run_from_praktika:
+        check_name = ""
+        # TODO:
+        # check_name_with_group = _get_ext_check_name(check_name)
+        start_time = datetime.now(timezone.utc)
         try:
             jr = JobReport.create_dummy(status="error", job_skipped=False)
             jr.dump()
             check_name = os.environ["JOB_NAME"]
             os.environ["CHECK_NAME"] = check_name
-            # TODO:
-            # check_name_with_group = _get_ext_check_name(check_name)
             exit_code = _run_test(check_name, args.run_command)
             job_report = JobReport.load() if JobReport.exist() else None
             assert (
@@ -1449,20 +1451,22 @@ def main() -> int:
                     pr_info.head_ref,
                     job_report.test_results,
                     job_report.additional_files,
-                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    check_name, # TODO: make with batch
                 )
                 post_commit_status(
                     commit,
                     job_report.status,
                     check_url,
                     format_description(job_report.description),
-                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    check_name, # TODO: make with batch
                     pr_info,
                     dump_to_file=True,
                 )
             else:
                 print("ERROR: Job was killed - generate evidence")
-                job_report.update_duration()
+                job_report.duration = (
+                    start_time - datetime.now(timezone.utc)
+                ).total_seconds()
                 if Utils.is_killed_with_oom():
                     print("WARNING: OOM while job execution")
                     print(subprocess.run("sudo dmesg -T", check=False))
@@ -1485,14 +1489,14 @@ def main() -> int:
                         pr_info.head_ref,
                         job_report.test_results,
                         job_report.additional_files,
-                        job_report.check_name or _get_ext_check_name(args.job_name),
+                        check_name, # TODO: make with batch,
                     )
                 post_commit_status(
                     commit,
                     ERROR,
                     check_url,
                     "Error: " + error_description,
-                    _get_ext_check_name(args.job_name),
+                    check_name, # TODO: make with batch
                     pr_info,
                     dump_to_file=True,
                 )

@@ -212,6 +212,10 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             info=info,
         )
 
+    if workflow.enable_report:
+        print("Push pending CI report")
+        HtmlRunnerHooks.push_pending_ci_report(workflow)
+
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     results = []
     files = []
