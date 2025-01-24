@@ -158,7 +158,7 @@
 * Add support for Azure SAS Tokens. [#72959](https://github.com/ClickHouse/ClickHouse/pull/72959) ([Azat Khuzhin](https://github.com/azat)).
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
-* Fixes Invalid: Codec 'snappy' doesn't support setting a compression level. [#74659](https://github.com/ClickHouse/ClickHouse/pull/74659) ([Arthur Passos](https://github.com/arthurpassos)).
+* Set parquet compression level only if compression codec supports it. [#74659](https://github.com/ClickHouse/ClickHouse/pull/74659) ([Arthur Passos](https://github.com/arthurpassos)).
 * Fixed a regression that using collation locales with modifiers throws an error. As an example, `SELECT arrayJoin(['kk 50', 'KK 01', ' KK 2', ' KK 3', 'kk 1', 'x9y99', 'x9y100']) item ORDER BY item ASC COLLATE 'tr-u-kn-true-ka-shifted` now works. [#73544](https://github.com/ClickHouse/ClickHouse/pull/73544) ([Robert Schulze](https://github.com/rschu1ze)).
 * Fix cannot create SEQUENTIAL node with keeper-client. [#64177](https://github.com/ClickHouse/ClickHouse/pull/64177) ([Duc Canh Le](https://github.com/canhld94)).
 * Fix incorrect character counting in PositionImpl::vectorVector. [#71003](https://github.com/ClickHouse/ClickHouse/pull/71003) ([思维](https://github.com/heymind)).
@@ -195,7 +195,7 @@
 * Fix deserialization of Dynamic/Object structure. It could lead to CANNOT_READ_ALL_DATA exceptions. [#73767](https://github.com/ClickHouse/ClickHouse/pull/73767) ([Pavel Kruglov](https://github.com/Avogar)).
 * Skip `metadata_version.txt` in while restoring parts from a backup. [#73768](https://github.com/ClickHouse/ClickHouse/pull/73768) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Fix segmentation fault when Casting to Enum with LIKE. [#73775](https://github.com/ClickHouse/ClickHouse/pull/73775) ([zhanglistar](https://github.com/zhanglistar)).
-* Fix for S3 Express Disk Initialisation Issue. [#73777](https://github.com/ClickHouse/ClickHouse/pull/73777) ([Sameer Tamsekar](https://github.com/stamsekar)).
+* Fix for S3 Express bucket not working as disk. [#73777](https://github.com/ClickHouse/ClickHouse/pull/73777) ([Sameer Tamsekar](https://github.com/stamsekar)).
 * Allow merging of rows with invalid sign column values in CollapsingMergeTree tables. [#73864](https://github.com/ClickHouse/ClickHouse/pull/73864) ([Christoph Wurm](https://github.com/cwurm)).
 * Fix getting error when querying ddl with offline replica. [#73876](https://github.com/ClickHouse/ClickHouse/pull/73876) ([Tuan Pham Anh](https://github.com/tuanpach)).
 * Fixes occasional failure to compare `map()` types due to possibility to create `Map` lacking explicit naming ('keys','values') of its nested tuple. [#73878](https://github.com/ClickHouse/ClickHouse/pull/73878) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
@@ -235,3 +235,6 @@
 * The `hasColumnInTable` function doesn't account for alias columns. Fix it to also work for alias columns. [#74841](https://github.com/ClickHouse/ClickHouse/pull/74841) ([Bharat Nallan](https://github.com/bharatnc)).
 * Fix FILE_DOESNT_EXIST error occurring during data parts merge for a table with an empty column in Azure Blob Storage. [#74892](https://github.com/ClickHouse/ClickHouse/pull/74892) ([Julia Kartseva](https://github.com/jkartseva)).
 * Fix projection column name when joining temporary tables, close [#68872](https://github.com/ClickHouse/ClickHouse/issues/68872). [#74897](https://github.com/ClickHouse/ClickHouse/pull/74897) ([Vladimir Cherkasov](https://github.com/vdimir)).
+
+#### Build/Testing/Packaging Improvement
+* The universal installation script will propose installation even on macOS. [#74339](https://github.com/ClickHouse/ClickHouse/pull/74339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
