@@ -198,7 +198,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 namespace
 {
 
-QueryTreeNodePtr replaceStorageIfNeeded(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
+QueryTreeNodePtr replaceStorageIfNeeded(QueryTreeNodePtr query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
