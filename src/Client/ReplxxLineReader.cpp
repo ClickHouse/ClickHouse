@@ -389,7 +389,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
     /// We don't want to allow opening EDITOR in the embedded mode.
-    if (!options.embedded_mode)
+    if (!       options.embedded_mode)
         rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 
     /// readline insert-comment
