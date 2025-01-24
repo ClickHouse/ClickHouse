@@ -20,7 +20,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/UnionNode.h>
 
@@ -412,8 +411,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(expression_list_ast));
     }
 
-    const auto & projection = getProjection();
-    auto projection_ast = projection.toAST(options);
+    auto projection_ast = getProjection().toAST(options);
     auto & projection_expression_list_ast = projection_ast->as<ASTExpressionList &>();
     size_t projection_expression_list_ast_children_size = projection_expression_list_ast.children.size();
     if (projection_expression_list_ast_children_size != getProjection().getNodes().size())
@@ -421,15 +419,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (!projection_columns.empty())
     {
-        const auto & projection_nodes = projection.getNodes();
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
         {
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
 
-            if (!ast_with_alias)
-                continue;
-
-            if (auto * column_node = projection_nodes[i]->as<ColumnNode>(); column_node == nullptr || column_node->getColumnName() != projection_columns[i].name)
+            if (ast_with_alias)
                 ast_with_alias->setAlias(projection_columns[i].name);
         }
     }
