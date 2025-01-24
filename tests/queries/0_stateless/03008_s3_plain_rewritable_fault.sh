@@ -118,7 +118,10 @@ fi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
 
-${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE test_s3_mt_fault;"
+${CLICKHOUSE_CLIENT} --query "
+INSERT INTO test_s3_mt_fault (*) VALUES (1, 2), (2, 2), (3, 1), (4, 7), (5, 10), (6, 12);
+OPTIMIZE TABLE test_s3_mt_fault FINAL;
+"
 
 inactive_count=$(${CLICKHOUSE_CLIENT} --query "
 select count() from system.parts
@@ -147,8 +150,6 @@ fi
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 
 timeout 60 bash -c 'wait_for_delete_inactive_parts test_s3_mt_fault'
-
-${CLICKHOUSE_CLIENT} --query "select 'there shoud be no rows', *, _state from system.parts where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'"
 
 # Filter out 'Removing temporary directory' because the fault injection prevents directory rename.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_s3_mt_fault SYNC" 2>&1 | grep -v 'Removing temporary directory' ||:

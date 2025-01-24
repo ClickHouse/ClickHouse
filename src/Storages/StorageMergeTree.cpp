@@ -1618,7 +1618,7 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
         // It allows the use case
         // - firstly SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause
-        // - after drop part / drop partition / truncate
+        // - after do operation like merge / optimize final (operations like drop part / drop partition / truncate do not fit here, they remove old parts synchronously without timeout)
         // All parts which are dropped in that operations are not removed until failpoint is released
         // If we would set this failpoint before grabOldParts, it leads us to a case when
         // background thread already passed the failpoint but did not reach grabOldParts yet
