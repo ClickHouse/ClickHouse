@@ -25,7 +25,7 @@ def test_memory_based_pipeline_throttling(start_cluster):
     settings = "max_insert_threads=32, max_memory_usage=6e8, max_execution_time=100"
 
     # Test case 1: Insert with memory-based pipeline throttling enabled
-    insert_status = instance.query(
+    insert_status = instance.query_and_get_answer_with_error(
         f"""
         INSERT INTO testing_memory
         SELECT number, replicate('x', range(1, 30)) FROM numbers(60000000)
@@ -38,7 +38,7 @@ def test_memory_based_pipeline_throttling(start_cluster):
     ), f"Unexpected behavior for throttling enabled: {insert_status}"
 
     # Test case 2: Insert with throttling disabled, expecting MEMORY_LIMIT_EXCEEDED
-    insert_status = instance.query(
+    insert_status = instance.query_and_get_error(
         f"""
         INSERT INTO testing_memory
         SELECT number, replicate('x', range(1, 30)) FROM numbers(60000000)
