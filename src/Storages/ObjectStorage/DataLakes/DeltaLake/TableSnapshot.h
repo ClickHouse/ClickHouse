@@ -1,3 +1,4 @@
+#pragma once
 #include <Core/Types.h>
 #include <IO/S3/URI.h>
 #include <Common/Logger.h>
@@ -10,6 +11,9 @@
 
 namespace DeltaLake
 {
+
+/// TODO;
+/// Enable event tracing.
 
 class TableSnapshot
 {

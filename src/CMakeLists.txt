@@ -602,10 +602,6 @@ if (TARGET ch_contrib::datasketches)
     dbms_target_link_libraries(PUBLIC ch_contrib::datasketches)
 endif ()
 
-if (TARGET ch_contrib::delta_kernel_rs)
-    dbms_target_link_libraries(PUBLIC ch_contrib::delta_kernel_rs)
-endif()
-
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 if (TARGET ch_contrib::qatzstd_plugin)

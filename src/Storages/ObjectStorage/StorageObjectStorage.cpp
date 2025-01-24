@@ -115,7 +115,8 @@ StorageObjectStorage::StorageObjectStorage(
     }
     catch (...)
     {
-        // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
+        // If we don't have format or schema yet, we can't ignore failed configuration update,
+        // because relevant configuration is crucial for format and schema inference
         if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
         {
             throw;
@@ -136,8 +137,23 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard())
-        sample_path = getPathSample(context);
+    if (sample_path.empty()
+        && context->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->withPartitionWildcard())
+    {
+        try
+        {
+            sample_path = getPathSample(context);
+        }
+        catch (...)
+        {
+            /// FIXME: We need to call getPathSample() lazily on select
+            /// in case it failed to be initialized in constructor.
+            LOG_WARNING(
+                log, "Failed to list object storage, cannot use hive partitioning. "
+                "Error: {}", getCurrentExceptionMessage(true));
+        }
+    }
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);

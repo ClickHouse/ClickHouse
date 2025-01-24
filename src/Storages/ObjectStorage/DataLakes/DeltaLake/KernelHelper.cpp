@@ -2,6 +2,11 @@
 #include "KernelUtils.h"
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
+namespace DB::ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace DeltaLake
 {
 

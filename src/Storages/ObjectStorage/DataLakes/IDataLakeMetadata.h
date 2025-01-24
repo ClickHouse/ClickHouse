@@ -36,7 +36,7 @@ public:
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method {} is not implemented", method);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method {} is not implemented", method);
     }
 };
 using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;

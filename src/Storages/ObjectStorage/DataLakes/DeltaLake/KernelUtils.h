@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DELTA_KERNEL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 }
@@ -23,6 +24,11 @@ struct KernelUtils
     static std::string fromDeltaString(const struct ffi::KernelStringSlice slice)
     {
         return std::string(slice.ptr, slice.len);
+    }
+
+    static void * allocateString(const struct ffi::KernelStringSlice slice)
+    {
+        return new std::string(slice.ptr, slice.len);
     }
 
     struct KernelError : ffi::EngineError

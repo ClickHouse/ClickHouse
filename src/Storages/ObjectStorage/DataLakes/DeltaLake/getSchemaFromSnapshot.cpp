@@ -1,4 +1,5 @@
 #include "getSchemaFromSnapshot.h"
+#include "KernelUtils.h"
 
 #include <Core/TypeId.h>
 #include <Core/getDataTypeFromTypeIndex.h>
@@ -42,6 +43,7 @@ private:
 
         /// Column name.
         const std::string name;
+        std::string physical_name;
         /// Column type.
         const DB::TypeIndex type;
         const bool nullable;
@@ -113,8 +115,25 @@ private:
         return id;
     }
 
+    static std::string getColumnPhysicalName(const ffi::CStringMap * metadata)
+    {
+        auto raw_value = ffi::get_from_map(
+            metadata,
+            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
+            KernelUtils::allocateString);
+        auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
+        if (value)
+            return *value;
+        return "";
+    }
+
     template <DB::TypeIndex type, bool is_bool = false>
-    static void simpleTypeVisitor(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice name, bool nullable)
+    static void simpleTypeVisitor(
+        void * data,
+        uintptr_t sibling_list_id,
+        ffi::KernelStringSlice name,
+        bool nullable,
+        const ffi::CStringMap * metadata)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         auto it = state->type_lists.find(sibling_list_id);
@@ -127,13 +146,14 @@ private:
 
         const std::string column_name(name.ptr, name.len);
 
+        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
+        field.physical_name = getColumnPhysicalName(metadata);
+        field.is_bool = is_bool;
+
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {}, type: {}, nullable: {}",
-            sibling_list_id, column_name, type, nullable);
-
-        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
-        field.is_bool = is_bool;
+            "List id: {}, column name: {}, type: {}, nullable: {}, physical name: {}",
+            sibling_list_id, column_name, type, nullable, field.physical_name);
 
         it->second->push_back(std::move(field));
     }
@@ -143,6 +163,7 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
+        const ffi::CStringMap * metadata,
         uint8_t precision,
         uint8_t scale)
     {
@@ -160,10 +181,11 @@ private:
 
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {}, type: {}",
-            sibling_list_id, column_name, type);
+            "List id: {}, column name: {}, type: {}, nullable: {}",
+            sibling_list_id, column_name, type, nullable);
 
         SchemaVisitorData::Field field(column_name, type, nullable);
+        field.physical_name = getColumnPhysicalName(metadata);
         field.precision = precision;
         field.scale = scale;
 
@@ -174,11 +196,11 @@ private:
         void * data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
-        bool contains_null,
         bool nullable,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, contains_null, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Array>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void tupleTypeVisitor(
@@ -186,9 +208,10 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, false, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Tuple>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     static void mapTypeVisitor(
@@ -196,10 +219,10 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        bool value_contains_null,
+        const ffi::CStringMap * metadata,
         uintptr_t child_list_id)
     {
-        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, value_contains_null, child_list_id);
+        return listBasedTypeVisitor<DB::TypeIndex::Map>(data, sibling_list_id, name, nullable, metadata, child_list_id);
     }
 
     template <DB::TypeIndex type>
@@ -208,7 +231,7 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        bool value_contains_null,
+        const ffi::CStringMap * /* metadata */,
         uintptr_t child_list_id)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
@@ -225,16 +248,14 @@ private:
         LOG_TEST(
             state->log,
             "List id: {}, column name: {}, type: {}, "
-            "value contains null: {}, child list id: {}",
-            sibling_list_id, column_name, type, value_contains_null, child_list_id);
+            "nullable: {}, child list id: {}",
+            sibling_list_id, column_name, type, nullable, child_list_id);
 
         SchemaVisitorData::Field field(column_name, std::move(type), nullable);
         field.child_list_id = child_list_id;
-        field.value_contains_null = value_contains_null;
 
         it->second->push_back(field);
     }
-
 };
 
 DB::NamesAndTypesList SchemaVisitorData::getSchemaResult()
@@ -245,7 +266,8 @@ DB::NamesAndTypesList SchemaVisitorData::getSchemaResult()
     std::list<DB::NameAndTypePair> result;
     for (size_t i = 0; i < types.size(); ++i)
     {
-        result.emplace_back((*type_lists[0])[i].name, types[i]);
+        const auto & field = (*type_lists[0])[i];
+        result.emplace_back(field.physical_name.empty() ? field.name : field.physical_name, types[i]);
     }
     return DB::NamesAndTypesList(result.begin(), result.end());
 }

@@ -11,17 +11,6 @@
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int DELTA_KERNEL_ERROR;
-}
-
-}
-
 namespace DeltaLake
 {
 
@@ -72,11 +61,6 @@ public:
         ffi::visit_scan_data(engine_data, selection_vec, engine_context, Iterator::scanCallback);
     }
 
-    static void * allocateString(const struct ffi::KernelStringSlice slice)
-    {
-        return new std::string(slice.ptr, slice.len);
-    }
-
     static void scanCallback(
         ffi::NullableCvoid engine_context,
         struct ffi::KernelStringSlice path,
@@ -92,7 +76,7 @@ public:
         DB::ObjectInfoWithParitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & name_and_type : context->schema)
         {
-            auto raw_value = ffi::get_from_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), allocateString);
+            auto raw_value = ffi::get_from_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), KernelUtils::allocateString);
             auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
             if (value)
                 partitions_info.emplace_back(name_and_type, DB::parseFieldFromString(*value, name_and_type.type));
@@ -140,6 +124,7 @@ void TableSnapshot::initSnapshot()
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     snapshot = KernelUtils::unwrapResult(ffi::snapshot(KernelUtils::toDeltaString(helper->getTablePath()), engine.get()), "snapshot");
     snapshot_version = ffi::version(snapshot.get());
+
     LOG_TEST(log, "Snapshot version: {}", snapshot_version);
 }
 
