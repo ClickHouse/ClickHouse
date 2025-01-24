@@ -188,7 +188,10 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     /// Remove the file if exists
     if (std::remove(nfile.generic_string().c_str()) && errno != ENOENT)
     {
-        LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
+        char buffer[1024];
+
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
     }
     ff->set_path(nfile.generic_string());
 
@@ -362,7 +365,10 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
         if (std::remove(qfile.generic_string().c_str()) && errno != ENOENT)
         {
-            LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
+            char buffer[1024];
+
+            strerror_r(errno, buffer, sizeof(buffer));
+            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
@@ -541,7 +547,10 @@ void QueryOracle::replaceQueryWithTablePeers(
 
         if (std::remove(qfile_peer.generic_string().c_str()) && errno != ENOENT)
         {
-            LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
+            char buffer[1024];
+
+            strerror_r(errno, buffer, sizeof(buffer));
+            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
         }
         ff.set_path(qfile_peer.generic_string());
     }

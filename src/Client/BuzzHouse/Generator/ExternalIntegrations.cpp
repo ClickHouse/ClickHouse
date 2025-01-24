@@ -1004,7 +1004,6 @@ bool MinIOIntegration::sendRequest(const String & resource)
 {
     struct tm ttm;
     ssize_t nbytes = 0;
-    bool created = false;
     int sock = -1;
     int error = 0;
     char buffer[1024];
@@ -1030,11 +1029,12 @@ bool MinIOIntegration::sendRequest(const String & resource)
     {
         if (error == EAI_SYSTEM)
         {
-            LOG_ERROR(fc.log, "getnameinfo error: {}", strerror(errno));
+            strerror_r(errno, buffer, sizeof(buffer));
+            LOG_ERROR(fc.log, "getaddrinfo error: {}", buffer);
         }
         else
         {
-            LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
+            LOG_ERROR(fc.log, "getaddrinfo error: {}", gai_strerror(error));
         }
         return false;
     }
@@ -1045,7 +1045,8 @@ bool MinIOIntegration::sendRequest(const String & resource)
     {
         if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         {
-            LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
+            strerror_r(errno, buffer, sizeof(buffer));
+            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
             return false;
         }
         if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
@@ -1054,7 +1055,8 @@ bool MinIOIntegration::sendRequest(const String & resource)
             {
                 if (error == EAI_SYSTEM)
                 {
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", strerror(errno));
+                    strerror_r(errno, buffer, sizeof(buffer));
+                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
                 }
                 else
                 {
@@ -1066,10 +1068,18 @@ bool MinIOIntegration::sendRequest(const String & resource)
         }
         sock = -1;
     }
-    freeaddrinfo(result);
-    if (sock == -1 || !gmtime_r(&time, &ttm))
+    if (sock == -1)
     {
-        LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
+        freeaddrinfo(result);
+        return false;
+    }
+    freeaddrinfo(result);
+    if (!gmtime_r(&time, &ttm))
+    {
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Could not convert time: {}", buffer);
         return false;
     }
     if (!std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm))
@@ -1100,15 +1110,22 @@ bool MinIOIntegration::sendRequest(const String & resource)
 
     if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
     {
-        LOG_ERROR(fc.log, "Error sending request {}: {}", http_request.str(), strerror(errno));
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Error sending request \"{}\": {}", http_request.str(), buffer);
         return false;
     }
-    if ((nbytes = read(sock, buffer, sizeof(buffer))) > 0 && nbytes < static_cast<ssize_t>(sizeof(buffer)) && nbytes > 12
-        && !(created = (std::strncmp(buffer + 9, "200", 3) == 0)))
+    if ((nbytes = read(sock, buffer, sizeof(buffer))) < 0)
     {
-        LOG_ERROR(fc.log, "Request {} not successful: {}", http_request.str(), buffer);
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Error reading request \"{}\" result: {}", http_request.str(), buffer);
+        return false;
     }
-    return created;
+    if (nbytes < 13 || std::memcmp(buffer + 9, "200", 3) != 0)
+    {
+        LOG_ERROR(fc.log, "Request \"{}\" was not successful", http_request.str());
+        return false;
+    }
+    return true;
 }
 
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
