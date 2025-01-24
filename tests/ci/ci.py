@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -108,6 +109,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     )
     parser.add_argument(
         "--run",
+        action="store_true",
+        help="Action that executes run action for specified --job-name. run_command must be configured for a given "
+        "job name.",
+    )
+    parser.add_argument(
+        "--run-from-praktika",
         action="store_true",
         help="Action that executes run action for specified --job-name. run_command must be configured for a given "
         "job name.",
@@ -1404,6 +1411,95 @@ def main() -> int:
             _set_pending_statuses(pr_info)
         else:
             assert False, "BUG! Not supported scenario"
+
+    ### RUN action for migration to praktika: start
+    elif args.run_from_praktika:
+        try:
+            jr = JobReport.create_dummy(status="error", job_skipped=False)
+            jr.dump()
+            check_name = os.environ["JOB_NAME"]
+            os.environ["CHECK_NAME"] = check_name
+            # TODO:
+            # check_name_with_group = _get_ext_check_name(check_name)
+            exit_code = _run_test(check_name, args.run_command)
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+            job_report.exit_code = exit_code
+            job_report.dump()
+
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+        except Exception as e:
+            traceback.print_exc()
+            print("Run failed")
+
+        # post
+        try:
+            gh = GitHub(get_best_robot_token(), per_page=100)
+            commit = get_commit(gh, pr_info.sha)
+            if not job_report.dummy:
+                check_url = upload_result_helper.upload_results(
+                    s3,
+                    pr_info.number,
+                    pr_info.sha,
+                    pr_info.head_ref,
+                    job_report.test_results,
+                    job_report.additional_files,
+                    job_report.check_name or _get_ext_check_name(args.job_name),
+                )
+                post_commit_status(
+                    commit,
+                    job_report.status,
+                    check_url,
+                    format_description(job_report.description),
+                    job_report.check_name or _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
+            else:
+                print("ERROR: Job was killed - generate evidence")
+                job_report.update_duration()
+                if Utils.is_killed_with_oom():
+                    print("WARNING: OOM while job execution")
+                    print(subprocess.run("sudo dmesg -T", check=False))
+                    error_description = (
+                        f"Out Of Memory, exit_code {job_report.exit_code}"
+                    )
+                else:
+                    error_description = f"Unknown, exit_code {job_report.exit_code}"
+                CIBuddy().post_job_error(
+                    error_description + f" after {int(job_report.duration)}s",
+                    job_name=_get_ext_check_name(args.job_name),
+                )
+
+                check_url = ""
+                if job_report.test_results or job_report.additional_files:
+                    check_url = upload_result_helper.upload_results(
+                        s3,
+                        pr_info.number,
+                        pr_info.sha,
+                        pr_info.head_ref,
+                        job_report.test_results,
+                        job_report.additional_files,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
+                    )
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    check_url,
+                    "Error: " + error_description,
+                    _get_ext_check_name(args.job_name),
+                    pr_info,
+                    dump_to_file=True,
+                )
+        except Exception as e:
+            traceback.print_exc()
+            print("Post failed")
+    ### RUN FROM PRAKTIKA action: end
 
     ### print results
     _print_results(result, args.outfile, args.pretty)

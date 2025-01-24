@@ -290,7 +290,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
 
 
 class JobNames:
-    STYLE_CHECK = "Style Check"
+    STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     STATELESS = "Stateless tests"
@@ -1106,7 +1106,7 @@ class LegacyJobs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=[RunnerLabels.STYLE_CHECK_ARM],
-        command="cd ./tests/ci && python3 style_check.py --no-push",
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,

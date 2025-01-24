@@ -26,6 +26,8 @@ class Runner:
         Shell.check(
             f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
         )
+        os.environ["JOB_NAME"] = job.name
+        os.environ["CHECK_NAME"] = job.name
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
@@ -186,7 +188,9 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data["digest_dockers"]
+                    RunConfig.from_fs(workflow.name).custom_data.get(
+                        "digest_dockers", "latest"
+                    )
                 )
             except Exception as e:
                 traceback.print_exc()

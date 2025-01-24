@@ -102,8 +102,8 @@ jobs:
   style_check:
     runs-on: [style-checker-aarch64]
     needs: [config_workflow, docker_builds]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3R5bGUgQ2hlY2s=') }}
-    name: "Style Check"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
+    name: "Style check"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -132,9 +132,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Style Check' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Style check' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Style Check' --workflow "PR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Style check' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
   fast_test:

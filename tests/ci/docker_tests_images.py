@@ -6,6 +6,7 @@ from praktika.mangle import _get_workflows
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell, Utils
+
 from docker_images_helper import get_images_oredered_list
 
 # TODO: script is created for seamless transision to praktika ci, all docker images are supposed to be described and manged in praktika, this script is to be removed

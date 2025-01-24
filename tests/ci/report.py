@@ -30,7 +30,8 @@ from env_helper import (
     GITHUB_RUN_ID,
     GITHUB_RUN_URL,
     GITHUB_WORKSPACE,
-    REPORT_PATH, REPO_COPY,
+    REPO_COPY,
+    REPORT_PATH,
 )
 
 logger = logging.getLogger(__name__)
@@ -489,7 +490,12 @@ class JobReport:
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
-        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING), f"Invalid status [{self.status}]"
+        assert self.status in (
+            SUCCESS,
+            ERROR,
+            FAILURE,
+            PENDING,
+        ), f"Invalid status [{self.status}]"
 
     @classmethod
     def exist(cls) -> bool:
