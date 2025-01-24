@@ -87,7 +87,7 @@ public:
 
     bool dropPeerTableOnRemote(const SQLTable & t);
 
-    virtual void optimizeTableForOracle(PeerTableDatabase, const SQLTable &) { }
+    virtual bool optimizeTableForOracle(PeerTableDatabase, const SQLTable &) { return true; }
 
     bool performCreatePeerTable(
         RandomGenerator & rg,
@@ -98,7 +98,7 @@ public:
 
     virtual String truncateStatement() { return String(); }
 
-    void truncatePeerTableOnRemote(const SQLTable & t);
+    bool truncatePeerTableOnRemote(const SQLTable & t);
 
     bool performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
 
@@ -110,7 +110,7 @@ class MySQLIntegration : public ClickHouseIntegratedDatabase
 #if defined USE_MYSQL && USE_MYSQL
 private:
     const bool is_clickhouse;
-    std::unique_ptr<MYSQL *> mysql_connection = nullptr;
+    std::unique_ptr<MYSQL *> mysql_connection;
 
 public:
     MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool is_click, std::unique_ptr<MYSQL *> mcon)
@@ -127,7 +127,7 @@ public:
 
     String truncateStatement() override;
 
-    void optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
+    bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 
     bool performQuery(const String & query) override;
 
@@ -149,7 +149,7 @@ class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_LIBPQXX && USE_LIBPQXX
 private:
-    std::unique_ptr<pqxx::connection> postgres_connection = nullptr;
+    std::unique_ptr<pqxx::connection> postgres_connection;
 
 public:
     PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<pqxx::connection> pcon)
@@ -183,7 +183,7 @@ class SQLiteIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_SQLITE && USE_SQLITE
 private:
-    std::unique_ptr<sqlite3 *> sqlite_connection = nullptr;
+    std::unique_ptr<sqlite3 *> sqlite_connection;
 
 public:
     const std::filesystem::path sqlite_path;
@@ -297,13 +297,13 @@ class ExternalIntegrations
 {
 private:
     const FuzzConfig & fc;
-    std::unique_ptr<MySQLIntegration> mysql = nullptr;
-    std::unique_ptr<PostgreSQLIntegration> postresql = nullptr;
-    std::unique_ptr<SQLiteIntegration> sqlite = nullptr;
-    std::unique_ptr<RedisIntegration> redis = nullptr;
-    std::unique_ptr<MongoDBIntegration> mongodb = nullptr;
-    std::unique_ptr<MinIOIntegration> minio = nullptr;
-    std::unique_ptr<MySQLIntegration> clickhouse = nullptr;
+    std::unique_ptr<MySQLIntegration> mysql;
+    std::unique_ptr<PostgreSQLIntegration> postresql;
+    std::unique_ptr<SQLiteIntegration> sqlite;
+    std::unique_ptr<RedisIntegration> redis;
+    std::unique_ptr<MongoDBIntegration> mongodb;
+    std::unique_ptr<MinIOIntegration> minio;
+    std::unique_ptr<MySQLIntegration> clickhouse;
 
     std::filesystem::path default_sqlite_path;
     size_t requires_external_call_check = 0;
@@ -350,9 +350,9 @@ public:
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
 
-    void truncatePeerTableOnRemote(const SQLTable & t);
+    bool truncatePeerTableOnRemote(const SQLTable & t);
 
-    void optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t);
+    bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t);
 
     void dropPeerTableOnRemote(const SQLTable & t);
 

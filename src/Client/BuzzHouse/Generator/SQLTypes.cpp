@@ -726,7 +726,7 @@ SQLType * JSONType::typeDeepCopy() const
     jsubcols.reserve(subcols.size());
     for (const auto & entry : subcols)
     {
-        jsubcols.push_back(JSubType(entry.cname, entry.subtype->typeDeepCopy()));
+        jsubcols.emplace_back(JSubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
     return new JSONType(desc, std::move(jsubcols));
 }
@@ -895,6 +895,7 @@ SQLType * ArrayType::typeDeepCopy() const
 
 String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const uint32_t limit) const
 {
+    /// This is a hot loop, so fmt::format may not be desirable
     String ret = "[";
     for (uint64_t i = 0; i < limit; i++)
     {
@@ -1019,7 +1020,7 @@ SQLType * TupleType::typeDeepCopy() const
     nsubtypes.reserve(subtypes.size());
     for (const auto & entry : subtypes)
     {
-        nsubtypes.push_back(SubType(entry.cname, entry.subtype->typeDeepCopy()));
+        nsubtypes.emplace_back(SubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
     return new TupleType(std::move(nsubtypes));
 }
@@ -1086,7 +1087,7 @@ SQLType * VariantType::typeDeepCopy() const
     nsubtypes.reserve(subtypes.size());
     for (const auto & entry : subtypes)
     {
-        nsubtypes.push_back(entry->typeDeepCopy());
+        nsubtypes.emplace_back(entry->typeDeepCopy());
     }
     return new VariantType(std::move(nsubtypes));
 }
@@ -1157,7 +1158,7 @@ SQLType * NestedType::typeDeepCopy() const
     nsubtypes.reserve(subtypes.size());
     for (const auto & entry : subtypes)
     {
-        nsubtypes.push_back(NestedSubType(entry.cname, entry.subtype->typeDeepCopy()));
+        nsubtypes.emplace_back(NestedSubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
     return new NestedType(std::move(nsubtypes));
 }
@@ -1179,34 +1180,34 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     {
         if ((allowed_types & allow_int8))
         {
-            this->ids.push_back(1);
+            this->ids.emplace_back(1);
         }
-        this->ids.push_back(2);
-        this->ids.push_back(3);
+        this->ids.emplace_back(2);
+        this->ids.emplace_back(3);
         if ((allowed_types & allow_int64))
         {
-            this->ids.push_back(4);
+            this->ids.emplace_back(4);
         }
         if ((allowed_types & allow_int128))
         {
-            this->ids.push_back(5);
-            this->ids.push_back(6);
+            this->ids.emplace_back(5);
+            this->ids.emplace_back(6);
         }
     }
     if ((allowed_types & allow_int8))
     {
-        this->ids.push_back(7);
+        this->ids.emplace_back(7);
     }
-    this->ids.push_back(8);
-    this->ids.push_back(9);
+    this->ids.emplace_back(8);
+    this->ids.emplace_back(9);
     if ((allowed_types & allow_int64))
     {
-        this->ids.push_back(10);
+        this->ids.emplace_back(10);
     }
     if ((allowed_types & allow_int128))
     {
-        this->ids.push_back(11);
-        this->ids.push_back(12);
+        this->ids.emplace_back(11);
+        this->ids.emplace_back(12);
     }
     const uint32_t nopt = rg.pickRandomlyFromVector(this->ids);
     this->ids.clear();
@@ -1468,7 +1469,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 edf->set_number(num);
                 edf->set_enumv(nval);
             }
-            evs.push_back(EnumValue(nval, num));
+            evs.emplace_back(EnumValue(nval, num));
         }
         res = new EnumType(bits16 ? 16 : 8, evs);
     }
@@ -1591,7 +1592,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 this->next_type_mask = type_mask_backup;
 
                 desc += jtp->typeName(false);
-                subcols.push_back(JSubType(npath, jtp));
+                subcols.emplace_back(JSubType(npath, jtp));
             }
         }
         this->depth--;
@@ -1715,7 +1716,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             }
             SQLType * k
                 = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
-            subtypes.push_back(SubType(opt_cname, k));
+            subtypes.emplace_back(SubType(opt_cname, k));
         }
         this->depth--;
         return new TupleType(subtypes);
@@ -1734,7 +1735,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         {
             TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
-            subtypes.push_back(this->randomNextType(
+            subtypes.emplace_back(this->randomNextType(
                 rg, this->next_type_mask & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
         }
         this->depth--;
@@ -1760,7 +1761,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
             }
             SQLType * k
                 = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
-            subtypes.push_back(NestedSubType(cname, k));
+            subtypes.emplace_back(NestedSubType(cname, k));
         }
         this->depth--;
         return new NestedType(subtypes);

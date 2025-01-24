@@ -217,6 +217,7 @@ static HugeInt divide(HugeInt lhs, HugeInt rhs)
 static HugeInt modulo(HugeInt lhs, HugeInt rhs)
 {
     HugeInt remainder;
+    /// Here it is interested in the remainder only
     auto u = divMod(lhs, rhs, remainder);
     UNUSED(u);
     return remainder;

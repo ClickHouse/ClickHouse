@@ -315,7 +315,7 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
         {
             for (const auto & col : entry.cols)
             {
-                available_cols.push_back(GroupCol(col, nullptr));
+                available_cols.emplace_back(GroupCol(col, nullptr));
             }
         }
     }
@@ -529,9 +529,9 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     {
         const String buf = String(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
-        rel.cols.push_back(SQLRelationCol("", {buf}));
+        rel.cols.emplace_back(SQLRelationCol("", {buf}));
     }
-    this->levels[this->current_level].rels.push_back(std::move(rel));
+    this->levels[this->current_level].rels.emplace_back(rel);
     this->generateExpression(rg, lexpr->mutable_expr());
 
     this->levels.clear();
@@ -979,21 +979,21 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             assert(this->ids.empty());
             if (this->fc.max_width - this->width > 1)
             {
-                this->ids.push_back(static_cast<uint32_t>(WINnth_value));
+                this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));
             }
             if (this->fc.max_width > this->width)
             {
-                this->ids.push_back(static_cast<uint32_t>(WINfirst_value));
-                this->ids.push_back(static_cast<uint32_t>(WINlast_value));
-                this->ids.push_back(static_cast<uint32_t>(WINntile));
-                this->ids.push_back(static_cast<uint32_t>(WINlagInFrame));
-                this->ids.push_back(static_cast<uint32_t>(WINleadInFrame));
+                this->ids.emplace_back(static_cast<uint32_t>(WINfirst_value));
+                this->ids.emplace_back(static_cast<uint32_t>(WINlast_value));
+                this->ids.emplace_back(static_cast<uint32_t>(WINntile));
+                this->ids.emplace_back(static_cast<uint32_t>(WINlagInFrame));
+                this->ids.emplace_back(static_cast<uint32_t>(WINleadInFrame));
             }
-            this->ids.push_back(static_cast<uint32_t>(WINdense_rank));
-            this->ids.push_back(static_cast<uint32_t>(WINnth_value));
-            this->ids.push_back(static_cast<uint32_t>(WINpercent_rank));
-            this->ids.push_back(static_cast<uint32_t>(WINrank));
-            this->ids.push_back(static_cast<uint32_t>(WINrow_number));
+            this->ids.emplace_back(static_cast<uint32_t>(WINdense_rank));
+            this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));
+            this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
+            this->ids.emplace_back(static_cast<uint32_t>(WINrank));
+            this->ids.emplace_back(static_cast<uint32_t>(WINrow_number));
             const WindowFuncs wfs = static_cast<WindowFuncs>(rg.pickRandomlyFromVector(this->ids));
 
             this->ids.clear();
@@ -1079,10 +1079,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const uint32_t cname = this->levels[this->current_level].aliases_counter++;
         const String cname_str = "c" + std::to_string(cname);
 
-        rel.cols.push_back(SQLRelationCol("", {cname_str}));
-        this->levels[this->current_level].rels.push_back(std::move(rel));
+        rel.cols.emplace_back(SQLRelationCol("", {cname_str}));
+        this->levels[this->current_level].rels.emplace_back(rel);
         eca->mutable_col_alias()->set_column(cname_str);
-        this->levels[this->current_level].projections.push_back(cname);
+        this->levels[this->current_level].projections.emplace_back(cname);
     }
 }
 

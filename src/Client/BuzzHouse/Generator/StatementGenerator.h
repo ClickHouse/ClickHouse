@@ -227,7 +227,7 @@ public:
         {
             if (func(entry.second))
             {
-                res.push_back(std::ref<const T>(entry.second));
+                res.emplace_back(std::ref<const T>(entry.second));
             }
         }
         return res;

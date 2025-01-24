@@ -246,7 +246,7 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, std::vector<String>
             next_cols.clear();
             current_table = ntable;
         }
-        next_cols.push_back(ncol);
+        next_cols.emplace_back(ncol);
         buf.resize(0);
     }
 }

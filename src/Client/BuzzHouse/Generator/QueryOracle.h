@@ -58,8 +58,8 @@ public:
     void generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
     /// Replace query with peer tables
-    void truncatePeerTables(const StatementGenerator & gen) const;
-    void optimizePeerTables(const StatementGenerator & gen) const;
+    void truncatePeerTables(const StatementGenerator & gen);
+    void optimizePeerTables(const StatementGenerator & gen);
     void replaceQueryWithTablePeers(
         RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };

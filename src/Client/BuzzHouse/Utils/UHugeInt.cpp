@@ -314,6 +314,7 @@ static UHugeInt divide(UHugeInt lhs, UHugeInt rhs)
 static UHugeInt modulo(UHugeInt lhs, UHugeInt rhs)
 {
     UHugeInt remainder;
+    /// Here it is interested in the remainder only
     auto u = divMod(lhs, rhs, remainder);
     UNUSED(u);
     return remainder;

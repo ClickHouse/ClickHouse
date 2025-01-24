@@ -18,7 +18,7 @@ void collectColumnPaths(
 
     checkStackSize();
     /// Append this node to the path
-    next.path.push_back(ColumnPathChainEntry(cname, tp));
+    next.path.emplace_back(ColumnPathChainEntry(cname, tp));
     if (((flags & skip_nested_node) == 0 || tp->getTypeClass() != SQLTypeClass::NESTED)
         && ((flags & skip_tuple_node) == 0 || tp->getTypeClass() != SQLTypeClass::TUPLE))
     {
@@ -26,7 +26,7 @@ void collectColumnPaths(
     }
     if ((flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::NULLABLE)
     {
-        next.path.push_back(ColumnPathChainEntry("null", &(*null_tp)));
+        next.path.emplace_back(ColumnPathChainEntry("null", &(*null_tp)));
         paths.push_back(next);
         next.path.pop_back();
     }
@@ -34,22 +34,22 @@ void collectColumnPaths(
     {
         uint32_t i = 1;
 
-        next.path.push_back(ColumnPathChainEntry("size0", &(*size_tp)));
+        next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
         paths.push_back(next);
         next.path.pop_back();
         while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
         {
-            next.path.push_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
+            next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
             paths.push_back(next);
             next.path.pop_back();
             i++;
         }
         if (mt)
         {
-            next.path.push_back(ColumnPathChainEntry("keys", mt->key));
+            next.path.emplace_back(ColumnPathChainEntry("keys", mt->key));
             paths.push_back(next);
             next.path.pop_back();
-            next.path.push_back(ColumnPathChainEntry("values", mt->value));
+            next.path.emplace_back(ColumnPathChainEntry("values", mt->value));
             paths.push_back(next);
             next.path.pop_back();
         }
@@ -80,7 +80,7 @@ void collectColumnPaths(
     {
         for (const auto & entry : jt->subcols)
         {
-            next.path.push_back(ColumnPathChainEntry(entry.cname, entry.subtype));
+            next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype));
             paths.push_back(next);
             next.path.pop_back();
         }
@@ -123,7 +123,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             names.push_back(path.cname);
         }
-        rel.cols.push_back(SQLRelationCol(rel_name, std::move(names)));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
     }
     this->table_entries.clear();
     if (allow_internal_cols && rg.nextSmallNumber() < 3)
@@ -132,39 +132,39 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             if (this->allow_not_deterministic)
             {
-                rel.cols.push_back(SQLRelationCol(rel_name, {"_block_number"}));
-                rel.cols.push_back(SQLRelationCol(rel_name, {"_block_offset"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
             }
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_part"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_part_data_version"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_part_index"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_part_offset"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_part_uuid"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_partition_id"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_partition_value"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_sample_factor"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
         }
         else if (t.isAnyS3Engine() || t.isFileEngine())
         {
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_path"}));
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_file"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
             if (t.isS3Engine())
             {
-                rel.cols.push_back(SQLRelationCol(rel_name, {"_size"}));
-                rel.cols.push_back(SQLRelationCol(rel_name, {"_time"}));
-                rel.cols.push_back(SQLRelationCol(rel_name, {"_etag"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
             }
         }
         else if (t.isMergeEngine())
         {
-            rel.cols.push_back(SQLRelationCol(rel_name, {"_table"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
         }
     }
     if (rel_name.empty())
     {
         this->levels[this->current_level] = QueryLevel(this->current_level);
     }
-    this->levels[this->current_level].rels.push_back(std::move(rel));
+    this->levels[this->current_level].rels.emplace_back(rel);
 }
 
 void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats)
@@ -173,7 +173,7 @@ void StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStat
 
     for (uint32_t i = 1; i <= ColumnStat_MAX; i++)
     {
-        ids.push_back(i);
+        ids.emplace_back(i);
     }
     std::shuffle(ids.begin(), ids.end(), rg.generator);
     for (size_t i = 0; i < nstats; i++)
@@ -252,7 +252,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
 
         if (!tp || (tp && (tp->getTypeClass() == SQLTypeClass::DATE || tp->getTypeClass() == SQLTypeClass::DATETIME)))
         {
-            filtered_entries.push_back(std::ref<const ColumnPathChain>(entry));
+            filtered_entries.emplace_back(std::ref<const ColumnPathChain>(entry));
         }
     }
     if (!filtered_entries.empty() && rg.nextMediumNumber() < 96)
@@ -666,7 +666,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
                         }
                         if (ok)
                         {
-                            this->filtered_entries.push_back(std::ref<const ColumnPathChain>(entry));
+                            this->filtered_entries.emplace_back(std::ref<const ColumnPathChain>(entry));
                             break;
                         }
                     }
@@ -712,11 +712,11 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             assert(this->ids.empty());
             if (replica_setup)
             {
-                this->ids.push_back(TReplicated);
+                this->ids.emplace_back(TReplicated);
             }
             if (supports_cloud_features)
             {
-                this->ids.push_back(TShared);
+                this->ids.emplace_back(TShared);
             }
             b.toption = static_cast<TableEngineOption>(rg.pickRandomlyFromVector(this->ids));
             te->set_toption(b.toption.value());
@@ -1247,21 +1247,21 @@ PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator &
     {
         if (teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
         {
-            this->ids.push_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
+            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
         if (teng != TableEngineValues::PostgreSQL && connections.hasPostgreSQLConnection())
         {
-            this->ids.push_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
+            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
         if (teng != TableEngineValues::SQLite && connections.hasSQLiteConnection())
         {
-            this->ids.push_back(static_cast<uint32_t>(PeerTableDatabase::SQLite));
+            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::SQLite));
         }
         if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree
             && connections.hasClickHouseExtraServerConnection())
         {
-            this->ids.push_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
-            this->ids.push_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
+            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
+            this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
         }
     }
     const auto res = (this->ids.empty() || rg.nextBool()) ? PeerTableDatabase::None
@@ -1284,58 +1284,58 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
         return static_cast<TableEngineValues>(table_engine(rg.generator));
     }
     assert(this->ids.empty());
-    this->ids.push_back(MergeTree);
-    this->ids.push_back(ReplacingMergeTree);
-    this->ids.push_back(SummingMergeTree);
-    this->ids.push_back(AggregatingMergeTree);
-    this->ids.push_back(CollapsingMergeTree);
-    this->ids.push_back(VersionedCollapsingMergeTree);
-    this->ids.push_back(File);
-    this->ids.push_back(Null);
-    this->ids.push_back(Set);
-    this->ids.push_back(Join);
-    this->ids.push_back(Memory);
-    this->ids.push_back(StripeLog);
-    this->ids.push_back(Log);
-    this->ids.push_back(TinyLog);
-    this->ids.push_back(EmbeddedRocksDB);
-    this->ids.push_back(Merge);
+    this->ids.emplace_back(MergeTree);
+    this->ids.emplace_back(ReplacingMergeTree);
+    this->ids.emplace_back(SummingMergeTree);
+    this->ids.emplace_back(AggregatingMergeTree);
+    this->ids.emplace_back(CollapsingMergeTree);
+    this->ids.emplace_back(VersionedCollapsingMergeTree);
+    this->ids.emplace_back(File);
+    this->ids.emplace_back(Null);
+    this->ids.emplace_back(Set);
+    this->ids.emplace_back(Join);
+    this->ids.emplace_back(Memory);
+    this->ids.emplace_back(StripeLog);
+    this->ids.emplace_back(Log);
+    this->ids.emplace_back(TinyLog);
+    this->ids.emplace_back(EmbeddedRocksDB);
+    this->ids.emplace_back(Merge);
     if (collectionHas<SQLTable>([](const SQLTable & t)
                                 { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; })
         || collectionHas<SQLView>([](const SQLView & v)
                                   { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; }))
     {
-        this->ids.push_back(Buffer);
+        this->ids.emplace_back(Buffer);
     }
     if (use_external_integrations)
     {
         if (connections.hasMySQLConnection())
         {
-            this->ids.push_back(MySQL);
+            this->ids.emplace_back(MySQL);
         }
         if (connections.hasPostgreSQLConnection())
         {
-            this->ids.push_back(PostgreSQL);
+            this->ids.emplace_back(PostgreSQL);
         }
         if (connections.hasSQLiteConnection())
         {
-            this->ids.push_back(SQLite);
+            this->ids.emplace_back(SQLite);
         }
         if (connections.hasMongoDBConnection())
         {
-            this->ids.push_back(MongoDB);
+            this->ids.emplace_back(MongoDB);
         }
         if (connections.hasRedisConnection())
         {
-            this->ids.push_back(Redis);
+            this->ids.emplace_back(Redis);
         }
         if (connections.hasMinIOConnection())
         {
-            this->ids.push_back(S3);
-            /// this->ids.push_back(S3Queue);
-            this->ids.push_back(Hudi);
-            this->ids.push_back(DeltaLake);
-            /// this->ids.push_back(IcebergS3);
+            this->ids.emplace_back(S3);
+            /// this->ids.emplace_back(S3Queue);
+            this->ids.emplace_back(Hudi);
+            this->ids.emplace_back(DeltaLake);
+            /// this->ids.emplace_back(IcebergS3);
         }
     }
 

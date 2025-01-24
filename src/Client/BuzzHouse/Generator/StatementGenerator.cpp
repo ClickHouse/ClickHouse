@@ -59,15 +59,15 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
 DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
 {
     assert(this->ids.empty());
-    this->ids.push_back(DAtomic);
-    this->ids.push_back(DMemory);
+    this->ids.emplace_back(DAtomic);
+    this->ids.emplace_back(DMemory);
     if (replica_setup)
     {
-        this->ids.push_back(DReplicated);
+        this->ids.emplace_back(DReplicated);
     }
     if (supports_cloud_features)
     {
-        this->ids.push_back(DShared);
+        this->ids.emplace_back(DShared);
     }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomlyFromVector(this->ids));
     this->ids.clear();
@@ -200,7 +200,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         for (uint32_t i = 0; i < next.ncols; i++)
         {
             std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
-            entries.push_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
+            entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
         }
         if (!has_to)
         {
@@ -208,9 +208,9 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
 
             for (uint32_t i = 0; i < next.ncols; i++)
             {
-                rel.cols.push_back(SQLRelationCol(vname, {"c" + std::to_string(i)}));
+                rel.cols.emplace_back(SQLRelationCol(vname, {"c" + std::to_string(i)}));
             }
-            this->levels[this->current_level].rels.push_back(std::move(rel));
+            this->levels[this->current_level].rels.emplace_back(rel);
             this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
             generateEngineDetails(rg, next, true, te);
             this->levels.clear();
@@ -2869,35 +2869,35 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
             switch (val.value())
             {
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST:
-                    this->ids.push_back(0);
-                    this->ids.push_back(1);
+                    this->ids.emplace_back(0);
+                    this->ids.emplace_back(1);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
-                    this->ids.push_back(2);
+                    this->ids.emplace_back(2);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
-                    this->ids.push_back(3);
-                    this->ids.push_back(4);
-                    this->ids.push_back(5);
-                    this->ids.push_back(6);
-                    this->ids.push_back(7);
+                    this->ids.emplace_back(3);
+                    this->ids.emplace_back(4);
+                    this->ids.emplace_back(5);
+                    this->ids.emplace_back(6);
+                    this->ids.emplace_back(7);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ESTIMATE:
-                    this->ids.push_back(1);
-                    this->ids.push_back(8);
-                    this->ids.push_back(9);
-                    this->ids.push_back(10);
-                    this->ids.push_back(11);
-                    this->ids.push_back(12);
-                    this->ids.push_back(13);
-                    this->ids.push_back(14);
-                    this->ids.push_back(15);
+                    this->ids.emplace_back(1);
+                    this->ids.emplace_back(8);
+                    this->ids.emplace_back(9);
+                    this->ids.emplace_back(10);
+                    this->ids.emplace_back(11);
+                    this->ids.emplace_back(12);
+                    this->ids.emplace_back(13);
+                    this->ids.emplace_back(14);
+                    this->ids.emplace_back(15);
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    this->ids.push_back(0);
-                    this->ids.push_back(15);
-                    this->ids.push_back(16);
+                    this->ids.emplace_back(0);
+                    this->ids.emplace_back(15);
+                    this->ids.emplace_back(16);
                     break;
                 default:
                     break;
@@ -2905,14 +2905,14 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
         }
         else
         {
-            this->ids.push_back(1);
-            this->ids.push_back(9);
-            this->ids.push_back(10);
-            this->ids.push_back(11);
-            this->ids.push_back(12);
-            this->ids.push_back(13);
-            this->ids.push_back(14);
-            this->ids.push_back(15);
+            this->ids.emplace_back(1);
+            this->ids.emplace_back(9);
+            this->ids.emplace_back(10);
+            this->ids.emplace_back(11);
+            this->ids.emplace_back(12);
+            this->ids.emplace_back(13);
+            this->ids.emplace_back(14);
+            this->ids.emplace_back(15);
         }
         if (!this->ids.empty())
         {

@@ -27,8 +27,8 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 
     if (performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
+        String buf;
         bool first = true;
-        String buf = fmt::format("CREATE TABLE {}(", str_tname);
 
         if (can_shuffle && rg.nextSmallNumber() < 7)
         {
@@ -47,8 +47,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
             assert(entry.path.size() == 1);
             first = false;
         }
-        buf += ");";
-        return performQuery(buf);
+        return performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
     }
     return false;
 }
@@ -113,11 +112,10 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     return res;
 }
 
-void ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
+bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     assert(t.hasDatabasePeer());
-    auto u = performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
-    UNUSED(u);
+    return performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -197,17 +195,18 @@ String MySQLIntegration::truncateStatement()
     return fmt::format("TRUNCATE{}", is_clickhouse ? " TABLE" : "");
 }
 
-void MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
+bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
+    bool success = true;
+
     assert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
-        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        UNUSED(u);
-        auto v = performQueryOnServerOrRemote(
+        success &= performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        success &= performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
-        UNUSED(v);
     }
+    return success;
 }
 
 bool MySQLIntegration::performQuery(const String & query)
@@ -261,8 +260,8 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
 {
     bool has_something = false;
     String connection_str;
-    std::unique_ptr<pqxx::connection> pcon = nullptr;
-    std::unique_ptr<PostgreSQLIntegration> psql = nullptr;
+    std::unique_ptr<pqxx::connection> pcon;
+    std::unique_ptr<PostgreSQLIntegration> psql;
 
     if (!scc.unix_socket.empty() || !scc.hostname.empty())
     {
@@ -339,6 +338,7 @@ bool PostgreSQLIntegration::performQuery(const String & query)
         pqxx::work w(*postgres_connection);
 
         out_file << query << std::endl;
+        /// Ignore the query result set
         auto u = w.exec(query);
         UNUSED(u);
         w.commit();
@@ -670,7 +670,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         {
             for (uint32_t i = 0; i < limit; i++)
             {
-                binary_data.push_back(static_cast<char>(rg.nextRandomInt8()));
+                binary_data.emplace_back(static_cast<char>(rg.nextRandomInt8()));
             }
             bsoncxx::types::b_binary val{
                 bsoncxx::binary_sub_type::k_binary, limit, reinterpret_cast<const std::uint8_t *>(binary_data.data())};
@@ -964,7 +964,7 @@ bool MongoDBIntegration::performIntegration(
                     assert(entry.path.size() == 1);
                 }
             }
-            documents.push_back(document << bsoncxx::builder::stream::finalize);
+            documents.emplace_back(document << bsoncxx::builder::stream::finalize);
         }
         /// Collection name
         out_file << str_tname << std::endl;
@@ -1012,14 +1012,14 @@ bool MinIOIntegration::sendRequest(const String & resource)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
+    /// It should always fit, ignore the result
     auto u = std::sprintf(buffer, "%" PRIu32 "", sc.port);
     UNUSED(u);
     if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
     {
         if (error == EAI_SYSTEM)
         {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
+            LOG_ERROR(fc.log, "getnameinfo error: {}", strerror(errno));
         }
         else
         {
@@ -1027,13 +1027,14 @@ bool MinIOIntegration::sendRequest(const String & resource)
         }
         return false;
     }
+    SCOPE_EXIT({ close(sock); });
+
     /// Loop through results
     for (const struct addrinfo * p = result; p; p = p->ai_next)
     {
         if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
+            LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
             return false;
         }
         if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
@@ -1042,8 +1043,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
             {
                 if (error == EAI_SYSTEM)
                 {
-                    strerror_r(errno, buffer, sizeof(buffer));
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
+                    LOG_ERROR(fc.log, "getnameinfo error: {}", strerror(errno));
                 }
                 else
                 {
@@ -1053,20 +1053,17 @@ bool MinIOIntegration::sendRequest(const String & resource)
             }
             break;
         }
-        close(sock);
         sock = -1;
     }
     freeaddrinfo(result);
-    if (sock == -1)
+    if (sock == -1 || !gmtime_r(&time, &ttm))
     {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
+        LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
         return false;
     }
-    auto * v = gmtime_r(&time, &ttm);
-    auto w = std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
+    /// It should always fit, ignore the result
+    auto v = std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
     UNUSED(v);
-    UNUSED(w);
     sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
              << resource << "\""
              << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
@@ -1077,7 +1074,6 @@ bool MinIOIntegration::sendRequest(const String & resource)
     res->wait();
     if (!sign_err.str().empty())
     {
-        close(sock);
         LOG_ERROR(fc.log, "Error while executing shell command: {}", sign_err.str());
         return false;
     }
@@ -1091,9 +1087,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
 
     if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
     {
-        strerror_r(errno, buffer, sizeof(buffer));
-        close(sock);
-        LOG_ERROR(fc.log, "Error sending request {}: {}", http_request.str(), buffer);
+        LOG_ERROR(fc.log, "Error sending request {}: {}", http_request.str(), strerror(errno));
         return false;
     }
     if ((nbytes = read(sock, buffer, sizeof(buffer))) > 0 && nbytes < static_cast<ssize_t>(sizeof(buffer)) && nbytes > 12
@@ -1101,7 +1095,6 @@ bool MinIOIntegration::sendRequest(const String & resource)
     {
         LOG_ERROR(fc.log, "Request {} not successful: {}", http_request.str(), buffer);
     }
-    close(sock);
     return created;
 }
 
@@ -1161,27 +1154,27 @@ void ExternalIntegrations::createExternalDatabaseTable(
     switch (dc)
     {
         case IntegrationCall::MySQL:
-            next_calls_succeeded.push_back(mysql->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(mysql->performIntegration(rg, b.db, b.tname, true, entries));
             mysql->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::PostgreSQL:
-            next_calls_succeeded.push_back(postresql->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(postresql->performIntegration(rg, b.db, b.tname, true, entries));
             postresql->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::SQLite:
-            next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(sqlite->performIntegration(rg, b.db, b.tname, true, entries));
             sqlite->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::MongoDB:
-            next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(mongodb->performIntegration(rg, b.db, b.tname, true, entries));
             mongodb->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::Redis:
-            next_calls_succeeded.push_back(redis->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(redis->performIntegration(rg, b.db, b.tname, true, entries));
             redis->setEngineDetails(rg, b, tname, te);
             break;
         case IntegrationCall::MinIO:
-            next_calls_succeeded.push_back(minio->performIntegration(rg, b.db, b.tname, true, entries));
+            next_calls_succeeded.emplace_back(minio->performIntegration(rg, b.db, b.tname, true, entries));
             minio->setEngineDetails(rg, b, tname, te);
             break;
     }
@@ -1194,16 +1187,16 @@ void ExternalIntegrations::createPeerTable(
     switch (pt)
     {
         case PeerTableDatabase::ClickHouse:
-            next_calls_succeeded.push_back(clickhouse->performCreatePeerTable(rg, true, t, ct, entries));
+            next_calls_succeeded.emplace_back(clickhouse->performCreatePeerTable(rg, true, t, ct, entries));
             break;
         case PeerTableDatabase::MySQL:
-            next_calls_succeeded.push_back(mysql->performCreatePeerTable(rg, false, t, ct, entries));
+            next_calls_succeeded.emplace_back(mysql->performCreatePeerTable(rg, false, t, ct, entries));
             break;
         case PeerTableDatabase::PostgreSQL:
-            next_calls_succeeded.push_back(postresql->performCreatePeerTable(rg, false, t, ct, entries));
+            next_calls_succeeded.emplace_back(postresql->performCreatePeerTable(rg, false, t, ct, entries));
             break;
         case PeerTableDatabase::SQLite:
-            next_calls_succeeded.push_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
+            next_calls_succeeded.emplace_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
             break;
         case PeerTableDatabase::None:
             assert(0);
@@ -1211,39 +1204,35 @@ void ExternalIntegrations::createPeerTable(
     }
 }
 
-void ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)
+bool ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)
 {
     switch (t.peer_table)
     {
         case PeerTableDatabase::ClickHouse:
-            clickhouse->truncatePeerTableOnRemote(t);
-            break;
+            return clickhouse->truncatePeerTableOnRemote(t);
         case PeerTableDatabase::MySQL:
-            mysql->truncatePeerTableOnRemote(t);
-            break;
+            return mysql->truncatePeerTableOnRemote(t);
         case PeerTableDatabase::PostgreSQL:
-            postresql->truncatePeerTableOnRemote(t);
-            break;
+            return postresql->truncatePeerTableOnRemote(t);
         case PeerTableDatabase::SQLite:
-            sqlite->truncatePeerTableOnRemote(t);
-            break;
+            return sqlite->truncatePeerTableOnRemote(t);
         case PeerTableDatabase::None:
-            break;
+            assert(0);
+            return false;
     }
 }
 
-void ExternalIntegrations::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
+bool ExternalIntegrations::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
     switch (t.peer_table)
     {
         case PeerTableDatabase::ClickHouse:
-            clickhouse->optimizeTableForOracle(pt, t);
-            break;
+            return clickhouse->optimizeTableForOracle(pt, t);
         case PeerTableDatabase::MySQL:
         case PeerTableDatabase::PostgreSQL:
         case PeerTableDatabase::SQLite:
         case PeerTableDatabase::None:
-            break;
+            return false;
     }
 }
 
@@ -1337,6 +1326,7 @@ void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const 
 {
     for (const auto & entry : settings)
     {
+        /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
         auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = 1;", entry));
         UNUSED(u);
     }
@@ -1400,6 +1390,7 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
                     replaced += c;
             }
         }
+        /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
         auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
         UNUSED(u);
         buf.resize(0);

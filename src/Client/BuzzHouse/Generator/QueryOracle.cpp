@@ -176,11 +176,10 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
-    if (std::filesystem::exists(nfile))
+    /// Remove the file if exists
+    if (std::remove(nfile.generic_string().c_str()) && errno != ENOENT)
     {
-        /// Remove the file
-        auto u = std::remove(nfile.generic_string().c_str());
-        UNUSED(u);
+        LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
     }
     ff->set_path(nfile.generic_string());
 
@@ -352,11 +351,9 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
-        if (std::filesystem::exists(qfile))
+        if (std::remove(qfile.generic_string().c_str()) && errno != ENOENT)
         {
-            /// Remove the file
-            auto u = std::remove(qfile.generic_string().c_str());
-            UNUSED(u);
+            LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
@@ -493,26 +490,26 @@ void QueryOracle::findTablesWithPeersAndReplace(
     }
 }
 
-void QueryOracle::truncatePeerTables(const StatementGenerator & gen) const
+void QueryOracle::truncatePeerTables(const StatementGenerator & gen)
 {
     for (const auto & entry : found_tables)
     {
         /// First truncate tables
-        gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
+        other_steps_sucess &= gen.connections.truncatePeerTableOnRemote(gen.tables.at(entry));
     }
 }
 
-void QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
+void QueryOracle::optimizePeerTables(const StatementGenerator & gen)
 {
     for (const auto & entry : found_tables)
     {
         /// Lastly optimize tables
         const auto & ntable = gen.tables.at(entry);
 
-        gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
+        other_steps_sucess &= gen.connections.optimizeTableForOracle(PeerTableDatabase::ClickHouse, ntable);
         if (measure_performance)
         {
-            gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
+            other_steps_sucess &= gen.connections.optimizeTableForOracle(PeerTableDatabase::None, ntable);
         }
     }
 }
@@ -533,11 +530,9 @@ void QueryOracle::replaceQueryWithTablePeers(
         /// Use a different file for the peer database
         FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
 
-        if (std::filesystem::exists(qfile_peer))
+        if (std::remove(qfile_peer.generic_string().c_str()) && errno != ENOENT)
         {
-            /// Remove the file
-            auto u = std::remove(qfile_peer.generic_string().c_str());
-            UNUSED(u);
+            LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
         }
         ff.set_path(qfile_peer.generic_string());
     }
@@ -565,7 +560,7 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
-        peer_queries.push_back(std::move(next));
+        peer_queries.emplace_back(next);
     }
 }
 

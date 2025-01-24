@@ -526,22 +526,15 @@ bool Client::buzzHouse()
                "allow_experimental_bfloat16_type",
                "allow_not_comparable_types_in_order_by",
                "allow_not_comparable_types_in_comparison_functions"};
-        defaultSettings.push_back(rg.nextBool() ? "s3_truncate_on_insert" : "s3_create_new_file_on_insert");
+        defaultSettings.emplace_back(rg.nextBool() ? "s3_truncate_on_insert" : "s3_create_new_file_on_insert");
 
         full_query.resize(0);
-        full_query += "SET ";
         for (const auto & entry : defaultSettings)
         {
-            if (!first)
-            {
-                full_query += ", ";
-            }
-            full_query += entry;
-            full_query += " = 1";
+            full_query += fmt::format("{}{} = 1", first ? "" : ", ", entry);
             first = false;
         }
-        full_query += ";";
-        auto w = logAndProcessQuery(outf, full_query);
+        auto w = logAndProcessQuery(outf, fmt::format("SET {};", full_query));
         UNUSED(w);
         if (ei.hasClickHouseExtraServerConnection())
         {
