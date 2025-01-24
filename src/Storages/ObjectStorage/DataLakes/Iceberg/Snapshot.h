@@ -15,15 +15,6 @@ struct ManifestListFileEntry
 
 using ManifestList = std::vector<ManifestListFileEntry>;
 
-// class ManifestList
-// {
-// public:
-//     explicit ManifestList(std::vector<ManifestListFileEntry> manifest_files_) : manifest_files(std::move(manifest_files_)) { }
-//     const std::vector<ManifestListFileEntry> & getManifestFiles() const { return manifest_files; }
-
-// private:
-//     std::vector<ManifestListFileEntry> manifest_files;
-// };
 
 using ManifestListsStorage = std::map<String, ManifestList>;
 using ManifestListIterator = IteratorWrapper<ManifestList>;
