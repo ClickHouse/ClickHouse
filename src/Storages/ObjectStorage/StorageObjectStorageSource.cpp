@@ -1,18 +1,13 @@
 #include "StorageObjectStorageSource.h"
-#include <memory>
 #include <optional>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -24,8 +19,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include "Processors/Formats/ISchemaReader.h"
-// #include "Storages/ObjectStorage/StorageObjectStorageSourceUtils.h"
+#include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
+#include "Interpreters/Cache/FileCache.h"
+#include "Interpreters/Cache/FileCacheKey.h"
+
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -49,7 +46,6 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -139,23 +135,11 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     std::unique_ptr<IIterator> iterator;
     if (configuration->isPathWithGlobs())
     {
-        auto path = configuration->getPath();
-        if (hasExactlyOneBracketsExpansion(path))
-        {
-            auto paths = expandSelectionGlob(configuration->getPath());
-
-            ConfigurationPtr copy_configuration = configuration->clone();
-            copy_configuration->setPaths(paths);
-            iterator = std::make_unique<KeysIterator>(
-                object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file, file_progress_callback);
-        }
-        else
-            /// Iterate through disclosed globs and make a source for each file
-            iterator = std::make_unique<GlobIterator>(
-                object_storage, configuration, predicate, virtual_columns,
-                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match, file_progress_callback);
+        /// Iterate through disclosed globs and make a source for each file
+        iterator = std::make_unique<GlobIterator>(
+            object_storage, configuration, predicate, virtual_columns,
+            local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+            query_settings.throw_on_zero_files_match, file_progress_callback);
     }
     else
     {
@@ -347,8 +331,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<ReadBuffer> read_buf_schema;
-    Block initial_header = read_from_format_info.format_header;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
@@ -385,21 +367,46 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        auto input_format = getInputFormat(
-            read_buf,
-            read_buf_schema,
+        CompressionMethod compression_method;
+        if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        {
+            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            const auto & archive_reader = object_info_in_archive->archive_reader;
+            read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+        }
+        else
+        {
+            compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+            read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+        }
+
+        Block initial_header = read_from_format_info.format_header;
+
+        if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
+        {
+            Block sample_header;
+            for (const auto & [name, type] : *initial_schema)
+            {
+                sample_header.insert({type->createColumn(), type, name});
+            }
+            initial_header = sample_header;
+        }
+
+
+        auto input_format = FormatFactory::instance().getInput(
+            configuration->format,
+            *read_buf,
             initial_header,
-            object_storage,
-            configuration,
-            read_from_format_info,
-            format_settings,
-            object_info,
             context_,
-            log,
             max_block_size,
-            max_parsing_threads,
-            need_only_count,
-            false);
+            format_settings,
+            need_only_count ? 1 : max_parsing_threads,
+            std::nullopt,
+            true /* is_remote_fs */,
+            compression_method,
+            need_only_count);
+
+        input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (key_condition_)
             input_format->setKeyCondition(key_condition_);
@@ -446,83 +453,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     return ReaderHolder(
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
 }
-
-
-std::shared_ptr<IInputFormat> StorageObjectStorageSource::getInputFormat(
-    std::unique_ptr<ReadBuffer> & read_buf,
-    std::unique_ptr<ReadBuffer> & read_buf_schema,
-    Block & initial_header,
-    ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
-    ReadFromFormatInfo & read_from_format_info,
-    const std::optional<FormatSettings> & format_settings,
-    ObjectInfoPtr object_info,
-    ContextPtr context_,
-    const LoggerPtr & log,
-    size_t max_block_size,
-    size_t max_parsing_threads,
-    bool need_only_count,
-    bool read_all_columns)
-{
-    CompressionMethod compression_method;
-
-    if (const auto * object_info_in_archive
-        = dynamic_cast<const StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
-    {
-        compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-        const auto & archive_reader = object_info_in_archive->archive_reader;
-        read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
-        if (read_all_columns)
-            read_buf_schema = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
-    }
-    else
-    {
-        compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-        read_buf = createReadBuffer(*object_info, object_storage, context_, log);
-        if (read_all_columns)
-            read_buf_schema = createReadBuffer(*object_info, object_storage, context_, log);
-    }
-
-    if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
-    {
-        Block sample_header;
-        for (const auto & [name, type] : *initial_schema)
-        {
-            sample_header.insert({type->createColumn(), type, name});
-        }
-        initial_header = sample_header;
-    }
-
-    if (read_all_columns)
-    {
-        auto schema_reader = FormatFactory::instance().getSchemaReader(configuration->format, *read_buf_schema, context_);
-        auto columns_with_names = schema_reader->readSchema();
-        ColumnsWithTypeAndName initial_header_data;
-        for (const auto & elem : columns_with_names)
-        {
-            initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
-        }
-        initial_header = Block(initial_header_data);
-    }
-
-    auto input_format = FormatFactory::instance().getInput(
-        configuration->format,
-        *read_buf,
-        initial_header,
-        context_,
-        max_block_size,
-        format_settings,
-        need_only_count ? 1 : max_parsing_threads,
-        std::nullopt,
-        true /* is_remote_fs */,
-        compression_method,
-        need_only_count);
-
-    input_format->setSerializationHints(read_from_format_info.serialization_hints);
-
-    return input_format;
-}
-
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
@@ -699,7 +629,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     {
         const auto key_with_globs = configuration_->getPath();
         const auto key_prefix = configuration->getPathWithoutGlobs();
-
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
@@ -979,11 +908,12 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
 {
     const auto size = object_info->metadata->size_bytes;
     return DB::createArchiveReader(
-        /* path_to_archive */
-        object_info->getPath(),
-        /* archive_read_function */ [=, this]()
-        { return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger); },
-        /* archive_size */ size);
+        /* path_to_archive */object_info->getPath(),
+        /* archive_read_function */[=, this]()
+        {
+            return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), logger);
+        },
+        /* archive_size */size);
 }
 
 StorageObjectStorageSource::ObjectInfoPtr

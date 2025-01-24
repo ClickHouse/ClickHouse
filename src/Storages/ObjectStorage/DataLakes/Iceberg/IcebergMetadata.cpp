@@ -512,59 +512,6 @@ Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
     }
     return getDataFilesImpl(&filter_dag);
 }
-
-// This method should be called only after getDataFiles for the query and before the query is executed
-bool IcebergMetadata::getPositionalDeleteTransform(const String & data_path) const
-{
-    std::vector<std::shared_ptr<IInputFormat>> delete_sources;
-
-    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf;
-    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf_schema;
-    std::vector<Block> delete_block;
-
-    for (const auto & positional_delete_object_info : positional_delete_files_for_current_query)
-    {
-        int delete_sequence_id = 
-        if (source_sequence_id > delete_sequence_id)
-            continue;
-
-        delete_read_buf.push_back(nullptr);
-        delete_read_buf_schema.push_back(nullptr);
-        delete_block.push_back({});
-
-        auto delete_format = getInputFormat(
-            delete_read_buf.back(),
-            delete_read_buf_schema.back(),
-            delete_block.back(),
-            object_storage,
-            configuration,
-            read_from_format_info,
-            format_settings,
-            positional_delete_object_info,
-            context_,
-            log,
-            max_block_size,
-            max_parsing_threads,
-            need_only_count,
-            true);
-
-        auto target_path = data_path;
-        if (!target_path.empty() && target_path.front() != '/')
-            target_path = "/" + target_path;
-        ASTPtr where_ast = makeASTFunction(
-            "equals",
-            std::make_shared<ASTIdentifier>(PositionalDeleteTransform::filename_column_name),
-            std::make_shared<ASTLiteral>(Field(target_path)));
-
-        auto syntax_result = TreeRewriter(context_).analyze(where_ast, delete_block.back().getNamesAndTypesList());
-
-        ExpressionAnalyzer analyzer(where_ast, syntax_result, context_);
-        const std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
-        delete_format->setKeyCondition(actions, context_);
-
-        delete_sources.push_back(std::move(delete_format));
-    }
-}
 }
 
 #endif
