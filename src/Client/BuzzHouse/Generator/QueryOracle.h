@@ -21,7 +21,7 @@ private:
     bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
 
     std::unordered_set<uint32_t> found_tables;
-    std::vector<String> nsettings;
+    DB::Strings nsettings;
 
     void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
 

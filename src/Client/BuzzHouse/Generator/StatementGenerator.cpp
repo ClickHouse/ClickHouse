@@ -58,7 +58,7 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
 
 DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
 {
-    assert(this->ids.empty());
+    chassert(this->ids.empty());
     this->ids.emplace_back(DAtomic);
     this->ids.emplace_back(DMemory);
     if (replica_setup)
@@ -196,7 +196,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         {
             next.teng = TableEngineValues::MergeTree;
         }
-        assert(this->entries.empty());
+        chassert(this->entries.empty());
         for (uint32_t i = 0; i < next.ncols; i++)
         {
             std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
@@ -346,7 +346,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     if (dp->sobject() != SQLObject::FUNCTION)
     {
@@ -516,7 +516,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -740,7 +740,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     trunc->set_sync(rg.nextSmallNumber() < 4);
     if (rg.nextSmallNumber() < 3)
@@ -1671,13 +1671,13 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             }
             else
             {
-                assert(0);
+                chassert(0);
             }
         }
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -1729,7 +1729,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     if (att->sobject() != SQLObject::DATABASE && rg.nextSmallNumber() < 3)
     {
@@ -1785,7 +1785,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     det->set_permanently(!detach_database && rg.nextSmallNumber() < 4);
     det->set_sync(rg.nextSmallNumber() < 4);
@@ -2638,7 +2638,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -2700,7 +2700,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
-    assert(this->ids.empty());
+    chassert(this->ids.empty());
     if (create_table && nopt < (create_table + 1))
     {
         generateNextCreateTable(rg, sq->mutable_create_table());
@@ -2815,7 +2815,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -2863,7 +2863,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
     }
     if (rg.nextBool())
     {
-        assert(this->ids.empty());
+        chassert(this->ids.empty());
         if (val.has_value())
         {
             switch (val.value())
@@ -2968,7 +2968,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -3105,7 +3105,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             {
                 const AlterTableItem & ati = i == 0 ? at.alter() : at.other_alters(i - 1);
 
-                assert(!ati.has_modify_query() && !ati.has_refresh());
+                chassert(!ati.has_modify_query() && !ati.has_refresh());
                 if (ati.has_add_column())
                 {
                     const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.add_column().new_col().col().column().substr(1)));
@@ -3130,7 +3130,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                         SQLColumn & col = t.cols.at(cname);
                         NestedType * ntp;
 
-                        assert(path.sub_cols_size() == 1);
+                        chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp)))
                         {
                             const uint32_t ncname = static_cast<uint32_t>(std::stoul(path.sub_cols(0).column().substr(1)));
@@ -3170,7 +3170,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                         SQLColumn & col = t.cols.at(old_cname);
                         NestedType * ntp;
 
-                        assert(path.sub_cols_size() == 1);
+                        chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp)))
                         {
                             const uint32_t nocname = static_cast<uint32_t>(std::stoul(path.sub_cols(0).column().substr(1)));

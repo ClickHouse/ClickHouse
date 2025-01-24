@@ -14,11 +14,11 @@ class SQLRelationCol
 {
 public:
     String rel_name;
-    std::vector<String> path;
+    DB::Strings path;
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const String rname, const std::vector<String> names) : rel_name(rname), path(names) { }
+    SQLRelationCol(const String rname, const DB::Strings names) : rel_name(rname), path(names) { }
 
     void AddRef(ColumnPath * cp) const
     {
@@ -94,7 +94,7 @@ private:
     std::unordered_map<uint32_t, SQLView> staged_views, views;
     std::unordered_map<uint32_t, SQLFunction> staged_functions, functions;
 
-    std::vector<String> enum_values
+    DB::Strings enum_values
         = {"'-1'",    "'0'",       "'1'",    "'10'",   "'1000'", "'is'",     "'was'",      "'are'",  "'be'",       "'have'", "'had'",
            "'were'",  "'can'",     "'said'", "'use'",  "','",    "'😀'",     "'😀😀😀😀'", "'名字'", "'兄弟姐妹'", "''",     "'\\n'",
            "x'c328'", "x'e28228'", "x'ff'",  "b'101'", "b'100'", "b'10001'", "' '",        "'c0'",   "'c1'",       "'11'"};
@@ -372,7 +372,7 @@ public:
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
         : fc(fuzzc), connections(conn), supports_cloud_features(scf), replica_setup(hrs)
     {
-        assert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
+        chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
     }
 
     void generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);

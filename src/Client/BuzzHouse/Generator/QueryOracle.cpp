@@ -1,6 +1,15 @@
 #include <cstdio>
 
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
+#include <Common/Exception.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BUZZHOUSE;
+}
+}
 
 namespace BuzzHouse
 {
@@ -601,7 +610,7 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
     {
         if (can_test_query_success && first_success != success)
         {
-            throw std::runtime_error(fmt::format("{}: failed with different success results", oracle_name));
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
         }
         if (first_success && success)
         {
@@ -612,20 +621,22 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
                     if (this->fc.query_time_minimum<this->query_duration_ms1 && this->query_duration_ms1> static_cast<uint64_t>(
                             this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
                     {
-                        throw std::runtime_error(fmt::format(
-                            "{}: ClickHouse peer table query was faster than the server: {} vs {}",
+                        throw DB::Exception(
+                            DB::ErrorCodes::BUZZHOUSE,
+                            "{}: ClickHouse peer server query was faster than the target server: {} vs {}",
                             oracle_name,
                             formatReadableTime(static_cast<double>(this->query_duration_ms1 * 1000000)),
-                            formatReadableTime(static_cast<double>(this->query_duration_ms2 * 1000000))));
+                            formatReadableTime(static_cast<double>(this->query_duration_ms2 * 1000000)));
                     }
                     if (this->fc.query_memory_minimum<this->memory_usage1 && this->memory_usage1> static_cast<uint64_t>(
                             this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
                     {
-                        throw std::runtime_error(fmt::format(
-                            "{}: ClickHouse peer table query used less memory than the server: {} vs {}",
+                        throw DB::Exception(
+                            DB::ErrorCodes::BUZZHOUSE,
+                            "{}: ClickHouse peer server query used less memory than the target server: {} vs {}",
                             oracle_name,
                             formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage1)),
-                            formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage2))));
+                            formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage2)));
                     }
                 }
             }
@@ -634,7 +645,7 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
                 md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qfile).generic_string(), second_digest);
                 if (first_digest != second_digest)
                 {
-                    throw std::runtime_error(fmt::format("{}: failed with different result sets", oracle_name));
+                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different result sets", oracle_name);
                 }
             }
         }

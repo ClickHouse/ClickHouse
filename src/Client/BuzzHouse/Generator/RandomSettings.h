@@ -74,7 +74,7 @@ const std::unordered_map<String, CHSetting> fileTableSettings
         CHSetting(
             [](RandomGenerator & rg)
             {
-                const std::vector<String> & choices = {"'read'", "'pread'", "'mmap'"};
+                const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
                 return rg.pickRandomlyFromVector(choices);
             },
             {},
@@ -85,7 +85,7 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"''", "'keep'", "'delete'"};
+             const DB::Strings & choices = {"''", "'keep'", "'delete'"};
              return rg.pickRandomlyFromVector(choices);
          },
          {},
@@ -134,7 +134,7 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
 
 extern std::unique_ptr<SQLType> size_tp, null_tp;
 
-extern std::unordered_map<String, std::vector<String>> systemTables;
+extern std::unordered_map<String, DB::Strings> systemTables;
 
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);

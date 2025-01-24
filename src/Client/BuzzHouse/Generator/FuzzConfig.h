@@ -89,7 +89,7 @@ private:
 
 public:
     LoggerPtr log;
-    std::vector<String> collations, storage_policies, timezones, disks;
+    DB::Strings collations, storage_policies, timezones, disks;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
@@ -109,12 +109,12 @@ public:
     bool processServerQuery(const String & input) const;
 
 private:
-    void loadServerSettings(std::vector<String> & out, const String & table, const String & col) const;
+    void loadServerSettings(DB::Strings & out, const String & table, const String & col) const;
 
 public:
     void loadServerConfigurations();
 
-    void loadSystemTables(std::unordered_map<String, std::vector<String>> & tables) const;
+    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const;
 
     bool tableHasPartitions(bool detached, const String & database, const String & table) const;
 

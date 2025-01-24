@@ -1,6 +1,15 @@
 #include <Client/BuzzHouse/Utils/MD5Impl.h>
+#include <Common/Exception.h>
 
 #include <fstream>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BUZZHOUSE;
+}
+}
 
 namespace BuzzHouse
 {
@@ -11,7 +20,7 @@ void MD5Impl::hashFile(const String & file_path, Poco::DigestEngine::Digest & re
 
     if (!file)
     {
-        throw std::runtime_error("Could not open file: " + file_path);
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Could not open file: {}", file_path);
     }
     while (file.read(reinterpret_cast<char *>(input_buffer), input_buffer_size) || file.gcount() > 0)
     {

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <cassert>
 #include <cstdint>
 #include <random>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
+#include <Core/Types.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 
@@ -51,7 +51,7 @@ private:
            std::uniform_int_distribution<uint32_t>(1, 30),
            std::uniform_int_distribution<uint32_t>(1, 31)};
 
-    const std::vector<String> common_english{
+    const DB::Strings common_english{
         "is",     "was",   "are",   "be",    "have",  "had",   "were",     "can",   "said",  "use",   "do",      "will",  "would",
         "make",   "like",  "has",   "look",  "write", "go",    "see",      "could", "been",  "call",  "am",      "find",  "did",
         "get",    "come",  "made",  "may",   "take",  "know",  "live",     "give",  "think", "say",   "help",    "tell",  "follow",
@@ -61,16 +61,15 @@ private:
         "stop",   "miss",  "eat",   "watch", "let",   "cut",   "talk",     "being", "leave", "water", "day",     "part",  "sound",
         "work",   "place", "year",  "back",  "thing", "name",  "sentence", "man",   "line",  "boy"};
 
-    const std::vector<String> common_chinese{
+    const DB::Strings common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const std::vector<String> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e",  "",     "😉",   "\"",   "\\'", "\\t",
-                                            "\\n",  "--",    "0",     "1",     "-1",   "{",    "}",    "(",    ")",   "[",
-                                            "]",    ",",     ".",     ";",     ":",    "\\\\", "/",    "_",    "%",   "*",
-                                            "\\0",  "{}",    "[]",    "()",    "null", "NULL", "TRUE", "FALSE"};
+    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--",   "0",
+                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",    "\\\\",
+                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "FALSE"};
 
     /// Use bad_utf8 on x' strings!
-    const std::vector<String> bad_utf8{
+    const DB::Strings bad_utf8{
         "FF",
         "C328",
         "A0A1",
@@ -85,7 +84,7 @@ private:
         "C328FF",
         "AAC328"};
 
-    const std::vector<String> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+    const DB::Strings jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
 
 public:
     pcg64_fast generator;
@@ -180,7 +179,7 @@ public:
             std::uniform_real_distribution<double> d{min_val, max_val};
             return d(generator);
         }
-        assert(0);
+        chassert(0);
         return 0;
     }
 

@@ -104,7 +104,7 @@ String IntType::MySQLtypeName(RandomGenerator &, const bool) const
         case 64:
             return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
         default:
-            assert(0);
+            chassert(0);
     }
     return "";
 }
@@ -121,7 +121,7 @@ String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
         case 64:
             return "BIGINT";
         default:
-            assert(0);
+            chassert(0);
     }
     return "";
 }
@@ -611,19 +611,19 @@ String DynamicType::typeName(const bool) const
 
 String DynamicType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String DynamicType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String DynamicType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -814,19 +814,19 @@ String GeoType::typeName(const bool) const
 
 String GeoType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String GeoType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String GeoType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -847,7 +847,7 @@ String ArrayType::typeName(const bool escape) const
 
 String ArrayType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -884,7 +884,7 @@ String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) co
 
 String ArrayType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -923,19 +923,19 @@ String MapType::typeName(const bool escape) const
 
 String MapType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String MapType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String MapType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -997,19 +997,19 @@ String TupleType::typeName(const bool escape) const
 
 String TupleType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String TupleType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String TupleType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -1064,19 +1064,19 @@ String VariantType::typeName(const bool escape) const
 
 String VariantType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String VariantType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String VariantType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -1129,25 +1129,25 @@ String NestedType::typeName(const bool escape) const
 
 String NestedType::MySQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String NestedType::PostgreSQLtypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String NestedType::SQLitetypeName(RandomGenerator &, const bool) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
 String NestedType::appendRandomRawValue(RandomGenerator &, StatementGenerator &) const
 {
-    assert(0);
+    chassert(0);
     return "";
 }
 
@@ -1174,7 +1174,7 @@ NestedType::~NestedType()
 
 std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint32_t allowed_types)
 {
-    assert(this->ids.empty());
+    chassert(this->ids.empty());
 
     if ((allowed_types & allow_unsigned_int))
     {
@@ -1238,7 +1238,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         case 12:
             return std::make_tuple(new IntType(256, false), Integers::Int256);
         default:
-            assert(0);
+            chassert(0);
     }
     return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
@@ -1623,7 +1623,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     return res;
 }
@@ -1781,7 +1781,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
     return nullptr;
 }
@@ -1945,7 +1945,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
-                    assert(0);
+                    chassert(0);
             }
         }
         else
@@ -2035,7 +2035,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             ret = '"' + rg.nextIPv6() + '"';
             break;
         default:
-            assert(0);
+            chassert(0);
     }
     return ret;
 }
@@ -2075,7 +2075,7 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
-                    assert(0);
+                    chassert(0);
             }
         }
     }

@@ -183,7 +183,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -412,7 +412,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -472,9 +472,9 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
             /// Using clause
             const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
-            std::vector<std::vector<String>> cols1;
-            std::vector<std::vector<String>> cols2;
-            std::vector<std::vector<String>> intersect;
+            std::vector<DB::Strings> cols1;
+            std::vector<DB::Strings> cols2;
+            std::vector<DB::Strings> intersect;
 
             cols1.reserve(rel1.cols.size());
             for (const auto & entry : rel1.cols)
@@ -498,7 +498,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
                     ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
-                    const std::vector<String> & npath = intersect[i];
+                    const DB::Strings & npath = intersect[i];
 
                     for (size_t j = 0; j < npath.size(); j++)
                     {
@@ -1281,7 +1281,7 @@ void StatementGenerator::generateTopSelect(
 {
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1), UINT32_C(1));
 
-    assert(this->levels.empty());
+    chassert(this->levels.empty());
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, ts->mutable_sel());
     this->levels.clear();

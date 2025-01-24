@@ -2,7 +2,6 @@
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 #include <base/defines.h>
 
-#include <cassert>
 #include <cmath>
 
 namespace BuzzHouse
@@ -53,7 +52,7 @@ static bool positiveHugeintIsBitSet(HugeInt lhs, uint8_t bit_position)
 
 static HugeInt positiveHugeintLeftShift(HugeInt lhs, uint32_t amount)
 {
-    assert(amount > 0 && amount < 64);
+    chassert(amount > 0 && amount < 64);
     HugeInt result;
     result.lower = lhs.lower << amount;
     result.upper = static_cast<int64_t>((static_cast<uint64_t>(lhs.upper) << amount) + (lhs.lower >> (64 - amount)));
@@ -62,7 +61,7 @@ static HugeInt positiveHugeintLeftShift(HugeInt lhs, uint32_t amount)
 
 static HugeInt divModPositive(HugeInt lhs, uint64_t rhs, uint64_t & remainder)
 {
-    assert(lhs.upper >= 0);
+    chassert(lhs.upper >= 0);
     /// DivMod code adapted from:
     /// https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
@@ -107,7 +106,7 @@ int sign(HugeInt n)
 
 HugeInt abs(HugeInt n)
 {
-    assert(n != NumericLimits<HugeInt>::minimum());
+    chassert(n != NumericLimits<HugeInt>::minimum());
     return (n * static_cast<HugeInt>(sign(n)));
 }
 
@@ -115,7 +114,7 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder);
 
 static HugeInt divModMinimum(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
 {
-    assert(lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum());
+    chassert(lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum());
     if (rhs == NumericLimits<HugeInt>::minimum())
     {
         if (lhs == NumericLimits<HugeInt>::minimum())
@@ -424,7 +423,7 @@ HugeInt HugeInt::operator>>(const HugeInt & rhs) const
     }
     else
     {
-        assert(shift < 128);
+        chassert(shift < 128);
         result.lower = uint64_t(upper >> (shift - 64));
         result.upper = (upper < 0) ? -1 : 0;
     }
@@ -461,7 +460,7 @@ HugeInt HugeInt::operator<<(const HugeInt & rhs) const
     }
     else
     {
-        assert(shift < 128);
+        chassert(shift < 128);
         result.lower = 0;
         result.upper = static_cast<int64_t>((lower << (shift - 64)) & 0x7FFFFFFFFFFFFFFF);
     }

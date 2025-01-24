@@ -1,6 +1,15 @@
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 
 #include <IO/copyData.h>
+#include <Common/Exception.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BUZZHOUSE;
+}
+}
 
 namespace BuzzHouse
 {
@@ -37,7 +46,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
 
         if (config_entries.find(nkey) == config_entries.end())
         {
-            throw std::runtime_error("Unknown Server option: " + nkey);
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
         }
         config_entries.at(nkey)(value);
     }
@@ -56,11 +65,11 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
     DB::copyData(in, out);
     if (!parser.parse(out.str(), object))
     {
-        throw std::runtime_error("Could not parse BuzzHouse JSON configuration file");
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Could not parse BuzzHouse JSON configuration file");
     }
     else if (!object.isObject())
     {
-        throw std::runtime_error("Parsed JSON value is not an object");
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
 
     static const SettingEntries config_entries = {
@@ -145,7 +154,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
 
                  if (type_entries.find(entry) == type_entries.end())
                  {
-                     throw std::runtime_error("Unknown type option: " + String(entry));
+                     throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for disabled_types: {}", String(entry));
                  }
                  type_mask &= (~type_entries.at(entry));
              }
@@ -157,21 +166,25 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(get
 
         if (config_entries.find(nkey) == config_entries.end())
         {
-            throw std::runtime_error("Unknown BuzzHouse option: " + nkey);
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }
         config_entries.at(nkey)(value);
     }
     if (min_insert_rows > max_insert_rows)
     {
-        throw std::runtime_error(
-            "min_insert_rows value (" + std::to_string(min_insert_rows) + ") is higher than max_insert_rows value ("
-            + std::to_string(max_insert_rows) + ")");
+        throw DB::Exception(
+            DB::ErrorCodes::BUZZHOUSE,
+            "min_insert_rows value ({}) is higher than max_insert_rows value ({})",
+            std::to_string(min_insert_rows),
+            std::to_string(max_insert_rows));
     }
     if (min_nested_rows > max_nested_rows)
     {
-        throw std::runtime_error(
-            "min_nested_rows value (" + std::to_string(min_nested_rows) + ") is higher than max_nested_rows value ("
-            + std::to_string(max_nested_rows) + ")");
+        throw DB::Exception(
+            DB::ErrorCodes::BUZZHOUSE,
+            "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
+            std::to_string(min_nested_rows),
+            std::to_string(max_nested_rows));
     }
 }
 
@@ -187,7 +200,7 @@ bool FuzzConfig::processServerQuery(const String & input) const
     }
 }
 
-void FuzzConfig::loadServerSettings(std::vector<String> & out, const String & table, const String & col) const
+void FuzzConfig::loadServerSettings(DB::Strings & out, const String & table, const String & col) const
 {
     String buf;
     uint64_t found = 0;
@@ -214,11 +227,11 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->timezones, "time_zones", "time_zone");
 }
 
-void FuzzConfig::loadSystemTables(std::unordered_map<String, std::vector<String>> & tables) const
+void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const
 {
     String buf;
     String current_table;
-    std::vector<String> next_cols;
+    DB::Strings next_cols;
 
     processServerQuery(fmt::format(
         "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' INTO OUTFILE "

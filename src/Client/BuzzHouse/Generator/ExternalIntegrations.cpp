@@ -44,7 +44,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 entry.getBottomName(),
                 columnTypeAsString(rg, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
-            assert(entry.path.size() == 1);
+            chassert(entry.path.size() == 1);
             first = false;
         }
         return performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
@@ -54,7 +54,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 
 bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 {
-    assert(t.hasDatabasePeer());
+    chassert(t.hasDatabasePeer());
     return performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
 }
 
@@ -94,7 +94,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             CreateTable newt;
             newt.CopyFrom(*ct);
 
-            assert(newt.has_est() && !newt.has_table_as());
+            chassert(newt.has_est() && !newt.has_table_as());
             ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
             if (t.db)
             {
@@ -114,7 +114,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
-    assert(t.hasDatabasePeer());
+    chassert(t.hasDatabasePeer());
     return performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
@@ -199,7 +199,7 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
 {
     bool success = true;
 
-    assert(t.hasDatabasePeer());
+    chassert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         success &= performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
@@ -782,7 +782,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -928,7 +928,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        assert(0);
+        chassert(0);
     }
 }
 
@@ -961,7 +961,7 @@ bool MongoDBIntegration::performIntegration(
                 {
                     /// Sometimes the column is missing
                     documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
-                    assert(entry.path.size() == 1);
+                    chassert(entry.path.size() == 1);
                 }
             }
             documents.emplace_back(document << bsoncxx::builder::stream::finalize);
@@ -1199,7 +1199,7 @@ void ExternalIntegrations::createPeerTable(
             next_calls_succeeded.emplace_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
             break;
         case PeerTableDatabase::None:
-            assert(0);
+            chassert(0);
             break;
     }
 }
@@ -1217,7 +1217,7 @@ bool ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)
         case PeerTableDatabase::SQLite:
             return sqlite->truncatePeerTableOnRemote(t);
         case PeerTableDatabase::None:
-            assert(0);
+            chassert(0);
             return false;
     }
 }
@@ -1322,7 +1322,7 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     return false;
 }
 
-void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const std::vector<String> & settings)
+void ExternalIntegrations::setDefaultSettings(const PeerTableDatabase pt, const DB::Strings & settings)
 {
     for (const auto & entry : settings)
     {

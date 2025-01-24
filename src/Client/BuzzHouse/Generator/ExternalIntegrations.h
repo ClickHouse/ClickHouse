@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include "config.h"
 
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
@@ -316,7 +317,7 @@ public:
 
     bool getNextExternalCallSucceeded() const
     {
-        assert(requires_external_call_check == next_calls_succeeded.size());
+        chassert(requires_external_call_check == next_calls_succeeded.size());
         return std::all_of(next_calls_succeeded.begin(), next_calls_succeeded.end(), [](bool v) { return v; });
     }
 
@@ -360,7 +361,7 @@ public:
 
     bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage);
 
-    void setDefaultSettings(PeerTableDatabase pt, const std::vector<String> & settings);
+    void setDefaultSettings(PeerTableDatabase pt, const DB::Strings & settings);
 
     void replicateSettings(PeerTableDatabase pt);
 };

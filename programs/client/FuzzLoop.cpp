@@ -454,7 +454,7 @@ bool Client::buzzHouse()
         UNUSED(v);
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
-        std::vector<String> defaultSettings
+        DB::Strings defaultSettings
             = {"engine_file_truncate_on_insert",
                "allow_aggregate_partitions_independently",
                "allow_archive_path_syntax",
@@ -745,7 +745,7 @@ bool Client::buzzHouse()
                 }
                 else
                 {
-                    assert(0);
+                    chassert(0);
                 }
             }
         }

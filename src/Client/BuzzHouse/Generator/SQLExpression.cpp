@@ -552,7 +552,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
 
-    assert(nallow_funcs || allow_aggr);
+    chassert(nallow_funcs || allow_aggr);
     const uint32_t nopt = next_dist(rg.generator);
     if (!nallow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
@@ -687,7 +687,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 
         if (n_lambda > 0)
         {
-            assert(n_lambda == 1);
+            chassert(n_lambda == 1);
             generateLambdaCall(rg, (rg.nextSmallNumber() % 3) + 1, func_call->add_args()->mutable_lambda());
             this->width++;
             generated_params++;
@@ -730,7 +730,7 @@ void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFun
     tfunc_call->set_func(static_cast<SQLTableFunc>(func.fnum));
     if (n_lambda > 0)
     {
-        assert(n_lambda == 1);
+        chassert(n_lambda == 1);
         generateLambdaCall(rg, (rg.nextSmallNumber() % 3) + 1, tfunc_call->add_args()->mutable_lambda());
         this->width++;
         generated_params++;
@@ -976,7 +976,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             uint32_t nargs = 0;
             SQLWindowCall * wc = sfc->mutable_win_func();
 
-            assert(this->ids.empty());
+            chassert(this->ids.empty());
             if (this->fc.max_width - this->width > 1)
             {
                 this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));

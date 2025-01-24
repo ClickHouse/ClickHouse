@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-static std::vector<String> merge_storage_policies;
+static DB::Strings merge_storage_policies;
 
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"adaptive_write_buffer_initial_size",
@@ -40,7 +40,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"'throw'", "'drop'", "'rebuild'"};
+             const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
              return rg.pickRandomlyFromVector(choices);
          },
          {},
@@ -68,7 +68,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const std::vector<String> & choices = {"'throw'", "'drop'", "'rebuild'"};
+             const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
              return rg.pickRandomlyFromVector(choices);
          },
          {},
@@ -201,34 +201,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }, {}, false)},
     {"vertical_merge_remote_filesystem_prefetch", CHSetting(trueOrFalse, {}, false)}};
 
-std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings
-    = {{MergeTree, mergeTreeTableSettings},
-       {ReplacingMergeTree, mergeTreeTableSettings},
-       {SummingMergeTree, mergeTreeTableSettings},
-       {AggregatingMergeTree, mergeTreeTableSettings},
-       {CollapsingMergeTree, mergeTreeTableSettings},
-       {VersionedCollapsingMergeTree, mergeTreeTableSettings},
-       {File, fileTableSettings},
-       {Null, {}},
-       {Set, setTableSettings},
-       {Join, joinTableSettings},
-       {Memory, memoryTableSettings},
-       {StripeLog, {}},
-       {Log, {}},
-       {TinyLog, {}},
-       {EmbeddedRocksDB, embeddedRocksDBTableSettings},
-       {Buffer, {}},
-       {MySQL, mySQLTableSettings},
-       {PostgreSQL, {}},
-       {SQLite, {}},
-       {MongoDB, {}},
-       {Redis, {}},
-       {S3, {}},
-       {S3Queue, s3QueueTableSettings},
-       {Hudi, {}},
-       {DeltaLake, {}},
-       {IcebergS3, {}},
-       {Merge, {}}};
+std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
@@ -239,6 +212,34 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
             {{"storage_policy",
               CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false)}});
     }
+    allTableSettings.insert(
+        {{MergeTree, mergeTreeTableSettings},
+         {ReplacingMergeTree, mergeTreeTableSettings},
+         {SummingMergeTree, mergeTreeTableSettings},
+         {AggregatingMergeTree, mergeTreeTableSettings},
+         {CollapsingMergeTree, mergeTreeTableSettings},
+         {VersionedCollapsingMergeTree, mergeTreeTableSettings},
+         {File, fileTableSettings},
+         {Null, {}},
+         {Set, setTableSettings},
+         {Join, joinTableSettings},
+         {Memory, memoryTableSettings},
+         {StripeLog, {}},
+         {Log, {}},
+         {TinyLog, {}},
+         {EmbeddedRocksDB, embeddedRocksDBTableSettings},
+         {Buffer, {}},
+         {MySQL, mySQLTableSettings},
+         {PostgreSQL, {}},
+         {SQLite, {}},
+         {MongoDB, {}},
+         {Redis, {}},
+         {S3, {}},
+         {S3Queue, s3QueueTableSettings},
+         {Hudi, {}},
+         {DeltaLake, {}},
+         {IcebergS3, {}},
+         {Merge, {}}});
 }
 
 }

@@ -2,7 +2,6 @@
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 #include <base/defines.h>
 
-#include <cassert>
 #include <cmath>
 
 namespace BuzzHouse

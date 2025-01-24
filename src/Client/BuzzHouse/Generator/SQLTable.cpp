@@ -94,7 +94,7 @@ void StatementGenerator::flatTableColumnPath(const uint32_t flags, const SQLTabl
     auto & res = ((flags & to_table_entries) != 0) ? this->table_entries
                                                    : (((flags & to_remote_entries) != 0) ? this->remote_entries : this->entries);
 
-    assert(res.empty());
+    chassert(res.empty());
     for (const auto & entry : t.cols)
     {
         if (col_filter(entry.second))
@@ -116,7 +116,7 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         [](const SQLColumn & c) { return !c.dmod.has_value() || c.dmod.value() != DModifier::DEF_EPHEMERAL; });
     for (const auto & entry : this->table_entries)
     {
-        std::vector<String> names;
+        DB::Strings names;
 
         names.reserve(entry.path.size());
         for (const auto & path : entry.path)
@@ -245,7 +245,7 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
 
 void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
 {
-    assert(filtered_entries.empty());
+    chassert(filtered_entries.empty());
     for (const auto & entry : this->entries)
     {
         SQLType * tp = entry.getBottomType();
@@ -638,7 +638,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     if (npkey && rg.nextSmallNumber() < 5)
     {
         /// Try to add sample key
-        assert(this->ids.empty());
+        chassert(this->ids.empty());
         for (const auto & entry : this->entries)
         {
             IntType * itp = nullptr;
@@ -699,7 +699,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
 }
 
-const std::vector<String> & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
 void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
@@ -709,7 +709,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     {
         if (te->has_engine() && !b.is_temp && (supports_cloud_features || replica_setup) && rg.nextSmallNumber() < 4)
         {
-            assert(this->ids.empty());
+            chassert(this->ids.empty());
             if (replica_setup)
             {
                 this->ids.emplace_back(TReplicated);
@@ -761,7 +761,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                 tep->set_join_const(JoinConst::J_ALL);
                 break;
             default:
-                assert(0);
+                chassert(0);
                 break;
         }
         te->add_params()->set_join_op(jt);
@@ -857,7 +857,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
         else
         {
-            assert(0);
+            chassert(0);
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
@@ -1242,7 +1242,7 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
 
 PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng)
 {
-    assert(this->ids.empty());
+    chassert(this->ids.empty());
     if (teng != TableEngineValues::Set)
     {
         if (teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
@@ -1283,7 +1283,7 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
         std::uniform_int_distribution<uint32_t> table_engine(1, TableEngineValues::VersionedCollapsingMergeTree);
         return static_cast<TableEngineValues>(table_engine(rg.generator));
     }
-    assert(this->ids.empty());
+    chassert(this->ids.empty());
     this->ids.emplace_back(MergeTree);
     this->ids.emplace_back(ReplacingMergeTree);
     this->ids.emplace_back(SummingMergeTree);
@@ -1501,12 +1501,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
                 }
                 else if (add_sign)
                 {
-                    assert(!add_is_deleted);
+                    chassert(!add_is_deleted);
                     added_sign++;
                 }
                 else
                 {
-                    assert(add_is_deleted);
+                    chassert(add_is_deleted);
                     added_is_deleted++;
                 }
             }
@@ -1594,7 +1594,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         entries.clear();
     }
 
-    assert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
+    chassert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
 }
 

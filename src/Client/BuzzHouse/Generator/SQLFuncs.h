@@ -745,7 +745,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCextractAllGroups, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCngrams, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCtokens, 0, 0, 1, 1),
-    /// Strings
+    /// DB::Strings
     CHFunction(SQLFunc::FUNCempty, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCnotEmpty, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNClength, 0, 0, 1, 1),
