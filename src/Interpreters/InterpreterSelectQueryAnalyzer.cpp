@@ -216,7 +216,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(query_tree_->toAST())
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(replaceStorageIfNeeded(query, context, storage_))
+    , query_tree(replaceStorageIfNeeded(query_tree_, context, storage_))
     , planner(query_tree, select_query_options)
 {}
 
