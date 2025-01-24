@@ -35,12 +35,12 @@ enum class ResultType : uint8_t
     DateTime64
 };
 
-/** 
-  * A base class that contains all the common code (executeImpl, 
-  * dispatchForTimeColumn, dispatchForIntervalColumn, etc.) that was 
-  * repeated in both FunctionToStartOfInterval and 
-  * FunctionToStartOfIntervalAllowNegative, except for the custom 
-  * getReturnTypeImpl(...) logic.
+/**
+  * A base class that contains all the common code (executeImpl,
+  * dispatchForTimeColumn, dispatchForIntervalColumn, etc.) that was
+  * repeated in both FunctionToStartOfInterval and
+  * FunctionToStartOfIntervalAllowNegative, except for the custom
+  * getReturnTypeImpl(...) logic
   */
 class FunctionToStartOfIntervalBase : public IFunction
 {
@@ -68,9 +68,9 @@ public:
     }
 
     /**
-     * We make decideReturnType(...) *pure virtual* here so that 
-     * each derived class has to implement its own logic for 
-     * "how do I decide the final return type?" 
+     * We make decideReturnType(...) *pure virtual* here so that
+     * each derived class has to implement its own logic for
+     * "how do I decide the final return type?"
      */
     virtual ResultType decideReturnType(const DataTypeInterval * interval_type) const = 0;
 
@@ -293,8 +293,8 @@ protected:
                     assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, 
-                        "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", 
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
                         getName());
     }
 
@@ -316,15 +316,15 @@ protected:
             case IntervalKind::Kind::Microsecond:
             case IntervalKind::Kind::Millisecond:
                 if (isDateOrDate32(time_data_type) || isDateTime(time_data_type))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, 
-                                    "Illegal interval kind for argument data type {}", 
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                    "Illegal interval kind for argument data type {}",
                                     isDate(time_data_type) ? "Date" : "DateTime");
                 break;
             case IntervalKind::Kind::Second:
             case IntervalKind::Kind::Minute:
             case IntervalKind::Kind::Hour:
                 if (isDateOrDate32(time_data_type))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, 
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                     "Illegal interval kind for argument data type Date");
                 break;
             default:
@@ -339,8 +339,8 @@ protected:
 
         const Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, 
-                            "Value for 2nd argument of function {} must be positive", 
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Value for 2nd argument of function {} must be positive",
                             getName());
 
         switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
@@ -373,8 +373,8 @@ protected:
     }
 
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
-    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, 
-                      const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, 
+    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units,
+                      const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type,
                       const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
