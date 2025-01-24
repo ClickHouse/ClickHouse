@@ -303,14 +303,14 @@ def main():
     if validate_bugfix_check:
         download_last_release(packages_path, debug=True)
     else:
-        if "amd_" in check_name or "arm_" in check_name:
-            # this is hack for praktika based CI
-            print("Copy input *.deb artifacts")
-            assert Shell.check(
-                f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True
-            )
-        else:
-            download_all_deb_packages(check_name, reports_path, packages_path)
+        # if "amd_" in check_name or "arm_" in check_name:
+        #     # this is hack for praktika based CI
+        #     print("Copy input *.deb artifacts")
+        #     assert Shell.check(
+        #         f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True
+        #     )
+        # else:
+        download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)

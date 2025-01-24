@@ -21,7 +21,7 @@ from ci_cache import CiCache
 from ci_config import CI
 from ci_metadata import CiMetadata
 from ci_settings import CiSettings
-from ci_utils import GH, Envs, Utils
+from ci_utils import GH, Envs, Shell, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -40,7 +40,14 @@ from commit_status_helper import (
     set_status_comment,
 )
 from digest_helper import DockerDigester
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_ID, IS_CI, REPO_COPY, TEMP_PATH
+from env_helper import (
+    GITHUB_REPOSITORY,
+    GITHUB_RUN_ID,
+    IS_CI,
+    REPO_COPY,
+    REPORT_PATH,
+    TEMP_PATH,
+)
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
@@ -1415,6 +1422,10 @@ def main() -> int:
     ### RUN action for migration to praktika: start
     elif args.run_from_praktika:
         check_name = ""
+        Shell.check(f"mkdir -p {REPORT_PATH}")
+        Shell.check(
+            f"mv {REPO_COPY}/ci/tmp/artifact_report_*.json {REPORT_PATH}/artifact_report.json"
+        )
         # TODO:
         # check_name_with_group = _get_ext_check_name(check_name)
         start_time = datetime.now(timezone.utc)

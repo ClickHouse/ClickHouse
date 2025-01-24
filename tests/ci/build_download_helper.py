@@ -206,9 +206,13 @@ def download_builds_filter(
     result_path: Path,
     filter_fn: Callable[[str], bool] = lambda _: True,
 ) -> None:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
+    if (Path(reports_path) / "artifact_report.json").is_file():
+        with open(Path(reports_path) / "artifact_report.json") as f:
+            urls = json.load(f)["build_urls"]  # type: ignore
+    else:
+        build_name = CI.get_required_build_name(check_name)
+        urls = read_build_urls(build_name, reports_path)
+    logger.info("The build report for %s contains the next URLs: %s", check_name, urls)
 
     if not urls:
         raise DownloadException("No build URLs found")

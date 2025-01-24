@@ -1,6 +1,13 @@
 from praktika import Workflow
 
-from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS, Jobs, OldStyleJobs
+from ci.workflows.defs import (
+    ARTIFACTS,
+    BASE_BRANCH,
+    DOCKERS,
+    SECRETS,
+    Jobs,
+    OldStyleJobs,
+)
 
 S3_BUILDS_BUCKET = "clickhouse-builds"
 

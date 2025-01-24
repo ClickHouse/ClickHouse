@@ -396,9 +396,7 @@ def _finish_workflow(workflow, job_name):
             failed_results.append(result.name)
 
     if failed_results:
-        ready_for_merge_description = (
-            f"Failed: {' '.join(failed_results)}"
-        )
+        ready_for_merge_description = f"Failed: {' '.join(failed_results)}"
 
     if not GH.post_commit_status(
         name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",

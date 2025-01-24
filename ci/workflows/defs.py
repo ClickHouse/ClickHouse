@@ -1138,5 +1138,5 @@ class OldStyleJobs:
                 "./tests/docker_scripts/",
             ],
         ),
-        requires=["Build (amd_debug)"]
+        requires=["Build (amd_debug)"],
     )
