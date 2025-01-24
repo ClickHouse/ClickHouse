@@ -110,11 +110,14 @@ class MySQLIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_MYSQL && USE_MYSQL
 private:
+    static void closeMySQLConnection(MYSQL * mysql);
+    using MySQLUniqueKeyPtr = std::unique_ptr<MYSQL, decltype(&closeMySQLConnection)>;
+
     const bool is_clickhouse;
-    std::unique_ptr<MYSQL *> mysql_connection;
+    MySQLUniqueKeyPtr mysql_connection;
 
 public:
-    MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool is_click, std::unique_ptr<MYSQL *> mcon)
+    MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool is_click, MySQLUniqueKeyPtr mcon)
         : ClickHouseIntegratedDatabase(fcc, scc), is_clickhouse(is_click), mysql_connection(std::move(mcon))
     {
     }
@@ -133,27 +136,27 @@ public:
     bool performQuery(const String & query) override;
 
     String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
-
-    ~MySQLIntegration() override;
 #else
 public:
     MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
     static std::unique_ptr<MySQLIntegration>
     testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, bool, const String &);
-
-    ~MySQLIntegration() override = default;
 #endif
+    ~MySQLIntegration() override = default;
 };
 
 class PostgreSQLIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_LIBPQXX && USE_LIBPQXX
 private:
-    std::unique_ptr<pqxx::connection> postgres_connection;
+    static void closePostgreSQLConnection(pqxx::connection * psql);
+    using PostgreSQLUniqueKeyPtr = std::unique_ptr<pqxx::connection, decltype(&closePostgreSQLConnection)>;
+
+    PostgreSQLUniqueKeyPtr postgres_connection;
 
 public:
-    PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<pqxx::connection> pcon)
+    PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, PostgreSQLUniqueKeyPtr pcon)
         : ClickHouseIntegratedDatabase(fcc, scc), postgres_connection(std::move(pcon))
     {
     }
@@ -175,22 +178,23 @@ public:
     PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
     static std::unique_ptr<PostgreSQLIntegration> testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, bool);
-
-    ~PostgreSQLIntegration() override = default;
 #endif
+    ~PostgreSQLIntegration() override = default;
 };
 
 class SQLiteIntegration : public ClickHouseIntegratedDatabase
 {
 #if defined USE_SQLITE && USE_SQLITE
 private:
-    std::unique_ptr<sqlite3 *> sqlite_connection;
+    static void closeSQLiteConnection(sqlite3 * sqlite);
+    using SQLiteUniqueKeyPtr = std::unique_ptr<sqlite3, decltype(&closeSQLiteConnection)>;
+
+    SQLiteUniqueKeyPtr sqlite_connection;
 
 public:
     const std::filesystem::path sqlite_path;
 
-    SQLiteIntegration(
-        const FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<sqlite3 *> scon, const std::filesystem::path & spath)
+    SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, SQLiteUniqueKeyPtr scon, const std::filesystem::path & spath)
         : ClickHouseIntegratedDatabase(fcc, scc), sqlite_connection(std::move(scon)), sqlite_path(spath)
     {
     }
@@ -206,8 +210,6 @@ public:
     String columnTypeAsString(RandomGenerator & rg, SQLType * tp) const override;
 
     bool performQuery(const String & query) override;
-
-    ~SQLiteIntegration() override;
 #else
 public:
     const std::filesystem::path sqlite_path;
@@ -215,9 +217,8 @@ public:
     SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
     static std::unique_ptr<SQLiteIntegration> testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &);
-
-    ~SQLiteIntegration() override = default;
 #endif
+    ~SQLiteIntegration() override = default;
 };
 
 class RedisIntegration : public ClickHouseIntegration

@@ -133,6 +133,14 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
 }
 
 #if defined USE_MYSQL && USE_MYSQL
+void MySQLIntegration::closeMySQLConnection(MYSQL * mysql)
+{
+    if (mysql)
+    {
+        mysql_close(mysql);
+    }
+}
+
 std::unique_ptr<MySQLIntegration> MySQLIntegration::testAndAddMySQLConnection(
     const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log, const String & server)
 {
@@ -158,7 +166,7 @@ std::unique_ptr<MySQLIntegration> MySQLIntegration::testAndAddMySQLConnection(
     else
     {
         std::unique_ptr<MySQLIntegration> mysql
-            = std::make_unique<MySQLIntegration>(fcc, scc, server == "ClickHouse", std::make_unique<MYSQL *>(mcon));
+            = std::make_unique<MySQLIntegration>(fcc, scc, server == "ClickHouse", MySQLUniqueKeyPtr(mcon, closeMySQLConnection));
 
         if (read_log
             || (mysql->performQuery("DROP DATABASE IF EXISTS " + scc.database + ";")
@@ -211,20 +219,20 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
 
 bool MySQLIntegration::performQuery(const String & query)
 {
-    if (!mysql_connection || !*mysql_connection)
+    if (!mysql_connection)
     {
         LOG_ERROR(fc.log, "Not connected to MySQL");
         return false;
     }
     out_file << query << std::endl;
-    if (mysql_query(*mysql_connection, query.c_str()))
+    if (mysql_query(mysql_connection.get(), query.c_str()))
     {
-        LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(*mysql_connection));
+        LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(mysql_connection.get()));
         return false;
     }
     else
     {
-        MYSQL_RES * result = mysql_store_result(*mysql_connection);
+        MYSQL_RES * result = mysql_store_result(mysql_connection.get());
 
         while (mysql_fetch_row(result))
             ;
@@ -237,14 +245,6 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) 
 {
     return tp->MySQLtypeName(rg, false);
 }
-
-MySQLIntegration::~MySQLIntegration()
-{
-    if (mysql_connection && *mysql_connection)
-    {
-        mysql_close(*mysql_connection);
-    }
-}
 #else
 std::unique_ptr<MySQLIntegration>
 MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const String &)
@@ -255,13 +255,19 @@ MySQLIntegration::testAndAddMySQLConnection(const FuzzConfig & fcc, const Server
 #endif
 
 #if defined USE_LIBPQXX && USE_LIBPQXX
+void PostgreSQLIntegration::closePostgreSQLConnection(pqxx::connection * psql)
+{
+    if (psql)
+    {
+        psql->close();
+    }
+}
+
 std::unique_ptr<PostgreSQLIntegration>
 PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, const bool read_log)
 {
-    bool has_something = false;
     String connection_str;
-    std::unique_ptr<pqxx::connection> pcon;
-    std::unique_ptr<PostgreSQLIntegration> psql;
+    bool has_something = false;
 
     if (!scc.unix_socket.empty() || !scc.hostname.empty())
     {
@@ -288,7 +294,9 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
     }
     try
     {
-        psql = std::make_unique<PostgreSQLIntegration>(fcc, scc, std::make_unique<pqxx::connection>(connection_str));
+        std::unique_ptr<PostgreSQLIntegration> psql = std::make_unique<PostgreSQLIntegration>(
+            fcc, scc, PostgreSQLUniqueKeyPtr(new pqxx::connection(connection_str), closePostgreSQLConnection));
+
         if (read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
         {
             LOG_INFO(fcc.log, "Connected to PostgreSQL");
@@ -335,7 +343,7 @@ bool PostgreSQLIntegration::performQuery(const String & query)
     }
     try
     {
-        pqxx::work w(*postgres_connection);
+        pqxx::work w(*(postgres_connection.get()));
 
         out_file << query << std::endl;
         /// Ignore the query result set
@@ -366,6 +374,14 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(const FuzzConfig & fcc, c
 #endif
 
 #if defined USE_SQLITE && USE_SQLITE
+void SQLiteIntegration::closeSQLiteConnection(sqlite3 * sqlite)
+{
+    if (sqlite)
+    {
+        sqlite3_close(sqlite);
+    }
+}
+
 std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
 {
     sqlite3 * scon = nullptr;
@@ -387,7 +403,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     else
     {
         LOG_INFO(fcc.log, "Connected to SQLite");
-        return std::make_unique<SQLiteIntegration>(fcc, scc, std::make_unique<sqlite3 *>(scon), spath);
+        return std::make_unique<SQLiteIntegration>(fcc, scc, SQLiteUniqueKeyPtr(scon, closeSQLiteConnection), spath);
     }
 }
 
@@ -411,13 +427,13 @@ bool SQLiteIntegration::performQuery(const String & query)
 {
     char * err_msg = nullptr;
 
-    if (!sqlite_connection || !*sqlite_connection)
+    if (!sqlite_connection)
     {
         LOG_ERROR(fc.log, "Not connected to SQLite");
         return false;
     }
     out_file << query << std::endl;
-    if (sqlite3_exec(*sqlite_connection, query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
+    if (sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
     {
         LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
         sqlite3_free(err_msg);
@@ -429,14 +445,6 @@ bool SQLiteIntegration::performQuery(const String & query)
 String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, SQLType * tp) const
 {
     return tp->SQLitetypeName(rg, false);
-}
-
-SQLiteIntegration::~SQLiteIntegration()
-{
-    if (sqlite_connection && *sqlite_connection)
-    {
-        sqlite3_close(*sqlite_connection);
-    }
 }
 #else
 std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
@@ -1012,9 +1020,11 @@ bool MinIOIntegration::sendRequest(const String & resource)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    /// It should always fit, ignore the result
-    auto u = std::sprintf(buffer, "%" PRIu32 "", sc.port);
-    UNUSED(u);
+    if (!std::sprintf(buffer, "%" PRIu32 "", sc.port))
+    {
+        LOG_ERROR(fc.log, "Buffer size was to small to fit result");
+        return false;
+    }
     if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
     {
         if (error == EAI_SYSTEM)
@@ -1061,9 +1071,11 @@ bool MinIOIntegration::sendRequest(const String & resource)
         LOG_ERROR(fc.log, "Could not connect: {}", strerror(errno));
         return false;
     }
-    /// It should always fit, ignore the result
-    auto v = std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm);
-    UNUSED(v);
+    if (!std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm))
+    {
+        LOG_ERROR(fc.log, "Buffer size was to small to fit result");
+        return false;
+    }
     sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
              << resource << "\""
              << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
