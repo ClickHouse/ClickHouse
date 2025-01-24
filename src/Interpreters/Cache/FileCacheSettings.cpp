@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <filesystem>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
@@ -31,6 +32,20 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
     max_size = config_parse_size("max_size");
     if (max_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected non-zero size for cache configuration");
+
+    try
+    {
+        auto fs_info = std::filesystem::space(base_path);
+        if (fs_info.capacity < max_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
+                base_path, std::to_string(max_size));
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to retrieve filesystem information for cache path {}. Error: {}",
+            base_path, e.what());
+    }
 
     if (has("max_elements"))
         max_elements = get_uint("max_elements");
