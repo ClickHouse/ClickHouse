@@ -170,7 +170,6 @@ class TestCIConfig(unittest.TestCase):
         for job in CI.JobNames:
             if job in CI.BuildNames:
                 if job in (
-                    CI.BuildNames.BINARY_TIDY,
                     CI.BuildNames.PACKAGE_RELEASE,
                     CI.BuildNames.PACKAGE_AARCH64,
                 ):
@@ -214,7 +213,6 @@ class TestCIConfig(unittest.TestCase):
         for job in CI.JobNames:
             if job in CI.BuildNames:
                 if job in (
-                    CI.BuildNames.BINARY_TIDY,
                     CI.BuildNames.PACKAGE_RELEASE,
                     CI.BuildNames.PACKAGE_AARCH64,
                 ):
