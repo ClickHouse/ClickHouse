@@ -45,32 +45,6 @@ private:
         std::string getData() { return data; }
     };
 
-    /// UInt16 getKeyDepth(const std::string & key)
-    /// {
-    ///     UInt16 depth = 0;
-    ///     for (size_t i = 0; i < key.size(); i++)
-    ///     {
-    ///         if (key[i] == '/' && i + 1 != key.size())
-    ///             depth ++;
-    ///     }
-    ///     return depth;
-    /// }
-
-    /// std::string getEncodedKey(const std::string & key, bool child_prefix = false)
-    /// {
-    ///     WriteBufferFromOwnString key_buffer;
-    ///     UInt16 depth = getKeyDepth(key) + (child_prefix ? 1 : 0);
-    ///     writeIntBinary(depth, key_buffer);
-    ///     writeString(key, key_buffer);
-    ///     return key_buffer.str();
-    /// }
-
-    /// static std::string_view getDecodedKey(const std::string_view & key)
-    /// {
-    ///     return std::string_view(key.begin() + 2, key.end());
-    /// }
-
-
     struct KVPair
     {
         StringRef key;

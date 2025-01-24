@@ -161,7 +161,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     initializeDisks(config);
 
     #if USE_ROCKSDB
-    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", true))
+    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
     {
         rocksdb_options = std::make_shared<rocksdb::Options>(getRocksDBOptionsFromConfig(config));
         digest_enabled = false; /// TODO: support digest
