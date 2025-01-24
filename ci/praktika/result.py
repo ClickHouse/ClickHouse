@@ -433,16 +433,13 @@ class ResultInfo:
 class _ResultS3:
 
     @classmethod
-    def copy_result_to_s3(cls, result, unlock=False):
+    def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        s3_path_full = f"{s3_path}/{Path(result.file_name()).name}"
+        if clean:
+            S3.delete(s3_path)
         url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
-        # if unlock:
-        #     if not cls.unlock(s3_path_full):
-        #         print(f"ERROR: File [{s3_path_full}] unlock failure")
-        #         assert False  # TODO: investigate
         return url
 
     @classmethod
