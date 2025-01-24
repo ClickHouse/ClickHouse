@@ -181,8 +181,7 @@ void IOutputFormat::onProgress(const Progress & progress)
         has_progress_update_to_write = true;
 
         /// Do not write progress too frequently.
-        /// Also, do not write it if we didn't write prefix, to prevent writing it before HTTP headers.
-        if (!need_write_prefix && elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
+        if (elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
         {
             std::unique_lock lock(writing_mutex, std::try_to_lock);
             if (lock)
@@ -194,6 +193,11 @@ void IOutputFormat::onProgress(const Progress & progress)
             }
         }
     }
+}
+
+void IOutputFormat::setProgress(Progress progress)
+{
+    statistics.progress = std::move(progress);
 }
 
 }
