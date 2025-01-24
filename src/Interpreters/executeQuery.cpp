@@ -966,7 +966,7 @@ static BlockIO executeQueryImpl(
                 /// Verify that AST formatting is consistent:
                 /// If you format AST, parse it back, and format it again, you get the same string.
 
-                String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                String formatted1 = out_ast->formatWithPossiblyHidingSensitiveData(
                     /*max_length=*/0,
                     /*one_line=*/true,
                     /*show_secrets=*/true,
