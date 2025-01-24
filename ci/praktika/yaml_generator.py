@@ -29,12 +29,20 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   GH_TOKEN: ${{{{{{{{ github.token }}}}}}}}
+{ENV_CHECKOUT_REFERENCE}
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all
 
 jobs:
 {JOBS}\
+"""
+        TEMPLATE_ENV_CHECKOUT_REF_PR = """\
+  USE_MERGE_COMMIT: ${{{{ vars.USE_MERGE_COMMIT || '0' }}}}
+  CHECKOUT_REF: ${{{{ vars.USE_MERGE_COMMIT == '1' && github.event.pull_request.merge_commit_sha || github.head_ref }}}}
+"""
+        TEMPLATE_ENV_CHECKOUT_REF_PUSH = """\
+  CHECKOUT_REF: ${{{{ github.head_ref }}}}
 """
 
         TEMPLATE_SCHEDULE = """\
@@ -47,6 +55,7 @@ on:
 
 env:
   PYTHONUNBUFFERED: 1
+{ENV_CHECKOUT_REFERENCE}
 
 jobs:
 {JOBS}\
@@ -66,6 +75,7 @@ on:
 
 env:
   PYTHONUNBUFFERED: 1
+{ENV_CHECKOUT_REFERENCE}
 
 jobs:
 {JOBS}\
@@ -101,7 +111,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{{{ github.head_ref }}}}
+          ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
@@ -352,12 +362,18 @@ class PullRequestPushYamlGen:
                 ),
                 "EVENT": self.workflow_config.event,
             }
+            if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
+                ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
+            else:
+                ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {"CRON_TEMPLATES": cron_items}
+            ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
         elif self.workflow_config.event in (Workflow.Event.DISPATCH,):
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
             format_kwargs = {"DISPATCH_INPUTS": dispatch_inputs}
+            ENV_CHECKOUT_REFERENCE = YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
         else:
             assert (
                 False
@@ -366,6 +382,7 @@ class PullRequestPushYamlGen:
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,
             JOBS="{}" * len(job_items),
+            ENV_CHECKOUT_REFERENCE=ENV_CHECKOUT_REFERENCE,
             **format_kwargs,
         )
         res = template_1.format(*job_items)

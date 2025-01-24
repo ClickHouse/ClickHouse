@@ -15,6 +15,9 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   GH_TOKEN: ${{ github.token }}
+  USE_MERGE_COMMIT: ${{ vars.USE_MERGE_COMMIT || '0' }}
+  CHECKOUT_REF: ${{ vars.USE_MERGE_COMMIT == '1' && github.event.pull_request.merge_commit_sha || github.head_ref }}
+
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all
@@ -31,7 +34,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
@@ -69,7 +72,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
@@ -107,7 +110,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
@@ -145,7 +148,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
