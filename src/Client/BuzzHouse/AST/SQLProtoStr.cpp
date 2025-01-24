@@ -3564,7 +3564,7 @@ CONV_FN(AlterTableItem, alter)
         case AlterType::kMovePartitionTo:
             ret += "MOVE ";
             PartitionExprToString(ret, alter.move_partition_to().partition());
-            ret += " FROM ";
+            ret += " TO TABLE ";
             ExprSchemaTableToString(ret, alter.move_partition_to().est());
             break;
         case AlterType::kClearColumnPartition:
