@@ -135,18 +135,31 @@ class Validator:
                     ), f"GitHub Runners must not be used for workflow with enabled: workflow.enable_cache, workflow.enable_html or workflow.enable_merge_ready_status as s3 access is required, workflow [{workflow.name}], job [{job.name}]"
 
             if workflow.enable_cidb:
-                assert (
-                    Settings.SECRET_CI_DB_URL
-                ), f"Settings.CI_DB_URL_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.SECRET_CI_DB_PASSWORD
-                ), f"Settings.CI_DB_PASSWORD_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.CI_DB_DB_NAME
-                ), f"Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.CI_DB_TABLE_NAME
-                ), f"Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_URL,
+                    "Settings.SECRET_CI_DB_URL must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_USER,
+                    "Settings.SECRET_CI_DB_USER must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_PASSWORD,
+                    "Settings.SECRET_CI_DB_PASSWORD must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.CI_DB_DB_NAME,
+                    "Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.CI_DB_TABLE_NAME,
+                    "Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
 
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:

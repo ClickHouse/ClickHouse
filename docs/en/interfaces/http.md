@@ -24,6 +24,11 @@ Sometimes, `curl` command is not available on user operating systems. On Ubuntu 
 
 Web UI can be accessed here: `http://localhost:8123/play`.
 
+The Web UI supports displaying progress during query runtime, query cancellation, and streaming results.
+It has a secret feature for displaying charts and graphs for query pipelines.
+
+Web UI is designed for professionals like you.
+
 ![Web UI](../images/play.png)
 
 In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
