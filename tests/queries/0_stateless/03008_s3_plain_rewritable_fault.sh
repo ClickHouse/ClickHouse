@@ -106,7 +106,7 @@ where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'")
 if [[ $active_count -eq 0 ]]
 then
     echo "At least one active part is expected"
-    return 2
+    exit 2
 fi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
@@ -119,7 +119,7 @@ where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault'")
 if [[ $inactive_count -eq 0 ]]
 then
     echo "At least one inactive part is expected"
-    return 2
+    exit 2
 fi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
@@ -134,7 +134,7 @@ where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $RE
 if [[ $inactive_count -eq 0 ]]
 then
     echo "At least one inactive part which has been rollbacked from remove is expected"
-    return 2
+    exit 2
 fi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
