@@ -201,7 +201,7 @@ namespace
 QueryTreeNodePtr replaceStorageIfNeeded(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
     if (storage)
-        return replaceStorageInQueryTree(query_tree, context, storage);
+        replaceStorageInQueryTree(query_tree, context, storage);
 
     return std::move(query_tree);
 }
