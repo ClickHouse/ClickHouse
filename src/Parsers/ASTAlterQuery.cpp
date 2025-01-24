@@ -161,7 +161,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << " " << (settings.hilite ? hilite_none : "");
         comment->format(ostr, settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_COMMENT)
+    else if (type == ASTAlterCommand::MODIFY_COMMENT || type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY COMMENT" << (settings.hilite ? hilite_none : "");
         ostr << " " << (settings.hilite ? hilite_none : "");
