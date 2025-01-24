@@ -5,8 +5,6 @@
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#    include <boost/bimap.hpp>
-
 
 namespace DB::ErrorCodes
 {

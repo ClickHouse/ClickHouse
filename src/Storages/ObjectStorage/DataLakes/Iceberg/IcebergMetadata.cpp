@@ -486,10 +486,10 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
                             manifest_file_entry.getPartitionRanges(partition_columns_ids),
                             partition_pruning_columns_names_and_types.getTypes())
                         .can_be_true)
+                {
                     if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                         data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
-                    else
-                        positional_delete_files_for_current_query.push_back(manifest_file_entry);
+                }
                 else
                     ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             }

@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
-#    include "IteratorWrapper.h"
+#include "IteratorWrapper.h"
 
 namespace Iceberg
 {

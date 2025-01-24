@@ -22,12 +22,6 @@ namespace DB
 {
 
 
-struct PositionalDeletesTransformHolder
-{
-    std::vector<std::shared_ptr<IInputFormat>> delete_sources;
-    std::vector<std::unique_ptr<ReadBuffer>> delete_read_buf;
-    std::vector<Block> delete_block;
-};
 
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
