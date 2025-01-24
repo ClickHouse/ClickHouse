@@ -416,7 +416,7 @@ REGISTER_FUNCTION(toStartOfIntervalAllowNegative)
 {
     factory.registerFunction<FunctionToStartOfIntervalAllowNegative>
     (FunctionDocumentation{
-        .description=R"(This function generalizes other toStartOf*() functions with toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone]) 
+        .description=R"(This function generalizes other toStartOf*() functions with toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])
                      syntax (does pretty much the same as toStartOfInterval, but returns Date32/DateTime64))",
         .syntax=R"(toStartOfInterval(value, INTERVAL x unit[, time_zone])
                 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]]))",
