@@ -1628,7 +1628,7 @@ class TestCase:
                 description,
             )
 
-        if "Exception" in stdout:
+        if "Exception" in stdout and "X-ClickHouse-Exception-Code" not in stdout:
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
