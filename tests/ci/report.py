@@ -443,6 +443,7 @@ class JobReport:
                     info=r.raw_logs,
                     links=list(r.log_urls) if r.log_urls else [],
                     duration=r.time,
+                    files=[str(f) for f in r.log_files] if r.log_files else [],
                 )
             )
 
@@ -455,6 +456,7 @@ class JobReport:
             files=(
                 [str(f) for f in self.additional_files] if self.additional_files else []
             ),
+            info=self.description,
         )
 
     @staticmethod
