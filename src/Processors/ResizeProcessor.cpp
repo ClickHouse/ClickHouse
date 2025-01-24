@@ -460,7 +460,7 @@ static size_t calculateDesiredActiveOutputs(
     Int64 free_memory,
     size_t total_outputs,
     size_t chunk_size_estimate,
-    double concurrency_factor = 1.5)
+    double concurrency_factor = 1.1)
 {
     // If free_memory is extremely large, we allow maximum concurrency
     if (free_memory == std::numeric_limits<Int64>::max())
@@ -666,7 +666,7 @@ IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & u
             free_mem,
             outputs.size(),
             /* chunk_size_estimate = */ chunk_size, // or 0 if unknown
-            /* concurrency_factor  = */ 1.5
+            /* concurrency_factor  = */ 0.8
         );
 
         // Count how many are currently "active" (enabled and not finished)
