@@ -1,13 +1,21 @@
+#include <filesystem>
 #include <memory>
+#include <Common/escapeForFileName.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
 
+
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -21,11 +29,21 @@ namespace ErrorCodes
 {
     extern const int CANNOT_BACKUP_TABLE;
     extern const int CANNOT_RESTORE_TABLE;
+<<<<<<< HEAD
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
 
+=======
+    extern const int LOGICAL_ERROR;
+    extern const int THERE_IS_NO_QUERY;
+}
+
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+>>>>>>> a0d81867486 (Implement feature allow altering database comment)
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
@@ -75,6 +93,7 @@ void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query,
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
 
+<<<<<<< HEAD
 void IDatabase::loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
@@ -208,6 +227,50 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
     if (throw_on_error)
         throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
     return nullptr;
+=======
+void IDatabase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
+{
+    if (!command.comment)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't get comment of database");
+
+    setDatabaseComment(command.comment.value());
+    ASTPtr ast = getCreateDatabaseQuery();
+    if (!ast)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", getDatabaseName());
+
+    auto * ast_create_query = ast->as<ASTCreateQuery>();
+    if (!ast_create_query->is_dictionary)
+        ast_create_query->attach = true;
+
+    WriteBufferFromOwnString statement_buf;
+    formatAST(*ast_create_query, statement_buf, false);
+    writeChar('\n', statement_buf);
+    String statement = statement_buf.str();
+
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
+
+    auto db_disk = query_context->getDatabaseDisk();
+    auto out = db_disk->writeFile(database_metadata_tmp_path, statement.size());
+    writeString(statement, *out);
+
+    out->next();
+    if (query_context->getSettingsRef()[Setting::fsync_metadata])
+        out->sync();
+    out->finalize();
+    out.reset();
+
+    try
+    {
+        /// rename atomically replaces the old file with the new one.
+        db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
+    }
+    catch (...)
+    {
+        db_disk->removeFileIfExists(database_metadata_tmp_path);
+        throw;
+    }
+>>>>>>> a0d81867486 (Implement feature allow altering database comment)
 }
 
 
