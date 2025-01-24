@@ -188,7 +188,20 @@ void FileCache::initialize()
         {
             if (!need_to_load_metadata)
                 fs::create_directories(getBasePath());
+
+            auto fs_info = std::filesystem::space(getBasePath());
+            const size_t size_limit = main_priority->getSizeLimit(lockCache());
+            if (fs_info.capacity < size_limit)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
+                                getBasePath(), std::to_string(size_limit));
+
             status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+        }
+        catch (const std::filesystem::filesystem_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to retrieve filesystem information for cache path {}. Error: {}",
+                            getBasePath(), e.what());
         }
         catch (...)
         {
