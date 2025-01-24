@@ -1,0 +1,36 @@
+engine : Atomic
+initial comment
+name=	comment_test_database	comment=	Test database with comment
+
+change a comment
+name=	comment_test_database	comment=	new comment on a table
+
+remove a comment
+name=	comment_test_database	comment=	
+
+add a comment back
+name=	comment_test_database	comment=	another comment on a table
+
+detach database
+
+re-attach database
+name=	comment_test_database	comment=	another comment on a table
+
+engine : Lazy
+initial comment
+name=	comment_test_database	comment=	Test database with comment
+
+change a comment
+name=	comment_test_database	comment=	new comment on a table
+
+remove a comment
+name=	comment_test_database	comment=	
+
+add a comment back
+name=	comment_test_database	comment=	another comment on a table
+
+detach database
+
+re-attach database
+name=	comment_test_database	comment=	another comment on a table
+
