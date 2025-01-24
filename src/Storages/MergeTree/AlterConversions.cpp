@@ -11,7 +11,7 @@ namespace ErrorCodes
 
 bool AlterConversions::isSupportedDataMutation(MutationCommand::Type)
 {
-    /// Currently there is no such mutations. See setting 'apply_mutations_on_fly'.
+    /// Currently there are no such mutations. See setting 'apply_mutations_on_fly'.
     return false;
 }
 

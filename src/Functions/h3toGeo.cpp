@@ -12,12 +12,19 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <h3api.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool h3togeo_lon_lat_result_order;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -31,10 +38,16 @@ namespace
 /// and returns the longitude and latitude that correspond to the provided h3 index
 class FunctionH3ToGeo : public IFunction
 {
+    const bool h3togeo_lon_lat_result_order;
 public:
     static constexpr auto name = "h3ToGeo";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeo>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeo>(context); }
+
+    explicit FunctionH3ToGeo(ContextPtr context)
+        : h3togeo_lon_lat_result_order(context->getSettingsRef()[Setting::h3togeo_lon_lat_result_order])
+    {
+    }
 
     std::string getName() const override { return name; }
 
@@ -52,9 +65,18 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arg->getName(), 1, getName());
 
-        return std::make_shared<DataTypeTuple>(
-            DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-            Strings{"longitude", "latitude"});
+        if (h3togeo_lon_lat_result_order)
+        {
+            return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"longitude", "latitude"});
+        }
+        else
+        {
+            return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"latitude", "longitude"});
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -92,8 +114,16 @@ public:
         }
 
         MutableColumns columns;
-        columns.emplace_back(std::move(longitude));
-        columns.emplace_back(std::move(latitude));
+        if (h3togeo_lon_lat_result_order)
+        {
+            columns.emplace_back(std::move(longitude));
+            columns.emplace_back(std::move(latitude));
+        }
+        else
+        {
+            columns.emplace_back(std::move(latitude));
+            columns.emplace_back(std::move(longitude));
+        }
         return ColumnTuple::create(std::move(columns));
     }
 };

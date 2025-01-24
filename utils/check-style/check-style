@@ -101,6 +101,7 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::end
+    ErrorCodes::extendedMessage
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName

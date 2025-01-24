@@ -172,14 +172,16 @@ void SelectStreamFactory::createForShardImpl(
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         Block shard_header;
+        PlannerContextPtr planner_context;
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;
 
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .query_tree = query_tree,
+            .planner_context = planner_context,
             .main_table = main_table,
             .header = shard_header,
             .has_missing_objects = has_missing_objects,

@@ -137,22 +137,35 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
 
     setFakeBufferWhenPreFinalized();
 
-    /// If there is only one block and size is less than or equal to max_single_part_upload_size
-    /// then we use single part upload instead of multi part upload
-    if (block_ids.empty() && detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
+    if (block_ids.empty())
     {
         ProfileEvents::increment(ProfileEvents::AzureUpload);
         if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
 
-        auto part_data = std::move(detached_part_data.front());
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
-        execWithRetry([&](){ block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, part_data.data_size);
-        LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
 
-        detached_part_data.pop_front();
-        return;
+        /// If there is only one block and size is less than or equal to max_single_part_upload_size
+        /// then we use single part upload instead of multi part upload
+        if (detached_part_data.size() == 1 && detached_part_data.front().data_size <= max_single_part_upload_size)
+        {
+            auto part_data = std::move(detached_part_data.front());
+            Azure::Core::IO::MemoryBodyStream memory_stream(
+                reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
+            execWithRetry([&]() { block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, part_data.data_size);
+            LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
+
+            detached_part_data.pop_front();
+            return;
+        }
+        /// Upload a single empty block
+        else if (detached_part_data.empty())
+        {
+            Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
+            execWithRetry([&]() { block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, 0);
+            LOG_TRACE(log, "Committed single empty block for blob `{}`", blob_path);
+            return;
+        }
     }
 
     writeMultipartUpload();

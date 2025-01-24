@@ -5,6 +5,8 @@
 #include <Common/Jemalloc.h>
 #include <Common/PageCache.h>
 
+#include <filesystem>
+
 namespace DB
 {
 

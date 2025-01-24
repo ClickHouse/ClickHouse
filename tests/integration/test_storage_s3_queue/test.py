@@ -732,7 +732,7 @@ def test_streaming_to_many_views(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
 
-    for i in range(3):
+    for i in range(10):
         table = f"{table_name}_{i + 1}"
         create_table(
             started_cluster,
@@ -1471,6 +1471,29 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             """
         )
         logging.debug(f"Unprocessed files: {info}")
+
+        files1 = (
+            node.query(f"select distinct(_path) from {dst_table_name}_1")
+            .strip()
+            .split("\n")
+        )
+        files2 = (
+            node.query(f"select distinct(_path) from {dst_table_name}_2")
+            .strip()
+            .split("\n")
+        )
+        files3 = (
+            node.query(f"select distinct(_path) from {dst_table_name}_3")
+            .strip()
+            .split("\n")
+        )
+
+        def intersection(list_a, list_b):
+            return [e for e in list_a if e in list_b]
+
+        logging.debug(f"Intersecting files 1: {intersection(files1, files2)}")
+        logging.debug(f"Intersecting files 2: {intersection(files1, files3)}")
+        logging.debug(f"Intersecting files 3: {intersection(files2, files3)}")
 
         assert False
 
@@ -2282,6 +2305,7 @@ def test_alter_settings(started_cluster):
             "s3queue_processing_threads_num": 10,
             "s3queue_loading_retries": 20,
             "s3queue_tracked_files_limit": 1000,
+            "s3queue_polling_max_timeout_ms": 1000,
         },
         database_name="r",
     )
@@ -2313,11 +2337,18 @@ def test_alter_settings(started_cluster):
         )
 
     expected_rows = files_to_generate
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
     assert expected_rows == get_count()
+
+    assert (
+        "true"
+        == node1.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE name = 'enable_hash_ring_filtering' and table = '{table_name}'"
+        ).strip()
+    )
 
     node1.query(
         f"""
@@ -2333,7 +2364,9 @@ def test_alter_settings(started_cluster):
         max_processed_files_before_commit=444,
         s3queue_max_processed_rows_before_commit=555,
         max_processed_bytes_before_commit=666,
-        max_processing_time_sec_before_commit=777
+        max_processing_time_sec_before_commit=777,
+        enable_hash_ring_filtering=false,
+        list_objects_batch_size=1234
     """
     )
 
@@ -2349,6 +2382,8 @@ def test_alter_settings(started_cluster):
         "max_processed_rows_before_commit": 555,
         "max_processed_bytes_before_commit": 666,
         "max_processing_time_sec_before_commit": 777,
+        "enable_hash_ring_filtering": "false",
+        "list_objects_batch_size": 1234,
     }
     string_settings = {"after_processing": "delete"}
 
