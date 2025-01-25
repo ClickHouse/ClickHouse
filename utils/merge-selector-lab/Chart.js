@@ -45,7 +45,7 @@ export class Chart {
         this.innerHeight = this.height - this.margin.top - this.margin.bottom;
 
         // Set up scales
-        this.x = d3.scaleLinear()
+        this.xScale = d3.scaleLinear()
             .domain([0, 10]) // Start with an arbitrary domain
             .range([0, this.innerWidth]);
 
@@ -58,7 +58,7 @@ export class Chart {
         this.svg.append("g")
             .attr("transform", `translate(0, ${this.innerHeight})`)
             .attr("class", "x-axis")
-            .call(d3.axisBottom(this.x));
+            .call(d3.axisBottom(this.xScale));
 
         // Add y-axis
         this.svg.append("g")
@@ -114,7 +114,7 @@ export class Chart {
             seriesIndex: this.series.length,
             data: [],
             line: d3.line()
-                .x(d => this.x(d.x))
+                .x(d => this.xScale(d.x))
                 .y(d => this.yScale(d.y)),
             path: this.svg.append("path")
                 .datum([])
@@ -133,8 +133,16 @@ export class Chart {
             //newSeries.data.sort((a, b) => a.x - b.x);
 
             // Update scales
-            this.x.domain([0, d3.max(this.series.flatMap(s => s.data), d => d.x)]);
-            this.yScale.domain([0, d3.max(this.series.flatMap(s => s.data), d => d.y)]).nice();
+            const xDomain = [
+                d3.min(this.series.flatMap(s => s.data), d => d.x),
+                d3.max(this.series.flatMap(s => s.data), d => d.x),
+            ];
+            const yDomain = [
+                d3.min(this.series.flatMap(s => s.data), d => d.y),
+                d3.max(this.series.flatMap(s => s.data), d => d.y),
+            ];
+            this.xScale.domain(xDomain).nice();
+            this.yScale.domain(yDomain).nice();
 
             // Update all series lines and points
             this.series.forEach(series => {
@@ -151,7 +159,7 @@ export class Chart {
                     .enter()
                     .append("circle")
                     .attr("class", `point-series-${series.seriesIndex}`)
-                    .attr("cx", d => this.x(d.x))
+                    .attr("cx", d => this.xScale(d.x))
                     .attr("cy", d => this.yScale(d.y))
                     .attr("r", 2)
                     .attr("fill", this.colors[series.seriesIndex % this.colors.length])
@@ -166,7 +174,7 @@ export class Chart {
 
             // Update axes
             this.svg.select(".x-axis")
-                .call(d3.axisBottom(this.x));
+                .call(d3.axisBottom(this.xScale));
 
             this.svg.select(".y-axis")
                 .call(d3.axisLeft(this.yScale));
@@ -182,15 +190,15 @@ export class Chart {
                     newSeries.arrowText.remove();
 
                 newSeries.arrow = this.svg.append("line")
-                    .attr("x2", this.x(minPoint.x))
+                    .attr("x2", this.xScale(minPoint.x))
                     .attr("y2", this.yScale(minPoint.y) + (newSeries.seriesIndex * 15) + 10) // Add a gap of 10 pixels
-                    .attr("x1", this.x(minPoint.x))
+                    .attr("x1", this.xScale(minPoint.x))
                     .attr("y1", this.yScale(minPoint.y) + ((newSeries.seriesIndex + 1) * 15) + 10) // Add a gap of 10 pixels
                     .attr("stroke", this.colors[colorIndex])
                     .attr("stroke-width", 2);
 
                 newSeries.arrowText = this.svg.append("text")
-                    .attr("x", this.x(minPoint.x))
+                    .attr("x", this.xScale(minPoint.x))
                     .attr("y", this.yScale(minPoint.y) + ((newSeries.seriesIndex + 1) * 15) + 25) // Add a gap of 10 pixels below the arrow
                     .attr("text-anchor", "middle")
                     .style("font-size", "10px")
