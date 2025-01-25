@@ -1535,6 +1535,7 @@ corrmatrix
 corrstable
 cors
 cosineDistance
+cooldown
 countDigits
 countEqual
 countIf
@@ -2880,6 +2881,7 @@ sysctl
 syslog
 syslogd
 systemd
+sqlreference
 tabix
 tablum
 tabseparated

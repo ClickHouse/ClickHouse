@@ -98,7 +98,12 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
         }
-
+        .json-value-small {
+            font-weight: normal;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
+            font-size: 0.75rem;
+        }
         .dropdown-value {
             width: 100px;
             font-weight: normal;
@@ -383,7 +388,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = key + ':';
+        keyElement.textContent = key !== "" ? key + ":" : "";
 
         let valueElement;
 
@@ -413,7 +418,11 @@
         } else {
             // Create a simple text display if no options are provided
             valueElement = document.createElement('div');
-            valueElement.className = 'json-value';
+            if (key !== "") {
+                valueElement.className = "json-value";
+            } else {
+                valueElement.className = "json-value-small";
+            }
             valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
         }
 
@@ -695,21 +704,43 @@
                 let targetData = navigatePath(data, nameParams);
                 let nest_level = nameParams.length;
 
-                // Add footer links from top-level  Result
-                if (Array.isArray(data.links) && data.links.length > 0) {
-                    data.links.forEach(link => {
-                        const a = document.createElement('a');
-                        a.href = link;
-                        if (link.includes('/pull/')) {
-                            a.textContent = 'PR';
-                        } else if (link.includes('/actions/runs/')) {
-                            a.textContent = 'Run';
-                        } else {
-                            a.textContent = link.split('/').pop();
-                        }
-                        a.target = '_blank';
-                        footerRight.appendChild(a);
-                    });
+                // helper func
+                function createLinkElement(href, textContent, footer) {
+                    const a = document.createElement('a');
+                    a.href = href;
+                    a.textContent = textContent;
+                    a.target = '_blank';
+                    footer.appendChild(a);
+                }
+
+                if (nameParams.length === 1) {
+                    // Add PR/Run links to the footer if not the top result.json
+                    if (Array.isArray(data.links) && data.links.length > 0) {
+                        data.links.forEach(link => {
+                            let textContent;
+                            if (link.includes('/pull/')) {
+                                textContent = 'PR';
+                                localStorage.setItem('pr_link', JSON.stringify(link));
+                            } else if (link.includes('/commit/')) {
+                                textContent = 'Commit';
+                                localStorage.setItem('commit_link', JSON.stringify(link));
+                            } else if (link.includes('/actions/runs/')) {
+                                textContent = 'Run';
+                                localStorage.setItem('run_link', JSON.stringify(link));
+                            } else {
+                                return; // Skip links that don't match the criteria
+                            }
+                            createLinkElement(link, textContent, footerRight);
+                        });
+                    }
+                } else {
+                    // Retrieve stored links and add them to the footer
+                    const prLink = JSON.parse(localStorage.getItem('pr_link'));
+                    const runLink = JSON.parse(localStorage.getItem('run_link'));
+                    const commitLink = JSON.parse(localStorage.getItem('commit_link'));
+                    if (prLink) createLinkElement(prLink, 'PR', footerRight);
+                    if (commitLink) createLinkElement(commitLink, 'PR', footerRight);
+                    if (runLink) createLinkElement(runLink, 'Run', footerRight);
                 }
 
                 if (targetData) {
@@ -798,7 +829,9 @@
         let commitsArray = [];
 
         if (PR) {
-            addKeyValueToStatus("PR", PR);
+            if (PR > 0) {
+                addKeyValueToStatus("PR", PR);
+            }
             const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
             path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
         } else {
@@ -836,6 +869,9 @@
             .finally(() => {
                 // Proceed with the rest of the initialization
                 addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
+
+                let current_sha = sha === "latest" ? (commitsArray.at(-1) || sha) : sha;
+                addKeyValueToStatus("", current_sha);
 
                 // These are present in naviagation bar at the bottom. Try to remove as names might be long and do not fit status bar
                 // if (nameParams[1]) {

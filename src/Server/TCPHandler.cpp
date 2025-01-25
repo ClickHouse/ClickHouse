@@ -548,7 +548,7 @@ void TCPHandler::runImpl()
                 checkIfQueryCanceled(query_state.value());
 
                 /// Get blocks of temporary tables
-                readData(query_state.value());
+                readTemporaryTables(query_state.value());
 
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
@@ -582,6 +582,9 @@ void TCPHandler::runImpl()
                 query_state->input_header = metadata_snapshot->getSampleBlock();
                 sendData(query_state.value(), query_state->input_header);
                 sendTimezone(query_state.value());
+
+                /// Update flag after reading external tables
+                query_state->read_all_data = false;
             });
 
             query_state->query_context->setInputBlocksReaderCallback([this, &query_state] (ContextPtr context) -> Block
@@ -596,7 +599,6 @@ void TCPHandler::runImpl()
                 if (receivePacketsExpectData(query_state.value()))
                     return query_state->block_for_input;
 
-                query_state->read_all_data = true;
                 query_state->block_in.reset();
                 query_state->maybe_compressed_in.reset();
                 return {};
@@ -758,9 +760,7 @@ void TCPHandler::runImpl()
             auto exception_code = exception->code();
 
             if (!query_state.has_value())
-            {
                 return;
-            }
 
             try
             {
@@ -783,8 +783,7 @@ void TCPHandler::runImpl()
             /// In this case, the user is already authenticated with this server,
             /// is_interserver_mode is false, and we can send the exception to the client normally.
 
-            if (is_interserver_mode
-                && !is_interserver_authenticated)
+            if (is_interserver_mode && !is_interserver_authenticated)
             {
                 /// Interserver authentication is done only after we read the query.
                 /// This fact can be abused by producing exception before or while we read the query.
@@ -801,7 +800,7 @@ void TCPHandler::runImpl()
             }
 
             if (thread_trace_context)
-                    thread_trace_context->root_span.addAttribute(*exception);
+                thread_trace_context->root_span.addAttribute(*exception);
 
             if (!out || out->isCanceled())
             {
@@ -817,19 +816,15 @@ void TCPHandler::runImpl()
                 /// Assume that we can't break output here
                 sendLogs(query_state.value());
 
+                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                    sendEndOfStream(query_state.value());
+                else
+                    sendException(*exception, send_exception_with_stack_trace);
+
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
-
-                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                {
-                    sendEndOfStream(query_state.value());
-                }
-                else
-                {
-                    sendException(*exception, send_exception_with_stack_trace);
-                }
 
                 LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
             }
@@ -978,9 +973,16 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
+            {
+                bool empty_block;
                 if (state.skipping_data)
-                    return processUnexpectedData();
-                return processData(state, packet_type == Protocol::Client::Scalar);
+                    empty_block = !processUnexpectedData();
+                else
+                    empty_block = !processData(state, packet_type == Protocol::Client::Scalar);
+                if (empty_block)
+                    state.read_all_data = true;
+                return !empty_block;
+            }
 
             case Protocol::Client::Ping:
                 writeVarUInt(Protocol::Server::Pong, *out);
@@ -1002,7 +1004,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 }
 
 
-void TCPHandler::readData(QueryState & state)
+void TCPHandler::readTemporaryTables(QueryState & state)
 {
     sendLogs(state);
 
@@ -1014,8 +1016,6 @@ void TCPHandler::readData(QueryState & state)
         sendLogs(state);
         sendInsertProfileEvents(state);
     }
-
-    state.read_all_data = true;
 }
 
 
@@ -1024,18 +1024,15 @@ void TCPHandler::skipData(QueryState & state)
     state.skipping_data = true;
     SCOPE_EXIT({ state.skipping_data = false; });
 
+    size_t blocks = 0;
     while (receivePacketsExpectData(state))
-    {
-        /// no op
-    }
-
-    state.read_all_data = true;
+        ++blocks;
+    LOG_TRACE(log, "Discarded {} blocks", blocks);
 }
 
 
 void TCPHandler::startInsertQuery(QueryState & state)
 {
-
     std::lock_guard lock(callback_mutex);
 
     /// Send ColumnsDescription for insertion table
@@ -1055,6 +1052,9 @@ void TCPHandler::startInsertQuery(QueryState & state)
     /// Send block to the client - table structure.
     sendData(state, state.io.pipeline.getHeader());
     sendLogs(state);
+
+    /// Update flag after reading external tables
+    state.read_all_data = false;
 }
 
 
@@ -1083,8 +1083,6 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
             };
         }
     }
-
-    state.read_all_data = true;
 
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
@@ -1122,8 +1120,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 sendLogs(state);
                 sendInsertProfileEvents(state);
             }
-
-            state.read_all_data = true;
 
             executor.finish();
         }
@@ -2292,9 +2288,8 @@ bool TCPHandler::processUnexpectedData()
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool read_ok = !!skip_block_in->read();
-
-    return read_ok;
+    bool empty_block = !skip_block_in->read();
+    return !empty_block;
 }
 
 
