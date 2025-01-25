@@ -33,7 +33,6 @@ namespace DB
 
 bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-
     ParserIdentifier s_ident;
     ParserKeyword s_copy(Keyword::COPY);
     ParserKeyword s_to(Keyword::TO);
@@ -42,13 +41,12 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
 
     ParserSubquery s_subquery;
-    ParserIdentifierWithOptionalParameters s_engine;
 
     auto copy_element = std::make_shared<ASTCopyQuery>();
+    node = copy_element;
 
     if (!s_copy.ignore(pos, expected))
         return false;
-
 
     auto saved_pos = pos;
     if (!open_bracket.ignore(pos, expected))
@@ -64,7 +62,6 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         saved_pos = pos;
         copy_element->table_name = table_name->as<ASTIdentifier>()->full_name;
-        //copy_element->data = table_name;
 
         if (s_to.ignore(pos, expected))
         {
@@ -79,18 +76,10 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        if (s_engine.parse(pos, copy_element->file, expected))
-        {
-            node = copy_element;
-            while (!pos->isEnd())
-                ++pos;
+        while (!pos->isEnd())
+            ++pos;
 
-            return true;
-        }
-        else
-        {
-            return false;
-        }
+        return true;
     }
 
     pos = saved_pos;
@@ -110,19 +99,10 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    if (s_engine.parse(pos, copy_element->file, expected))
-    {
-        copy_element->data = name_or_expr->children[0];
-        node = copy_element;
-        while (!pos->isEnd())
-            ++pos;
+    while (!pos->isEnd())
+        ++pos;
 
-        return true;
-    }
-    else
-    {
-        return false;
-    }
+    return true;
 }
 
 }
