@@ -166,6 +166,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
+    extern const SettingsBool apply_mutations_on_fly;
 }
 
 namespace ErrorCodes
@@ -1394,6 +1395,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (!interpreter->supportsTransactions())
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+
+                    if (query_settings[Setting::apply_mutations_on_fly])
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
