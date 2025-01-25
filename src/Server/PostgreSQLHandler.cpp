@@ -54,7 +54,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -495,28 +494,22 @@ void PostgreSQLHandler::processQuery()
 
             CurrentThread::QueryScope query_scope{query_context};
 
-            {
-                auto columns_count = fmt::format("SELECT count(*) FROM system.columns WHERE table = '{}' FORMAT CSV;", copy_query->table_name);
-                std::vector<char> res;
-                WriteBufferFromVectorImpl out_buf(res);
-                ReadBufferFromString read_buf_test(columns_count);
-                executeQuery(read_buf_test, out_buf, false, query_context, {});
-                int num_columns = std::stoi(std::string(res.begin(), res.end()));
-                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));       
-            }
+            auto columns_count = fmt::format("SELECT count(*) FROM system.columns WHERE table = '{}' FORMAT CSV;", copy_query->table_name);
+            std::vector<char> res;
+            WriteBufferFromVectorImpl out_buf(res);
+            ReadBufferFromString read_buf_columns_count(columns_count);
+            executeQuery(read_buf_columns_count, out_buf, false, query_context, {});
+            int num_columns = std::stoi(std::string(res.begin(), res.end()));
+            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));       
 
-            {
-                std::string select_query = fmt::format("SELECT * FROM {} FORMAT CSV;", copy_query->table_name);
-                ReadBufferFromString read_buf(select_query);
-                ReadBufferFromString read_buf_test(select_query);
-                std::vector<char> res;
-                WriteBufferFromVectorImpl out_buf(res);
-
-                executeQuery(read_buf_test, out_buf, false, query_context, {});
-                while (!res.empty() && res.back() == 0)
-                    res.pop_back();
-                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(res));    
-            }
+            std::string select_query = fmt::format("SELECT * FROM {} FORMAT CSV;", copy_query->table_name);
+            std::vector<char> result_select;
+            WriteBufferFromVectorImpl out_buf_select_query(result_select);
+            ReadBufferFromString read_buf_select_query(select_query);
+            executeQuery(read_buf_select_query, out_buf_select_query, false, query_context, {});
+            while (!result_select.empty() && result_select.back() == 0)
+                result_select.pop_back();
+            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_select));    
 
             message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse());
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
