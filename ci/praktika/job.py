@@ -38,7 +38,7 @@ class Job:
 
         job_requirements: Optional["Job.Requirements"] = None
 
-        timeout: int = 1 * 3600
+        timeout: int = 5 * 3600
 
         digest_config: Optional["Job.CacheDigestConfig"] = None
 

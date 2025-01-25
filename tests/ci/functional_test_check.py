@@ -291,7 +291,9 @@ def main():
 
     docker_image = get_docker_image(get_image_name(check_name))
 
-    for option in check_name.split(","):
+    match = re.search(r"\(.*?\)", check_name)
+    options = match.group(0)[1:-1].split(",") if match else None
+    for option in options:
         if "/" in option:
             run_by_hash_num = int(option.split("/")[0]) - 1
             run_by_hash_total = int(option.split("/")[1])
@@ -303,13 +305,6 @@ def main():
     if validate_bugfix_check:
         download_last_release(packages_path, debug=True)
     else:
-        # if "amd_" in check_name or "arm_" in check_name:
-        #     # this is hack for praktika based CI
-        #     print("Copy input *.deb artifacts")
-        #     assert Shell.check(
-        #         f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True
-        #     )
-        # else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = temp_path / "server_log"

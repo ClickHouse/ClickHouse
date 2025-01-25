@@ -205,21 +205,20 @@ jobs:
         self.py_workflows = []  # type: List[Workflow.Config]
 
     @classmethod
-    def _get_workflow_file_name(cls, workflow_name):
-        return f"{Settings.WORKFLOW_PATH_PREFIX}/{Utils.normalize_string(workflow_name)}.yaml"
+    def _get_workflow_file_name(cls, file_name):
+        yaml_name = file_name.removesuffix(".py") + ".yaml"
+        return f"{Settings.WORKFLOW_PATH_PREFIX}/{Utils.normalize_string(yaml_name)}"
 
-    def generate(self, workflow_file="", workflow_config=None):
+    def generate(self):
         print("---Start generating yaml pipelines---")
-        if workflow_config:
-            self.py_workflows = [workflow_config]
-        else:
-            self.py_workflows = _get_workflows(file=workflow_file)
-            assert self.py_workflows
-        for workflow_config in self.py_workflows:
+        files = []
+        self.py_workflows = _get_workflows(_file_names_out=files)
+        assert self.py_workflows and files
+        for workflow_config, workflow_file_name in zip(self.py_workflows, files):
             print(f"Generate workflow [{workflow_config.name}]")
             parser = WorkflowConfigParser(workflow_config).parse()
             yaml_workflow_str = PullRequestPushYamlGen(parser).generate()
-            with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
+            with open(self._get_workflow_file_name(workflow_file_name), "w") as f:
                 f.write(yaml_workflow_str)
 
         Shell.check("git add ./.github/workflows/*.yaml")

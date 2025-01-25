@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import glob
 import json
 import logging
 import os
@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
 import requests
+from ci_definitions import BuildNames
+from env_helper import REPO_COPY
 
 from ci_config import CI
 
@@ -122,7 +124,38 @@ def get_gh_api(
     raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
+BUILD_TO_REPORT = {
+    BuildNames.PACKAGE_RELEASE: "artifact_report_build_amd_release.json",
+    BuildNames.PACKAGE_ASAN: "artifact_report_build_amd_asan.json",
+    BuildNames.PACKAGE_UBSAN: "artifact_report_build_amd_ubsan.json",
+    BuildNames.PACKAGE_TSAN: "artifact_report_build_amd_tsan.json",
+    BuildNames.PACKAGE_MSAN: "artifact_report_build_amd_msan.json",
+    BuildNames.PACKAGE_DEBUG: "artifact_report_build_amd_debug.json",
+    BuildNames.PACKAGE_AARCH64: "artifact_report_build_arm_release.json",
+    BuildNames.PACKAGE_AARCH64_ASAN: "artifact_report_build_arm_asan.json",
+    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_amd_coverage.json",
+    BuildNames.BINARY_RELEASE: "artifact_report_build_amd_binary.json",
+    BuildNames.BINARY_TIDY: "artifact_report_build_amd_tidy.json",
+    BuildNames.BINARY_DARWIN: "artifact_report_build_amd_darwin.json",
+    BuildNames.BINARY_AARCH64: "artifact_report_build_arm_binary.json",
+    BuildNames.BINARY_AARCH64_V80COMPAT: "artifact_report_build_arm_v80compat.json",
+    BuildNames.BINARY_FREEBSD: "artifact_report_build_amd_freebsd.json",
+    BuildNames.BINARY_DARWIN_AARCH64: "artifact_report_build_arm_darwin.json",
+    BuildNames.BINARY_PPC64LE: "artifact_report_build_ppc64le.json",
+    BuildNames.BINARY_AMD64_COMPAT: "artifact_report_build_amd_compat.json",
+    BuildNames.BINARY_AMD64_MUSL: "artifact_report_build_amd_musl.json",
+    BuildNames.BINARY_RISCV64: "artifact_report_build_riscv64.json",
+    BuildNames.BINARY_S390X: "artifact_report_build_s390x.json",
+    BuildNames.BINARY_LOONGARCH64: "artifact_report_build_loongarch.json",
+    BuildNames.FUZZERS: "artifact_report_build_fuzzers.json",
+}
+
+
 def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
+    artifact_report = Path(REPO_COPY) / "ci" / "tmp" / BUILD_TO_REPORT[build_name]
+    if artifact_report.is_file():
+        with open(artifact_report, "r", encoding="utf-8") as f:
+            return json.load(f)["build_urls"]
     for root, _, files in os.walk(reports_path):
         for file in files:
             if file.endswith(f"_{build_name}.json"):

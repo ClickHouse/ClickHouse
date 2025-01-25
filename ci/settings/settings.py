@@ -6,9 +6,9 @@ S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 MAIN_BRANCH = "master"
 
 S3_ARTIFACT_PATH = f"{S3_BUCKET_NAME}/artifacts"
-CI_CONFIG_RUNS_ON = ["style-checker-aarch64"]
+CI_CONFIG_RUNS_ON = ["self-hosted", "style-checker-aarch64"]
 # TODO: cannot crosscompile the image: clickhouse/mysql-java-client. use amd runner to have all images for amd:
-DOCKER_BUILD_RUNS_ON = ["style-checker"]
+DOCKER_BUILD_RUNS_ON = ["self-hosted", "style-checker"]
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
 HTML_S3_PATH = f"{S3_REPORT_BUCKET_NAME}/reports"
 S3_BUCKET_TO_HTTP_ENDPOINT = {
@@ -28,5 +28,5 @@ SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 
-DISABLED_WORKFLOWS = ["new_pull_request.py"]
+DISABLED_WORKFLOWS = ["new_pull_request.py", "defs.py"]
 PYTHONPATHS = ""

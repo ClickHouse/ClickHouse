@@ -1422,12 +1422,6 @@ def main() -> int:
     ### RUN action for migration to praktika: start
     elif args.run_from_praktika:
         check_name = ""
-        Shell.check(f"mkdir -p {REPORT_PATH}")
-        Shell.check(
-            f"mv {REPO_COPY}/ci/tmp/artifact_report_*.json {REPORT_PATH}/artifact_report.json"
-        )
-        # TODO:
-        # check_name_with_group = _get_ext_check_name(check_name)
         start_time = datetime.now(timezone.utc)
         try:
             jr = JobReport.create_dummy(status="error", job_skipped=False)
