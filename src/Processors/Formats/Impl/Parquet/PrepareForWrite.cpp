@@ -360,6 +360,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
         case TypeIndex::DateTime64:
         {
+            // Optional because `parq::ConvertedType::type` default constructs to UTF8
+            // and nano precision does not have a converted type, it has to be none
             std::optional<parq::ConvertedType::type> converted;
             parq::TimeUnit unit;
             const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
