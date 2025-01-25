@@ -36,9 +36,9 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
     case DB::DataPartRemovalState::REMOVE_ROLLBACKED:
-        return "Part was selected to be removed but then it had been rollbacked. The remove will be retried.";
+        return "Part was selected to be removed but then it had been rollbacked. The remove will be retried";
     case DB::DataPartRemovalState::REMOVE_RETRY:
-        return "Retry to remove part.";
+        return "Retry to remove part";
     }
 }
 

@@ -187,9 +187,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
         getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    const static bool validate_content = true;
+    constexpr bool validate_content = true;
 #else
-    const static bool validate_content = false;
+    constexpr bool validate_content = false;
 #endif
 
     auto write_buf = createWriteBuf(path_from, path_to, validate_content);

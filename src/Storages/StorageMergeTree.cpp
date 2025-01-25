@@ -1607,13 +1607,13 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     return mutations_to_delete.size();
 }
 
-size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_point)
+size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
     if (parts_to_remove.empty())
         return 0;
 
-    if (with_pause_point)
+    if (with_pause_fail_point)
     {
         // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
         // It allows the use case

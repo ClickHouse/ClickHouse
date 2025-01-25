@@ -235,7 +235,7 @@ private:
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
-    size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_point = false);
+    size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
