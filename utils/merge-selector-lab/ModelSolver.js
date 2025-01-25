@@ -79,24 +79,33 @@ export class ModelSolver {
         const x00 = this.#getSolutions(i0, j0);
         const x01 = this.#getSolutions(i0, j1);
         const x10 = this.#getSolutions(i1, j0);
+        const x11 = this.#getSolutions(i1, j1);
 
         // Make arrays to have the same size, by replicating last elements
         // This is justified by empirical fact that x[0] for L>Lopt is similar to x[0] for Lopt
-        let len = Math.max(x00.length, x01.length, x10.length);
+        let len = Math.max(x00.length, x01.length, x10.length, x11.length);
         while (x00.length < len)
             x00.push(x00[x00.length - 1]);
         while (x01.length < len)
             x01.push(x01[x01.length - 1]);
         while (x10.length < len)
             x10.push(x10[x10.length - 1]);
+        while (x11.length < len)
+            x11.push(x11[x11.length - 1]);
+
+        // Bilinear interpolation coefficients
+        const ci1 = i - i0;
+        const ci0 = 1 - ci1;
+        const cj1 = j - j0;
+        const cj0 = 1 - cj1;
+        const c00 = ci0 * cj0;
+        const c10 = ci1 * cj0;
+        const c01 = ci0 * cj1;
+        const c11 = ci1 * cj1;
 
         let result = [];
         for (let k = 0; k < len; k++) {
-            result.push(
-                x00[k]
-                    + (x10[k] - x00[k]) * (i - i0)
-                    + (x01[k] - x00[k]) * (j - j0)
-            );
+            result.push(c00 * x00[k] + c10 * x10[k] + c01 * x01[k] + c11 * x11[k]);
         }
 
         console.log({x00, x01, x10, result});
