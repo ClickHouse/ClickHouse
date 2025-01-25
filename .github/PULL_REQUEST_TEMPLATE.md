@@ -47,7 +47,6 @@ At a minimum, the following information should be added (but add more as needed)
 
 All builds in Builds_1 and Builds_2 stages are always mandatory and will run independently of the checks below:
 - [ ] <!---ci_include_stateless--> Only: Stateless tests
-- [ ] <!---ci_include_stateful--> Only: Stateful tests
 - [ ] <!---ci_include_integration--> Only: Integration tests
 - [ ] <!---ci_include_performance--> Only: Performance tests
 ---
