@@ -913,6 +913,8 @@ class FailureReason(enum.Enum):
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
     DISTRIBUTED_CACHE = "distributed-cache"
+    NO_STATELESS = "no-stateless"
+    NO_STATEFUL = "no-stateful"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1513,6 +1515,10 @@ class TestCase:
 
         if "no-flaky-check" in tags and (1 == int(os.environ.get("IS_FLAKY_CHECK", 0))):
             return FailureReason.SKIP
+        if "stateful" in tags and args.no_stateful:
+            return FailureReason.NO_STATEFUL
+        if "stateful" not in tags and args.no_stateless:
+            return FailureReason.NO_STATELESS
 
         if tags:
             for build_flag in args.build_flags:
@@ -2351,8 +2357,10 @@ class TestSuite:
         if test_name not in self.all_tags:
             return False
 
-        return ("no-parallel" in self.all_tags[test_name]) or (
-            "sequential" in self.all_tags[test_name]
+        return (
+            ("no-parallel" in self.all_tags[test_name])
+            or ("sequential" in self.all_tags[test_name])
+            or ("stateful" in self.all_tags[test_name])
         )
 
     def get_tests_list(self, sort_key, filter_func):
