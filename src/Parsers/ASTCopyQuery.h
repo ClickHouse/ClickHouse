@@ -21,29 +21,10 @@ public:
     } type;
 
     String table_name;
-    ASTPtr data;
-    ASTPtr file;
 
     String getID(char) const override { return "CopyQuery"; }
 
-    ASTPtr clone() const override
-    {
-        auto res = std::make_shared<ASTCopyQuery>(*this);
-        res->children.clear();
-
-        if (data)
-        {
-            res->data = data->clone();
-            res->children.push_back(res->data);
-        }
-        if (file)
-        {
-            res->file = file->clone();
-            res->children.push_back(res->file);
-        }
-
-        return res;
-    }
+    ASTPtr clone() const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Copy; }
 

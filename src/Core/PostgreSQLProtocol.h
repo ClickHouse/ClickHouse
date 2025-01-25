@@ -1022,7 +1022,7 @@ public:
     }
 };
 
-class CopyData : FrontMessage
+class CopyInData : FrontMessage
 {
 public:
     String query;
@@ -1040,6 +1040,35 @@ public:
     {
         return MessageType::COPY_DATA;
     }
+};
+
+class CopyOutData : public BackendMessage
+{
+    std::vector<char> data;
+public:
+    explicit CopyOutData(std::vector<char> data_)
+        : data(data_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        writeBinaryBigEndian('d', out);
+        writeBinaryBigEndian(size(), out);
+        out.write(data.data(), data.size());
+    }
+
+    Int32 size() const override
+    {
+        return 4 + static_cast<Int32>(data.size());
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+
+
 };
 
 class CopyDataResponse : BackendMessage

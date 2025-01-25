@@ -247,6 +247,27 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(1,), (2,), (3,), (4,), (5,)]
 
+    cur.execute("drop table if exists test;")
+    cur.execute("drop table if exists test_recreated;")
+
+    cur.execute("create table test (x UInt32, y String) engine=Memory();")
+    cur.execute("insert into test values (42,'a'),(43,'b'),(44,'c'),(45,'d');")
+    cur.execute("select * from test order by x;")
+
+    assert cur.fetchall() == [(42,'a'), (43,'b'), (44,'c'), (45,'d')]
+
+    with open("out.csv", "w") as f:
+        cur.copy_to(file=f, table="test")
+    with open("out.csv", "r") as f:
+        assert f.read() == '42,"a"\n43,"b"\n44,"c"\n45,"d"\n'
+
+    cur.execute("create table test_recreated (x UInt32, y String) engine=Memory();")
+    data_to_copy = "1,'a'\n2,'b'\n3,'c'\n"
+    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x",))
+    cur.execute("select * from test_recreated order by x;")
+
+    assert cur.fetchall() == [(1,'a'), (2,'b'), (3,'c')]
+
 
 def test_java_client(started_cluster):
     node = cluster.instances["node"]

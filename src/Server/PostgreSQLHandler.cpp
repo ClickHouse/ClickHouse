@@ -389,6 +389,35 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     return message;
 }
 
+std::string PostgreSQLHandler::ConvertPGDataToCH(const String & initial_data)
+{
+    std::string data;
+    std::string current_data_part;
+    for (auto& elem : initial_data)
+    {
+        if (elem == '\t')
+        {
+            current_data_part += ",";
+        }
+        else if (elem == '\n')
+        {
+            if (current_data_part.ends_with(","))
+            {
+                current_data_part.pop_back();
+            }
+            data += "(" + current_data_part + "),";
+            current_data_part.clear();
+        }
+        else 
+        {
+            current_data_part.push_back(elem);
+        }
+    }
+    if (data.back() == ',')
+        data.pop_back();
+    return data;
+}
+
 void PostgreSQLHandler::processQuery()
 {
     try
@@ -433,35 +462,12 @@ void PostgreSQLHandler::processQuery()
                 PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
                 if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
                 {
-                    std::unique_ptr<PostgreSQLProtocol::Messaging::CopyData> data_query =
-                        message_transport->receive<PostgreSQLProtocol::Messaging::CopyData>();
+                    std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> data_query =
+                        message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
-                    std::string data;
-                    std::string current_data_part;
-                    for (auto& elem : data_query->query)
-                    {
-                        if (elem == '\t')
-                        {
-                            current_data_part += ",";
-                        }
-                        else if (elem == '\n')
-                        {
-                            if (current_data_part.ends_with(","))
-                            {
-                                current_data_part.pop_back();
-                            }
-                            data += "(" + current_data_part + "),";
-                            current_data_part.clear();
-                        }
-                        else 
-                        {
-                            current_data_part.push_back(elem);
-                        }
-                    }
-                    if (data.back() == ',')
-                        data.pop_back();
+                    std::string data = ConvertPGDataToCH(data_query->query);
 
-                    String insert_query = fmt::format("INSERT INTO {} VALUES {} ;", copy_query->table_name, data);
+                    String insert_query = fmt::format("INSERT INTO {} (*) VALUES {} ;", copy_query->table_name, data);
                     auto query_context = session->makeQueryContext();
                     query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
@@ -490,7 +496,7 @@ void PostgreSQLHandler::processQuery()
             CurrentThread::QueryScope query_scope{query_context};
 
             {
-                auto columns_count = fmt::format("SELECT count() FROM system.columns WHERE table = {} FORMAT CSV;", copy_query->table_name);
+                auto columns_count = fmt::format("SELECT count(*) FROM system.columns WHERE table = '{}' FORMAT CSV;", copy_query->table_name);
                 std::vector<char> res;
                 WriteBufferFromVectorImpl out_buf(res);
                 ReadBufferFromString read_buf_test(columns_count);
@@ -509,11 +515,7 @@ void PostgreSQLHandler::processQuery()
                 executeQuery(read_buf_test, out_buf, false, query_context, {});
                 while (!res.empty() && res.back() == 0)
                     res.pop_back();
-                std::string result(res.begin(), res.end());
-                writeBinaryBigEndian('d', *out);
-
-                writeBinaryBigEndian(static_cast<Int32>(4 + result.size()), *out);
-                out->write(result.c_str(), result.size());
+                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(res));                
             }
 
             message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse());
