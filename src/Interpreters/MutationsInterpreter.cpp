@@ -1445,6 +1445,25 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     return builder;
 }
 
+std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
+{
+    std::vector<MutationActions> result;
+    for (const auto & stage : stages)
+    {
+        for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
+        {
+            const auto & step = stage.expressions_chain.steps[i];
+            bool project_input = step->actions()->project_input;
+            if (i < stage.filter_column_names.size())
+                result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input});
+            else
+                result.push_back({step->actions()->dag.clone(), "", project_input});
+        }
+    }
+
+    return result;
+}
+
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
