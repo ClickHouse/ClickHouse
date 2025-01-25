@@ -408,7 +408,7 @@ std::string PostgreSQLHandler::ConvertPGDataToCH(const String & initial_data)
             data += "(" + current_data_part + "),";
             current_data_part.clear();
         }
-        else 
+        else
         {
             current_data_part.push_back(elem);
         }
@@ -444,7 +444,7 @@ void PostgreSQLHandler::processQuery()
         std::string query_text = query->query;
         ParserCopyQuery parser_copy;
         ASTPtr copy_query_parsed;
-        try 
+        try
         {
             copy_query_parsed = parseQuery(parser_copy, query_text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         }
@@ -475,7 +475,7 @@ void PostgreSQLHandler::processQuery()
                     ReadBufferFromString read_buf(insert_query);
                     executeQuery(read_buf, *out, false, query_context, {});
                 }
-                else 
+                else
                 {
                     break;
                 }
@@ -502,7 +502,7 @@ void PostgreSQLHandler::processQuery()
                 ReadBufferFromString read_buf_test(columns_count);
                 executeQuery(read_buf_test, out_buf, false, query_context, {});
                 int num_columns = std::stoi(std::string(res.begin(), res.end()));
-                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));                
+                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));       
             }
 
             {
@@ -515,7 +515,7 @@ void PostgreSQLHandler::processQuery()
                 executeQuery(read_buf_test, out_buf, false, query_context, {});
                 while (!res.empty() && res.back() == 0)
                     res.pop_back();
-                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(res));                
+                message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(res));    
             }
 
             message_transport->send(PostgreSQLProtocol::Messaging::CopyCompletionResponse());
