@@ -500,7 +500,7 @@ void PostgreSQLHandler::processQuery()
             ReadBufferFromString read_buf_columns_count(columns_count);
             executeQuery(read_buf_columns_count, out_buf, false, query_context, {});
             int num_columns = std::stoi(std::string(res.begin(), res.end()));
-            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));    
+            message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(num_columns));
 
             std::string select_query = fmt::format("SELECT * FROM {} FORMAT CSV;", copy_query->table_name);
             std::vector<char> result_select;
