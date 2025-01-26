@@ -26,7 +26,19 @@ DROP TABLE mv;
 
 CREATE MATERIALIZED VIEW mv TO dst AS SELECT x, y FROM src; -- { serverError THERE_IS_NO_COLUMN }
 
-DROP TABLE IF EXISTS mv;
+-- Creating an MV with a nonexistent target table is no longer possible
+SET allow_materialized_view_with_bad_select = 1;
+
+CREATE MATERIALIZED VIEW mv TO nonexistent AS SELECT x, y FROM src;
+
+INSERT INTO src VALUES (3, 3); -- { serverError UNKNOWN_TABLE }
+
+DROP TABLE mv;
+
+SET allow_materialized_view_with_bad_select = 0;
+
+CREATE MATERIALIZED VIEW mv TO nonexistent AS SELECT x, y FROM src; -- { serverError UNKNOWN_TABLE }
 
 DROP TABLE src;
 DROP TABLE dst;
+DROP TABLE IF EXISTS mv;
