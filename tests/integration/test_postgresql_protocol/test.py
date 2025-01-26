@@ -232,7 +232,6 @@ def test_copy_command(started_cluster):
     cur.execute("create table test (x UInt32) engine=Memory();")
     cur.execute("insert into test values (42),(43),(44),(45);")
     cur.execute("select * from test order by x;")
-
     assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
 
     with open(f"out_{file_index}.csv", "w") as f:
