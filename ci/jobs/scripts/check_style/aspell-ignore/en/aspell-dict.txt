@@ -1436,6 +1436,7 @@ auth
 authType
 authenticator
 authenticators
+authUser
 autocompletion
 autodetect
 autodetected

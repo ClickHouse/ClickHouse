@@ -53,7 +53,26 @@ public:
 
 REGISTER_FUNCTION(AuthUser)
 {
-    factory.registerFunction<FunctionAuthUser>();
+    factory.registerFunction<FunctionAuthUser>(FunctionDocumentation{
+        .description=R"(If the session user has been switched using the EXECUTE AS command, this function returns the name of the original user that was used for authentication and creating the session.)",
+        .syntax=R"(authUser())",
+        .arguments={},
+        .returned_value={R"(The name of the authenticated user.)", {"String"}},
+        .examples{
+            {"Usage example",
+            R"(
+            EXECUTE as u1;
+            SELECT currentUser(), authUser();
+            )",
+            R"(
+            ┌─currentUser()─┬─authUser()─┐
+            │ u1            │ default    │
+            └───────────────┴────────────┘
+            )"
+        }},
+        .introduced_in = {25, 11},
+        .category = FunctionDocumentation::Category::Other
+    });
 }
 
 }
