@@ -499,7 +499,7 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
     {
         deallocate = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
-    catch (const Exception &)   
+    catch (const Exception &)
     {
         return false;
     }
