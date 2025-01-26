@@ -12,6 +12,14 @@ class Info:
         self.env = _Environment.get()
 
     @property
+    def sha(self):
+        return self.env.SHA
+
+    @property
+    def pr_number(self):
+        return self.env.PR_NUMBER
+
+    @property
     def pr_body(self):
         return self.env.PR_BODY
 
@@ -20,8 +28,12 @@ class Info:
         return self.env.PR_TITLE
 
     @property
-    def pr_number(self):
-        return self.env.PR_NUMBER
+    def pr_url(self):
+        return self.env.CHANGE_URL
+
+    @property
+    def commit_url(self):
+        return self.env.COMMIT_URL
 
     @property
     def git_branch(self):
@@ -46,6 +58,18 @@ class Info:
     @property
     def pr_labels(self):
         return self.env.PR_LABELS
+
+    @property
+    def instance_type(self):
+        return self.env.INSTANCE_TYPE
+
+    @property
+    def instance_id(self):
+        return self.env.INSTANCE_ID
+
+    @property
+    def is_local_run(self):
+        return self.env.LOCAL_RUN
 
     def get_report_url(self, latest=False):
         from praktika.settings import Settings
