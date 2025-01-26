@@ -228,6 +228,8 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
+
+    pipeline.finalizeWriteInQueryCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -272,6 +274,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
 
     logProcessorProfile(context, pipeline.getProcessors());
+    pipeline.finalizeWriteInQueryCache();
 
     return set_and_key->set;
 }

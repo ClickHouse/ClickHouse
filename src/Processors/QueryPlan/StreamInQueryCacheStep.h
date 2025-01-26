@@ -12,7 +12,8 @@ class StreamInQueryCacheStep : public ITransformingStep
 public:
     StreamInQueryCacheStep(
         const Header & input_header_,
-        std::shared_ptr<QueryCache::Writer> writer_
+        std::shared_ptr<QueryCache::Writer> writer_,
+        const std::string& query
     );
 
     String getName() const override { return "StreamInQueryCacheStep"; }
@@ -26,6 +27,7 @@ private:
     }
 
     std::shared_ptr<QueryCache::Writer> writer;
+    std::string query;
 };
 
 }

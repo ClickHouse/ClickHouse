@@ -260,6 +260,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
+            io.pipeline.finalizeWriteInQueryCache();
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
         }
 
