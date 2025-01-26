@@ -28,7 +28,6 @@
 
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <fmt/format.h>
 
@@ -392,7 +391,7 @@ std::string PostgreSQLHandler::ConvertPGDataToCH(const String & initial_data)
 {
     std::string data;
     std::string current_data_part;
-    for (auto& elem : initial_data)
+    for (const auto& elem : initial_data)
     {
         if (elem == '\t')
         {
@@ -447,7 +446,7 @@ void PostgreSQLHandler::processQuery()
         {
             copy_query_parsed = parseQuery(parser_copy, query_text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         }
-        catch (...)
+        catch (const Exception &)
         { }
         if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
         {
