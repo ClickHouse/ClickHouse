@@ -4494,3 +4494,34 @@ Result:
 │                                         206 │
 └─────────────────────────────────────────────┘
 ```
+
+## authUser {#authUser}
+
+If the session user has been switched using the EXECUTE AS comand, this function returns the name of the original user that was used for authentication and creating the session.
+
+**Syntax**
+
+```sql
+authUser()
+```
+
+Aliases: None
+
+**Returned values**
+
+- The name of the authenticated user. [String](../data-types/string.md).
+
+**Example**
+
+```sql
+EXECUTE as u1;
+SELECT currentUser(), authUser();
+```
+
+Result:
+
+```text
+   ┌─currentUser()─┬─authUser()─┐
+1. │ u1            │ default    │
+   └───────────────┴────────────┘
+```

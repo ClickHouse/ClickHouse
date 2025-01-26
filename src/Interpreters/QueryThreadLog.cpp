@@ -52,6 +52,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
+        {"auth_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
         {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query."},
