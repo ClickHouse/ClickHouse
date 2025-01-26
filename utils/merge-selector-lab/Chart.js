@@ -5,7 +5,7 @@ export class Chart {
     {
         // Set up dimensions and margins
         this.width = document.documentElement.clientWidth;
-        this.height = 300;
+        this.height = 400;
         this.margin = { top: 20, right: 30, bottom: 60, left: 50 };
 
         // Initialize empty series array

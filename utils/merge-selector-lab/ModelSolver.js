@@ -22,7 +22,7 @@ export class ModelSolver {
         const xSum = Math.log(parts);
         const Lopt = Math.floor(xSum);
         let solutions = [];
-        for (let L = 1; L <= Lopt; L++)
+        for (let L = 1; L <= Lopt + 1; L++)
             solutions.push(xSum / L);
         return solutions;
     }
@@ -74,8 +74,6 @@ export class ModelSolver {
         const i1 = i0 + 1;
         const j1 = j0 + 1;
 
-        // ------- TODO ------------
-        // TODO(serxa): check boundary conditions
         // Get precomputed solutions at nearest points
         const x00 = this.#getSolutions(i0, j0);
         const x01 = this.#getSolutions(i0, j1);
@@ -134,7 +132,7 @@ export class ModelSolver {
         const xSum = Math.log(finalSize);
         const xMax = Math.log(maxSourceParts);
 
-        let solutions = this.solve({
+        const solutions = this.solve({
             parts,
             workers,
             maxSourceParts,
@@ -154,13 +152,14 @@ export class ModelSolver {
             let Fx = 0; // Objective function
 
             // We only store x[0] values, and to restore x[1]..x[L-1] values we recursively solve smaller subproblems
-            for (let i = 0; i < L; i++) {
+            for (let l = L; l >= 1;) {
                 let xi = Math.min(xMax, solution);
                 x.push(xi);
                 Fx += this.F0(xi, partsLeft, workers);
                 partsLeft /= Math.exp(xi);
+                l--;
 
-                if (i != L - 1) {
+                if (l != 0) {
                     let res = this.solve({
                         parts: partsLeft,
                         workers,
@@ -168,14 +167,13 @@ export class ModelSolver {
                         maxPartSize,
                         insertPartSize
                     });
-                    // We are interested in solution for the rest number of layers only
-                    solution = res[L - 2 - i];
-                    if (!solution)
-                        throw { message: "Solve failed", res };
+                    if (l > res.length)
+                        break; // Solution is not optimal
+                    solution = res[l - 1];
                 }
             }
-
-            onOption(L, x, Fx);
+            if (x.length == L)
+                onOption(L, x, Fx);
         }
     }
 

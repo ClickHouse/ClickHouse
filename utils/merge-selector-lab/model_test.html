@@ -120,7 +120,7 @@
                 let result = function(params, onOption) {
                     solver.mergeModel(params, onOption);
                 };
-                result.precomputed = true;
+                result.isModelSolver = true;
                 return result;
             }
 
@@ -128,8 +128,8 @@
                 "Subgradient Method": subgradientMethod,
                 "Projected GD": projectedGradientDescent,
                 "Accelerated PGD": nesterovAcceleratedPGD,
-                "PC-x4": await loadSolver("solver-64KB_256GB_32768_x4_x4"),
-                "PC-x1": await loadSolver("solver-64KB_256GB_32768"),
+                "BLI-x4": await loadSolver("solver-64KB_256GB_32768_x4_x4"),
+                "BLI-x1": await loadSolver("solver-64KB_256GB_32768"),
             };
 
             // Populate methods dropdown
@@ -181,7 +181,7 @@
                 d3.select('#options-table tbody').html('');
 
                 function solve(params, method, onOption) {
-                    if ('precomputed' in method) {
+                    if ('isModelSolver' in method) {
                         method(params, onOption);
                     } else {
                         mergeModel(params, method, onOption);

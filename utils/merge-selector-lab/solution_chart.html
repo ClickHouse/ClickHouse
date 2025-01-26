@@ -16,11 +16,11 @@
                     </div>
                     <div class="form-group col-md-4">
                         <label for="parts">Initial parts count:</label>
-                        <input type="text" class="form-control form-control-sm" id="parts" value="logrange(4,1024,1.1)">
+                        <input type="text" class="form-control form-control-sm" id="parts" value="logrange(4,100000,1.1)">
                     </div>
                     <div class="form-group col-md-4">
                         <label for="poolSize">Workers in merge pool:</label>
-                        <input type="text" class="form-control form-control-sm" id="poolSize" value="16">
+                        <input type="text" class="form-control form-control-sm" id="poolSize" value="100">
                     </div>
                 </div>
                 <div class="row">
@@ -34,7 +34,7 @@
                     </div>
                     <div class="form-group col-md-4">
                         <label for="layers">Layers:</label>
-                        <input type="text" class="form-control form-control-sm" id="layers" value="range(1,10,1)">
+                        <input type="text" class="form-control form-control-sm" id="layers" value="range(2,10,1)">
                     </div>
                 </div>
                 <div class="row">
@@ -160,9 +160,9 @@
             };
 
             const solvers = {
-                "PC-x4": await loadSolver("solver-64KB_256GB_32768_x4_x4"),
-                "PC-x1": await loadSolver("solver-64KB_256GB_32768"),
                 "None": null,
+                "BLI-x4": await loadSolver("solver-64KB_256GB_32768_x4_x4"),
+                "BLI-x1": await loadSolver("solver-64KB_256GB_32768"),
             };
 
             const xAxes = {
@@ -281,7 +281,7 @@
                             this.chartDiv,
                             xAxis,
                             yAxis,
-                            `This chart shows how gradient descent and precomputed solver compares`
+                            `This chart shows solutions`
                         );
                         this.xAxis = xAxis;
                         this.yAxis = yAxis;
@@ -363,7 +363,7 @@
                 if (selectedMethod)
                     runners.GD = selectedMethod;
                 if (selectedSolver)
-                    runners.PC = selectedSolver;
+                    runners.BLI = selectedSolver;
 
                 if (insertPartSizeArray.length == 1)
                     series.ignoreKey('insertPartSize');
