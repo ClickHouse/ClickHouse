@@ -235,9 +235,9 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
 
-    with open("out.csv", "w") as f:
+    with open(f"out_{file_index}.csv", "w") as f:
         cur.copy_to(file=f, table="test")
-    with open("out.csv", "r") as f:
+    with open(f"out_{file_index}.csv", "r") as f:
         assert f.read() == "42\n43\n44\n45\n"
 
     cur.execute("create table test_recreated (x UInt32) engine=Memory();")
@@ -256,9 +256,9 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(42, "a"), (43, "b"), (44, "c"), (45, "d")]
 
-    with open("out.csv", "w") as f:
+    with open(f"out_{file_index + 1}.csv", "w") as f:
         cur.copy_to(file=f, table="test")
-    with open("out.csv", "r") as f:
+    with open(f"out_{file_index + 1}.csv", "r") as f:
         assert f.read() == '42,"a"\n43,"b"\n44,"c"\n45,"d"\n'
 
     cur.execute("create table test_recreated (x UInt32, y String) engine=Memory();")
