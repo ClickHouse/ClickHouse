@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
