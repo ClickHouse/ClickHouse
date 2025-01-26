@@ -197,9 +197,11 @@ def test_prepared_statement(started_cluster):
     cur = ch.cursor()
     cur.execute("drop table if exists test;")
 
-    cur.execute("""CREATE TABLE test(
-        id INT
-    ) ENGINE = Memory;""")
+    cur.execute(
+        """CREATE TABLE test(
+            id INT
+        ) ENGINE = Memory;"""
+    )
 
     cur.execute("INSERT INTO test (id) VALUES (1), (2), (3);")
 

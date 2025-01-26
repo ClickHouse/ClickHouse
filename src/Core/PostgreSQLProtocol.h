@@ -634,7 +634,7 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    std::vector<String> parametrs;
+    std::vector<String> parameters;
     Int32 num_params;
 
     void deserialize(ReadBuffer & in) override
@@ -657,7 +657,7 @@ public:
             readBinaryBigEndian(sz_param, in);
             String current_param;
             readNullTerminated(current_param, in);
-            parametrs.push_back(current_param);
+            parameters.push_back(current_param);
         }
 
         Int16 num_format_params_result;
@@ -1101,7 +1101,7 @@ public:
 
     String getStatmentFromBind()
     {
-        auto result = getStatement(bind_query->function_name, bind_query->parametrs);
+        auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         bind_query.reset();
         return result;

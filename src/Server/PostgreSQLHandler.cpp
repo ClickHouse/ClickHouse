@@ -448,11 +448,11 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
 {
     auto parser = ParserPrepare();
     ASTPtr prepare;
-    try 
+    try
     {
-        prepare = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);    
-    } 
-    catch (const Exception &) 
+        prepare = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
     {
         return false;
     }
@@ -469,11 +469,11 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 {
     auto parser = ParserExecute();
     ASTPtr prepare;
-    try 
+    try
     {
-        prepare = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);    
-    } 
-    catch (const Exception &) 
+        prepare = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
     {
         return false;
     }
@@ -495,11 +495,11 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
 {
     auto parser = ParserDeallocate();
     ASTPtr deallocate;
-    try 
+    try
     {
-        deallocate = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);    
-    } 
-    catch (const Exception &) 
+        deallocate = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)   
     {
         return false;
     }
@@ -522,7 +522,7 @@ void PostgreSQLHandler::processParseQuery()
         auto statement = std::make_shared<ASTPreparedStatement>();
         statement->function_name = query->function_name;
         statement->function_body = query->sql_query;
-        prepared_statements_manager.addStatement(statement.get());        
+        prepared_statements_manager.addStatement(statement.get());
         message_transport->send(PostgreSQLProtocol::Messaging::ParseQueryComplete(), true);
     }
     catch (const Exception & e)
@@ -544,8 +544,8 @@ void PostgreSQLHandler::processBindQuery()
 
         auto statement = std::make_shared<ASTPreparedStatement>();
         statement->function_name = query->function_name;
-        prepared_statements_manager.addStatement(statement.get());     
-        message_transport->send(PostgreSQLProtocol::Messaging::BindQueryComplete(), true);   
+        prepared_statements_manager.addStatement(statement.get());
+        message_transport->send(PostgreSQLProtocol::Messaging::BindQueryComplete(), true);
     }
     catch (const Exception & e)
     {
