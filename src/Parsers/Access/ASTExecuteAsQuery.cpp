@@ -18,13 +18,14 @@ ASTPtr ASTExecuteAsQuery::clone() const
 
     if (targetuser)
         res->targetuser = std::static_pointer_cast<ASTRolesOrUsersSet>(targetuser->clone());
-
+    if (select)
+        res->set(res->select, select->clone());
 
     return res;
 }
 
 
-void ASTExecuteAsQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTExecuteAsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << (settings.hilite ? hilite_keyword : "");
     ostr << "EXECUTE AS";
@@ -32,5 +33,11 @@ void ASTExecuteAsQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & se
 
     ostr << " ";
     targetuser->format(ostr, settings);
+
+    if (select)
+    {
+        ostr << settings.nl_or_ws;
+        select->format(ostr, settings, state, frame);
+    }
 }
 }

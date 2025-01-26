@@ -2,3 +2,9 @@ serviceuser	serviceuser
 serviceuser	appuser1
 0
 serviceuser	appuser2
+serviceuser	appuser1
+serviceuser	serviceuser
+0
+serviceuser	serviceuser
+serviceuser	appuser2
+serviceuser	serviceuser
