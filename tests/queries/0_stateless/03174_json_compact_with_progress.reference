@@ -1,0 +1,12 @@
+1
+{"meta":[{"name":"value","type":"UInt8"},{"name":"name","type":"String"}]}
+{"row":[1, "a"]}
+{"row":[2, "b"]}
+{"row":[3, "c"]}
+2
+{"meta":[{"name":"name","type":"String"},{"name":"c","type":"UInt64"}]}
+{"row":["a", "1"]}
+{"row":["b", "1"]}
+{"row":["c", "1"]}
+3
+{"exception":"Code: 395"}
