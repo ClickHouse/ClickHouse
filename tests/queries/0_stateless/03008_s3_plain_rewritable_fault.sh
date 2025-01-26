@@ -23,8 +23,8 @@ trap on_exit EXIT
 set -eu
 
 REMOVAL_STATE_CONDITION="(
-    removal_state='Part was selected to be removed but then it had been rollbacked. The remove will be retried.'
-    OR removal_state='Retry to remove part.')"
+    removal_state='Part was selected to be removed but then it had been rollbacked. The remove will be retried'
+    OR removal_state='Retry to remove part')"
 
 STATE_CONDITION="_state in ['Deleting', 'Outdated']"
 
