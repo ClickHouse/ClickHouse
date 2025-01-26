@@ -6,10 +6,12 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
-#include "Types.h"
+#include <Parsers/ParserPreparedStatement.h>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TYPE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -48,6 +51,7 @@ enum class FrontMessageType : Int32
     SYNC = 'S',
     FLUSH = 'H',
     CLOSE = 'C',
+    EXECUTE = 'E',
 };
 
 enum class MessageType : Int32
@@ -578,6 +582,140 @@ public:
     }
 };
 
+class ParseQuery : FrontMessage
+{
+public:
+    String function_name;
+    String sql_query;
+    Int16 num_params;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(function_name, in);
+        readNullTerminated(sql_query, in);
+        readBinaryBigEndian(num_params, in);
+        Int32 oid_param;
+        for (int i = 0; i < num_params; ++i)
+            readBinaryBigEndian(oid_param, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::PARSE;
+    }
+};
+
+class ParseQueryComplete : BackendMessage
+{
+public:
+    ParseQueryComplete() = default;
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('1');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::PARSE_COMPLETE;
+    }
+};
+
+class BindQuery : FrontMessage
+{
+public:
+    String portal_name;
+    String function_name;
+    std::vector<String> parametrs;
+    Int32 num_params;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(portal_name, in);
+        readNullTerminated(function_name, in);
+
+        Int16 num_format_params;
+        readBinaryBigEndian(num_format_params, in);
+        Int16 format_param;
+        for (Int16 i = 0; i < num_format_params; ++i)
+            readBinaryBigEndian(format_param, in);
+
+        readBinaryBigEndian(num_params, in);
+        for (int i = 0; i < num_params; ++i)
+        {
+            Int32 sz_param;
+            readBinaryBigEndian(sz_param, in);
+            String current_param;
+            readNullTerminated(current_param, in);
+            parametrs.push_back(current_param);
+        }
+
+        Int16 num_format_params_result;
+        readBinaryBigEndian(num_format_params_result, in);
+        Int16 format_param_result;
+        for (Int16 i = 0; i < num_format_params_result; ++i)
+            readBinaryBigEndian(format_param_result, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::BIND;
+    }
+};
+
+class BindQueryComplete : BackendMessage
+{
+public:
+    BindQueryComplete() = default;
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('2');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::BIND_COMPLETE;
+    }
+};
+
+class ExecuteQuery : FrontMessage
+{
+public:
+    String function_name;
+    Int32 max_rows;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(function_name, in);
+        readBinaryBigEndian(max_rows, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::BIND;
+    }
+
+};
+
 class EmptyQueryResponse : public BackendMessage
 {
 public:
@@ -739,9 +877,9 @@ public:
 class CommandComplete : BackendMessage
 {
 public:
-    enum Command {BEGIN = 0, COMMIT = 1, INSERT = 2, DELETE = 3, UPDATE = 4, SELECT = 5, MOVE = 6, FETCH = 7, COPY = 8};
+    enum Command {BEGIN = 0, COMMIT = 1, INSERT = 2, DELETE = 3, UPDATE = 4, SELECT = 5, MOVE = 6, FETCH = 7, COPY = 8, EXECUTE = 9};
 private:
-    String enum_to_string[9] = {"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY"};
+    String enum_to_string[10] = {"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"};
 
     String value;
 
@@ -774,7 +912,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        std::vector<String> query_types({"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY"});
+        std::vector<String> query_types({"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"});
         for (size_t i = 0; i != query_types.size(); ++i)
         {
             String::const_iterator iter = std::search(
@@ -918,6 +1056,83 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "None of the authentication methods registered for the user are supported");
     }
 };
+}
+
+namespace PostgresPreparedStatements
+{
+
+class PreparedStatemetsManager
+{
+public:
+    explicit PreparedStatemetsManager(std::optional<size_t> limit_statements_)
+        : limit_statements(limit_statements_)
+    {
+    }
+
+    void addStatement(ASTPreparedStatement * statement)
+    {
+        if (limit_statements && statements.size() + 1 >= limit_statements.value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Statements limit exceeded");
+
+        statements[statement->function_name] = statement->function_body;
+    }
+
+    String getStatement(ASTExecute * execute)
+    {
+        return getStatement(execute->function_name, execute->arguments);
+    }
+
+    void deleteStatement(ASTDeallocate * query)
+    {
+        auto it = statements.find(query->function_name);
+        if (it == statements.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statement");
+
+        statements.erase(it);
+    }
+
+    void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
+    {
+        if (bind_query)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is already binded");
+
+        bind_query = std::move(query);
+    }
+
+    String getStatmentFromBind()
+    {
+        auto result = getStatement(bind_query->function_name, bind_query->parametrs);
+
+        bind_query.reset();
+        return result;
+    }
+
+private:
+    std::unordered_map<String, String> statements;
+    std::optional<size_t> limit_statements;
+    std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
+
+    String getStatement(const String & function_name, const std::vector<String> & arguments)
+    {
+        auto it = statements.find(function_name);
+        if (it == statements.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statement");
+
+        auto body = it->second;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            auto templ = "$" + std::to_string(i + 1);
+            auto pos = body.find(templ);
+            if (pos != std::string::npos)
+            {
+                body.replace(pos, templ.size(), arguments[i]);
+            }
+        }
+        return body;
+    }
+
+};
+
 }
 
 }

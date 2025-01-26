@@ -73,6 +73,7 @@ private:
     ProfileEvents::Event write_event;
 
     PostgreSQLProtocol::PGAuthentication::AuthenticationManager authentication_manager;
+    PostgreSQLProtocol::PostgresPreparedStatements::PreparedStatemetsManager prepared_statements_manager;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::PostgreSQLConnection};
 
@@ -91,6 +92,14 @@ private:
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
     void processQuery();
+
+    bool processPrepareStatement(const String & query);
+    bool processExecute(const String & query, ContextMutablePtr query_context);
+    bool processDeallocate(const String & query);
+
+    void processParseQuery();
+    void processBindQuery();
+    void processExecuteQuery();
 
     static bool isEmptyQuery(const String & query);
 };
