@@ -48,7 +48,7 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     /// support 1) EXECUTE AS <user1>  2) EXECUTE AS <user1> SELECT ...
 
-    if(ParserKeyword{Keyword::SELECT}.checkWithoutMoving(pos, expected))
+    if (ParserKeyword{Keyword::SELECT}.checkWithoutMoving(pos, expected))
     {
         ParserSelectWithUnionQuery select_p;
         ASTPtr select;

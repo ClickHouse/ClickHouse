@@ -41,7 +41,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
             auto select_query = InterpreterSelectWithUnionQuery(query.select->clone(), getContext()->getSessionContext(), {});
             return_value = select_query.execute();
         }
-        catch(...)
+        catch (...)
         {
             restore_previous_user();
             throw;
