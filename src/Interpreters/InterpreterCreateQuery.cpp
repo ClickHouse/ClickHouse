@@ -1070,7 +1070,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         if (to_table)
         {
-            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList();
+            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlockInsertable().getNamesAndTypesList();
             check_columns = true;
         }
     }
