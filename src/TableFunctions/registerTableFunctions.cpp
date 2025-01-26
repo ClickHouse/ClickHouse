@@ -61,7 +61,9 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+
     registerTableFunctionTimeSeries(factory);
+    registerTableFunctionPrometheusQuery(factory);
 
     registerTableFunctionObjectStorage(factory);
     registerTableFunctionObjectStorageCluster(factory);
