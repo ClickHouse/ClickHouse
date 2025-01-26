@@ -1,4 +1,4 @@
-export function mergeModel({parts, workers, maxSourceParts, maxPartSize, insertPartSize}, method, onOption) {
+export function mergeModel({parts, workers, maxSourceParts, maxPartSize, insertPartSize}, method, onOption, xInit = {}) {
     // Total number of bytes in all parts (just to keep track of proper units)
     const B = 1;
 
@@ -61,13 +61,17 @@ export function mergeModel({parts, workers, maxSourceParts, maxPartSize, insertP
         if (xMax * L < xSum)
             continue;
 
-        let x = method(grad_F, L, xSum, xMax /*,eta*/);
+        if (!(L in xInit))
+            xInit[L] = Array(L).fill(xSum / L);
+        let x = method(grad_F, L, xSum, xMax, xInit[L]);
+        xInit[L] = x; // We save solution back to xInit to be reused in subsequent calls
         let Fx = F(x);
+
+        onOption(L, x, Fx);
 
         // Stop if Fx begins to increase, this increase both write amplification and avg part count
         if (Fx > prevFx)
             return;
-        onOption(L, x, Fx);
         prevFx = Fx;
     }
 }

@@ -59,7 +59,7 @@
                 </div>
                 <div class="row mt-3">
                     <div class="col">
-                        <button type="button" class="btn btn-primary" id="compareButton">Compare</button>
+                        <button type="button" class="btn btn-primary" id="solveButton">Solve</button>
                     </div>
                 </div>
             </form>
@@ -160,7 +160,8 @@
             };
 
             const solvers = {
-                "Precomputed": await loadSolver("solver-64KB_256GB_32768"),
+                "PC-x4": await loadSolver("solver-64KB_256GB_32768_x4_x4"),
+                "PC-x1": await loadSolver("solver-64KB_256GB_32768"),
                 "None": null,
             };
 
@@ -229,10 +230,10 @@
                 return params;
             }
 
-            document.getElementById('compareButton').addEventListener('click', async () => {
-                const compareButton = document.getElementById('compareButton');
-                compareButton.textContent = '⏳';
-                compareButton.disabled = true;
+            document.getElementById('solveButton').addEventListener('click', async () => {
+                const solveButton = document.getElementById('solveButton');
+                solveButton.textContent = '⏳';
+                solveButton.disabled = true;
 
                 const {
                     insertPartSizeArray,
@@ -253,19 +254,15 @@
                 function calculateBases(params, runner) {
                     if (runner instanceof ModelSolver) {
                         return runner.solve(params);
-                        // return Math.exp(solution.pop()); // Optimal value is the last one
                     } else {
-                        let xOpt;
                         let solutions = [];
                         mergeModel(params,
                             runner, // GD method
                             function onOption(L, x, Fx) {
                                 solutions[L - 1] = x[0];
-                                // xOpt = x[0]; // Optimal value is the last one, but we compare only the first base
                             }
                         );
                         return solutions;
-                        // return Math.exp(xOpt);
                     }
                 }
 
@@ -411,10 +408,10 @@
                 }
 
                 const endTime = performance.now(); // End timing
-                console.log(`Compare time: ${(endTime - startTime).toFixed(2)} ms`); // Log time
+                console.log(`Solve time: ${(endTime - startTime).toFixed(2)} ms`); // Log time
 
-                compareButton.textContent = 'Compare';
-                compareButton.disabled = false;
+                solveButton.textContent = 'Solve';
+                solveButton.disabled = false;
             });
         </script>
     </body>

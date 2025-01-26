@@ -8,6 +8,8 @@ export class ModelSolver {
         this.workersMin = 1;
         this.workersMax = null;
         this.minRatioExp = Math.log2(this.partsMin / this.workersMin);
+        this.partsStep = 1;
+        this.workersStep = 1;
     }
 
     // Returns solutions for arbitrary i given unlimited worker pool
@@ -27,19 +29,20 @@ export class ModelSolver {
 
     // Returns solutions for integer i and j
     #getSolutions(i, j) {
+        const xSum = Math.log(this.partsMin) + i * this.partsStep * Math.LN2;
         if (i < 0) // There are too few parts -- merge at once
-            return [Math.log(this.partsMin) + i * Math.LN2];
-        if (this.minRatioExp < j - i + 1) // Equivalent to `workers > parts / 2`
-            return this.#getSolutionsForUnlimitedWorkers(this.partsMin * (1 << i));
+            return [xSum];
+        if (this.minRatioExp < j * this.workersStep - i * this.partsStep + 1) // Equivalent to `workers > parts / 2`
+            return this.#getSolutionsForUnlimitedWorkers(this.partsMin * Math.pow(2, i * this.partsStep));
         if (i < this.data.length) {
             const data_i = this.data[i];
             if (j < data_i.length)
-                return data_i[j];
+                return [xSum, ...data_i[j]];
         }
         throw {
             message: "parts or workers are out of range for solver",
-            parts: this.partsMin * (1 << i),
-            workers: this.workersMin * (1 << j),
+            parts: this.partsMin * Math.pow(2, i * this.partsStep),
+            workers: this.workersMin * Math.pow(2, j * this.workersStep),
             partsMax: this.partsMax,
             workersMax: this.workersMax,
         };
@@ -59,22 +62,20 @@ export class ModelSolver {
             parts : // Max part size is unlimited - we merge all parts into one big part
             maxPartSize / insertPartSize);
 
-        // Constraints
+        // TODO(serxa): Constraints
         const xSum = Math.log(finalSize);
         const xMax = Math.log(maxSourceParts);
 
         // Find points for interpolation
-        const i = Math.log2(finalSize / this.partsMin);
-        const j = Math.log2(workers / this.workersMin);
+        const i = Math.log2(finalSize / this.partsMin) / this.partsStep;
+        const j = Math.log2(workers / this.workersMin) / this.workersStep;
         const i0 = Math.floor(i);
         const j0 = Math.floor(j);
         const i1 = i0 + 1;
         const j1 = j0 + 1;
 
-        console.log("SOLVE", {i0, j0, i, j});
-
         // ------- TODO ------------
-        // TODO: check boundary conditions
+        // TODO(serxa): check boundary conditions
         // Get precomputed solutions at nearest points
         const x00 = this.#getSolutions(i0, j0);
         const x01 = this.#getSolutions(i0, j1);
@@ -103,13 +104,11 @@ export class ModelSolver {
         const c01 = ci0 * cj1;
         const c11 = ci1 * cj1;
 
+        // Bilinear interpolation
         let result = [];
         for (let k = 0; k < len; k++) {
             result.push(c00 * x00[k] + c10 * x10[k] + c01 * x01[k] + c11 * x11[k]);
         }
-
-        console.log({x00, x01, x10, result});
-
         return result;
     }
 
@@ -181,10 +180,16 @@ export class ModelSolver {
     }
 
     // Solves models in a number of points and store solution for futher interpolation
-    async train(minPartSize, maxPartSize, workersMax, method, onProgress) {
+    async train(minPartSize, maxPartSize, workersMax, partsStep, workersStep, method, onProgress) {
         // Feasible ranges for parameters
         this.partsMax = maxPartSize / minPartSize;
         this.workersMax = workersMax;
+
+        // Steps
+        this.partsStep = partsStep;
+        this.workersStep = workersStep;
+        const partsMult = Math.pow(2, this.partsStep);
+        const workersMult = Math.pow(2, this.workersStep);
 
         // Prepare to report progress
         let runs_total = 0;
@@ -192,18 +197,19 @@ export class ModelSolver {
         let last_logged = 0;
 
         // Cumpute number of model runs
-        for (let i = 0, parts = this.partsMin; parts <= this.partsMax; parts *= 2, i++) {
-            for (let j = 0, workers = this.workersMin; workers <= this.workersMax; workers *= 2, j++) {
+        for (let i = 0, parts = this.partsMin; parts <= this.partsMax; parts *= partsMult, i++) {
+            for (let j = 0, workers = this.workersMin; workers <= this.workersMax; workers *= workersMult, j++) {
                 if (workers <= parts / 2)
                     runs_total++;
             }
         }
 
-        for (let i = 0, parts = this.partsMin; parts <= this.partsMax; parts *= 2, i++) {
+        for (let i = 0, parts = this.partsMin; parts <= this.partsMax; parts *= partsMult, i++) {
             if (this.data.length <= i)
                 this.data[i] = [];
             let data_i = this.data[i];
-            for (let j = 0, workers = this.workersMin; workers <= this.workersMax; workers *= 2, j++) {
+            let xInit = {}; // Cache: reuse previous solutions as initial guess for the next model run
+            for (let j = 0, workers = this.workersMin; workers <= this.workersMax; workers *= workersMult, j++) {
                 if (workers > parts / 2)
                     continue; // too many workers
                 if (data_i.length <= j)
@@ -212,10 +218,13 @@ export class ModelSolver {
                 this.model({parts, workers, maxSourceParts: parts, maxPartSize: null, insertPartSize: null},
                     method,
                     function onOption(L, x, Fx) {
-                        // TODO(serxa): do not save value for L=1, it's always equal to log(parts)
-                        data_i_j[L - 1] = x[0];
+                        // We don't save value for L=1, it's always equal to log(parts)
+                        if (L == 1)
+                            return;
+                        data_i_j[L - 2] = x[0];
                         console.log({parts, workers, L, Fx, x: x[0]});
-                    }
+                    },
+                    xInit
                 );
                 runs_done++;
                 const progress = Math.floor(runs_done * 100 / runs_total);
@@ -234,6 +243,8 @@ export class ModelSolver {
         return JSON.stringify({
             partsMax: this.partsMax,
             workersMax: this.workersMax,
+            partsStep: this.partsStep,
+            workersStep: this.workersStep,
             data: this.data,
         });
     }
@@ -244,6 +255,8 @@ export class ModelSolver {
             const parsed = JSON.parse(jsonString);
             this.partsMax = parsed.partsMax;
             this.workersMax = parsed.workersMax;
+            this.partsStep = parsed.partsStep ?? 1;
+            this.workersStep = parsed.workersStep ?? 1;
             this.data = parsed.data;
         } catch (error) {
             throw { message: "Failed to deserialize solver", error };

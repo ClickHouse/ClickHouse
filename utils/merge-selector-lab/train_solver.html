@@ -47,6 +47,16 @@
                         <input type="text" class="form-control form-control-sm" id="maxWorkers" placeholder="Maximum workers" value="32768">
                     </div>
                 </div>
+                <div class="row">
+                    <div class="form-group col-md-4">
+                        <label for="partsStep">Part size step:</label>
+                        <input type="text" class="form-control form-control-sm" id="partsStep" placeholder="Power of 2 exponent" value="0.25">
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="workersStep">Workers step:</label>
+                        <input type="text" class="form-control form-control-sm" id="workersStep" placeholder="Power of 2 exponent" value="0.25">
+                    </div>
+                </div>
                 <div class="row mt-3">
                     <div class="col">
                         <button type="button" class="btn btn-primary" id="trainButton">
@@ -79,6 +89,8 @@
                     minPartSize: readSize('minPartSize'),
                     maxPartSize: readSize('maxPartSize'),
                     maxWorkers: readSize('maxWorkers'),
+                    partsStep: readSize('partsStep'),
+                    workersStep: readSize('workersStep'),
                 };
                 console.log("PARAMS", params);
                 return params;
@@ -95,10 +107,10 @@
                 progressFill.style.width = '0%';
                 downloadButton.style.display = 'none';
 
-                const { minPartSize, maxPartSize, maxWorkers } = readParams();
+                const { minPartSize, maxPartSize, maxWorkers, partsStep, workersStep } = readParams();
 
                 let solver = new ModelSolver(mergeModel);
-                await solver.train(minPartSize, maxPartSize, maxWorkers, subgradientMethod,
+                await solver.train(minPartSize, maxPartSize, maxWorkers, partsStep, workersStep, subgradientMethod,
                     async function onProgress({progress, runs_done, runs_total}) {
                         // Update progress bar (button background)
                         progressFill.style.width = `${progress}%`;
@@ -124,6 +136,8 @@
                         document.getElementById('minPartSize').value,
                         document.getElementById('maxPartSize').value,
                         document.getElementById('maxWorkers').value,
+                        'x' + (1.0 / +document.getElementById('partsStep').value),
+                        'x' + (1.0 / +document.getElementById('workersStep').value),
                     ];
                     link.download = `solver-${params.join('_')}.json`;
                     link.click();

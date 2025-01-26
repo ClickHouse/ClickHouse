@@ -62,13 +62,14 @@ export function projectedGradientDescent(
     L,               // dimension of x
     xSum,            // sum(x[i]) constraint
     xMax,            // maximum bound for each x[i]
+    xInit = initialGuess(L, xSum),
     eta = 1e-3,      // step size
     projFn = defaultProjection,
     maxIterations = 100000,
     tolerance = 1e-5,
 ) {
     const projection = (x) => projFn(x, L, xSum, xMax);
-    let x = initialGuess(L, xSum);
+    let x = xInit;
 
     // Check unfeasibility
     if (xMax * L <= xSum)
@@ -105,6 +106,7 @@ export function nesterovAcceleratedPGD(
     L,               // dimension of x
     xSum,            // sum(x[i]) constraint
     xMax,            // maximum bound for each x[i]
+    xInit = initialGuess(L, xSum),
     eta = 1e-3,      // step size
     projFn = defaultProjection,
     maxIterations = 100000,
@@ -112,7 +114,7 @@ export function nesterovAcceleratedPGD(
     momentum = 0.9,  // typical momentum values in [0.7, 0.99]
 ) {
     const projection = (x) => projFn(x, L, xSum, xMax);
-    let x = initialGuess(L, xSum);
+    let x = xInit;
 
     // Check unfeasibility
     if (xMax * L <= xSum)
@@ -166,13 +168,14 @@ export function subgradientMethod(
     L,               // dimension of x
     xSum,            // sum(x[i]) constraint
     xMax,            // maximum bound for each x[i]
+    xInit = initialGuess(L, xSum),
     alpha = 1e-1,    // initial step size
     projFn = defaultProjection,
     maxIterations = 1000000,
     tolerance = 1e-6,
 ) {
     const projection = (x) => projFn(x, L, xSum, xMax);
-    let x = initialGuess(L, xSum);
+    let x = xInit;
 
     // Check unfeasibility
     if (xMax * L <= xSum)
