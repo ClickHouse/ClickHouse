@@ -46,6 +46,12 @@ $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --multiline -q "CRE
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --multiline -q "EXECUTE AS appuser1; SELECT authUser(), currentUser(); SELECT count(*) FROM testdb03252.test1;"  --user serviceuser
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --multiline -q "EXECUTE AS appuser2; SELECT authUser(), currentUser(); SELECT count(*) FROM testdb03252.test1; -- {serverError ACCESS_DENIED} -- "  --user serviceuser
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --multiline -q "EXECUTE AS otheruser; -- {serverError ACCESS_DENIED} -- "  --user serviceuser
+$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --multiline -q "EXECUTE AS appuser1 SELECT authUser(), currentUser(); SELECT authUser(), currentUser(); EXECUTE AS appuser1 SELECT count(*) FROM testdb03252.test1; SELECT authUser(), currentUser();"  --user serviceuser
+
+#the count(*) as 'appuser2' will fail and session will be successfully switched back to 'serviceuser'
+#But the "SELECT authUser(), currentUser()" query after the ACCESS_DENIED is not being executed by
+#clickhouse client for some reason. Even --ignore-error does not help.
+$CLICKHOUSE_CLIENT_BINARY --ignore-error --host 127.1 --port "$server_port" -q "EXECUTE AS appuser2 SELECT authUser(), currentUser(); SELECT authUser(), currentUser(); EXECUTE AS appuser2 SELECT count(*) FROM testdb03252.test1; -- {serverError ACCESS_DENIED} -- ; SELECT authUser(), currentUser(); "  --user serviceuser
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --multiline -q "DROP USER IF EXISTS serviceuser, appuser1, appuser2, otheruser; DROP TABLE testdb03252.test1; DROP DATABASE testdb03252;"
 # send TERM and save the error code to ensure that it is 0 (EXIT_SUCCESS)
 kill $server_pid

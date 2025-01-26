@@ -1839,7 +1839,7 @@ void Context::switchImpersonateUser(const RolesOrUsersSet & new_user)
     auto new_user_uuid = *(new_user.ids.begin());
     setUser(new_user_uuid);
     setCurrentUserName(getUser()->getName());
-    setInitialUserName(getUser()->getName());
+    setInitialUserName(getUser()->getName()); /// ensure to update the client_info
 }
 
 std::vector<UUID> Context::getCurrentRoles() const
@@ -6235,12 +6235,6 @@ void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address
 void Context::setInitialUserName(const String & initial_user_name)
 {
     client_info.initial_user = initial_user_name;
-    need_recalculate_access = true;
-}
-
-void Context::setAuthUserName(const String & auth_user_name)
-{
-    client_info.auth_user = auth_user_name;
     need_recalculate_access = true;
 }
 

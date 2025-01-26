@@ -2,6 +2,8 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 
 
@@ -44,6 +46,17 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     query->targetuser = targetuser;
 
+    /// support 1) EXECUTE AS <user1>  2) EXECUTE AS <user1> SELECT ...
+
+    if(ParserKeyword{Keyword::SELECT}.checkWithoutMoving(pos, expected))
+    {
+        ParserSelectWithUnionQuery select_p;
+        ASTPtr select;
+
+        if (!select_p.parse(pos, select, expected))
+            return false;
+        query->set(query->select, select);
+    }
     return true;
 }
 
