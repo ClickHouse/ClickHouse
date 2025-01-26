@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
+void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     ostr << (settings.hilite ? hilite_alias : "");
     ostr << table_name;
