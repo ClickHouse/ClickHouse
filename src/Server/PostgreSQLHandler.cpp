@@ -447,7 +447,9 @@ void PostgreSQLHandler::processQuery()
             copy_query_parsed = parseQuery(parser_copy, query_text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         }
         catch (const Exception &)
-        { }
+        { 
+            copy_query_parsed.reset();
+        }
         if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
         {
             auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
