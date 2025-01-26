@@ -52,6 +52,7 @@ BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
     BuildTypes.AMD_MSAN: "msan",
     BuildTypes.AMD_UBSAN: "ubsan",
     BuildTypes.AMD_TSAN: "tsan",
+    BuildTypes.AMD_COVERAGE: "release",
 }
 
 build_dir = f"{Utils.cwd()}/ci/tmp/build"

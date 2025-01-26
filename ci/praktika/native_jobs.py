@@ -396,7 +396,11 @@ def _finish_workflow(workflow, job_name):
             failed_results.append(result.name)
 
     if failed_results:
-        ready_for_merge_description = f"Failed: {' '.join(failed_results)}"
+        failed_jobs_csv = ",".join(failed_results)
+        if len(failed_jobs_csv) < 50:
+            ready_for_merge_description = f"Failed: {failed_jobs_csv}"
+        else:
+            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
 
     if not GH.post_commit_status(
         name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",

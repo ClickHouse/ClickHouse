@@ -157,7 +157,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
-    STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
+    STATELESS_TEST_FLAKY_ASAN = "Stateless tests (flaky check, asan)"
 
     STRESS_TEST_ASAN = "Stress test (asan)"
     STRESS_TEST_TSAN = "Stress test (tsan)"

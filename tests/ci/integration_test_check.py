@@ -13,10 +13,10 @@ from typing import Dict, List, Tuple
 import integration_tests_runner as runner
 from build_download_helper import download_all_deb_packages
 from ci_config import CI
-from ci_utils import Shell, Utils
+from ci_utils import Utils
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import IS_NEW_CI, REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from integration_test_images import IMAGES
 from pr_info import PRInfo
 from report import (
@@ -181,16 +181,6 @@ def main():
     pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugfix_check)
 
     images = [get_docker_image(image_) for image_ in IMAGES]
-    if IS_NEW_CI:
-        print("WARNING: yet another hack for praktika ci")
-        for image in images:
-            if image.name in (
-                "clickhouse/integration-test",
-                "clickhouse/integration-tests-runner",
-                "clickhouse/python-bottle",
-            ):
-                image.version = "latest"
-        print(images)
 
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
@@ -204,13 +194,7 @@ def main():
     if validate_bugfix_check:
         download_last_release(build_path, debug=True)
     else:
-        if IS_NEW_CI:
-            print("Copy input *.deb artifacts")
-            assert Shell.check(
-                f"cp {REPO_COPY}/ci/tmp/*.deb {build_path}", verbose=True
-            )
-        else:
-            download_all_deb_packages(check_name, reports_path, build_path)
+        download_all_deb_packages(check_name, reports_path, build_path)
 
     my_env = get_env_for_runner(
         check_name, build_path, repo_path, result_path, work_path

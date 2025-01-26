@@ -15,7 +15,7 @@ class JobNames:
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
     STRESS = "Stress test"
-    UPGRADE = "Upgrade test"
+    UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance comparison"
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
@@ -152,7 +152,7 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        requires=[],
+        requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
         command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
@@ -215,19 +215,16 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.CH_ODBC_B_AMD_ASAN,
-                # ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.CH_ODBC_B_AMD_TSAN,
-                # ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.CH_ODBC_B_AMD_MSAN,
-                # ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
@@ -303,7 +300,7 @@ class JobConfigs:
     ).parametrize(
         parameter=[
             "release",
-            "aarch",
+            "aarch64",
         ],
         runs_on=[
             RunnerLabels.STYLE_CHECK_AMD,
@@ -331,7 +328,7 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "flaky, asan",
+            "flaky check, asan",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -358,11 +355,11 @@ class JobConfigs:
     ).parametrize(
         parameter=[
             "debug",
-            "asan",
-            "tsan, 1/4",
-            "tsan, 2/4",
-            "tsan, 3/4",
-            "tsan, 4/4",
+            "asan, 1/2",
+            "asan, 2/2",
+            "tsan, 1/3",
+            "tsan, 2/3",
+            "tsan, 3/3",
             "msan, 1/4",
             "msan, 2/4",
             "msan, 3/4",
@@ -421,7 +418,7 @@ class JobConfigs:
         requires=[
             ["Build (amd_debug)"],
             ["Build (amd_asan)"],
-            ["Build (amd_tsan)"],
+            ["Build (amd_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_tsan)"],

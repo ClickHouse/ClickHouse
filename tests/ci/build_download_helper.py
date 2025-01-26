@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
 import requests
-from ci_definitions import BuildNames
-from env_helper import REPO_COPY
 
 from ci_config import CI
+from ci_definitions import BuildNames
+from env_helper import REPO_COPY
 
 try:
     # A work around for scripts using this downloading module without required deps
