@@ -239,7 +239,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
@@ -249,7 +249,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
@@ -335,7 +335,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (Exception & e)
             {
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
@@ -382,7 +382,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (Exception & e)
             {
                 e.addMessage("while loading table {}.{}", postgres_database, table_name);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
 
                 if (throw_on_error)
                     throw;
@@ -444,7 +444,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
         table_structure = std::make_unique<PostgreSQLTableStructure>();
     }
     if (!table_structure->physical_columns)
@@ -523,7 +523,7 @@ void PostgreSQLReplicationHandler::cleanupFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 
     if (!stop_synchronization)
@@ -548,7 +548,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 
     if (stop_synchronization)
