@@ -1172,7 +1172,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-            try {
+            try
+            {
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query,
@@ -2417,6 +2418,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
+    const char * prev_query_begin = all_queries_text.data();
+    UInt32 script_query_number = 0;
+    UInt32 script_line_number = 0;
+
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
     ASTPtr parsed_query;
@@ -2480,6 +2485,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             {
                 is_first = false;
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+
+                ++script_query_number;
+                script_line_number += count_symbols<'\n'>(prev_query_begin, this_query_begin);
+                prev_query_begin = this_query_begin;
+                client_context->setScriptLineNumbers(script_query_number, 1 + script_line_number);
+
                 if (query_fuzzer_runs)
                 {
                     if (!processWithFuzzing(full_query))

@@ -22,6 +22,15 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
         )
     directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
+        if Settings.DISABLED_WORKFLOWS:
+            if any(
+                py_file.name == Path(disabled_wf_file).name
+                for disabled_wf_file in Settings.DISABLED_WORKFLOWS
+            ):
+                print(
+                    f"NOTE: Workflow [{py_file.name}] disabled via Settings.DISABLED_WORKFLOWS - skip"
+                )
+                continue
         if file and file not in str(py_file):
             continue
         module_name = py_file.name.removeprefix(".py")
@@ -42,20 +51,22 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
                     else:
                         continue
                 else:
-                    res += foo.WORKFLOWS
-                    print(f"Read workflow configs from [{module_name}]")
+                    res += [workflow]
+                    print(
+                        f"Read workflow configs from [{module_name}], workflow name [{workflow.name}]"
+                    )
         except Exception as e:
             print(
                 f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
             )
     if not res:
-        Utils.raise_with_error(f"Failed to find workflow [{name or file}]")
+        Utils.raise_with_error(f"Failed to find [{name or file or 'any'}] workflow")
 
-    for workflow in res:
+    for wf in res:
         # add native jobs
-        _update_workflow_with_native_jobs(workflow)
+        _update_workflow_with_native_jobs(wf)
         # fill in artifact properties, e.g. _provided_by
-        _update_workflow_artifacts(workflow)
+        _update_workflow_artifacts(wf)
     return res
 
 

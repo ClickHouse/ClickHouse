@@ -647,9 +647,12 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             if CI.is_build_job(job):
                 # no GH status for build jobs
                 continue
-            job_config = CI.get_job_config(job)
-            if not job_config:
-                # there might be a new job that does not exist on this branch - skip it
+            try:
+                job_config = CI.get_job_config(job)
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to get job config for [{job}], it might have been removed from main branch, ex: [{e}]"
+                )
                 continue
             for batch in range(job_config.num_batches):
                 future = executor.submit(
@@ -1126,6 +1129,16 @@ def main() -> int:
             args.workflow,
         )
 
+        # Early post the version to have it before await
+        ch_helper = ClickHouseHelper()
+        _add_build_to_version_history(
+            pr_info,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            version,
+            ci_cache.job_digests[CI.BuildNames.PACKAGE_RELEASE],
+            ch_helper,
+        )
+
         ci_cache.print_status()
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
@@ -1163,14 +1176,6 @@ def main() -> int:
                 },
             }
         result["docker_data"] = docker_data
-        ch_helper = ClickHouseHelper()
-        _add_build_to_version_history(
-            pr_info,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            result["version"],
-            result["build"],
-            ch_helper,
-        )
     ### CONFIGURE action: end
 
     ### PRE action: start
@@ -1226,7 +1231,8 @@ def main() -> int:
                 # upload binaries only for normal builds in PRs
                 upload_binary = (
                     not pr_info.is_pr
-                    or CI.get_job_ci_stage(args.job_name) == CI.WorkflowStages.BUILDS_1
+                    or CI.get_job_ci_stage(args.job_name)
+                    not in (CI.WorkflowStages.BUILDS_2,)
                     or CiSettings.create_from_run_config(indata).upload_all
                 )
 
