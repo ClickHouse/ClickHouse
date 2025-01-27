@@ -1038,7 +1038,6 @@ bool MinIOIntegration::sendRequest(const String & resource)
         }
         return false;
     }
-    SCOPE_EXIT({ close(sock); });
 
     /// Loop through results
     for (const struct addrinfo * p = result; p; p = p->ai_next)
@@ -1062,10 +1061,12 @@ bool MinIOIntegration::sendRequest(const String & resource)
                 {
                     LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
                 }
+                close(sock);
                 return false;
             }
             break;
         }
+        close(sock);
         sock = -1;
     }
     if (sock == -1)
@@ -1076,6 +1077,12 @@ bool MinIOIntegration::sendRequest(const String & resource)
         return false;
     }
     freeaddrinfo(result);
+    SCOPE_EXIT({
+        if (sock > -1)
+        {
+            close(sock);
+        }
+    });
     if (!gmtime_r(&time, &ttm))
     {
         strerror_r(errno, buffer, sizeof(buffer));
