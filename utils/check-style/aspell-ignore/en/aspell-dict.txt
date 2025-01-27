@@ -967,6 +967,7 @@ SaaS
 Sanjeev
 Sankey
 Scalable
+ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -2881,6 +2882,7 @@ sysctl
 syslog
 syslogd
 systemd
+sqlreference
 tabix
 tablum
 tabseparated
