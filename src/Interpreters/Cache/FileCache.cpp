@@ -200,6 +200,7 @@ void FileCache::initialize()
         }
         catch (const std::filesystem::filesystem_error & e)
         {
+            init_exception = std::current_exception();
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to retrieve filesystem information for cache path {}. Error: {}",
                             getBasePath(), e.what());
         }
