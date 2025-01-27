@@ -4131,13 +4131,19 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
             else
             {
-                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to select merge: {}", select_merge_result.error().explanation.text);
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't select merge: {}", select_merge_result.error().explanation.text);
             }
         }
 
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
         if (max_source_part_size_for_mutation == 0 || merges_and_mutations_queued.mutations >= (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue])
+        {
+            LOG_TRACE(log, "Number of queued mutations ({}) is greater than max_replicated_mutations_in_queue ({})"
+                " or there are not enough free threads for mutations, so won't select new parts to merge or mutate.",
+                max_source_part_size_for_mutation,
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue]);
             return AttemptStatus::Limited;
+        }
 
         if (queue.countMutations() > 0)
         {
@@ -7117,7 +7123,7 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     }
 
     return createEphemeralLockInZooKeeper(
-        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path);
+        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path, std::nullopt);
 }
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(

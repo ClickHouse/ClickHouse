@@ -66,6 +66,7 @@ protected:
     {
         total_rows = 0;
         displayed_rows = 0;
+        use_vertical_format = false;
     }
 
     static bool cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows);
@@ -79,6 +80,7 @@ private:
 
     /// Fallback to Vertical format for wide but short tables.
     std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
+    bool use_vertical_format = false;
 
     /// For mono_block == true only
     Chunk mono_chunk;
