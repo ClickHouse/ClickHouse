@@ -677,6 +677,23 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return std::make_unique<ReadBufferFromEmptyFile>();
     }
 
+    /// Matryoshka of read buffers:
+    ///
+    /// [AsynchronousBoundedReadBuffer] (if use_async_buffer)
+    ///   [CachedInMemoryReadBufferFromFile] (if use_page_cache)
+    ///     ReadBufferFromRemoteFSGather
+    ///       [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
+    ///         ReadBufferFromS3 or similar
+    ///
+    /// Some of them have special requirements:
+    ///  * use_external_buffer = true is required for the buffer nested directly inside
+    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile, and
+    ///    ReadBufferFromRemoteFSGather.
+    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile must be freely seekable.
+    ///    I.e. either remote_read_buffer_restrict_seek = false or buffer implementation that
+    ///    ignores that setting.
+    ///    Note: ReadBufferFromRemoteFSGather ignores this setting.
+
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
     /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
@@ -686,7 +703,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const bool use_page_cache =
         (!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
         && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache;
-    const bool use_external_buffer = use_async_buffer || use_page_cache;
+
+    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache;
 
     auto read_buffer_creator =
         [this, read_settings, read_hint, file_size]
@@ -715,8 +733,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         storage_objects,
         read_settings,
         global_context->getFilesystemCacheLog(),
-        use_external_buffer,
-        /* buffer_size */use_external_buffer ? 0 : buffer_size);
+        use_external_buffer_for_gather,
+        /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
 
     if (use_page_cache)
     {
