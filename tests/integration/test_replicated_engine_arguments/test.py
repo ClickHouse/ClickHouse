@@ -48,4 +48,3 @@ def test_replicated_engine_with_arguments(start_cluster):
     # ensure that t2 was created with the correct default engine args
     assert node1.query("SHOW CREATE TABLE r.t2") == expected
     node1.query("DROP DATABASE r")
-
