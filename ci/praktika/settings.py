@@ -1,7 +1,7 @@
 import dataclasses
 import importlib.util
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 
 @dataclasses.dataclass
@@ -21,6 +21,7 @@ class _Settings:
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
+    DISABLED_WORKFLOWS: Optional[List[str]] = None
 
     ######################################
     #    Runtime Settings                #
@@ -46,13 +47,15 @@ class _Settings:
     INSTALL_PYTHON_FOR_NATIVE_JOBS: bool = False
     INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS: str = "./ci/requirements.txt"
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
-    RUN_LOG: str = f"{TEMP_DIR}/praktika_run.log"
+    RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
     SECRET_GH_APP_ID: str = "GH_APP_ID"
     SECRET_GH_APP_PEM_KEY: str = "GH_APP_PEM_KEY"
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
+    WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
+    ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
 
     ######################################
     #        CI Cache settings           #
@@ -76,11 +79,15 @@ class _Settings:
     ######################################
     #        CI DB Settings              #
     ######################################
-    SECRET_CI_DB_URL: str = "CI_DB_URL"
-    SECRET_CI_DB_PASSWORD: str = "CI_DB_PASSWORD"
+    SECRET_CI_DB_URL: str = ""
+    SECRET_CI_DB_USER: str = ""
+    SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
     CI_DB_INSERT_TIMEOUT_SEC = 5
+    SUB_RESULT_NAMES_WITH_TESTS = [
+        "Tests",
+    ]
 
     DISABLE_MERGE_COMMIT = True
 
@@ -109,14 +116,16 @@ _USER_DEFINED_SETTINGS = [
     "DOCKERHUB_SECRET",
     "READY_FOR_MERGE_STATUS_NAME",
     "SECRET_CI_DB_URL",
+    "SECRET_CI_DB_USER",
     "SECRET_CI_DB_PASSWORD",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SECRET_GH_APP_PEM_KEY",
+    "SUB_RESULT_NAMES_WITH_TESTS" "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_ID",
     "MAIN_BRANCH",
     "DISABLE_MERGE_COMMIT",
+    "DISABLED_WORKFLOWS",
 ]
 
 

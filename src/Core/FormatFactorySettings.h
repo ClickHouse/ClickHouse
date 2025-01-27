@@ -1128,11 +1128,14 @@ If not, they will be rendered as is, potentially deforming the table (one upside
 If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
 See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
 )", 0) \
-    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 100, R"(
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 10, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
@@ -1273,9 +1276,9 @@ Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date3
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. The result is random.
-- `throw` — Throw an exception in case of conversion overflow.
-- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+- `ignore` — Silently ignore overflows. Result are undefined.
+- `throw` — Throw an exception in case of overflow.
+- `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
 )", 0) \

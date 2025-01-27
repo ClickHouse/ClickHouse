@@ -12,7 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include "Common/logger_useful.h"
@@ -1224,6 +1224,18 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
     }
 
     return {};
+}
+
+
+UInt64 Connection::receivePacketType()
+{
+    /// Have we already read packet type?
+    if (last_input_packet_type)
+        return *last_input_packet_type;
+
+    UInt64 type;
+    readVarUInt(type, *in);
+    return last_input_packet_type.emplace(type);
 }
 
 

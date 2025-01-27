@@ -389,6 +389,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return processors;
         });
 
+        pipeline.resize(params.max_threads, /* force = */ true);
+
         aggregating = collector.detachProcessors(0);
         return;
     }
