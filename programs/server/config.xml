@@ -1453,7 +1453,7 @@
          command is executed through /bin/sh and is expected to write
          a Base64-encoded key to the stdout.
 
-         Note: ClickHouse Cloud https://clickhouse.cloud/ allows encryption with customer-managed keys.
+         Note: ClickHouse Cloud https://clickhouse.cloud/ supports encryption with customer-managed keys.
     -->
     <encryption_codecs>
         <!-- aes_128_gcm_siv -->
