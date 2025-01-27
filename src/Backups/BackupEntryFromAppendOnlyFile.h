@@ -32,6 +32,7 @@ public:
     String getFilePath() const override { return file_path; }
 
 protected:
+    bool isPartialChecksumAllowed() const override { return true; }
     bool isChecksumFromRemotePathAllowed() const override { return allow_checksum_from_remote_path; }
 
 private:

@@ -24,6 +24,8 @@ public:
         return res;
     }
 
+    bool isPartialChecksumAllowed() const override { return true; }
+
 private:
     const String data;
 };

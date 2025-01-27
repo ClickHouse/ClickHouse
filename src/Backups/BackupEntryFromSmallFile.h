@@ -26,6 +26,8 @@ public:
     DiskPtr getDisk() const override { return disk; }
     String getFilePath() const override { return file_path; }
 
+    bool isPartialChecksumAllowed() const override { return true; }
+
 private:
     const DiskPtr disk;
     const String file_path;

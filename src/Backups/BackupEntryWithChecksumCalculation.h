@@ -18,10 +18,10 @@ protected:
     virtual std::optional<UInt128> getPrecalculatedChecksum() const { return {}; }
 
     /// Whether it is allowed to calculate a checksum of a part of the file from its beginning up to some point.
-    virtual bool isPartialChecksumAllowed() const { return true; }
+    virtual bool isPartialChecksumAllowed() const = 0;
 
     /// Whether it is allowed to calculate a checksum from the paths to blobs on a remote disk.
-    virtual bool isChecksumFromRemotePathAllowed() const { return true; }
+    virtual bool isChecksumFromRemotePathAllowed() const { return false; }
 
     mutable std::mutex mutex;
 
@@ -29,7 +29,7 @@ private:
     std::optional<UInt128> calculateChecksum(UInt64 limit, const ReadSettings & read_settings) const;
 
     /// Calculates one or two checksums.
-    std::pair<std::optional<UInt128>, std::optional<UInt128>> calculateChecksum(
+    std::pair<std::optional<UInt128>, std::optional<UInt128>> calculateOneOrTwoChecksums(
         UInt64 limit, std::optional<UInt64> second_limit, const ReadSettings & read_settings) const;
 
     /// Depending on how a file is stored different methods of calculating its checksum for a backup can be used.
