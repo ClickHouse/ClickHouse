@@ -544,8 +544,8 @@ public:
 
         Coordination::ACLs getACLs(StringRef path) const;
 
-        void applyDeltas(const std::list<Delta> & new_deltas);
-        void applyDelta(const Delta & delta);
+        void applyDeltas(const std::list<Delta> & new_deltas, uint64_t & digest);
+        void applyDelta(const Delta & delta, uint64_t & digest);
         void rollbackDelta(const Delta & delta);
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
