@@ -452,7 +452,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .categories{"Hash"}});
+        .category{"Hash"}});
 #    endif
 }
 #endif

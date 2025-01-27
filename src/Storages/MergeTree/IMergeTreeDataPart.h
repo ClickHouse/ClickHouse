@@ -25,7 +25,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/IPartMetadataManager.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
@@ -85,8 +84,6 @@ public:
 
     using Type = MergeTreeDataPartType;
 
-    using uint128 = IPartMetadataManager::uint128;
-
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
@@ -107,7 +104,6 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
-    virtual bool isStoredOnDisk() const = 0;
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
@@ -169,9 +165,6 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
-    /// Throws an exception if part is not stored in on-disk format.
-    void assertOnDisk() const;
-
     void remove();
 
     ColumnsStatistics loadStatistics() const;
@@ -227,7 +220,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getZeroLevelPartBlockID(std::string_view token) const;
+    String getNewPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
 
@@ -354,7 +347,7 @@ public:
         {
         }
 
-        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        void load(const MergeTreeData & data, const IMergeTreeDataPart & part);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
@@ -579,6 +572,10 @@ public:
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
 
+    /// Read a file associated to a part
+    std::unique_ptr<ReadBuffer> readFile(const String & file_name) const;
+    std::unique_ptr<ReadBuffer> readFileIfExists(const String & file_name) const;
+
     static std::optional<String> getStreamNameOrHash(
         const String & name,
         const IMergeTreeDataPart::Checksums & checksums);
@@ -647,8 +644,6 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    mutable PartMetadataManagerPtr metadata_manager;
-
     void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
@@ -668,8 +663,6 @@ protected:
     /// storage storage, excluding files in the second returned argument.
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
-
-    void initializePartMetadataManager();
 
     void initializeIndexGranularityInfo();
 

@@ -6,6 +6,7 @@ sidebar_position: 35
 
 import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 import CloudDetails from '@site/docs/en/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Dictionaries
 
@@ -52,6 +53,8 @@ Dictionaries can be created with [DDL queries](../../sql-reference/statements/cr
 - The dictionaries can be easily renamed
 
 ## Creating a dictionary with a configuration file
+
+<CloudNotSupportedBadge/>
 
 :::note
 Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as user `default`.
@@ -955,7 +958,6 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](#dictionary-sources):
 
 - For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
-- For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
 - Dictionaries from other sources are updated every time by default.
 
 For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:

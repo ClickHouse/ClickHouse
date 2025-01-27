@@ -178,7 +178,7 @@ def test_mysql_client(started_cluster):
 
     assert (
         "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
-        "ERROR 516 (00000): default: Authentication failed: password is incorrect, or there is no user with such name"
+        "ERROR 194 (HY000): default: Authentication failed: password is incorrect, or there is no user with such name"
         in stderr.decode()
     )
 
@@ -198,7 +198,7 @@ def test_mysql_client(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
+            "ERROR 81 (HY000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -242,7 +242,7 @@ def test_mysql_client_exception(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 279 (00000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
+            "ERROR 279 (HY000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -629,7 +629,7 @@ def test_python_client(started_cluster):
             port=server_port,
         )
 
-    assert exc_info.value.args[0] == 516
+    assert exc_info.value.args[0] == 194
     assert (
         "default: Authentication failed: password is incorrect, or there is no user with such name"
         in exc_info.value.args[1]

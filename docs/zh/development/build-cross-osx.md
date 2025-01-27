@@ -19,7 +19,7 @@ sudo apt-get install clang-8
 
 # 安装交叉编译工具集 {#an-zhuang-jiao-cha-bian-yi-gong-ju-ji}
 
-我们假设安装 `cctools` 在 ${CCTOOLS} 路径下
+我们假设安装 `cctools` 在 `${CCTOOLS}` 路径下
 
 ``` bash
 mkdir ${CCTOOLS}

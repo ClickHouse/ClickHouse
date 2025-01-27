@@ -7,7 +7,7 @@ sidebar_label: 客户端开发库
 # 第三方开发库 {#client-libraries-from-third-party-developers}
 
 !!! warning "声明"
-Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
+ClickHouse, Inc **没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
 
 -   Python
     -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
@@ -69,6 +69,7 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
     -   [pillar](https://github.com/sofakingworld/pillar)
+    -   [req_ch](https://github.com/livebook-dev/req_ch)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell

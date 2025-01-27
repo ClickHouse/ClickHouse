@@ -427,6 +427,7 @@ void DataPartStorageOnDiskBase::backup(
             backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
             return;
         }
+
         if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(filepath_on_disk))
             return;
 
