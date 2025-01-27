@@ -37,8 +37,8 @@ struct MergeTreePartition
 
     static std::optional<Row> tryParseValueFromID(const String & partition_id, const Block & partition_key_sample);
 
-    void serializeText(const StorageMetadataPtr & metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const;
-    String serializeToString(const StorageMetadataPtr & metadata_snapshot) const;
+    void serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const;
+    String serializeToString(StorageMetadataPtr metadata_snapshot) const;
 
     void load(const IMergeTreeDataPart & part);
 

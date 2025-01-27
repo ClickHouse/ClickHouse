@@ -140,7 +140,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
-    const StorageMetadataPtr & metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums) const
+    StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums) const
 {
     const auto & partition_key = metadata_snapshot->getPartitionKey();
 
@@ -533,13 +533,34 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     columns_description_with_collected_nested = ColumnsDescription(Nested::collect(columns));
 }
 
+String IMergeTreeDataPart::getProjectionName() const
+{
+    if (!parent_part)
+        return "";
+
+    if (!temp_projection_block_number)
+        return name;
+
+    if (!is_temp)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary block number {} is set but projection part {} is not temporary", *temp_projection_block_number, name);
+
+    String suffix = "_" + std::to_string(*temp_projection_block_number);
+
+    if (!name.ends_with(suffix))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary block number {} is set but projection part {} doesn't have it name's suffix", *temp_projection_block_number, name);
+
+    auto pos = name.rfind(suffix);
+    chassert(pos != std::string::npos);
+    return name.substr(0, pos);
+}
+
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        return metadata_snapshot->projections.get(name).metadata;
+    if (!parent_part)
+        return metadata_snapshot;
 
-    return metadata_snapshot;
+    return metadata_snapshot->projections.get(getProjectionName()).metadata;
 }
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
@@ -981,7 +1002,8 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    const auto & primary_key = getMetadataSnapshot()->getPrimaryKey();
+    auto metadata_snapshot = getMetadataSnapshot();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
     size_t key_size = primary_key.column_names.size();
 
     if (!key_size)
@@ -2060,10 +2082,9 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
 
 UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    auto metadata_snapshot = getMetadataSnapshot();
     const auto & pk = metadata_snapshot->getPrimaryKey();
+
     if (!pk.column_names.empty())
     {
         String file = "primary" + getIndexExtension(false);

@@ -357,7 +357,7 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     return res;
 }
 
-void MergeTreePartition::serializeText(const StorageMetadataPtr & metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const
+void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const
 {
     const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
@@ -398,7 +398,7 @@ void MergeTreePartition::serializeText(const StorageMetadataPtr & metadata_snaps
     }
 }
 
-String MergeTreePartition::serializeToString(const StorageMetadataPtr & metadata_snapshot) const
+String MergeTreePartition::serializeToString(StorageMetadataPtr metadata_snapshot) const
 {
     static FormatSettings format_settings{};
 
