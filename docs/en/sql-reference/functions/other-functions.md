@@ -4497,7 +4497,7 @@ Result:
 
 ## authUser {#authUser}
 
-If the session user has been switched using the EXECUTE AS comand, this function returns the name of the original user that was used for authentication and creating the session.
+If the session user has been switched using the EXECUTE AS command, this function returns the name of the original user that was used for authentication and creating the session.
 
 **Syntax**
 
