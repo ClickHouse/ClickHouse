@@ -509,15 +509,22 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
 void PostgreSQLReplicationHandler::cleanupFunc()
 {
-    /// It is very important to make sure temporary replication slots are removed!
-    /// So just in case every 30 minutes check if one still exists.
-    postgres::Connection connection(connection_info);
-    String last_committed_lsn;
-    connection.execWithRetry([&](pqxx::nontransaction & tx)
+    try
     {
-        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-            dropReplicationSlot(tx, /* temporary */true);
-    });
+        /// It is very important to make sure temporary replication slots are removed!
+        /// So just in case every 30 minutes check if one still exists.
+        postgres::Connection connection(connection_info);
+        String last_committed_lsn;
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        {
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+                dropReplicationSlot(tx, /* temporary */true);
+        });
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     if (!stop_synchronization)
         cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
