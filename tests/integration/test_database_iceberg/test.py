@@ -117,11 +117,13 @@ def generate_record():
     }
 
 
-def create_clickhouse_iceberg_database(started_cluster, node, name, additional_settings):
+def create_clickhouse_iceberg_database(
+    started_cluster, node, name, additional_settings
+):
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse"
+        "storage_endpoint": "http://minio:9000/warehouse",
     }
 
     settings.update(additional_settings)
@@ -328,8 +330,18 @@ def test_hide_sensitive_info(started_cluster):
 
     table = create_table(catalog, namespace, table_name)
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, additional_settings={"catalog_credential" : "SECRET_1"})
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"catalog_credential": "SECRET_1"},
+    )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME, additional_settings={"auth_header" : "SECRET_2"})
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"auth_header": "SECRET_2"},
+    )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
