@@ -2920,6 +2920,9 @@ Allow push predicate to final subquery.
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
 )", 0) \
+    DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
+Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+)", 0) \
     \
     DECLARE(UInt64, low_cardinality_max_dictionary_size, 8192, R"(
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
@@ -3194,7 +3197,7 @@ Limit maximum number of partitions in the single INSERTed block. Zero means unli
 Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.
 )", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
-Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.
+Limit the max number of partitions that can be accessed in one query. &lt;= 0 means unlimited.
 )", 0) \
     DECLARE(Bool, check_query_single_value_result, true, R"(
 Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md/#checking-mergetree-tables) query result for `MergeTree` family engines .
@@ -3604,7 +3607,7 @@ Possible values:
 - true, false
 )", 0) \
     DECLARE(Bool, optimize_time_filter_with_preimage, true, R"(
-Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')
+Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 )", 0) \
     DECLARE(Bool, normalize_function_names, true, R"(
 Normalize function names to their canonical names
@@ -4218,7 +4221,7 @@ If true, virtual columns of table will be included into result of DESCRIBE query
 If true, include only column names and types into result of DESCRIBE query
 )", 0) \
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
-If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs. Only available in ClickHouse Cloud.
+If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
     DECLARE(Bool, mutations_execute_nondeterministic_on_initiator, false, R"(
 If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
@@ -4801,6 +4804,7 @@ Possible values:
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
+    DECLARE(Bool, query_plan_use_new_logical_join_step, false, "Use new logical join step in query plan", 0) \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md/#extractallgroups-horizontal) function.
 
@@ -5656,6 +5660,9 @@ Only available in ClickHouse Cloud. If a merged part is less than this many seco
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
+    DECLARE(Bool, use_iceberg_partition_pruning, false, R"(
+Use Iceberg partition pruning for Iceberg tables
+)", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
 Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
 Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
@@ -5684,7 +5691,7 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
     DECLARE(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", BETA) ALIAS(enable_parallel_replicas) \
-    DECLARE(NonZeroUInt64, max_parallel_replicas, 1, R"(
+    DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 
 Possible values:
@@ -5943,10 +5950,10 @@ Wait for committed changes to become actually visible in the latest snapshot
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, grace_hash_join_initial_buckets, 1, R"(
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
 Initial number of grace hash join buckets
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, grace_hash_join_max_buckets, 1024, R"(
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
@@ -5967,7 +5974,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL) ALIAS(allow_experimental_statistic) \
     \
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
-File/S3 engines/table function will parse paths with '::' as '\\<archive\\> :: \\<file\\>' if archive has correct extension
+File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>\` if archive has correct extension
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_inverted_index, false, R"(
@@ -6010,7 +6017,7 @@ Timeout for waiting for window view fire signal in event time processing
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
-On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with SYSTEM START VIEWS or SYSTEM START VIEW \\<name\\> afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
+On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(

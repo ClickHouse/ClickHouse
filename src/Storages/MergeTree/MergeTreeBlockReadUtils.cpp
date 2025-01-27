@@ -262,6 +262,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
+    const PrewhereExprSteps & mutation_steps,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
@@ -325,6 +326,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
     };
 
+    for (const auto & step : mutation_steps)
+        add_step(*step);
+
     if (prewhere_info)
     {
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
@@ -339,8 +343,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// Remove columns read in prewehere from the list of columns to read
     Names post_column_names;
     for (const auto & name : column_to_read_after_prewhere)
+    {
         if (!columns_from_previous_steps.contains(name))
             post_column_names.push_back(name);
+    }
 
     column_to_read_after_prewhere = std::move(post_column_names);
 

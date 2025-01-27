@@ -49,6 +49,7 @@ template <typename T>
 struct SettingFieldNumber : public SettingFieldBase
 {
     using Type = T;
+    using ValueType = T;
     Type value;
 
     SettingFieldNumber(const SettingFieldNumber & o) : SettingFieldBase(o.changed), value(o.value) { }
@@ -448,6 +449,7 @@ template <typename EnumT, typename Traits>
 struct SettingFieldEnum final : public SettingFieldBase
 {
     using EnumType = EnumT;
+    using ValueType = EnumT;
 
     EnumType value;
 

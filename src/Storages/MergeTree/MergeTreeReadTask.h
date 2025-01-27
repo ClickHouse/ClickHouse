@@ -62,6 +62,8 @@ struct MergeTreeReadTaskInfo
     size_t part_index_in_query;
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
+    /// Prewhere steps that should be applied to execute on-fly mutations for part.
+    PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
