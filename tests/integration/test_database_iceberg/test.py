@@ -118,7 +118,7 @@ def generate_record():
 
 
 def create_clickhouse_iceberg_database(
-    started_cluster, node, name, additional_settings
+    started_cluster, node, name, additional_settings = {}
 ):
     settings = {
         "catalog_type": "rest",
