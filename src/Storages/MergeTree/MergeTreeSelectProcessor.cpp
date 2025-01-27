@@ -227,6 +227,9 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
         all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
+    for (const auto & step : task->getInfo().mutation_steps)
+        all_prewhere_actions.steps.push_back(step);
+
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
