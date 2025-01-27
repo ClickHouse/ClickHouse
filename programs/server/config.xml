@@ -564,7 +564,7 @@
     <bcrypt_workfactor>12</bcrypt_workfactor>
 
     <!-- Complexity requirements for user passwords.
-         Note: ClickHouse Cloud https://clickhouse.cloud/ always configures for strong passwords.
+         Note: ClickHouse Cloud https://clickhouse.cloud/ is always configured for strong passwords.
       -->
     <!-- <password_complexity>
         <rule>
