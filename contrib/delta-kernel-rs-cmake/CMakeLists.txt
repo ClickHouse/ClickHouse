@@ -31,7 +31,7 @@ ExternalProject_Add(
   _delta_kernel_rs_target
   CONFIGURE_COMMAND ""
   GIT_REPOSITORY "file://${DELTA_KERNEL_RS_SOURCE_DIR}"
-  GIT_TAG 08f0764a00e89f42136fd478823d28278adc7ee8
+  GIT_TAG clickhouse-main
   UPDATE_COMMAND ""
   BUILD_IN_SOURCE 1
   BUILD_COMMAND
