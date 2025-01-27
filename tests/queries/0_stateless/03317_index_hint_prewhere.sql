@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS test_indexHint_prewhere;
 
 CREATE TABLE test_indexHint_prewhere
