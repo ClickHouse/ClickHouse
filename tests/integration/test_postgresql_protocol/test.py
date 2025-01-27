@@ -226,6 +226,9 @@ def test_copy_command(started_cluster):
     cur = ch.cursor()
     file_index = random.randint(0, 100000000)
 
+    cur.execute("CREATE DATABASE copy_x")
+    cur.execute("USE copy_x")
+
     cur.execute("drop table if exists test;")
     cur.execute("drop table if exists test_recreated;")
 
@@ -266,6 +269,7 @@ def test_copy_command(started_cluster):
     cur.execute("select * from test_recreated order by x;")
 
     assert cur.fetchall() == [(1, "a"), (2, "b"), (3, "c")]
+    cur.execute("DROP DATABASE copy_x")
 
 
 def test_java_client(started_cluster):
