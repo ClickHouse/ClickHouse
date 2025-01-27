@@ -18,6 +18,13 @@ static constexpr double FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO = 0; /// Dis
 static constexpr int FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH = 10;
 static constexpr auto FILECACHE_DEFAULT_CONFIG_PATH = "filesystem_caches";
 
+static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = "SLRU";
+
+/// SLRU ratio of 0.6 means:
+/// 60% of cache for protected elements.
+/// 40% of cache for probationary elements.
+static constexpr double FILECACHE_DEFAULT_SLRU_RATIO = 0.6;
+
 class FileCache;
 using FileCachePtr = std::shared_ptr<FileCache>;
 

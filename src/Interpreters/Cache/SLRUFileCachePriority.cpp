@@ -7,6 +7,10 @@
 #include <Common/assert_cast.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease;
+}
 namespace DB
 {
 
@@ -42,11 +46,16 @@ SLRUFileCachePriority::SLRUFileCachePriority(
                                               description_ + ", probationary"))
     , log(getLogger("SLRUFileCachePriority(" + description_ + ")"))
 {
-    LOG_DEBUG(
+    LOG_INFO(
         log, "Probationary queue {} in size and {} in elements. "
         "Protected queue {} in size and {} in elements",
         probationary_queue.max_size, probationary_queue.max_elements,
         protected_queue.max_size, protected_queue.max_elements);
+}
+
+FileCachePriorityPtr SLRUFileCachePriority::copy() const
+{
+    return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, probationary_queue.state, protected_queue.state);
 }
 
 size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::Lock & lock) const
@@ -348,18 +357,24 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
+    /// Entry can be not movable (between probationary and protected queues)
+    /// in case it is in process of being evicted.
     if (!iterator.movable)
     {
-        iterator.lru_iterator.increasePriority(lock);
+        /// Entry could not be chosen for eviction
+        /// in case there is at least one reference to the corresponding file segment.
+        /// But if someone called increasePriority(), then there must be one.
+        chassert(false);
         return;
     }
 
     chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
 
+    EntryPtr entry = iterator.getEntry();
+
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
-    const size_t entry_size = iterator.getEntry()->size;
-    if (entry_size > protected_queue.getSizeLimit(lock))
+    if (entry->size > protected_queue.getSizeLimit(lock))
     {
         /// Entry size is bigger than the whole protected queue limit.
         /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
@@ -368,7 +383,6 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
-    EntryPtr entry = iterator.getEntry();
     /// We need to remove the entry from probationary first
     /// in order to make space for downgrade from protected.
     iterator.lru_iterator.remove(lock);
@@ -393,6 +407,12 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
         eviction_candidates.evict();
         eviction_candidates.finalize(nullptr, lock);
+
+        /// Count how much we evict,
+        /// because it could affect performance if we have to do this often.
+        ProfileEvents::increment(
+            ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
+            eviction_candidates.size());
     }
     catch (...)
     {
@@ -405,7 +425,9 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 }
 
 LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
-    EntryPtr entry, LRUFileCachePriority & queue, const CachePriorityGuard::Lock & lock)
+    EntryPtr entry,
+    LRUFileCachePriority & queue,
+    const CachePriorityGuard::Lock & lock)
 {
     try
     {
@@ -430,14 +452,15 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected exception: {} (Initial exception: {}). Cache will become inconsistent",
-                            getCurrentExceptionMessage(true), initial_exception);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected exception: {} (Initial exception: {}). Cache will become inconsistent",
+                getCurrentExceptionMessage(true), initial_exception);
         }
 
-        /// Let's try to catch such cases in CI.
-        chassert(false);
-        throw;
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Failed to create queue entry: {}", getCurrentExceptionMessage(true));
     }
 }
 
