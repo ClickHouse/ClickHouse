@@ -21,8 +21,8 @@ class WriteBuffer;
 struct SettingFieldBase
 {
     bool changed = false;
-    SettingFieldBase() { }
-    SettingFieldBase(bool changed_) : changed(changed_) { }
+    SettingFieldBase() = default;
+    explicit SettingFieldBase(bool changed_) : changed(changed_) { }
     virtual ~SettingFieldBase() = default;
 
     virtual String toString() const = 0;
@@ -59,6 +59,8 @@ struct SettingFieldNumber : public SettingFieldBase
     SettingFieldNumber & operator=(const Field & f) override;
     SettingFieldNumber & operator=(const SettingFieldNumber & o)
     {
+        if (&o == this)
+            return *this;
         value = o.value;
         changed = o.changed;
         return *this;
@@ -124,6 +126,8 @@ struct SettingAutoWrapper final : public SettingFieldBase
 
     SettingAutoWrapper & operator=(const SettingAutoWrapper & o)
     {
+        if (&o == this)
+            return *this;
         changed = o.changed;
         if (is_auto = o.is_auto; !is_auto)
             base = o.base;
@@ -192,6 +196,8 @@ struct SettingFieldMaxThreads final : public SettingFieldBase
     SettingFieldMaxThreads & operator=(const Field & f) override;
     SettingFieldMaxThreads & operator=(const SettingFieldMaxThreads & o)
     {
+        if (&o == this)
+            return *this;
         is_auto = o.is_auto;
         value = o.value;
         changed = o.changed;
@@ -249,6 +255,8 @@ struct SettingFieldTimespan final : public SettingFieldBase
     SettingFieldTimespan & operator=(const Field & f) override;
     SettingFieldTimespan & operator=(const SettingFieldTimespan & o)
     {
+        if (&o == this)
+            return *this;
         changed = o.changed;
         value = o.value;
         return *this;
@@ -301,6 +309,8 @@ struct SettingFieldString final : public SettingFieldBase
     }
     SettingFieldString & operator=(const SettingFieldString & o)
     {
+        if (&o == this)
+            return *this;
         value = o.value;
         changed = o.changed;
         return *this;
@@ -331,6 +341,8 @@ struct SettingFieldMap final : public SettingFieldBase
     SettingFieldMap & operator=(const Field & f) override;
     SettingFieldMap & operator=(const SettingFieldMap & o)
     {
+        if (&o == this)
+            return *this;
         changed = o.changed;
         value = o.value;
         return *this;
@@ -360,6 +372,8 @@ struct SettingFieldChar : public SettingFieldBase
     SettingFieldChar & operator=(const Field & f) override;
     SettingFieldChar & operator=(const SettingFieldChar & o)
     {
+        if (&o == this)
+            return *this;
         value = o.value;
         changed = o.changed;
         return *this;
@@ -398,6 +412,8 @@ struct SettingFieldURI final : public SettingFieldBase
     }
     SettingFieldURI & operator=(const SettingFieldURI & o)
     {
+        if (&o == this)
+            return *this;
         value = o.value;
         changed = o.changed;
         return *this;
@@ -447,6 +463,8 @@ struct SettingFieldEnum final : public SettingFieldBase
     }
     SettingFieldEnum & operator=(const SettingFieldEnum & o)
     {
+        if (&o == this)
+            return *this;
         value = o.value;
         changed = o.changed;
         return *this;
@@ -514,6 +532,8 @@ struct SettingFieldMultiEnum final : public SettingFieldBase
     }
     SettingFieldMultiEnum & operator=(const SettingFieldMultiEnum & o)
     {
+        if (&o == this)
+            return *this;
         changed = o.changed;
         value = o.value;
         return *this;
@@ -607,6 +627,8 @@ struct SettingFieldTimezone final : public SettingFieldBase
     }
     SettingFieldTimezone & operator=(const SettingFieldTimezone & o)
     {
+        if (&o == this)
+            return *this;
         changed = o.changed;
         value = o.value;
         return *this;
@@ -634,7 +656,7 @@ struct SettingFieldCustom final : public SettingFieldBase
 
     explicit SettingFieldCustom(const Field & f = {}) : value(f) {}
     SettingFieldCustom(const SettingFieldCustom & o) : SettingFieldBase(o.changed), value(o.value) { }
-    SettingFieldCustom(SettingFieldCustom && o) : SettingFieldBase(o.changed), value(std::move(o.value)) { }
+    SettingFieldCustom(SettingFieldCustom && o) noexcept : SettingFieldBase(o.changed), value(std::move(o.value)) { }
     SettingFieldCustom & operator=(const Field & f) override
     {
         value = f;
@@ -643,6 +665,8 @@ struct SettingFieldCustom final : public SettingFieldBase
     }
     SettingFieldCustom & operator=(const SettingFieldCustom & o)
     {
+        if (&o == this)
+            return *this;
         value = o.value;
         changed = o.changed;
         return *this;
