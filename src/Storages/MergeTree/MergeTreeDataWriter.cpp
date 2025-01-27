@@ -676,7 +676,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
-        if (column.column->isSparse() && infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
             column.column = recursiveRemoveSparse(column.column);
     }
 
