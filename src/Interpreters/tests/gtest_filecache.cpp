@@ -363,6 +363,7 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings.max_elements = 5;
     settings.boundary_alignment = 1;
     settings.load_metadata_asynchronously = false;
+    settings.cache_policy = "LRU";
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
@@ -752,6 +753,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
         settings2.base_path = caches_dir / "cache2";
+        settings2.cache_policy = "LRU";
         fs::create_directories(settings2.base_path);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
@@ -822,6 +824,7 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_file_segment_size = 5;
     settings.base_path = cache_base_path;
     settings.load_metadata_asynchronously = false;
+    settings.cache_policy = "LRU";
 
     FileCache cache("6", settings);
     cache.initialize();
@@ -955,6 +958,7 @@ try
     settings.max_file_segment_size = 1_KiB;
     settings.base_path = cache_base_path;
     settings.load_metadata_asynchronously = false;
+    settings.cache_policy = "LRU";
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
@@ -1094,6 +1098,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings.max_elements = 10;
     settings.boundary_alignment = 1;
     settings.load_metadata_asynchronously = false;
+    settings.cache_policy = "LRU";
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1155,6 +1160,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         settings.max_file_segment_size = 1_KiB;
         settings.base_path = cache_base_path;
         settings.load_metadata_asynchronously = false;
+        settings.cache_policy = "LRU";
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
