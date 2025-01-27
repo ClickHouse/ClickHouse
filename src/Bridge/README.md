@@ -5,5 +5,5 @@ part of the ClickHouse server. Examples:
 
 The clickhouse server and the bridge binary communicate via HTTP.
 
-Separate bridge binaries exist is usually that the provided functionality is toxic, buggy, crashes sporadically, etc. and we don't want
-problems to spill into the address space of the clickhouse server.
+Separate bridge binaries exist is usually that the provided functionality is toxic garbage, or otherwise buggy, sporadically crashing, etc.
+and we don't want problems to spill into the address space of the clickhouse server.

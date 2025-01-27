@@ -2487,9 +2487,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
 
                 ++script_query_number;
-                script_line_number += count_symbols<'\n'>(prev_query_begin, this_query_begin);
+                script_line_number += std::count(prev_query_begin, this_query_begin, '\n');
                 prev_query_begin = this_query_begin;
-                client_context->setScriptLineNumbers(script_query_number, 1 + script_line_number);
+                client_context->setScriptQueryAndLineNumber(script_query_number, 1 + script_line_number);
 
                 if (query_fuzzer_runs)
                 {
