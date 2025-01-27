@@ -1187,7 +1187,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
-        scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+        alias_node->removeAlias();
     }
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
