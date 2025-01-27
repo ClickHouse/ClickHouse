@@ -90,7 +90,6 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    HDFSFileInfo hdfsListDirectoryWrapper(const std::string & path) const;
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     String getObjectsNamespace() const override { return ""; }
@@ -110,6 +109,8 @@ public:
     void shutdown() override { }
 
 private:
+    template <typename R, typename F, typename... P> R wrapper(F fn, const P... p) const;
+
     void initializeHDFSFS() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
 

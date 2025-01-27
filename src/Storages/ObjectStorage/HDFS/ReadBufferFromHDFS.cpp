@@ -61,7 +61,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     {
         builder = createHDFSBuilder(hdfs_uri_, config_);
         fs = createHDFSFS(builder.get());
-        fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+        fin = wrapper<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
@@ -74,7 +74,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         else
         {
-            auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
+            auto * file_info = wrapper<hdfsFileInfo *>(hdfsGetPathInfo, fs.get(), hdfs_file_path.c_str());
             if (!file_info)
             {
                 hdfsCloseFile(fs.get(), fin);
@@ -88,6 +88,19 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     ~ReadBufferFromHDFSImpl() override
     {
         hdfsCloseFile(fs.get(), fin);
+    }
+
+    template <typename R, typename F, typename... P> R wrapper(F fn, const P... p) const
+    {
+        R r = fn(p...);
+        #if USE_KRB5
+        if (errno == EACCES) // NOLINT
+        {
+            builder.runKinit(); // krb5 keytab reinitialization
+            r = fn(p...);
+        }
+        #endif // USE_KRB5
+        return r;
     }
 
     std::optional<size_t> tryGetFileSize() override
@@ -120,7 +133,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
 
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        int bytes_read = wrapper<tSize>(hdfsRead, fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
         rlock.unlock(std::max(0, bytes_read));
 
         if (bytes_read < 0)
@@ -152,7 +165,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
-        int seek_status = hdfsSeek(fs.get(), fin, file_offset_);
+        int seek_status = wrapper<int>(hdfsSeek, fs.get(), fin, file_offset_);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
         file_offset = file_offset_;
@@ -168,7 +181,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
-        auto bytes_read = hdfsPread(fs.get(), fin, buffer, safe_cast<int>(size), offset);
+        auto bytes_read = wrapper<tSize>(hdfsPread, fs.get(), fin, buffer, safe_cast<int>(size), offset);
         rlock.unlock(std::max(0, bytes_read));
 
         if (bytes_read < 0)

@@ -63,11 +63,23 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         hdfsCloseFile(fs.get(), fout);
     }
 
+    template <typename R, typename F, typename... P> R wrapper(F fn, const P... p) const
+    {
+        R r = fn(p...);
+        #if USE_KRB5
+        if (errno == EACCES) // NOLINT
+        {
+            builder.runKinit(); // krb5 keytab reinitialization
+            r = fn(p...);
+        }
+        #endif // USE_KRB5
+        return r;
+    }
 
     int write(const char * start, size_t size)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, size);
-        int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+        int bytes_written = wrapper<tSize>(hdfsWrite, fs.get(), fout, start, safe_cast<int>(size));
         rlock.unlock(std::max(0, bytes_written));
 
         if (bytes_written < 0)
@@ -81,7 +93,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
     void sync() const
     {
-        int result = hdfsSync(fs.get(), fout);
+        int result = wrapper<int>(hdfsSync, fs.get(), fout);
         if (result < 0)
             throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {}, hdfs_url: {}, {}", hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
     }
