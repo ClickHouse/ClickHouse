@@ -1,7 +1,14 @@
 from praktika import Job, Workflow
 from praktika.utils import MetaClasses, Utils
 
-from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS, RunnerLabels
+from ci.workflows.defs import (
+    ARTIFACTS,
+    BASE_BRANCH,
+    DOCKERS,
+    SECRETS,
+    ArtifactNames,
+    RunnerLabels,
+)
 
 S3_BUILDS_BUCKET = "clickhouse-builds"
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"
@@ -59,72 +66,6 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     S390X = "s390x"
     LOONGARCH64 = "loongarch"
     FUZZERS = "fuzzers"
-
-
-class ArtifactNames:
-    CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_RELEASE = "CH_AMD_RELEASE"
-    CH_AMD_ASAN = "CH_AMD_ASAN"
-    CH_AMD_TSAN = "CH_AMD_TSAN"
-    CH_AMD_MSAN = "CH_AMD_MSAN"
-    CH_AMD_UBSAN = "CH_AMD_UBSAN"
-    CH_AMD_BINARY = "CH_AMD_BINARY"
-    CH_ARM_RELEASE = "CH_ARM_RELEASE"
-    CH_ARM_ASAN = "CH_ARM_ASAN"
-
-    CH_AMD_COV_BIN = "CH_AMDCOV_BIN"
-    CH_ARM_BIN = "CH_ARM_BIN"
-    CH_TIDY_BIN = "CH_TIDY_BIN"
-    CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
-    CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
-    CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
-    CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
-    CH_PPC64LE = "CH_PPC64LE_BIN"
-    CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
-    CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
-    CH_RISCV64 = "CH_RISCV64_BIN"
-    CH_S390X = "CH_S390X_BIN"
-    CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
-
-    CH_ODBC_B_AMD_DEBUG = "CH_ODBC_B_AMD_DEBUG"
-    CH_ODBC_B_AMD_RELEASE = "CH_ODBC_B_AMD_RELEASE"
-    CH_ODBC_B_AMD_ASAN = "CH_ODBC_B_AMD_ASAN"
-    CH_ODBC_B_AMD_TSAN = "CH_ODBC_B_AMD_TSAN"
-    CH_ODBC_B_AMD_MSAN = "CH_ODBC_B_AMD_MSAN"
-    CH_ODBC_B_AMD_UBSAN = "CH_ODBC_B_AMD_UBSAN"
-    CH_ODBC_B_ARM_RELEASE = "CH_ODBC_B_ARM_RELEASE"
-    CH_ODBC_B_ARM_ASAN = "CH_ODBC_B_ARM_ASAN"
-
-    UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
-    UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
-    UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
-    UNITTEST_AMD_UBSAN = "UNITTEST_AMD_UBSAN"
-    UNITTEST_AMD_BINARY = "UNITTEST_AMD_BINARY"
-
-    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
-    DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN = "DEB_AMD_ASAN"
-    DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAM = "DEB_AMD_MSAM"
-    DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
-    DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_ASAN = "DEB_ARM_ASAN"
-
-    RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
-    RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
-
-    TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
-    TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
-
-    FUZZERS = "FUZZERS"
-    FUZZERS_CORPUS = "FUZZERS_CORPUS"
-
-    PERF_REPORTS_AMD_1_3 = "PERF_REPORTS_AMD_1_3"
-    PERF_REPORTS_AMD_2_3 = "PERF_REPORTS_AMD_2_3"
-    PERF_REPORTS_AMD_1_3_WITH_RELEASE = "PERF_REPORTS_AMD_1_3_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_3_WITH_RELEASE = "PERF_REPORTS_AMD_2_3_WITH_RELEASE"
-
-    PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
 
 
 class JobConfigs:
@@ -247,7 +188,7 @@ class JobConfigs:
                 ArtifactNames.CH_ODBC_B_ARM_ASAN,
             ],
             # special builds
-            [ArtifactNames.CH_AMD_COV_BIN],
+            [ArtifactNames.DEB_AMD_COV, ArtifactNames.CH_AMD_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_TIDY_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
@@ -328,7 +269,7 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "flaky check, asan",
+            "asan, flaky check",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -454,7 +395,6 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
-                "./tests/queries/1_stateful/",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
@@ -537,7 +477,7 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
             ["Build (amd_asan)"],
@@ -625,7 +565,7 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "asan, flaky",
+            "asan, flaky check",
         ],
         runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(1)],
         requires=[["Build (amd_asan)"] for _ in range(1)],
@@ -716,14 +656,17 @@ class JobConfigs:
         runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(2)],
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_3],
-            [ArtifactNames.PERF_REPORTS_AMD_2_3],
+            [ArtifactNames.PERF_REPORTS_AMD_1_2],
+            [ArtifactNames.PERF_REPORTS_AMD_2_2],
         ],
     )
     clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./tests/ci/clickbench.py", "./docker"],
+        ),
         allow_merge_on_failure=True,
         no_download_requires=True,
     ).parametrize(
@@ -865,8 +808,12 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/prechecks/pr_description.py",
         "python3 ./ci/jobs/scripts/prechecks/trusted.py",
         "python3 ./ci/jobs/scripts/prechecks/docker_digests.py",
+        "python3 ./ci/jobs/scripts/prechecks/version_log.py",
     ],
-    post_hooks=[],
+    post_hooks=[
+        # TODO: legacy Mergeable check, remove after transition to praktika's Ready For Merge feature
+        "WORKFLOW_RESULT_FILE=$(pwd)/ci/tmp/workflow_status.json cd ./tests/ci & python3 ./merge_pr.py --set-ci-status",
+    ],
 )
 
 WORKFLOWS = [

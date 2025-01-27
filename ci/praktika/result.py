@@ -97,7 +97,7 @@ class Result(MetaClasses.Serializable):
                     Result.Status.ERROR,
                 ):
                     Utils.raise_with_error(
-                        f"Unexpected result status [{result.status}] for Result.create_from call"
+                        f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
                 if result.status != Result.Status.SUCCESS:
                     result_status = Result.Status.FAILED

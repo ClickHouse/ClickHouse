@@ -112,27 +112,27 @@ def main():
 
     res = True
     results = []
-    version = ""
+    version = CHVersion.get_version()
 
-    if res and JobStages.UNSHALLOW in stages:
-        results.append(
-            Result.from_commands_run(
-                name="Repo Unshallow",
-                command="git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:",
-                with_log=True,
-            )
-        )
-        res = results[-1].is_ok()
-        if res:
-            try:
-                version = CHVersion.get_version()
-                assert version
-                print(f"Got version from repo [{version}]")
-            except Exception as e:
-                results[-1].set_failed().set_info(
-                    f"Failed to get version from repo, ex [{e}]"
-                )
-                res = False
+    # if res and JobStages.UNSHALLOW in stages:
+    #     results.append(
+    #         Result.from_commands_run(
+    #             name="Repo Unshallow",
+    #             command="git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:",
+    #             with_log=True,
+    #         )
+    #     )
+    #     res = results[-1].is_ok()
+    #     if res:
+    #         try:
+    #             version = CHVersion().get_version()
+    #             assert version
+    #             print(f"Got version from repo [{version}]")
+    #         except Exception as e:
+    #             results[-1].set_failed().set_info(
+    #                 f"Failed to get version from repo, ex [{e}]"
+    #             )
+    #             res = False
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -145,6 +145,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.CMAKE in stages:
+        CHVersion.set_build_version()
         if "darwin" in build_type:
             Shell.check(
                 f"rm -rf {current_directory}/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
@@ -236,8 +237,7 @@ def main():
     # TODO:
     # profile_result = None
     # if (
-    #     res
-    #     and JobStages.UPLOAD_PROFILE_DATA in stages
+    #     res and JobStages.UPLOAD_PROFILE_DATA in stages
     #     and "release" in build_type
     #     and not Info().is_local_run
     # ):

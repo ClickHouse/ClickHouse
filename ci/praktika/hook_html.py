@@ -126,7 +126,7 @@ class HtmlRunnerHooks:
             if info.pr_number
             else f"{info.git_branch}  |  {info.git_sha}"
         )
-        assert _ResultS3.copy_result_to_s3(summary_result, clean=True)
+        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         page_url = Info().get_report_url(latest=True)
         print(f"CI Status page url [{page_url}]")
 
@@ -173,7 +173,7 @@ class HtmlRunnerHooks:
             if info.pr_number
             else f"{info.git_branch}  |  {info.git_sha}"
         )
-        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
+        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=1)
 
     @classmethod
     def pre_run(cls, _workflow, _job):
