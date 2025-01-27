@@ -82,7 +82,7 @@ struct DDLLogEntry
     /// Add new version here
 
     /// Remember to update the value below once new version is added
-    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 9;
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 8;
 
     UInt64 version = 1;
     String query;
