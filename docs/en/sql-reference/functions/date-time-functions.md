@@ -1642,6 +1642,8 @@ Result:
 **See Also**
 - [date_trunc](#date_trunc)
 
+**Note:** in case of using negative datetime values (before `1970-01-01`) as arguments for this function, please consider using the [`toStartOfIntervalAllowNegative`](#toStartOfIntervalAllowNegative) function, which supports these cases.
+
 ## toStartOfIntervalAllowNegative
 
 Works just like the `toStartOfInterval` function but works correctly with negative date/datetime values (before 1970-01-01) as function arguments.
