@@ -232,6 +232,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
     format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
+    format_settings.pretty.fallback_to_vertical_min_columns = settings[Setting::output_format_pretty_fallback_to_vertical_min_columns];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
@@ -532,7 +533,8 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, const Cont
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
-        format->onProgress(read_progress);
+        if (!read_progress.empty())
+            format->setProgress(std::move(read_progress));
 
         /// Update the start of the statistics to use the start of the query, and not the creation of the format class
         format->setStartTime(element_id->getQueryCPUStartTime(), true);

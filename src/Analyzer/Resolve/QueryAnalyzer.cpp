@@ -1562,7 +1562,11 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
     if (table_expression_node->hasAlias())
         additional_column_qualification_parts = {table_expression_node->getAlias()};
     else if (auto * table_node = table_expression_node->as<TableNode>())
+    {
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
+        if (!table_node->getTemporaryTableName().empty())
+            additional_column_qualification_parts = {table_node->getTemporaryTableName()};
+    }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
     else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
