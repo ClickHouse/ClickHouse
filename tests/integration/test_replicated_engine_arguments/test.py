@@ -38,17 +38,14 @@ def test_replicated_engine_with_arguments(start_cluster):
     node1.query(
         "CREATE TABLE r.t1 (x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
-    # From v24.9 onwards we introduced a setting `database_replicated_allow_replicated_engine_arguments` with default value 0.
-    # This controls if users are allowed to specify ENGINE arguments for *MergeTree tables in Replicated databases or not.
-    # The `CREATE TABLE AS ...` query is interesting because it clones the table structure of t1 and tries to create t2. When engine args are not present, we generate them automatically.
-    # When creating t2 with the table structure of t1, the AST for the create query also contains the engine args from t1 which gets validated, and we fail when the
-    # setting value is 0. The fix is to drop engine args for `AS TABLE` queries for `*MergeTree`tables in `Replicated` database.
-    # This test is to ensure that we are able to do a CREATE TABLE AS ... without any issues for such kind of tables
+    # Test that `database_replicated_allow_replicated_engine_arguments=0` for *MergeTree tables in Replicated databases work as expected for `CREATE TABLE ... AS ...` queries.
+    # While creating t2 with the table structure of t1, the AST for the create query would contain the engine args from t1. For this kind of queries, skip this validation if
+    # the value of the arguments match the default values and also skip throwing an exception.
     node1.query(
         "SET database_replicated_allow_replicated_engine_arguments=0; CREATE TABLE r.t2 AS r.t1"
     )  # should not fail
     expected = "CREATE TABLE r.t2\\n(\\n    `x` UInt8,\\n    `y` String\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY x\\nSETTINGS index_granularity = 8192\n"
     # ensure that t2 was created with the correct default engine args
     assert node1.query("SHOW CREATE TABLE r.t2") == expected
-    node1.query("DROP TABLE IF EXISTS r.t1")
-    node1.query("DROP TABLE IF EXISTS r.t2")
+    node1.query("DROP DATABASE r")
+

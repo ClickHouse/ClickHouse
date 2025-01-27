@@ -1,0 +1,1 @@
+CREATE TABLE test_03321.t2\\n(\\n `x` UInt8,\\n `y` String\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY x\\nSETTINGS index_granularity = 8192\n
