@@ -4,7 +4,6 @@
 #include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/MergeTree/IPartMetadataManager.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -16,6 +15,7 @@ struct FormatSettings;
 struct MergeTreeDataPartChecksums;
 struct StorageInMemoryMetadata;
 class IDataPartStorage;
+class IMergeTreeDataPart;
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
@@ -40,7 +40,7 @@ struct MergeTreePartition
     void serializeText(const StorageMetadataPtr & metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const;
     String serializeToString(const StorageMetadataPtr & metadata_snapshot) const;
 
-    void load(const StorageMetadataPtr & metadata_snapshot, const PartMetadataManagerPtr & manager, const ContextPtr & context);
+    void load(const IMergeTreeDataPart & part);
 
     /// Store functions return write buffer with written but not finalized data.
     /// User must call finish() for returned object.

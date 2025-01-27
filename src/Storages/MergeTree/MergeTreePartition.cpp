@@ -407,14 +407,15 @@ String MergeTreePartition::serializeToString(const StorageMetadataPtr & metadata
     return out.str();
 }
 
-void MergeTreePartition::load(const StorageMetadataPtr & metadata_snapshot, const PartMetadataManagerPtr & manager, const ContextPtr & context)
+void MergeTreePartition::load(const IMergeTreeDataPart & part)
 {
+    auto metadata_snapshot = part.getMetadataSnapshot();
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, context).sample_block;
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, part.storage.getContext()).sample_block;
 
-    auto file = manager->read("partition.dat");
+    auto file = part.readFile("partition.dat");
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});

@@ -1227,6 +1227,18 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
+UInt64 Connection::receivePacketType()
+{
+    /// Have we already read packet type?
+    if (last_input_packet_type)
+        return *last_input_packet_type;
+
+    UInt64 type;
+    readVarUInt(type, *in);
+    return last_input_packet_type.emplace(type);
+}
+
+
 Packet Connection::receivePacket()
 {
     try

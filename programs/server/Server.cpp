@@ -71,6 +71,8 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -771,6 +773,17 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         {
             std::string full_prefix = "startup_scripts." + key;
 
+            auto user = config.getString(full_prefix + ".user", "");
+            auto startup_context = Context::createCopy(context);
+
+            if (!user.empty())
+            {
+                auto & access_control = startup_context->getAccessControl();
+                startup_context->setUser(access_control.getID<User>(user));
+            }
+
+            startup_context->makeQueryContext();
+
             if (config.has(full_prefix + ".condition"))
             {
                 auto condition = config.getString(full_prefix + ".condition");
@@ -778,8 +791,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                auto startup_context = Context::createCopy(context);
-                startup_context->makeQueryContext();
+
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
@@ -800,8 +812,6 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
-            auto startup_context = Context::createCopy(context);
-            startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
