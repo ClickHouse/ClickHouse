@@ -27,6 +27,48 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_parallel_quorum_actually_parallel(started_cluster):
+    settings = {
+        "insert_quorum": "3",
+        "insert_quorum_parallel": "1",
+        "function_sleep_max_microseconds_per_block": "0",
+    }
+    for i, node in enumerate([node1, node2, node3]):
+        node.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '{num}') ORDER BY tuple()".format(
+                num=i
+            )
+        )
+
+    p = Pool(10)
+
+    def long_insert(node):
+        node.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(5) where sleepEachRow(1) == 0",
+            settings=settings,
+        )
+
+    job = p.apply_async(long_insert, (node1,))
+
+    node2.query("INSERT INTO r VALUES (6, '6')", settings=settings)
+    assert node1.query("SELECT COUNT() FROM r") == "1\n"
+    assert node2.query("SELECT COUNT() FROM r") == "1\n"
+    assert node3.query("SELECT COUNT() FROM r") == "1\n"
+
+    node1.query("INSERT INTO r VALUES (7, '7')", settings=settings)
+    assert node1.query("SELECT COUNT() FROM r") == "2\n"
+    assert node2.query("SELECT COUNT() FROM r") == "2\n"
+    assert node3.query("SELECT COUNT() FROM r") == "2\n"
+
+    job.get()
+
+    assert node1.query("SELECT COUNT() FROM r") == "7\n"
+    assert node2.query("SELECT COUNT() FROM r") == "7\n"
+    assert node3.query("SELECT COUNT() FROM r") == "7\n"
+    p.close()
+    p.join()
+
+
 def test_parallel_quorum_actually_quorum(started_cluster):
     for i, node in enumerate([node1, node2, node3]):
         node.query(
