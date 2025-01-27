@@ -20,6 +20,7 @@ public:
     }
 
     String getName() const override = 0;
+    virtual bool isMemoryDependent() const { return false; }
 
 protected:
     virtual void concurrencyControlLogic() {}
@@ -96,6 +97,7 @@ public:
     {}
 
     String getName() const override { return "Resize"; }
+    bool isMemoryDependent() const override { return false; }
 
     Status prepare() override { return prepareRoundRobin(); }
     Status prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs) override
@@ -113,7 +115,7 @@ protected:
 
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
-  * When the amount of free memory is too low (some heuristics implement), we push data to lower amount of inputs, trying to slow down the process.
+  * When the amount of free memory is too low (some heuristics implemented), we push data to lower amount of inputs, trying to slow down the process.
   */
 class MemoryDependentResizeProcessor final : public BaseResizeProcessor
 {
@@ -125,6 +127,7 @@ public:
     ~MemoryDependentResizeProcessor() override = default;
 
     String getName() const override { return "MemoryDependentResize"; }
+    bool isMemoryDependent() const override { return true; }
 
 protected:
     static Int64 getFreeMemory();

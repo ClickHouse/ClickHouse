@@ -265,7 +265,7 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
 
         Port::Data data = input_with_data.port->pullData();
 
-        if (chunk_size == 0 && !data.chunk.getChunkInfos().empty()) /// This should be done only on the first iteration
+        if (isMemoryDependent() && chunk_size == 0 && !data.chunk.getChunkInfos().empty()) /// This should be done only on the first iteration
         {
             const auto & info_chunks = data.chunk.getChunkInfos().get<ChunksToSquash>()->chunks;
             for (const auto & chunk : info_chunks)
