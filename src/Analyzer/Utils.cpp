@@ -233,8 +233,7 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     bool resolve)
 {
     std::string cast_type = type->getName();
-    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
-    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type), std::make_shared<DataTypeString>());
 
     std::string cast_function_name = "_CAST";
     auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
@@ -252,7 +251,7 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
 {
-    const auto * constant_node = condition_node->as<ConstantNode>();
+    const auto * constant_node = condition_node ? condition_node->as<ConstantNode>() : nullptr;
     if (!constant_node)
         return {};
 
@@ -842,8 +841,7 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
 
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
-    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
 
     auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
     QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };

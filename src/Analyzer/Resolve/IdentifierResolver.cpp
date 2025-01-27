@@ -347,11 +347,11 @@ static FunctionNodePtr wrapExpressionNodeInFunctionWithSecondConstantStringArgum
     auto function_node = std::make_shared<FunctionNode>(std::move(function_name));
 
     auto constant_node_type = std::make_shared<DataTypeString>();
-    auto constant_value = std::make_shared<ConstantValue>(std::move(second_argument), std::move(constant_node_type));
+    auto constant_value = ConstantValue{second_argument, std::move(constant_node_type)};
 
     ColumnsWithTypeAndName argument_columns;
     argument_columns.push_back({nullptr, expression->getResultType(), {}});
-    argument_columns.push_back({constant_value->getType()->createColumnConst(1, constant_value->getValue()), constant_value->getType(), {}});
+    argument_columns.push_back({constant_value.getColumn(), constant_value.getType(), {}});
 
     auto function = FunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
     auto function_base = function->build(argument_columns);
@@ -1411,7 +1411,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
 
-    const auto & resolved_subcolumn_path = second_argument->getValue().safeGet<String &>();
+    auto resolved_subcolumn_path = second_argument->getValue().safeGet<String>();
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 

@@ -355,9 +355,9 @@
         </client>
     </openSSL>
 
-    <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
+    <!-- Default root page on http[s] server. -->
     <!--
-    <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
+    <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>
     -->
 
     <!-- The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries.
