@@ -73,7 +73,7 @@ public:
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
-    String build_id;
+    std::function<String()> build_id;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 
