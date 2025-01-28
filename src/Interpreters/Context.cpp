@@ -1674,9 +1674,9 @@ void Context::setCurrentRolesDefault()
     setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
 }
 
-void Context::switchImpersonateUser(const RolesOrUsersSet & users)
+void Context::switchImpersonateUser(const RolesOrUsersSet & new_user)
 {
-    auto new_user_uuid = *(users.ids.begin());
+    auto new_user_uuid = *(new_user.ids.begin());
     setUser(new_user_uuid);
     setCurrentUserName(getUser()->getName());
     setInitialUserName(getUser()->getName()); /// ensure to update the client_info
