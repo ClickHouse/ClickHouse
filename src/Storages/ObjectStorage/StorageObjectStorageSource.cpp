@@ -265,7 +265,7 @@ Chunk StorageObjectStorageSource::generate()
             return chunk;
         }
 
-        if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files] && !key_condition)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
