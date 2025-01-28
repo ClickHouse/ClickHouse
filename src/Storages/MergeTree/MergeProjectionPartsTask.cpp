@@ -88,6 +88,7 @@ bool MergeProjectionPartsTask::executeStep()
         /// not commit each subprojection part
         next_level_parts.back()->getDataPartStorage().commitTransaction();
         next_level_parts.back()->is_temp = true;
+        next_level_parts.back()->temp_projection_block_number = block_num;
     }
 
     /// Need execute again
