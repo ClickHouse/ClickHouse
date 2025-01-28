@@ -2,6 +2,8 @@ import glob
 from itertools import chain
 from pathlib import Path
 
+from praktika import Job
+
 from . import Workflow
 from .mangle import _get_workflows
 from .settings import GHRunners, Settings
@@ -20,9 +22,16 @@ class Validator:
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        workflows = _get_workflows()
+        workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
+
+            for job in workflow.jobs:
+                cls.evaluate_check(
+                    isinstance(job, Job.Config),
+                    f"Invalid job type [{job}]",
+                    workflow.name,
+                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
