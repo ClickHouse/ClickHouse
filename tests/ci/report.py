@@ -485,7 +485,7 @@ class JobReport:
             start_time = datetime.datetime.strptime(
                 self.start_time, "%Y-%m-%d %H:%M:%S"
             )
-            current_time = datetime.datetime.now(datetime.timezone.utc)
+            current_time = datetime.datetime.now()
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
