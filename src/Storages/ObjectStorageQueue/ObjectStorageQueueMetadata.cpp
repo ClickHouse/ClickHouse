@@ -179,6 +179,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     const std::string & path,
     ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
 {
+    chassert(metadata_ref_count);
     auto file_status = local_file_statuses->get(path, /* create */true);
     switch (mode)
     {
@@ -190,6 +191,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 bucket_info,
                 buckets_num,
                 table_metadata.loading_retries,
+                *metadata_ref_count,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -197,6 +199,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 path,
                 file_status,
                 table_metadata.loading_retries,
+                *metadata_ref_count,
                 log);
     }
 }
@@ -444,6 +447,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         if (!table_metadata.last_processed_path.empty())
         {
+            std::atomic<size_t> noop = 0;
             ObjectStorageQueueOrderedFileMetadata(
                 zookeeper_path,
                 table_metadata.last_processed_path,
@@ -451,6 +455,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 /* bucket_info */nullptr,
                 buckets_num,
                 table_metadata.loading_retries,
+                noop,
                 log).prepareProcessedAtStartRequests(requests, zookeeper);
         }
 

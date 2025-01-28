@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -52,6 +53,7 @@ class MetaClasses:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
+                    traceback.print_exc()
                     print(f"ERROR: failed to parse json, ex [{ex}]")
                     print(f"JSON content [{cls.file_name_static(name)}]")
                     Shell.check(f"cat {cls.file_name_static(name)}")
@@ -122,6 +124,7 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            executable="/bin/bash",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -407,7 +410,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return Path.cwd()
+        return str(Path.cwd())
 
     @staticmethod
     def cpu_count():
@@ -469,20 +472,22 @@ class Utils:
         res = string.lower()
         for r in (
             (" ", "_"),
-            ("(", ""),
-            (")", ""),
-            ("{", ""),
-            ("}", ""),
-            ("'", ""),
-            ("[", ""),
-            ("]", ""),
-            (",", ""),
+            ("(", "_"),
+            (")", "_"),
+            ("{", "_"),
+            ("}", "_"),
+            ("'", "_"),
+            ("[", "_"),
+            ("]", "_"),
+            (",", "_"),
             ("/", "_"),
             ("-", "_"),
-            (":", ""),
-            ('"', ""),
+            (":", "_"),
+            ('"', "_"),
         ):
             res = res.replace(*r)
+            res = re.sub(r"_+", "_", res)
+            res = res.rstrip("_")
         return res
 
     @staticmethod

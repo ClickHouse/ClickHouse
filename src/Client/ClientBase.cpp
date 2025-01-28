@@ -1009,7 +1009,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     return !settings[Setting::async_insert];
 }
 
-void ClientBase::processTextAsSingleQuery(const String & full_query)
+bool ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
@@ -1019,7 +1019,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         /*allow_multi_statements=*/ false);
 
     if (!parsed_query)
-        return;
+        return false;
 
     String query_to_execute;
 
@@ -1058,6 +1058,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
     if (have_error)
         processError(full_query);
+    return !have_error;
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -1172,7 +1173,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-            try {
+            try
+            {
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query,
@@ -2397,7 +2399,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
         {
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+            auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+            UNUSED(u);
         }
     }
 
@@ -2417,6 +2420,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
+    const char * prev_query_begin = all_queries_text.data();
+    UInt32 script_query_number = 0;
+    UInt32 script_line_number = 0;
+
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
     ASTPtr parsed_query;
@@ -2434,7 +2441,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             {
                 /// Compatible with old version when run interactive, e.g. "", "\ld"
                 if (is_first && is_interactive)
-                    processTextAsSingleQuery(all_queries_text);
+                {
+                    auto u = processTextAsSingleQuery(all_queries_text);
+                    UNUSED(u);
+                }
                 return true;
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
@@ -2480,6 +2490,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             {
                 is_first = false;
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+
+                ++script_query_number;
+                script_line_number += count_symbols<'\n'>(prev_query_begin, this_query_begin);
+                prev_query_begin = this_query_begin;
+                client_context->setScriptLineNumbers(script_query_number, 1 + script_line_number);
+
                 if (query_fuzzer_runs)
                 {
                     if (!processWithFuzzing(full_query))
