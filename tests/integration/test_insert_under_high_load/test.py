@@ -22,7 +22,7 @@ def test_memory_based_pipeline_throttling(start_cluster):
     )
     instance.query("SYSTEM STOP MERGES")
 
-    settings = "max_insert_threads=32, max_memory_usage=6e8, max_execution_time=150"
+    settings = "max_insert_threads=32, max_memory_usage=85e7, max_execution_time=150"
 
     # Test case 1: Insert with memory-based pipeline throttling enabled
     _, err = instance.query_and_get_answer_with_error(
