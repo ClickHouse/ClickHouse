@@ -462,8 +462,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         {
             frame.expression_list_always_start_on_new_line = true;
             ostr << (settings.one_line ? " (" : "\n(");
-            FormatStateStacked frame_nested = frame;
-            columns_list->format(ostr, settings, state, frame_nested);
+            columns_list->format(ostr, settings, state, frame);
             ostr << (settings.one_line ? ")" : "\n)");
             frame.expression_list_always_start_on_new_line = false;
         }
@@ -479,8 +478,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (columns_list && !columns_list->empty() && !as_table_function)
     {
         ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
-        columns_list->format(ostr, settings, state, frame_nested);
+        columns_list->format(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 
@@ -489,19 +487,17 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (is_ordinary_view && aliases_list && !as_table_function)
     {
         ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
-        aliases_list->format(ostr, settings, state, frame_nested);
+        aliases_list->format(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 
     if (dictionary_attributes_list)
     {
         ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
         if (settings.one_line)
-            dictionary_attributes_list->format(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->format(ostr, settings, state, frame);
         else
-            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 
