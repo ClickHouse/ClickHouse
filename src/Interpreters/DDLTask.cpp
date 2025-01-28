@@ -272,7 +272,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     const auto & access_control = from_context->getAccessControl();
     const auto user = access_control.tryRead<User>(entry.initiator_user);
     if (!user)
-        LOG_WARNING(getLogger("DDLTask"), "Initiator user is not present on the instance. Will use the global user for the query execution. This is a security vulnerability!");
+        LOG_INFO(getLogger("DDLTask"), "Initiator user is not present on the instance. Will use the global user for the query execution.");
     else
         query_context->setUser(entry.initiator_user, entry.initiator_user_roles);
 
