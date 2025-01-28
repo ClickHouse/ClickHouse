@@ -50,8 +50,14 @@
 02861_filter_pushdown_const_bug
 
     https://github.com/ClickHouse/ClickHouse/issues/74547
+    vector search segfault
 02354_vector_search_multiple_marks
 02354_vector_search_expansion_search
+02354_vector_search_detach_attach
+02354_vector_search_different_array_sizes
+
+    https://github.com/ClickHouse/ClickHouse/issues/74711
+03080_incorrect_join_with_merge
 
     https://github.com/ClickHouse/ClickHouse/issues/74226
     Database _table_function does not exist
@@ -538,3 +544,4 @@
 00141_transform
 00443_optimize_final_vertical_merge
 01660_join_or_any
+01801_s3_cluster

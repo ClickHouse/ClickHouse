@@ -152,13 +152,14 @@ enum class AccessType : uint8_t
 #define APPLY_FOR_ACCESS_TYPES(M) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
-    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>, CHECK <table>;
+    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
                                        implicitly enabled by any grant on the table */\
+    M(CHECK, "", TABLE, ALL) /* allows to execute CHECK TABLE; */\
     M(SHOW_COLUMNS, "", COLUMN, SHOW) /* allows to execute SHOW CREATE TABLE, DESCRIBE;
                                          implicitly enabled with any grant on the column */\
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
-    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE */\
+    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
     M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
     \
     M(SELECT, "", COLUMN, ALL) \
