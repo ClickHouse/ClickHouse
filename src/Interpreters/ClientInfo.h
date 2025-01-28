@@ -120,12 +120,27 @@ public:
             return {};
         String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
         boost::trim(last);
+
+        if (last[0] == '[')
+        {
+            /// IPv6 address with port
+            return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
+        }
+
+        if (last[0] == ':')
+        {
+            /// IPv6 address without port
+            return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
+        }
+
         try
         {
-            return Poco::Net::SocketAddress{last};
+            /// Probably IPv4 with port
+            return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
         }
         catch (const Poco::InvalidArgumentException &)
         {
+            /// IPv4 or IPv6 without port
             return Poco::Net::SocketAddress{last, 0};
         }
     }
