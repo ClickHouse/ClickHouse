@@ -402,7 +402,7 @@ struct BackupsWorker::BackupStarter
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
                                 on_cluster, cluster);
 
         backup_coordination->finish(/* throw_if_error = */ true);
@@ -527,6 +527,7 @@ void BackupsWorker::doBackup(
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -536,7 +537,7 @@ void BackupsWorker::doBackup(
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
     auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
-        context->checkAccess(required_access);
+        query_context->checkAccess(required_access);
 
     maybeSleepForTesting();
 
@@ -771,7 +772,7 @@ struct BackupsWorker::RestoreStarter
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
 
-        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context,
+        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
                                  on_cluster, cluster);
 
         /// The restore coordination is not needed anymore.
@@ -865,6 +866,7 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -892,7 +894,7 @@ void BackupsWorker::doRestore(
             String addr_database = address->default_database.empty() ? current_database : address->default_database;
             for (auto & element : restore_elements)
                 element.setCurrentDatabase(addr_database);
-            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
+            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
     }
@@ -924,7 +926,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
+                                    backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 }
