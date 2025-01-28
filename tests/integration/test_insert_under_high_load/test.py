@@ -35,7 +35,7 @@ def test_memory_based_pipeline_throttling(start_cluster):
 
     assert (
         "TIMEOUT_EXCEEDED" in err or not err.strip()
-    ), f"Unexpected behavior for throttling enabled: {insert_status}"
+    ), f"Unexpected behavior for throttling enabled: {err}"
 
     # Test case 2: Insert with throttling disabled, expecting MEMORY_LIMIT_EXCEEDED
     insert_status = instance.query_and_get_error(
