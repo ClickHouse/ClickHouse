@@ -25,6 +25,8 @@ def _add_build_to_version_history():
     }
     print(f"Update version log: [{data}]")
     CIDBCluster().insert_json(table="version_history", json_str=data)
+    # stores actual version data in pipline storage, to be used by jobs that need it
+    CHVersion.store_version_data_in_ci_pipeline()
 
 
 if __name__ == "__main__":
