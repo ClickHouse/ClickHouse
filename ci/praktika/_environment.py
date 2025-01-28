@@ -144,6 +144,23 @@ class _Environment(MetaClasses.Serializable):
                 COMMIT_URL = CHANGE_URL
             else:
                 assert False, "TODO: not supported"
+            INSTANCE_TYPE = (
+                os.getenv("INSTANCE_TYPE", None)
+                or Shell.get_output("ec2metadata --instance-type")
+                or ""
+            )
+            INSTANCE_ID = (
+                os.getenv("INSTANCE_ID", None)
+                or Shell.get_output("ec2metadata --instance-id")
+                or ""
+            )
+            INSTANCE_LIFE_CYCLE = (
+                os.getenv("INSTANCE_LIFE_CYCLE", None)
+                or Shell.get_output(
+                    "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+                )
+                or ""
+            )
         else:
             print("WARNING: Local execution - dummy Environment will be generated")
             SHA = "TEST"
@@ -151,24 +168,9 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TYPE = Workflow.Event.PUSH
             CHANGE_URL = ""
             COMMIT_URL = ""
-
-        INSTANCE_TYPE = (
-            os.getenv("INSTANCE_TYPE", None)
-            or Shell.get_output("ec2metadata --instance-type")
-            or ""
-        )
-        INSTANCE_ID = (
-            os.getenv("INSTANCE_ID", None)
-            or Shell.get_output("ec2metadata --instance-id")
-            or ""
-        )
-        INSTANCE_LIFE_CYCLE = (
-            os.getenv("INSTANCE_LIFE_CYCLE", None)
-            or Shell.get_output(
-                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-            )
-            or ""
-        )
+            INSTANCE_TYPE = ""
+            INSTANCE_ID = ""
+            INSTANCE_LIFE_CYCLE = ""
 
         return _Environment(
             WORKFLOW_NAME=WORKFLOW_NAME,
