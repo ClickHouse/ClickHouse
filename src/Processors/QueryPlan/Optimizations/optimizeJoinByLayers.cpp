@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -319,6 +320,10 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
             }
+        }
+        else if (auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(frame.node->step.get()))
+        {
+            result = std::move(frame.results.front());
         }
         else if (auto * source = findReadingStep(*frame.node))
         {

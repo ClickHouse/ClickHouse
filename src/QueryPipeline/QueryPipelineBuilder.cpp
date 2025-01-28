@@ -646,7 +646,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByLayer
     std::vector<JoinPtr> joins;
     right->addSimpleTransform([&](const Block & header)
     {
-        joins.push_back(join->clone(std::make_shared<TableJoin>(join->getTableJoin()), left->getHeader(), header));
+        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getHeader(), header));
         auto finish_counter = std::make_shared<FinishCounter>(1);
         return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter);
     });
