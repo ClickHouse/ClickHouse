@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS bloom_filter_test;
 
 CREATE TABLE bloom_filter_test
