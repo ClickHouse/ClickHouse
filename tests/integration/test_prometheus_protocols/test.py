@@ -229,6 +229,22 @@ def test_read_auth():
 
 def test_remote_write_v1_status_code():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+    # send a remote write v1 request created from the following object:
+    # request := prompb.WriteRequest{
+    # 	Metadata: []prompb.MetricMetadata{
+    # 		{Type: prompb.MetricMetadata_GAUGE, MetricFamilyName: "time", Unit: "ms", Help: "Help Message"},
+    # 	},
+    # 	Timeseries: []prompb.TimeSeries{
+    # 		{Labels: []prompb.Label{
+    # 			{Name: "__name__", Value: "time"},
+    # 			{Name: "region", Value: "us-east-1"},
+    # 		}, Samples: []prompb.Sample{
+    # 			{Value: 33.0, Timestamp: time.Now().Unix()},
+    # 		}},
+    # 	},
+    # }
+    # buf, _ := request.Marshal()
+    # hex.EncodeToString(buf)
     body = bytes.fromhex(
         "0a380a100a085f5f6e616d655f5f120474696d650a130a06726567696f6e120975732d656173742d31120f09000000000080404010afdcb5bc061a1a0802120474696d65220c48656c70204d6573736167652a026d73"
     )
