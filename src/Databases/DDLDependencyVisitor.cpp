@@ -151,10 +151,16 @@ namespace
                     auto select_copy = create.select->clone();
                     ApplyWithSubqueryVisitor::visit(select_copy);
 
-                    auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy /*select_not_owning_ptr*/, false /*refresheable*/, global_context);
-                    if (!select_query.select_table_id.empty() && create.is_materialized_view)
+                    if (create.is_materialized_view)
                     {
-                        mv_from_dependency = select_query.select_table_id;
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy /*select_not_owning_ptr*/, create.refresh_strategy != nullptr /*refresheable*/, global_context);
+                        if (!select_query.select_table_id.empty())
+                        {
+                            mv_from_dependency = select_query.select_table_id;
+
+                            /// Keepeing UUID is problematic
+                            mv_from_dependency->uuid = UUIDHelpers::Nil;
+                        }
                     }
                 }
                 else
@@ -196,13 +202,12 @@ namespace
             }
         }
 
-
         /// ASTTableExpression represents a reference to a table in SELECT query.
         /// DDLDependencyVisitor should handle ASTTableExpression because some CREATE queries can contain SELECT queries after AS
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
-            LOG_DEBUG(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
+            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 

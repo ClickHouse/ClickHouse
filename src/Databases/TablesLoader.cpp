@@ -111,14 +111,12 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     TablesDependencyGraph all_startup_dependencies("AllStartupMvDependencies");
     all_startup_dependencies.mergeWith(mv_to_dependencies);
 
-    for (auto table_id : mv_from_dependencies.getTables())
+    for (const auto & table_id : mv_from_dependencies.getTables())
     {
         auto storage_id_vector = mv_from_dependencies.getDependencies(table_id);
         for (auto storage_id : storage_id_vector)
             all_startup_dependencies.addDependency(table_id, storage_id);
     }
-
-    all_startup_dependencies.log();
 
     for (const auto & table_id : all_startup_dependencies.getTablesSortedByDependency())
     {

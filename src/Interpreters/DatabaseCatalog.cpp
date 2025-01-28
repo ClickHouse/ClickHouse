@@ -642,6 +642,16 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
         referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
         loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+
+        auto tables_from = view_dependencies.getDependents(StorageID{old_name, table_name});
+        if (!tables_from.empty())
+        {
+            assert(tables_from.size() == 1);
+            const auto & the_table_from = *tables_from.begin();
+
+            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name});
+            view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
+        }
     }
 }
 
@@ -1501,15 +1511,14 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
 
     if (is_mv)
     {
-        for (auto & a_table_id : view_dependencies.getTables())
+        auto tables_from = view_dependencies.getDependents(table_id);
+        if (!tables_from.empty())
         {
-            const auto dependencies = view_dependencies.getDependencies(a_table_id);
-            if (auto it = std::find(dependencies.begin(), dependencies.end(), table_id); it != dependencies.end())
-            {
-                view_dependencies.removeDependency(a_table_id, *it, /* remove_isolated_tables= */ true);
-                old_view_dependencies.push_back(a_table_id);
-                break;
-            }
+            assert(tables_from.size() == 1);
+            const auto & the_table_from = *tables_from.begin();
+
+            view_dependencies.removeDependency(the_table_from, table_id);
+            old_view_dependencies.push_back(the_table_from);
         }
     }
     return {
@@ -1533,18 +1542,15 @@ void DatabaseCatalog::updateDependencies(
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
     if (!new_view_dependencies.empty())
     {
-        for (auto & a_table_id : view_dependencies.getTables())
+        assert(new_view_dependencies.size() == 1);
+        auto tables_from = view_dependencies.getDependents(table_id);
+        if (!tables_from.empty())
         {
-            const auto dependencies = view_dependencies.getDependencies(a_table_id);
-            if (auto it = std::find(dependencies.begin(), dependencies.end(), table_id); it != dependencies.end())
-            {
-                view_dependencies.removeDependency(a_table_id, *it, /* remove_isolated_tables= */ true);
-                break;
-            }
-        }
-        for (auto & new_view_dependency : new_view_dependencies)
-        {
-            view_dependencies.addDependency(StorageID{new_view_dependency}, table_id);
+            assert(tables_from.size() == 1);
+            const auto & the_table_from = *tables_from.begin();
+
+            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
         }
     }
 }
