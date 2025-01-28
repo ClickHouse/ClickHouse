@@ -235,13 +235,12 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
                 break
 
         if cd is None or cd == CHECK_DESCRIPTIONS[-1]:
-            if not status.context == "PR":
-                # This is the case for either non-found description or a fallback
-                cd = CheckDescription(
-                    status.context,
-                    CHECK_DESCRIPTIONS[-1].description,
-                    CHECK_DESCRIPTIONS[-1].match_func,
-                )
+            # This is the case for either non-found description or a fallback
+            cd = CheckDescription(
+                status.context,
+                CHECK_DESCRIPTIONS[-1].description,
+                CHECK_DESCRIPTIONS[-1].match_func,
+            )
 
         if cd in grouped_statuses:
             grouped_statuses[cd].append(status)
