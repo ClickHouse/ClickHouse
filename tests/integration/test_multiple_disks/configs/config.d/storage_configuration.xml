@@ -119,6 +119,19 @@
             </volumes>
         </special_warning_policy>
 
+        <policy_with_waiting>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <waiting>
+                    <disk>jbod2</disk>
+                    <min_wait_after_move_ms>250</min_wait_after_move_ms>
+                    <max_wait_after_move_ms>500</max_wait_after_move_ms>
+                </waiting>
+            </volumes>
+        </policy_with_waiting>
+
     </policies>
 
 </storage_configuration>

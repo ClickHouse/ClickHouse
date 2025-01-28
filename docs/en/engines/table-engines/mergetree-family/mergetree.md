@@ -806,6 +806,10 @@ Tags:
   * If only _some_ volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
   * If _no_ volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
   * Two volumes cannot have the same priority value.
+- `min_wait_after_move_ms` — Minimal waiting period after moving a part to the volume before making it active. Actual value is picked randomly between `min_wait_after_move_ms` and `max_wait_after_move_ms`. Default is `0`.
+It makes sense for storages not providing strong read-after-write guarantee.
+- `max_wait_after_move_ms` — Maximal waiting period after move to the volume before making part active. See `min_wait_after_move_ms`. Default is `0`.
+
 
 Configuration examples:
 

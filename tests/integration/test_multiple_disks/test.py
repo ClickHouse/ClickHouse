@@ -2074,3 +2074,27 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_waiting_after_move(start_cluster):
+    table = "table_for_move"
+
+    node1.restart_clickhouse(kill=True)
+    node1.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            d UInt64
+        ) ENGINE = MergeTree()
+        ORDER BY d
+        SETTINGS storage_policy='policy_with_waiting'
+    """
+    )
+
+    node1.query(f"INSERT INTO {table} VALUES (0)")
+
+    node1.query(f"ALTER TABLE {table} MOVE PARTITION tuple() TO VOLUME 'waiting'")
+
+    first_part = get_oldest_part(node1, table)
+    assert get_disk_for_part(node1, table, first_part) == "jbod2"
+
+    assert node1.contains_in_log(f"Sleeping [0-9]\+ ms after cloning part {first_part}")
