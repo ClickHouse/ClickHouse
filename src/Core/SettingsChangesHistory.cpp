@@ -99,7 +99,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_multiline_fields", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
-            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_columns", 0, 5, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 250, "A new setting"},
             {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
@@ -124,7 +125,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
-            {"skip_redundant_aliases_in_udf", false, false, "New setting."},
+            {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             /// Release closed. Please use 25.1
