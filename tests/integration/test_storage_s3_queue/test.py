@@ -2443,7 +2443,7 @@ def test_alter_settings(started_cluster):
         "processing_threads_num": 5,
         "loading_retries": 10,
         "tracked_files_ttl_sec": 0,
-        "tracked_files_limit": 2000,
+        "tracked_files_limit": 1000,
     }
     string_settings = {"after_processing": "keep"}
 
