@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: shard
 
 DROP TABLE IF EXISTS tmp;
 
