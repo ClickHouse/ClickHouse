@@ -195,7 +195,7 @@ class TestCIOptions(unittest.TestCase):
                 "binary_release",
                 "Stateless tests (asan)",
                 "Stateless tests (azure, asan)",
-                "Stateless tests (asan,  flaky check)",
+                "Stateless tests (asan, flaky check)",
                 "Stateless tests (msan)",
                 "Stateless tests (ubsan)",
                 "Stateless tests (debug)",

@@ -973,7 +973,7 @@ if __name__ == "__main__":
         "BuzzHouse (msan)": "c38ebf947f",
         "BuzzHouse (tsan)": "c38ebf947f",
         "BuzzHouse (ubsan)": "c38ebf947f",
-        "Stateless tests (asan,  flaky check)": "deb6778b88",
+        "Stateless tests (asan, flaky check)": "deb6778b88",
         "Performance Comparison (release)": "a8a7179258",
         "ClickBench (release)": "45c07c4aa6",
         "ClickBench (aarch64)": "45c07c4aa6",
