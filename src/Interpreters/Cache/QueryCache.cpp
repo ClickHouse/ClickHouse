@@ -7,7 +7,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -164,6 +166,11 @@ bool isQueryCacheRelatedSetting(const String & setting_name)
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
+bool isSubquerySpecificSetting(const String & setting_name)
+{
+    return setting_name == "use_structure_from_insertion_table_in_table_functions";
+}
+
 class RemoveQueryCacheSettingsMatcher
 {
 public:
@@ -215,9 +222,34 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+ASTPtr removeASTSubquery(ASTPtr ast)
+{
+    ASTPtr transformed_ast = ast->clone();
+
+    if (auto * subquery = transformed_ast->as<ASTSubquery>())
+        transformed_ast = subquery->children[0];
+
+    return transformed_ast;
+}
+
+ASTPtr removeASTSelectWithUnionQuery(ASTPtr ast)
+{
+    ASTPtr transformed_ast = ast->clone();
+
+    if (auto * select_with_union_query = transformed_ast->as<ASTSelectWithUnionQuery>()) {
+        auto & select_lists = select_with_union_query->list_of_selects->as<ASTExpressionList &>();
+        if (select_lists.children.size() == 1)
+            transformed_ast = select_lists.children[0];
+    }
+
+    return transformed_ast;
+}
+
 IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
     ast = removeQueryCacheSettings(ast);
+    ast = removeASTSubquery(ast);
+    ast = removeASTSelectWithUnionQuery(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -240,8 +272,10 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryCacheRelatedSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+        if (!isQueryCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
+        else
+            LOG_TRACE(getLogger("QueryCache"), "unused setting: {} {}", change.name, change.value);
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)

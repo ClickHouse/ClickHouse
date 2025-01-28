@@ -1478,7 +1478,8 @@ void Planner::buildPlanForQueryNode()
     /// Try to use query cache for subquery. If find, add read from cache step instead of building rest of the plan.
     QueryCachePtr query_cache = planner_context->getMutableQueryContext()->getQueryCache();
     bool can_use_query_cache = query_context->getCanUseQueryCache();
-    ASTPtr ast = select_query_info.query;
+    // ASTPtr ast = select_query_info.query;
+    ASTPtr ast = query_node.getOriginalAST();
 
     /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
     /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
