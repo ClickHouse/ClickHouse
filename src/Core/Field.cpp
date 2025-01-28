@@ -14,6 +14,12 @@
 
 using namespace std::literals;
 
+/// Explicit instantiation for DB::FieldVector
+template class std::vector<DB::Field, AllocatorWithMemoryTracking<DB::Field>>;
+
+/// Explicit instantiation for DB::FieldMap
+template class std::map<String, DB::Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, DB::Field>>>;
+
 namespace DB
 {
 

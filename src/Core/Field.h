@@ -1036,3 +1036,9 @@ struct fmt::formatter<DB::Field>
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }
 };
+
+/// Explicit instantiation for DB::FieldVector
+extern template class std::vector<DB::Field, AllocatorWithMemoryTracking<DB::Field>>;
+
+/// Explicit instantiation for DB::FieldMap
+extern template class std::map<String, DB::Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, DB::Field>>>;
