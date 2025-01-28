@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from ._environment import _Environment
 from .cache import Cache
 from .runtime import RunConfig
@@ -30,6 +32,8 @@ class CacheRunnerHooks:
                 # assign the job digest also to the artifacts it provides
                 for artifact in job.provides:
                     artifact_digest_map[artifact] = digest
+                # TODO: remove together with artifact_report_ hack
+                artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
             if job.requires:
@@ -50,16 +54,44 @@ class CacheRunnerHooks:
         ), f"BUG, Workflow with enabled cache must have job digests after configuration, wf [{workflow.name}]"
 
         print("Check remote cache")
-        for job_name, job_digest in workflow_config.digest_jobs.items():
-            record = cache.fetch_success(job_name=job_name, job_digest=job_digest)
+
+        def fetch_record(job_name, job_digest, cache_):
+            """Fetch a single record from the cache."""
+            record = cache_.fetch_success(job_name=job_name, job_digest=job_digest)
             if record:
-                assert (
-                    Utils.normalize_string(job_name)
-                    not in workflow_config.cache_success
-                )
-                workflow_config.cache_success.append(job_name)
-                workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
-                workflow_config.cache_jobs[job_name] = record
+                return job_name, record
+            return None
+
+        # Step 1: Fetch records concurrently
+        fetched_records = []
+        with ThreadPoolExecutor() as executor:
+            futures = {
+                executor.submit(fetch_record, job_name, job_digest, cache): job_name
+                for job_name, job_digest in workflow_config.digest_jobs.items()
+            }
+
+            for future in futures:
+                result = future.result()
+                if result:  # If a record was found, add it to the fetched list
+                    fetched_records.append(result)
+
+        # Step 2: Apply the fetched records sequentially
+        for job_name, record in fetched_records:
+            assert Utils.normalize_string(job_name) not in workflow_config.cache_success
+            workflow_config.cache_success.append(job_name)
+            workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
+            workflow_config.cache_jobs[job_name] = record
+        # single threaded variant
+        # for job_name, job_digest in workflow_config.digest_jobs.items():
+        #     record = cache.fetch_success(job_name=job_name, job_digest=job_digest)
+        #     if record:
+        #         assert (
+        #             Utils.normalize_string(job_name)
+        #             not in workflow_config.cache_success
+        #         )
+        #         workflow_config.cache_success.append(job_name)
+        #         workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
+        #         workflow_config.cache_jobs[job_name] = record
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
@@ -67,6 +99,10 @@ class CacheRunnerHooks:
                 if job.provides:
                     for artifact_name in job.provides:
                         workflow_config.cache_artifacts[artifact_name] = (
+                            workflow_config.cache_jobs[job.name]
+                        )
+                    if Settings.ENABLE_ARTIFACTS_REPORT:
+                        workflow_config.cache_artifacts[job.name] = (
                             workflow_config.cache_jobs[job.name]
                         )
 

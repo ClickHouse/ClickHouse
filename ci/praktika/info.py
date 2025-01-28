@@ -1,7 +1,11 @@
 import json
+import os
 import urllib
 from pathlib import Path
 from typing import Optional
+
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
 
 
 class Info:
@@ -18,6 +22,10 @@ class Info:
     @property
     def pr_number(self):
         return self.env.PR_NUMBER
+
+    @property
+    def workflow_name(self):
+        return self.env.WORKFLOW_NAME
 
     @property
     def pr_body(self):
@@ -72,6 +80,12 @@ class Info:
         return self.env.LOCAL_RUN
 
     def get_report_url(self, latest=False):
+        sha = self.env.SHA
+        if self.env.PR_NUMBER and latest:
+            sha = "latest"
+        return self.get_specific_report_url(pr_number=self.env.PR_NUMBER, sha=sha)
+
+    def get_specific_report_url(self, pr_number, sha):
         from praktika.settings import Settings
 
         path = Settings.HTML_S3_PATH
@@ -79,14 +93,7 @@ class Info:
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        if self.env.PR_NUMBER:
-            if latest:
-                sha = "latest"
-            else:
-                sha = self.env.SHA
-        else:
-            sha = self.env.SHA
-        return f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.env.PR_NUMBER}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        return f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={pr_number}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
 
     @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:
@@ -99,3 +106,20 @@ class Info:
         except Exception as e:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
+
+    def store_custom_data(self, key, value):
+        assert (
+            self.env.JOB_NAME == "Config Workflow"
+        ), "Custom data can be stored only in Config Workflow Job"
+        custom_data = {key: value}
+        if Path(Settings.CUSTOM_DATA_FILE).is_file():
+            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+                custom_data = json.load(f)
+                custom_data[key] = value
+        with open(Settings.CUSTOM_DATA_FILE, "w", encoding="utf8") as f:
+            json.dump(custom_data, f, indent=4)
+
+    def get_custom_data(self, key=None):
+        if key:
+            return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data.get(key, None)
+        return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
