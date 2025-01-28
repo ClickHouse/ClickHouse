@@ -215,7 +215,7 @@ public:
         };
         for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix); iter->Next())
         {
-            if (!is_direct_child(iter->key(), rocksdb::Slice(key_)))
+            if (!is_direct_child(iter->key(), rocksdb::Slice(key_prefix)))
                 continue;
             Node node;
             if (read_meta)
