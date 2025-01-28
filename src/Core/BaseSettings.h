@@ -1059,7 +1059,7 @@ struct DefineAliases
     SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, Data & data) const \
     { \
         /* Using offset_in_Data is technically undefined behaviour (the class is not a PODType) but it works correctly in all tested
-            platforms and allows us to massively reduce the complexity of the Setting objects (before we were using anonymous lamda
+            platforms and allows us to massively reduce the complexity of the Setting objects (before we were using anonymous lambda
             functions to resolve the method) so let's go with it for now */ \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
