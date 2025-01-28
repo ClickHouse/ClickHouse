@@ -928,7 +928,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             const SettingFieldBase * getSettingFieldPtr(size_t index, const Data & data) const; \
             const SettingFieldBase * getDefault(size_t index) const \
             { \
-                return field_infos[index].default_value.get(); \
+                return field_infos[index].default_value; \
             } \
             const String & getName(size_t index) const \
             { \
@@ -959,7 +959,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const char * type; \
                 const char * description; \
                 UInt64 flags; \
-                std::unique_ptr<const SettingFieldBase> default_value; \
+                const SettingFieldBase * default_value; \
                 uintptr_t offset_in_Data; \
             }; \
             std::vector<FieldInfo> field_infos; \
@@ -1027,13 +1027,15 @@ struct DefineAliases
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
+        static const Data defaults; \
         static const Accessor the_instance = [] \
         { \
             Accessor res; \
+            \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
-            for (size_t i : collections::range(res.field_infos.size())) \
+            for (size_t i = 0; i < res.field_infos.size(); i++) \
             { \
                 auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \
@@ -1056,6 +1058,9 @@ struct DefineAliases
     } \
     SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, Data & data) const \
     { \
+        /* Using offset_in_Data is technically undefined behaviour (the class is not a PODType) but it works correctly in all tested
+            platforms and allows us to massively reduce the complexity of the Setting objects (before we were using anonymous lamda
+            functions to resolve the method) so let's go with it for now */ \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
             return reinterpret_cast<SettingFieldBase *>( \
@@ -1091,8 +1096,7 @@ struct DefineAliases
         #TYPE, \
         DESCRIPTION, \
         static_cast<UInt64>(FLAGS), \
-        std::make_unique<const SettingField##TYPE>(DEFAULT), \
-        reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->NAME) \
-            - reinterpret_cast<uintptr_t>(&static_cast<Data *>(nullptr)->BLOCK_START), \
+        &defaults.NAME, \
+        reinterpret_cast<uintptr_t>(&defaults.NAME) - reinterpret_cast<uintptr_t>(&defaults.BLOCK_START), \
     });
 }
