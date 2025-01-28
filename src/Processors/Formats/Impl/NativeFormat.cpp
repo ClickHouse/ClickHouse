@@ -142,7 +142,6 @@ void registerOutputFormatNative(FormatFactory & factory)
     {
         return std::make_shared<NativeOutputFormat>(buf, sample, settings, settings.client_protocol_version);
     });
-    factory.markOutputFormatNotTTYFriendly("Native");
 }
 
 

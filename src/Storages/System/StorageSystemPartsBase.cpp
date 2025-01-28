@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
@@ -167,6 +168,13 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                         storage_uuid = hash.get128();
                     }
 
+#if USE_MYSQL
+                    if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
+                    {
+                        auto nested = proxy->getNested();
+                        storage.swap(nested);
+                    }
+#endif
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 

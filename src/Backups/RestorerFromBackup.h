@@ -38,7 +38,6 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
-        const ContextPtr & query_context_,
         ThreadPool & thread_pool_,
         const std::function<void()> & after_task_callback_);
 
@@ -82,7 +81,6 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
-    ContextPtr query_context;
     QueryStatusPtr process_list_element;
     std::function<void()> after_task_callback;
     std::chrono::milliseconds create_table_timeout;

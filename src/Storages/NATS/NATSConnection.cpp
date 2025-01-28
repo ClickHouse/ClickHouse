@@ -108,12 +108,12 @@ void NATSConnectionManager::connectImpl()
     }
     else
     {
-        std::vector<const char *> servers(configuration.servers.size());
+        const char * servers[configuration.servers.size()];
         for (size_t i = 0; i < configuration.servers.size(); ++i)
         {
             servers[i] = configuration.servers[i].c_str();
         }
-        natsOptions_SetServers(options, servers.data(), static_cast<int>(configuration.servers.size()));
+        natsOptions_SetServers(options, servers, static_cast<int>(configuration.servers.size()));
     }
     natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);

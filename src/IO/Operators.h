@@ -102,9 +102,7 @@ struct PcgDeserializer
 {
     static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
     {
-        decltype(rng.state_) multiplier;
-        decltype(rng.state_) increment;
-        decltype(rng.state_) state;
+        decltype(rng.state_) multiplier, increment, state;
         readText(multiplier, buf);
         assertChar(' ', buf);
         readText(increment, buf);

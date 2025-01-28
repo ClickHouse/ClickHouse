@@ -12,7 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientApplicationBase.h>
+#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include "Common/logger_useful.h"
@@ -547,8 +547,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 
             for (size_t i = 0; i < rules_size; ++i)
             {
-                String original_pattern;
-                String exception_message;
+                String original_pattern, exception_message;
                 readStringBinary(original_pattern, *in);
                 readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
@@ -1224,18 +1223,6 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
     }
 
     return {};
-}
-
-
-UInt64 Connection::receivePacketType()
-{
-    /// Have we already read packet type?
-    if (last_input_packet_type)
-        return *last_input_packet_type;
-
-    UInt64 type;
-    readVarUInt(type, *in);
-    return last_input_packet_type.emplace(type);
 }
 
 

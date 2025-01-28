@@ -83,7 +83,7 @@ namespace ErrorCodes
 String dumpQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
-    query_plan.explainPlan(query_plan_buffer, ExplainPlanOptions{true, true, true, true});
+    query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
 
     return query_plan_buffer.str();
 }
@@ -300,14 +300,6 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             {
                 return true;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
-
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
@@ -372,14 +364,6 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             {
                 auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
                 join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
-
                 break;
             }
             case QueryTreeNodeType::JOIN:

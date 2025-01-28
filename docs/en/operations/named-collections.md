@@ -546,27 +546,3 @@ ENGINE = Kafka(my_kafka_cluster)
 SETTINGS kafka_num_consumers = 4,
          kafka_thread_per_consumer = 1;
 ```
-
-## Named collections for backups
-
-For the description of parameters see [Backup and Restore](./backup.md).
-
-### DDL example
-
-```sql
-BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
-```
-
-### XML example
-
-```xml
-<clickhouse>
-    <named_collections>
-        <named_collection_s3_backups>
-            <url>https://my-s3-bucket.s3.amazonaws.com/backup-S3/</url>
-            <access_key_id>ABC123</access_key_id>
-            <secret_access_key>Abc+123</secret_access_key>
-        </named_collection_s3_backups>
-    </named_collections>
-</clickhouse>
-```
