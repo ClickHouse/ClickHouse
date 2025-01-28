@@ -206,7 +206,7 @@ jobs:
 
     @classmethod
     def _get_workflow_file_name(cls, file_name):
-        yaml_name = file_name.removesuffix(".py") + ".yaml"
+        yaml_name = file_name.removesuffix(".py") + ".yml"
         return f"{Settings.WORKFLOW_PATH_PREFIX}/{Utils.normalize_string(yaml_name)}"
 
     def generate(self):
@@ -221,7 +221,7 @@ jobs:
             with open(self._get_workflow_file_name(workflow_file_name), "w") as f:
                 f.write(yaml_workflow_str)
 
-        Shell.check("git add ./.github/workflows/*.yaml")
+        Shell.check("git add ./.github/workflows/*.yml")
 
 
 class PullRequestPushYamlGen:
@@ -414,7 +414,7 @@ class AuxConfig:
             suffix += "_uplgh"
         for _ in self.downloads_gh:
             suffix += "_dnlgh"
-        return f"{Settings.WORKFLOW_PATH_PREFIX}/aux_job{suffix}.yaml"
+        return f"{Settings.WORKFLOW_PATH_PREFIX}/aux_job{suffix}.yml"
 
     def get_aux_workflow_input(self):
         res = ""

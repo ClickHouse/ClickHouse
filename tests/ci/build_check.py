@@ -10,12 +10,13 @@ from typing import Tuple
 
 import docker_images_helper
 from ci_config import CI
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET
 from git_helper import Git
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_utils import Shell
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
@@ -152,11 +153,21 @@ def main():
     build_config = CI.JOB_CONFIGS[build_name].build_config
     assert build_config
 
-    temp_path = Path(TEMP_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
+    temp_path = repo_path / "ci" / "tmp"
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
+
+    print("Unshallow repo")
+    Shell.check(
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:"
+    )
+
+    print("Sync submodules")
+    Shell.check(
+        "git submodule sync --recursive && git submodule init && git submodule update --depth 1 --recursive --jobs 20"
+    )
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -176,7 +187,7 @@ def main():
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = temp_path / build_name
+    build_output_path = temp_path / "build"
     build_output_path.mkdir(parents=True, exist_ok=True)
 
     docker_image = docker_images_helper.pull_image(

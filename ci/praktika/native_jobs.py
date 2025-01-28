@@ -352,6 +352,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
+    stop_watch = Utils.Stopwatch()
 
     print("Check Actions statuses")
     print(env.get_needs_statuses())
@@ -427,9 +428,7 @@ def _finish_workflow(workflow, job_name):
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
-    return (
-        Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_results(results)
-    )
+    return Result.create_from(results=results, stopwatch=stop_watch)
 
 
 if __name__ == "__main__":

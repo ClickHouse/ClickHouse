@@ -39,12 +39,8 @@ class CacheRunnerHooks:
             if job.requires:
                 # include digest of required artifact to the job digest, so that they affect job state
                 for artifact_name in job.requires:
-                    if artifact_name not in [
-                        artifact.name for artifact in workflow.artifacts
-                    ]:
-                        # phony artifact assumed to be not affecting jobs that depend on it
-                        continue
-                    digests_combined_list.append(artifact_digest_map[artifact_name])
+                    if artifact_name in artifact_digest_map:
+                        digests_combined_list.append(artifact_digest_map[artifact_name])
             digests_combined_list.append(job_digest_map[job.name])
             final_digest = "-".join(digests_combined_list)
             workflow_config.digest_jobs[job.name] = final_digest
@@ -64,7 +60,7 @@ class CacheRunnerHooks:
 
         # Step 1: Fetch records concurrently
         fetched_records = []
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=200) as executor:
             futures = {
                 executor.submit(fetch_record, job_name, job_digest, cache): job_name
                 for job_name, job_digest in workflow_config.digest_jobs.items()

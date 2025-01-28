@@ -9,7 +9,7 @@ from ci.jobs.scripts.clickhouse_version import CHVersion
 
 def _add_build_to_version_history():
     Shell.check(
-        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:"
+        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:"
     )
     info = Info()
     commit_parents = Shell.get_output("git log --format=%P -n 1").split(" ")

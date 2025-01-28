@@ -85,6 +85,9 @@ class Info:
             sha = "latest"
         return self.get_specific_report_url(pr_number=self.env.PR_NUMBER, sha=sha)
 
+    def dump(self):
+        self.env.dump()
+
     def get_specific_report_url(self, pr_number, sha):
         from praktika.settings import Settings
 
