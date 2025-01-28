@@ -3916,7 +3916,7 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 exec_id = self.exec_in_container(
-                    ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command]),
+                    ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
                     user=str(os.getuid()),
                     detach=True,
                     use_cli=False,
