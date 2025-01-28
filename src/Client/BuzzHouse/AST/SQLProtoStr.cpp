@@ -623,6 +623,12 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_LEGR:
             ret += " <> ";
             break;
+        case BINOP_IS_NOT_DISTINCT_FROM:
+            ret += " IS NOT DISTINCT FROM ";
+            break;
+        case BINOP_LEEQLE:
+            ret += " <=> ";
+            break;
         case BINOP_AND:
             ret += " AND ";
             break;
@@ -1026,7 +1032,8 @@ CONV_FN(ExprLike, elike)
     ret += " ";
     if (elike.not_())
         ret += "NOT ";
-    ret += "LIKE ";
+    ret += ExprLike_PossibleKeywords_Name(elike.keyword());
+    ret += " ";
     ExprToString(ret, elike.expr2());
 }
 
