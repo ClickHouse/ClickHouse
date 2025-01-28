@@ -2,8 +2,7 @@
 #include "config.h"
 
 #if USE_AVRO
-
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 namespace Iceberg
 {
 

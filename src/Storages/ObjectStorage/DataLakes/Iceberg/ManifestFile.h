@@ -6,7 +6,6 @@
 
 #include <cstdint>
 #include <Common/Exception.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
 namespace Iceberg
 {
@@ -33,15 +32,6 @@ struct DataFileEntry
     String data_file_name;
     ManifestEntryStatus status;
     DataFileContent content;
-    std::unordered_map<Int32, DB::Range> partition_ranges;
-
-    std::vector<DB::Range> getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const;
-};
-
-struct PartitionColumnInfo
-{
-    PartitionTransform transform;
-    Int32 source_id;
 };
 
 
@@ -52,8 +42,6 @@ public:
 
     const std::vector<DataFileEntry> & getDataFiles() const;
     Int32 getSchemaId() const;
-    const std::vector<PartitionColumnInfo> & getPartitionColumnInfos() const;
-
 
 private:
     std::unique_ptr<ManifestFileContentImpl> impl;
