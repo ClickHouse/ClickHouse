@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <base/AlignedUnion.h>
+#include <base/StringRef.h>
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -259,6 +260,7 @@ template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
 template <> struct NearestFieldTypeImpl<std::string_view> { using Type = String; };
+template <> struct NearestFieldTypeImpl<StringRef> { using Type = String; };
 template <> struct NearestFieldTypeImpl<String> { using Type = String; };
 template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
 template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
@@ -383,6 +385,7 @@ public:
     Field(const String & str) { create(std::string_view{str}); } /// NOLINT
     Field(String && str) { create(std::move(str)); } /// NOLINT
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
+    Field(StringRef str) { create(str.toView()); } /// NOLINT
 
     template <typename CharT>
     Field(const CharT * data, size_t size)
@@ -441,6 +444,7 @@ public:
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
     Field & operator= (String && str);
     Field & operator= (const char * str) { return *this = std::string_view{str}; }
+    Field & operator= (StringRef str) { return *this = str.toView(); }
 
     ~Field()
     {

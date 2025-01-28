@@ -11,6 +11,7 @@
 #include <Dictionaries/HashedDictionaryCollectionType.h>
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
 #include <Dictionaries/HashedDictionaryParallelLoader.h>
+#include <Dictionaries/DictionaryBytesUtils.h>
 
 #include <Core/Block.h>
 #include <Core/Defines.h>
@@ -1226,8 +1227,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
         {
             for (const auto & container : containers)
             {
-                bytes_allocated += sizeof(container);
-                bytes_allocated += getBufferSizeInBytes(container);
+                bytes_allocated += getAllocatedBytesInContainer(container);
                 bucket_count += getBufferSizeInCells(container);
             }
         });

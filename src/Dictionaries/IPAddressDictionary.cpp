@@ -21,6 +21,7 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionaryBytesUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <stack>
@@ -576,7 +577,7 @@ template <typename T>
 void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
 {
     const auto & vec = std::get<ContainerType<T>>(attribute.maps);
-    bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
+    bytes_allocated += getAllocatedBytesInContainer(vec);
     bucket_count = vec.size();
 }
 

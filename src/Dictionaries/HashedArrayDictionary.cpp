@@ -14,6 +14,7 @@
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <Dictionaries/DictionaryBytesUtils.h>
 
 namespace DB
 {
@@ -1065,18 +1066,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
 
             for (const auto & container : std::get<AttributeContainerShardsType<ValueType>>(attribute.containers))
             {
-                bytes_allocated += sizeof(AttributeContainerType<ValueType>);
-
-                if constexpr (std::is_same_v<ValueType, Array>)
-                {
-                    /// It is not accurate calculations
-                    bytes_allocated += sizeof(Array) * container.size();
-                }
-                else
-                {
-                    bytes_allocated += container.allocated_bytes();
-                }
-
+                bytes_allocated += getAllocatedBytesInContainer(container);
                 bucket_count += container.capacity();
             }
         };
