@@ -26,7 +26,6 @@
 #include <Parsers/ParserViewTargets.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTOrderByElement.h>
 
 
 namespace DB
@@ -495,47 +494,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     return true;
 }
 
-bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserStorageOrderByExpressionList order_list_p(allow_order);
-    ParserStorageOrderByElement order_elem_p(allow_order);
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
-
-    ASTPtr order_by;
-
-    /// Check possible ASC|DESC suffix for single key
-    if (order_elem_p.parse(pos, order_by, expected))
-    {
-        /// This is needed because 'order by (x, y)' is parsed as tuple.
-        /// We can remove ASTStorageOrderByElement if no ASC|DESC suffix was specified.
-        if (const auto * elem = order_by->as<ASTStorageOrderByElement>(); elem && elem->direction > 0)
-            order_by = elem->children.front();
-
-        node = order_by;
-        return true;
-    }
-
-    /// Check possible ASC|DESC suffix for a list of keys
-    if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "tuple")
-        ++pos;
-
-    if (!s_lparen.ignore(pos, expected))
-        return false;
-
-    if (!order_list_p.parse(pos, order_by, expected))
-        order_by = std::make_shared<ASTExpressionList>();
-
-    if (!s_rparen.ignore(pos, expected))
-        return false;
-
-    auto tuple_function = std::make_shared<ASTFunction>();
-    tuple_function->name = "tuple";
-    tuple_function->arguments = std::move(order_by);
-
-    node = std::move(tuple_function);
-    return true;
-}
 
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -550,7 +508,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
-    ParserStorageOrderByClause order_by_p(/*allow_order_*/ true);
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
     ParserStringLiteral string_literal_parser;
@@ -599,7 +556,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            if (order_by_p.parse(pos, order_by, expected))
+            if (expression_p.parse(pos, order_by, expected))
             {
                 storage_like = true;
                 continue;
@@ -627,10 +584,10 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
-        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
-        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
-        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
+        /// Do not allow SETTINGS clause without ENGINE,
+        /// because we cannot distinguish engine settings from query settings in this case.
+        /// And because settings for each engine are different.
+        if (parsed_engine_keyword && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -684,9 +641,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_as(Keyword::AS);
-    ParserKeyword s_not(Keyword::NOT);
-    ParserKeyword s_replicated(Keyword::REPLICATED);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -744,23 +698,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!table_name_p.parse(pos, table, expected))
         return false;
 
-    std::optional<bool> attach_as_replicated = std::nullopt;
-    if (attach)
+    if (attach && s_from.ignore(pos, expected))
     {
-        if (s_from.ignore(pos, expected))
-        {
-            ParserStringLiteral from_path_p;
-            if (!from_path_p.parse(pos, from_path, expected))
-                return false;
-        } else if (s_as.ignore(pos, expected))
-        {
-            if (s_not.ignore(pos, expected))
-                attach_as_replicated = false;
-            if (!s_replicated.ignore(pos, expected))
-                return false;
-            if (!attach_as_replicated.has_value())
-                attach_as_replicated = true;
-        }
+        ParserStringLiteral from_path_p;
+        if (!from_path_p.parse(pos, from_path, expected))
+            return false;
     }
 
     if (s_on.ignore(pos, expected))
@@ -786,8 +728,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
-
-        query->attach_as_replicated = attach_as_replicated;
 
         if (query->database)
             query->children.push_back(query->database);
@@ -902,7 +842,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = query;
 
     query->attach = attach;
-    query->attach_as_replicated = attach_as_replicated;
     query->replace_table = replace;
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
@@ -1520,7 +1459,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
-    ParserAliasesExpressionList expr_list_aliases;
     ParserSelectWithUnionQuery select_p;
     ParserNameList names_p;
     ParserSQLSecurity sql_security_p;
@@ -1529,7 +1467,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr to_table;
     ASTPtr to_inner_uuid;
     ASTPtr columns_list;
-    ASTPtr aliases_list;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -1607,31 +1544,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-    if (s_lparen.ignore(pos, expected)) // Parsing cases like CREATE VIEW (a Int64, b Int64) (a, b) SELECT ...
+    if (s_lparen.ignore(pos, expected))
     {
-        bool has_aliases = false;
         if (!table_properties_p.parse(pos, columns_list, expected))
-        {
-            if (!expr_list_aliases.parse(pos, aliases_list, expected))
-                return false;
-            else
-                has_aliases = true;
-        }
-        else
-        {
-            if (!s_rparen.ignore(pos, expected))
-                return false;
-            if (s_lparen.ignore(pos, expected))
-            {
-                has_aliases = true;
-                if (!expr_list_aliases.parse(pos, aliases_list, expected))
-                    return false;
-            }
-        }
+            return false;
 
-        if (has_aliases)
-            if (!s_rparen.ignore(pos, expected))
-                return false;
+        if (!s_rparen.ignore(pos, expected))
+            return false;
     }
 
     if (is_materialized_view)
@@ -1707,7 +1626,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
-    query->set(query->aliases_list, aliases_list);
 
     if (refresh_strategy)
         query->set(query->refresh_strategy, refresh_strategy);

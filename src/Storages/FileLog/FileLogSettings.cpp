@@ -93,8 +93,4 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
             ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size);
 }
 
-bool FileLogSettings::hasBuiltin(std::string_view name)
-{
-    return FileLogSettingsImpl::hasBuiltin(name);
-}
 }

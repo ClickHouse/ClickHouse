@@ -1,6 +1,5 @@
 
 #include "Commands.h"
-#include <Common/StringUtils.h>
 #include <queue>
 #include "KeeperClient.h"
 #include "Parsers/CommonParsers.h"
@@ -114,21 +113,13 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     int mode = zkutil::CreateMode::Persistent;
 
     if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
-    {
-        ParserToken{TokenType::Whitespace}.ignore(pos);
-        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
-            mode = zkutil::CreateMode::PersistentSequential;
-        else
-            mode = zkutil::CreateMode::Persistent;
-    }
+        mode = zkutil::CreateMode::Persistent;
     else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
-    {
-        ParserToken{TokenType::Whitespace}.ignore(pos);
-        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
-            mode = zkutil::CreateMode::EphemeralSequential;
-        else
-            mode = zkutil::CreateMode::Ephemeral;
-    }
+        mode = zkutil::CreateMode::Ephemeral;
+    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
+        mode = zkutil::CreateMode::EphemeralSequential;
+    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
+        mode = zkutil::CreateMode::PersistentSequential;
 
     node->args.push_back(std::move(mode));
 

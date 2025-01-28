@@ -24,15 +24,14 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
+            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
             --header-background-color: #f4f4f4;
         }
 
         body.night-theme {
             --background-color: #1F1F1C;
-            --text-color: #dedede;
-            --tile-background: #1F1F1C;
+            --text-color: #fff;
+            --tile-background: black;
             --header-background-color: #1F1F1C;
         }
 
@@ -55,8 +54,6 @@
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
-            overflow-y: auto;
-            margin-bottom: 40px;
         }
 
         #status-container a {
@@ -66,16 +63,9 @@
             cursor: pointer;
             display: inline-block;
             margin-top: 5px;
-            margin-left: 10px;
+            margin-left: 20px;
             padding: 2px 0;
-            font-size: 0.7em;
-            font-family: 'Roboto Condensed', sans-serif;
-            font-stretch: ultra-condensed;
-
-            max-width: 270px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            font-size: 0.8em;
         }
 
         #status-container a:hover {
@@ -98,12 +88,7 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
         }
-        .json-value-small {
-            font-weight: normal;
-            font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
-            font-size: 0.75rem;
-        }
+
         .dropdown-value {
             width: 100px;
             font-weight: normal;
@@ -125,8 +110,6 @@
             font-weight: normal;
             flex-grow: 1;
             margin-bottom: 40px;
-            overflow-x: auto;
-            white-space: nowrap;
         }
 
         #footer {
@@ -292,10 +275,9 @@
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
-<!--    TODO: fix night theme and enable-->
-<!--    <div class="settings">-->
-<!--        <span id="theme-toggle">☀️</span>-->
-<!--    </div>-->
+    <div class="settings">
+        <span id="theme-toggle">☀️</span>
+    </div>
 </footer>
 
 <script>
@@ -316,8 +298,7 @@
     }
 
     // Attach the toggle function to the click event of the icon
-    // TODO: fix night theme and enable
-    // document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -388,7 +369,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = key !== "" ? key + ":" : "";
+        keyElement.textContent = key + ':';
 
         let valueElement;
 
@@ -418,11 +399,7 @@
         } else {
             // Create a simple text display if no options are provided
             valueElement = document.createElement('div');
-            if (key !== "") {
-                valueElement.className = "json-value";
-            } else {
-                valueElement.className = "json-value-small";
-            }
+            valueElement.className = 'json-value';
             valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
         }
 
@@ -441,8 +418,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        //keyElement.textContent = columnSymbols[key] + ':' || key;
-        keyElement.textContent = '';
+        keyElement.textContent = columnSymbols[key] + ':' || key;
         statusContainer.appendChild(keyElement);
 
         if (Array.isArray(links) && links.length > 0) {
@@ -466,8 +442,7 @@
         let valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
-        keyElement.textContent = '';
+        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
         valueElement.classList.add('status-value');
         valueElement.classList.add(getStatusClass(status));
         valueElement.textContent = status;
@@ -481,8 +456,7 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
-        keyElement.textContent = ''
+        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
         valueElement.textContent = formatTimestamp(start_time);
         keyValuePair.appendChild(keyElement);
         keyValuePair.appendChild(valueElement);
@@ -494,8 +468,7 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        //keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
-        keyElement.textContent = ''
+        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
         if (duration === null) {
             // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
             valueElement.textContent = '00:00:00';
@@ -522,19 +495,13 @@
         let pathLinks = [];
         let currentObj = jsonObj;
 
-        // Add the first entry (workflow level)
-        baseParams.set(`name_0`, nameArray[0]);
-        pathNames.push(nameArray[0]);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[0]}</a>`);
-        // Add the second entry (job level)
-        if (nameArray.length > 1) {
-            baseParams.set(`name_1`, nameArray[1]);
-            pathNames.push(nameArray[1]);
-            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[1]}</a>`);
-        }
+        // Add the first entry (root level)
+        baseParams.set(`name_0`, currentObj.name);
+        pathNames.push(currentObj.name);
+        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
         // Iterate through the nameArray starting at index 0
         for (const [index, name] of nameArray.entries()) {
-            if (index === 0 || index === 1) continue;
+            if (index === 0) continue;
             if (currentObj && Array.isArray(currentObj.results)) {
                 const nextResult = currentObj.results.find(result => result.name === name);
                 if (nextResult) {
@@ -561,11 +528,11 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        // name: '🗂️',
-        // status: '✅',
-        start_time: 'ts',
-        duration: 'dur',
-        // info: '📝',
+        name: '🗂️',
+        status: '🧾',
+        start_time: '🕒',
+        duration: '⏳',
+        info: '📝',
         files: '📎'
     };
 
@@ -634,7 +601,7 @@
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
-                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
+                    td.textContent = value.includes('\n') ? '↵' : (value || '');
                     td.classList.add('info-column');
                 }
 
@@ -674,15 +641,7 @@
     function loadResultsJSON(PR, sha, nameParams) {
         const infoElement = document.getElementById('info-container');
         let lastModifiedTime = null;
-        // There are result json files of 2 levels:
-        //     0. top level - workflow result
-        //     1. job level - job result
-        //   if nameParams.length > 1 - it's a job result
-        const task = (nameParams.length > 1 ? nameParams[1] : nameParams[0])
-            .toLowerCase()
-            .replace(/[^a-z0-9]/g, '_')
-            .replace(/_+/g, '_')
-            .replace(/_+$/, '');
+        const task = nameParams[0].toLowerCase();
 
         // Construct the URL dynamically based on PR, sha, and name_X
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
@@ -704,43 +663,15 @@
                 let targetData = navigatePath(data, nameParams);
                 let nest_level = nameParams.length;
 
-                // helper func
-                function createLinkElement(href, textContent, footer) {
-                    const a = document.createElement('a');
-                    a.href = href;
-                    a.textContent = textContent;
-                    a.target = '_blank';
-                    footer.appendChild(a);
-                }
-
-                if (nameParams.length === 1) {
-                    // Add PR/Run links to the footer if not the top result.json
-                    if (Array.isArray(data.links) && data.links.length > 0) {
-                        data.links.forEach(link => {
-                            let textContent;
-                            if (link.includes('/pull/')) {
-                                textContent = 'PR';
-                                localStorage.setItem('pr_link', JSON.stringify(link));
-                            } else if (link.includes('/commit/')) {
-                                textContent = 'Commit';
-                                localStorage.setItem('commit_link', JSON.stringify(link));
-                            } else if (link.includes('/actions/runs/')) {
-                                textContent = 'Run';
-                                localStorage.setItem('run_link', JSON.stringify(link));
-                            } else {
-                                return; // Skip links that don't match the criteria
-                            }
-                            createLinkElement(link, textContent, footerRight);
-                        });
-                    }
-                } else {
-                    // Retrieve stored links and add them to the footer
-                    const prLink = JSON.parse(localStorage.getItem('pr_link'));
-                    const runLink = JSON.parse(localStorage.getItem('run_link'));
-                    const commitLink = JSON.parse(localStorage.getItem('commit_link'));
-                    if (prLink) createLinkElement(prLink, 'PR', footerRight);
-                    if (commitLink) createLinkElement(commitLink, 'PR', footerRight);
-                    if (runLink) createLinkElement(runLink, 'Run', footerRight);
+                // Add footer links from top-level  Result
+                if (Array.isArray(data.links) && data.links.length > 0) {
+                    data.links.forEach(link => {
+                        const a = document.createElement('a');
+                        a.href = link;
+                        a.textContent = link.split('/').pop();
+                        a.target = '_blank';
+                        footerRight.appendChild(a);
+                    });
                 }
 
                 if (targetData) {
@@ -750,9 +681,8 @@
                     addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 
                     // Handle links
-                    if (nameParams.length > 1) {
-                        addFileButtonToStatus('files', targetData.links)
-                    }
+                    addFileButtonToStatus('files', targetData.links)
+
 
                     // Handle duration update if duration is null and start_time exists
                     if (targetData.duration === null && targetData.start_time) {
@@ -829,9 +759,7 @@
         let commitsArray = [];
 
         if (PR) {
-            if (PR > 0) {
-                addKeyValueToStatus("PR", PR);
-            }
+            addKeyValueToStatus("PR", PR);
             const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
             path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
         } else {
@@ -870,14 +798,10 @@
                 // Proceed with the rest of the initialization
                 addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
 
-                let current_sha = sha === "latest" ? (commitsArray.at(-1) || sha) : sha;
-                addKeyValueToStatus("", current_sha);
-
-                // These are present in naviagation bar at the bottom. Try to remove as names might be long and do not fit status bar
-                // if (nameParams[1]) {
-                //     addKeyValueToStatus("job", nameParams[1]);
-                // }
-                // addKeyValueToStatus("workflow", nameParams[0]);
+                if (nameParams[1]) {
+                    addKeyValueToStatus("job", nameParams[1]);
+                }
+                addKeyValueToStatus("workflow", nameParams[0]);
 
                 // Check if all required parameters are present to load JSON
                 if (PR && sha && root_name) {

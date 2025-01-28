@@ -1,11 +1,10 @@
 import json
 import time
-from typing import Any, List, Union
 
-from ._environment import _Environment
-from .result import Result
-from .settings import Settings
-from .utils import Shell
+from praktika._environment import _Environment
+from praktika.result import Result
+from praktika.settings import Settings
+from praktika.utils import Shell
 
 
 class GH:
@@ -94,16 +93,6 @@ class GH:
             assert (
                 False
             ), f"Invalid status [{status}] to be set as GH commit status.state"
-
-    @classmethod
-    def print_log_in_group(cls, group_name: str, lines: Any):
-        if not isinstance(lines, (list, tuple, set)):
-            lines = [lines]
-
-        print(f"::group::{group_name}")
-        for line in lines:
-            print(line)
-        print("::endgroup::")
 
 
 if __name__ == "__main__":

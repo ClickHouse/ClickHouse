@@ -1,6 +1,4 @@
-import copy
 from dataclasses import dataclass
-from typing import List, Union
 
 
 class Artifact:
@@ -19,20 +17,12 @@ class Artifact:
 
         name: str
         type: str
-        path: Union[str, List[str]]
+        path: str
         _provided_by: str = ""
         _s3_path: str = ""
 
         def is_s3_artifact(self):
             return self.type == Artifact.Type.S3
-
-        def parametrize(self, names):
-            res = []
-            for name in names:
-                obj = copy.deepcopy(self)
-                obj.name = name
-                res.append(obj)
-            return res
 
     @classmethod
     def define_artifact(cls, name, type, path):

@@ -1,19 +1,19 @@
 import sys
 from typing import Dict
 
-from . import Job, Workflow
-from ._environment import _Environment
-from .cidb import CIDB
-from .digest import Digest
-from .docker import Docker
-from .gh import GH
-from .hook_cache import CacheRunnerHooks
-from .hook_html import HtmlRunnerHooks
-from .mangle import _get_workflows
-from .result import Result, ResultInfo, _ResultS3
-from .runtime import RunConfig
-from .settings import Settings
-from .utils import Shell, Utils
+from praktika import Job, Workflow
+from praktika._environment import _Environment
+from praktika.cidb import CIDB
+from praktika.digest import Digest
+from praktika.docker import Docker
+from praktika.gh import GH
+from praktika.hook_cache import CacheRunnerHooks
+from praktika.hook_html import HtmlRunnerHooks
+from praktika.mangle import _get_workflows
+from praktika.result import Result, ResultInfo, _ResultS3
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
+from praktika.utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
 
@@ -38,7 +38,7 @@ _docker_build_job = Job.Config(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
-    timeout=int(5.5 * 3600),
+    timeout=4 * 3600,
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_JOB_NAME}'",
 )
 
@@ -137,10 +137,6 @@ def _build_dockers(workflow, job_name):
 
 
 def _config_workflow(workflow: Workflow.Config, job_name):
-
-    # debug info
-    GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
-
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         stop_watch = Utils.Stopwatch()
@@ -148,7 +144,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
         )
         info = ""
-        status = Result.Status.FAILED
+        status = Result.Status.SUCCESS
         if exit_code != 0:
             info = f"workspace has uncommitted files unexpectedly [{output}]"
             status = Result.Status.ERROR
@@ -156,23 +152,22 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         else:
             assert Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika yaml")
             exit_code, output, err = Shell.get_res_stdout_stderr(
-                f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
+                f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if output:
-                info = f"outdated workflows: [{output}], run [praktika yaml] to update"
-                status = Result.Status.FAILED
+            if exit_code != 0:
+                info = f"workspace has outdated workflows [{output}] - regenerate with [python -m praktika --generate]"
+                status = Result.Status.ERROR
                 print("ERROR: ", info)
-            elif exit_code == 0 and not err:
-                status = Result.Status.SUCCESS
-            else:
-                print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
-        return Result(
-            name="Check Workflows updated",
-            status=status,
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-            info=info,
+        return (
+            Result(
+                name="Check Workflows updated",
+                status=status,
+                start_time=stop_watch.start_time,
+                duration=stop_watch.duration,
+                info=info,
+            ),
+            info,
         )
 
     def _check_secrets(secrets):
@@ -187,27 +182,32 @@ def _config_workflow(workflow: Workflow.Config, job_name):
                 print(info)
 
         info = "\n".join(infos)
-        return Result(
-            name="Check Secrets",
-            status=(Result.Status.FAILED if infos else Result.Status.SUCCESS),
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-            info=info,
+        return (
+            Result(
+                name="Check Secrets",
+                status=(Result.Status.FAILED if infos else Result.Status.SUCCESS),
+                start_time=stop_watch.start_time,
+                duration=stop_watch.duration,
+                info=info,
+            ),
+            info,
         )
 
     def _check_db(workflow):
         stop_watch = Utils.Stopwatch()
         res, info = CIDB(
             workflow.get_secret(Settings.SECRET_CI_DB_URL).get_value(),
-            workflow.get_secret(Settings.SECRET_CI_DB_USER).get_value(),
             workflow.get_secret(Settings.SECRET_CI_DB_PASSWORD).get_value(),
         ).check()
-        return Result(
-            name="Check CI DB",
-            status=(Result.Status.FAILED if not res else Result.Status.SUCCESS),
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-            info=info,
+        return (
+            Result(
+                name="Check CI DB",
+                status=(Result.Status.FAILED if not res else Result.Status.SUCCESS),
+                start_time=stop_watch.start_time,
+                duration=stop_watch.duration,
+                info=info,
+            ),
+            info,
         )
 
     print(f"Start [{job_name}], workflow [{workflow.name}]")
@@ -216,57 +216,38 @@ def _config_workflow(workflow: Workflow.Config, job_name):
     info_lines = []
     job_status = Result.Status.SUCCESS
 
-    env = _Environment.get()
     workflow_config = RunConfig(
         name=workflow.name,
         digest_jobs={},
         digest_dockers={},
-        sha=env.SHA,
+        sha=_Environment.get().SHA,
         cache_success=[],
         cache_success_base64=[],
         cache_artifacts={},
         cache_jobs={},
     ).dump()
 
-    if workflow.pre_hooks:
-        sw_ = Utils.Stopwatch()
-        res_ = []
-        for pre_check in workflow.pre_hooks:
-            if callable(pre_check):
-                name = pre_check.__name__
-            else:
-                name = str(pre_check)
-            res_.append(
-                Result.from_commands_run(name=name, command=pre_check, with_info=True)
-            )
-
-        results.append(
-            Result.create_from(name="Pre Checks", results=res_, stopwatch=sw_)
-        )
-        if not results[-1].is_ok():
-            job_status = Result.Status.ERROR
-
     # checks:
-    result_ = _check_yaml_up_to_date()
+    result_, info = _check_yaml_up_to_date()
     if result_.status != Result.Status.SUCCESS:
         print("ERROR: yaml files are outdated - regenerate, commit and push")
         job_status = Result.Status.ERROR
-        info_lines.append(result_.name + ": " + result_.info)
+        info_lines.append(job_name + ": " + info)
     results.append(result_)
 
     if workflow.secrets:
-        result_ = _check_secrets(workflow.secrets)
+        result_, info = _check_secrets(workflow.secrets)
         if result_.status != Result.Status.SUCCESS:
             print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
             job_status = Result.Status.ERROR
-            info_lines.append(result_.name + ": " + result_.info)
+            info_lines.append(job_name + ": " + info)
         results.append(result_)
 
     if workflow.enable_cidb:
-        result_ = _check_db(workflow)
+        result_, info = _check_db(workflow)
         if result_.status != Result.Status.SUCCESS:
             job_status = Result.Status.ERROR
-            info_lines.append(result_.name + ": " + result_.info)
+            info_lines.append(job_name + ": " + info)
         results.append(result_)
 
     if workflow.enable_merge_commit:
@@ -329,33 +310,15 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    version = _ResultS3.copy_result_from_s3_with_version(
+    _ResultS3.copy_result_from_s3(
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
 
-    update_final_report = False
-    results = []
-    if workflow.post_hooks:
-        sw_ = Utils.Stopwatch()
-        res_ = workflow_result.results
-        update_final_report = True
-        for check in workflow.post_hooks:
-            if callable(check):
-                name = check.__name__
-            else:
-                name = str(check)
-            res_.append(
-                Result.from_commands_run(name=name, command=check, with_info=True)
-            )
-
-        results.append(
-            Result.create_from(name="Post Checks", results=res_, stopwatch=sw_)
-        )
-
     ready_for_merge_status = Result.Status.SUCCESS
     ready_for_merge_description = ""
     failed_results = []
+    update_final_report = False
     for result in workflow_result.results:
         if result.name == job_name or result.status in (
             Result.Status.SUCCESS,
@@ -370,7 +333,7 @@ def _finish_workflow(workflow, job_name):
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
             # add error into env - should apper in the report
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+            env.add_info(ResultInfo.NOT_FINALIZED + f" [{result.name}]")
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
@@ -395,9 +358,11 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
+        _ResultS3.copy_result_to_s3(
+            workflow_result,
+        )
 
-    Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_results(results)
+    Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
 
 
 if __name__ == "__main__":

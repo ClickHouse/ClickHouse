@@ -1,8 +1,8 @@
-from ._environment import _Environment
-from .cache import Cache
-from .runtime import RunConfig
-from .settings import Settings
-from .utils import Utils
+from praktika._environment import _Environment
+from praktika.cache import Cache
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 class CacheRunnerHooks:
@@ -100,7 +100,9 @@ class CacheRunnerHooks:
                 record = runtime_config.cache_artifacts[artifact.name]
                 print(f"Reuse artifact [{artifact.name}] from [{record}]")
                 path_prefixes.append(
-                    env.get_s3_prefix_static(record.pr_number, record.sha)
+                    env.get_s3_prefix_static(
+                        record.pr_number, record.branch, record.sha
+                    )
                 )
             else:
                 path_prefixes.append(env.get_s3_prefix())

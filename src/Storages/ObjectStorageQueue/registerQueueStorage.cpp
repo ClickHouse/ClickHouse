@@ -32,7 +32,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false, nullptr);
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -79,7 +79,6 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
-            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif
@@ -97,7 +96,6 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::AZURE,
-            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif

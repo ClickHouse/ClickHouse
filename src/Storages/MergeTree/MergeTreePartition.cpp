@@ -399,7 +399,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
 }
 
-void MergeTreePartition::load(const MergeTreeData & storage, const IMergeTreeDataPart & part)
+void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!metadata_snapshot->hasPartitionKey())
@@ -407,7 +407,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const IMergeTreeDat
 
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
 
-    auto file = part.readFile("partition.dat");
+    auto file = manager->read("partition.dat");
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});

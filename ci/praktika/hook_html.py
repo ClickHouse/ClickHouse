@@ -3,15 +3,14 @@ import json
 from pathlib import Path
 from typing import List
 
-from ._environment import _Environment
-from .gh import GH
-from .info import Info
-from .parser import WorkflowConfigParser
-from .result import Result, ResultInfo, _ResultS3
-from .runtime import RunConfig
-from .s3 import S3
-from .settings import Settings
-from .utils import Utils
+from praktika._environment import _Environment
+from praktika.gh import GH
+from praktika.parser import WorkflowConfigParser
+from praktika.result import Result, ResultInfo, _ResultS3
+from praktika.runtime import RunConfig
+from praktika.s3 import S3
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 @dataclasses.dataclass
@@ -57,9 +56,6 @@ class GitCommit:
                 )
                 return
         commits.append(GitCommit(sha=sha))
-        commits = commits[
-            -20:
-        ]  # limit maximum number of commits from the past to show in the report
         cls.push_to_s3(commits)
         return
 
@@ -76,7 +72,7 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.PR_NUMBER}/{file_name}"
+        s3_path = f"{Settings.HTML_S3_PATH}/{cls.get_s3_prefix(pr_number=env.PR_NUMBER, branch=env.BRANCH)}/{file_name}"
         if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
@@ -89,9 +85,19 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.PR_NUMBER}/{file_name}"
+        s3_path = f"{Settings.HTML_S3_PATH}/{cls.get_s3_prefix(pr_number=env.PR_NUMBER, branch=env.BRANCH)}/{file_name}"
         if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
+
+    @classmethod
+    def get_s3_prefix(cls, pr_number, branch):
+        prefix = ""
+        assert pr_number or branch
+        if pr_number and pr_number > 0:
+            prefix += f"{pr_number}"
+        else:
+            prefix += f"{branch}"
+        return prefix
 
     @classmethod
     def file_name(cls):
@@ -129,32 +135,28 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
-        info = Info()
-        summary_result.set_info(
-            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
-            if info.pr_number
-            else f"{info.git_branch}  |  {info.git_sha}"
-        )
 
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = Info().get_report_url(latest=True)
+        page_url = env.get_report_url(settings=Settings)
         print(f"CI Status page url [{page_url}]")
 
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=page_url,
+            url=env.get_report_url(settings=Settings, latest=True),
         )
-        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
+        res2 = GH.post_pr_comment(
             comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
+            or_update_comment_with_substring=f"Workflow [",
         )
         if not (res1 or res2):
             Utils.raise_with_error(
                 "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
             )
-        GitCommit.update_s3_data()
+        if env.PR_NUMBER:
+            # TODO: enable for branch, add commit number limiting
+            GitCommit.update_s3_data()
 
     @classmethod
     def pre_run(cls, _workflow, _job):
@@ -170,7 +172,7 @@ class HtmlRunnerHooks:
     @classmethod
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
-        _ResultS3.upload_result_files_to_s3(result).dump()
+        _ResultS3.upload_result_files_to_s3(result)
         _ResultS3.copy_result_to_s3(result)
 
         env = _Environment.get()
@@ -223,5 +225,5 @@ class HtmlRunnerHooks:
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=True),
+                url=env.get_report_url(settings=Settings, latest=True),
             )

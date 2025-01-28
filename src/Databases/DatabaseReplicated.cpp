@@ -15,7 +15,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -44,7 +43,6 @@
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PoolId.h>
-#include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
@@ -142,9 +140,9 @@ DatabaseReplicated::DatabaseReplicated(
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
-    if (shard_name.contains('/') || replica_name.contains('/'))
+    if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
-    if (shard_name.contains('|') || replica_name.contains('|'))
+    if (shard_name.find('|') != std::string::npos || replica_name.find('|') != std::string::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (zookeeper_path.back() == '/')
@@ -1107,9 +1105,9 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.contains("Replicated");
-    bool looks_like_shared = metadata.contains("Shared");
-    bool looks_like_merge_tree = metadata.contains("MergeTree");
+    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
+    bool looks_like_shared = metadata.find("Shared") != std::string::npos;
+    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
     if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
@@ -1548,7 +1546,7 @@ void DatabaseReplicated::dropReplica(
 
     String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
 
-    if (full_replica_name.contains('/'))
+    if (full_replica_name.find('/') != std::string::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
@@ -1845,14 +1843,9 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
-    ReadSettings read_settings = getReadSettings();
-    read_settings.local_fs_method = LocalFSReadMethod::read;
-    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
-    auto in = db_disk->readFile(getObjectMetadataPath(table_name), read_settings);
-
     String statement;
-    readStringUntilEOF(statement, *in);
-
+    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
+    readStringUntilEOF(statement, in);
     return statement;
 }
 

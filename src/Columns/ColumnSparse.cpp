@@ -94,11 +94,6 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
-{
-    return values->getValueNameAndType(getValueIndex(n));
-}
-
 bool ColumnSparse::getBool(size_t n) const
 {
     return values->getBool(getValueIndex(n));
@@ -779,10 +774,10 @@ UInt64 ColumnSparse::getNumberOfDefaultRows() const
     return _size - offsets->size();
 }
 
-ColumnPtr ColumnSparse::compress(bool force_compression) const
+ColumnPtr ColumnSparse::compress() const
 {
-    auto values_compressed = values->compress(force_compression);
-    auto offsets_compressed = offsets->compress(force_compression);
+    auto values_compressed = values->compress();
+    auto offsets_compressed = offsets->compress();
 
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 
