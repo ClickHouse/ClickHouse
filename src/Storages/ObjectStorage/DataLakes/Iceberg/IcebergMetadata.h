@@ -130,6 +130,8 @@ private:
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
+    std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
+
     //Fields are needed only for providing dynamic polymorphism
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;

@@ -283,7 +283,7 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     auto manifest_file_it = manifest_file_by_data_file.find(data_path);
     if (manifest_file_it == manifest_file_by_data_file.end())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find manifest file for data file: {}", data_path);
     }
     const ManifestFileContent & manifest_file = *manifest_file_it->second;
     auto schema_id = manifest_file.getSchemaId();
@@ -335,6 +335,30 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
     auto manifest_list_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
+
+    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "dataSchema: {}", manifest_list_file_reader->dataSchema().toJson(true));
+
+    std::stringstream data_schema_root_ss;
+    manifest_list_file_reader->dataSchema().root()->printJson(data_schema_root_ss, 10);
+    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "dataSchema root: {}", data_schema_root_ss.str());
+
+    LOG_DEBUG(
+        &Poco::Logger::get("IcebergMetadata, ManifestList"),
+        "dataSchema root type: {}",
+        manifest_list_file_reader->dataSchema().root()->type());
+
+    for (size_t i = 0; i < manifest_list_file_reader->dataSchema().root()->leaves(); ++i)
+    {
+        const auto & field = manifest_list_file_reader->dataSchema().root()->leafAt(static_cast<int>(i));
+
+        const auto & field_name = manifest_list_file_reader->dataSchema().root()->nameAt(static_cast<int>(i));
+
+        std::stringstream ss;
+        field->printJson(ss, 10);
+        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "field: {}", ss.str());
+        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "field name: {}", field_name);
+    }
+
     auto [name_to_index, name_to_data_type, header] = getColumnsAndTypesFromAvroByNames(
         manifest_list_file_reader->dataSchema().root(),
         {"manifest_path", "sequence_number"},
@@ -384,9 +408,16 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
         {
             added_sequence_number = sequence_number_column.value()->getInt(i);
         }
-        auto [manifest_file_iterator, _inserted]
-            = manifest_files_by_name.emplace(current_filename, initializeManifestFile(current_filename, added_sequence_number));
-        manifest_list.push_back(ManifestListFileEntry{ManifestFileIterator{manifest_file_iterator}, added_sequence_number});
+        /// We can't encapsulate this logic in getManifestFile because we need not only the name of the file, but also an inherited sequence number which is known only during the parsing of ManifestList
+        auto manifest_file_content = initializeManifestFile(current_filename, added_sequence_number);
+        auto [iterator, _inserted] = manifest_files_by_name.emplace(current_filename, std::move(manifest_file_content));
+        auto manifest_file_iterator = ManifestFileIterator{iterator};
+        for (const auto & data_file_path : manifest_file_iterator->getFiles())
+        {
+            if (std::holds_alternative<DataFileEntry>(data_file_path.file))
+                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_iterator);
+        }
+        manifest_list.push_back(ManifestListFileEntry{manifest_file_iterator, added_sequence_number});
     }
 
     return manifest_list;
@@ -419,6 +450,14 @@ ManifestFileIterator IcebergMetadata::getManifestFile(const String & filename) c
     if (manifest_file_it != manifest_files_by_name.end())
         return ManifestFileIterator{manifest_file_it};
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find manifest file: {}", filename);
+}
+
+std::optional<ManifestFileIterator> IcebergMetadata::tryGetManifestFile(const String & filename) const
+{
+    auto manifest_file_it = manifest_files_by_name.find(filename);
+    if (manifest_file_it != manifest_files_by_name.end())
+        return ManifestFileIterator{manifest_file_it};
+    return std::nullopt;
 }
 
 ManifestListIterator IcebergMetadata::getManifestList(const String & filename) const
@@ -464,10 +503,10 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         return cached_unprunned_files_for_current_snapshot.value();
 
     Strings data_files;
-    for (const auto & manifest_entry : *current_snapshot->manifest_list_iterator)
+    for (const auto & manifest_list_entry : *(current_snapshot->manifest_list_iterator))
     {
         const auto & partition_columns_ids
-            = getRelevantPartitionColumnIds(manifest_entry.manifest_file, schema_processor, current_schema_id);
+            = getRelevantPartitionColumnIds(manifest_list_entry.manifest_file, schema_processor, current_schema_id);
         const auto & partition_pruning_columns_names_and_types
             = schema_processor.tryGetFieldsCharacteristics(current_schema_id, partition_columns_ids);
 
@@ -476,7 +515,7 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         const KeyCondition partition_key_condition(
             filter_dag, getContext(), partition_pruning_columns_names_and_types.getNames(), partition_minmax_idx_expr);
 
-        const auto & data_files_in_manifest = manifest_entry.manifest_file->getFiles();
+        const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
             if (manifest_file_entry.status != ManifestEntryStatus::DELETED)

@@ -12,6 +12,7 @@
 #include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
 
+#    include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -48,6 +49,7 @@ std::vector<DB::Range> ManifestFileEntry::getPartitionRanges(const std::vector<I
 
 const std::vector<PartitionColumnInfo> & ManifestFileContent::getPartitionColumnInfos() const
 {
+    chassert(impl != nullptr);
     return impl->partition_column_infos;
 }
 
@@ -69,10 +71,21 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     Int64 inherited_sequence_number)
 {
     this->schema_id = schema_id_;
+
+    LOG_DEBUG(&Poco::Logger::get("ManifestFileContentImpl"), "dataSchema: {}", manifest_file_reader_->dataSchema().toJson(true));
+
+    LOG_DEBUG(&Poco::Logger::get("ManifestFileContentImpl"), "readerSchema: {}", manifest_file_reader_->readerSchema().toJson(true));
+
+
     avro::NodePtr root_node = manifest_file_reader_->dataSchema().root();
 
     auto [name_to_index, name_to_data_type, manifest_file_header] = getColumnsAndTypesFromAvroByNames(
-        root_node, {"status", "data_file", "sequence_number"}, {avro::Type::AVRO_INT, avro::Type::AVRO_RECORD, avro::Type::AVRO_LONG});
+        root_node, {"status", "data_file", "sequence_number"}, {avro::Type::AVRO_INT, avro::Type::AVRO_RECORD, avro::Type::AVRO_UNION});
+
+    for (const auto & [key, value] : name_to_index)
+    {
+        LOG_DEBUG(&Poco::Logger::get("ManifestFileContentImpl name_to_index"), "key: {} value: {}", key, value);
+    }
 
     if (name_to_index.find("status") == name_to_index.end())
         throw Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: status");
@@ -178,16 +191,16 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
     }
 
-    if (columns.at(name_to_index.at("sequence_number"))->getDataType() != TypeIndex::Nullable)
-    {
-        throw Exception(
-            DB::ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `sequence_number` field should be Int64 type, got {}",
-            columns.at(name_to_index.at("sequence_number"))->getFamilyName());
-    }
     std::optional<const ColumnNullable *> sequence_number_column = std::nullopt;
     if (format_version_ > 1)
     {
+        if (columns.at(name_to_index.at("sequence_number"))->getDataType() != TypeIndex::Nullable)
+        {
+            throw Exception(
+                DB::ErrorCodes::ILLEGAL_COLUMN,
+                "The parsed column from Avro file of `sequence_number` field should be Int64 type, got {}",
+                columns.at(name_to_index.at("sequence_number"))->getFamilyName());
+        }
         sequence_number_column = assert_cast<const ColumnNullable *>(columns.at(name_to_index.at("sequence_number")).get());
     }
 

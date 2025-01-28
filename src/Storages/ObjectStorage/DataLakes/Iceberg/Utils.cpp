@@ -1,10 +1,12 @@
 
+#include <typeinfo>
 #include "config.h"
 
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#    include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -55,7 +57,8 @@ std::tuple<NameToIndex, NameToDataType, DB::Block> getColumnsAndTypesFromAvroByN
     size_t leaves_num = root_node->leaves();
     for (size_t i = 0; i < leaves_num; ++i)
     {
-        const auto & name = root_node->leafAt(static_cast<int>(i))->name();
+        const auto & name = root_node->nameAt(static_cast<int>(i));
+
         if (initial_index_by_name.find(name) != initial_index_by_name.end())
             initial_index_by_name[name] = i;
     }
@@ -63,14 +66,15 @@ std::tuple<NameToIndex, NameToDataType, DB::Block> getColumnsAndTypesFromAvroByN
 
     size_t current_new_index = 0;
     ColumnsWithTypeAndName columns_to_add = {};
-    for (const auto & name : names)
+    for (size_t i = 0; i < names.size(); ++i)
     {
+        const auto & name = names[i];
         if (initial_index_by_name.at(name).has_value())
         {
             name_to_index.insert({name, current_new_index++});
             const auto node = root_node->leafAt(static_cast<int>(initial_index_by_name.at(name).value()));
             const size_t initial_index = initial_index_by_name.at(name).value();
-            if (node->type() != expected_types.at(initial_index))
+            if (node->type() != expected_types.at(i))
             {
                 throw Exception(
                     ErrorCodes::BAD_TYPE_OF_FIELD,
