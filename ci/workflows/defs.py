@@ -32,6 +32,18 @@ SECRETS = [
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
+    Secret.Config(
+        name="clickhouse-test-stat-url",
+        type=Secret.Type.AWS_SSM_VAR,
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-login",
+        type=Secret.Type.AWS_SSM_VAR,
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-password",
+        type=Secret.Type.AWS_SSM_VAR,
+    ),
     azure_secret,
     # Secret.Config(
     #     name="woolenwolf_gh_app.clickhouse-app-id",
@@ -666,7 +678,7 @@ class Jobs:
 
     stateless_tests_jobs = Job.Config(
         name=JobNames.STATELESS,
-        runs_on=[RunnerLabels.BUILDER_AMD],
+        runs_on=["..params.."],
         command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
         # many tests expect to see "/var/lib/clickhouse" in various output lines - add mount for now, consider creating this dir in docker file
         run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
@@ -679,32 +691,57 @@ class Jobs:
         parameter=[
             "amd_debug,parallel",
             "amd_debug,non-parallel",
-            "amd_release,parallel",
-            "amd_release,non-parallel",
-            "arm_asan,parallel",
-            "arm_asan,non-parallel",
+            # "amd_release,parallel",
+            # "amd_release,non-parallel",
+            # "arm_asan,parallel",
+            # "arm_asan,non-parallel",
         ],
         runs_on=[
-            [RunnerLabels.BUILDER_AMD],
             [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.BUILDER_AMD],
             [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.BUILDER_ARM],
-            [RunnerLabels.FUNC_TESTER_ARM],
+            # [RunnerLabels.FUNC_TESTER_AMD],
+            # [RunnerLabels.FUNC_TESTER_AMD],
+            # [RunnerLabels.FUNC_TESTER_ARM],
+            # [RunnerLabels.FUNC_TESTER_ARM],
         ],
         requires=[
             [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
             [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
-            [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-            [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-            [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
-            [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
+            # [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
+            # [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
+            # [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
+            # [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
         ],
     )
 
+    # # TODO: non-refactored (legacy) stateless tests
+    # stateless_tests_jobs = Job.Config(
+    #     name=JobNames.STATELESS,
+    #     runs_on=[RunnerLabels.FUNC_TESTER_AMD],
+    #     command="python3 ./tests/ci/functional_test_check.py {PARAMETER}",
+    #     digest_config=Job.CacheDigestConfig(
+    #         include_paths=[
+    #             "./tests/ci/functional_test_check.py",
+    #             "./tests/queries/0_stateless/",
+    #             "./tests/clickhouse-test",
+    #             "./tests/config",
+    #             "./tests/*.txt",
+    #             "./tests/docker_scripts/",
+    #         ],
+    #     ),
+    # ).parametrize(
+    #     parameter=[
+    #         "amd_release",
+    #     ],
+    #     runs_on=[
+    #         [RunnerLabels.FUNC_TESTER_AMD],
+    #     ],
+    #     requires=[[ArtifactNames.DEB_AMD_RELEASE]],
+    # )
+
     stateful_tests_jobs = Job.Config(
         name=JobNames.STATEFUL,
-        runs_on=[RunnerLabels.BUILDER_AMD],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
         command="python3 ./ci/jobs/functional_stateful_tests.py --test-options {PARAMETER}",
         run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(

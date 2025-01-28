@@ -721,6 +721,9 @@
                             if (link.includes('/pull/')) {
                                 textContent = 'PR';
                                 localStorage.setItem('pr_link', JSON.stringify(link));
+                            } else if (link.includes('/commit/')) {
+                                textContent = 'Commit';
+                                localStorage.setItem('commit_link', JSON.stringify(link));
                             } else if (link.includes('/actions/runs/')) {
                                 textContent = 'Run';
                                 localStorage.setItem('run_link', JSON.stringify(link));
@@ -734,7 +737,9 @@
                     // Retrieve stored links and add them to the footer
                     const prLink = JSON.parse(localStorage.getItem('pr_link'));
                     const runLink = JSON.parse(localStorage.getItem('run_link'));
+                    const commitLink = JSON.parse(localStorage.getItem('commit_link'));
                     if (prLink) createLinkElement(prLink, 'PR', footerRight);
+                    if (commitLink) createLinkElement(commitLink, 'PR', footerRight);
                     if (runLink) createLinkElement(runLink, 'Run', footerRight);
                 }
 
@@ -824,7 +829,9 @@
         let commitsArray = [];
 
         if (PR) {
-            addKeyValueToStatus("PR", PR);
+            if (PR > 0) {
+                addKeyValueToStatus("PR", PR);
+            }
             const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
             path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
         } else {

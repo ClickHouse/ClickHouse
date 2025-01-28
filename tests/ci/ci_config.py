@@ -79,7 +79,6 @@ class CI:
                 JobNames.STYLE_CHECK,
                 JobNames.BUILD_CHECK,
                 JobNames.UNIT_TEST_ASAN,
-                JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
     }  # type: Dict[str, LabelConfig]
@@ -287,58 +286,6 @@ class CI:
         JobNames.INSTALL_TEST_AARCH64: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.STYLE_CHECKER_AARCH64,
-        ),
-        JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN]
-        ),
-        JobNames.STATEFUL_TEST_AARCH64_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
-        ),
-        JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN]
-        ),
-        JobNames.STATEFUL_TEST_MSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN]
-        ),
-        JobNames.STATEFUL_TEST_UBSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN]
-        ),
-        JobNames.STATEFUL_TEST_DEBUG: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG]
-        ),
-        JobNames.STATEFUL_TEST_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
-        ),
-        JobNames.STATEFUL_TEST_RELEASE_COVERAGE: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE]
-        ),
-        JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64],
-            runner_type=Runners.FUNC_TESTER_AARCH64,
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_DEBUG: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG]
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
-            random_bucket="parrepl_with_sanitizer",
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN],
-            random_bucket="parrepl_with_sanitizer",
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN],
-            random_bucket="parrepl_with_sanitizer",
-        ),
-        JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN],
-            random_bucket="parrepl_with_sanitizer",
-            timeout=3600,
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
@@ -637,7 +584,6 @@ class CI:
             else:
                 stage_type = WorkflowStages.BUILDS_2
             if job_name in (
-                BuildNames.BINARY_TIDY,
                 BuildNames.PACKAGE_RELEASE,
                 BuildNames.PACKAGE_AARCH64,
             ):
