@@ -1068,6 +1068,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
         auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+
+        sendLogs(state);
+        sendInsertProfileEvents(state);
+
         if (result_chunk)
         {
             auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
