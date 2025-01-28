@@ -9,7 +9,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/docs/en/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 
@@ -58,14 +58,14 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
 
 :::tip
-Here is a step by step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
+Here is a step-by-step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
 :::
 
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.

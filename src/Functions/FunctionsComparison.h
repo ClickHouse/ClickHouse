@@ -49,6 +49,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -644,20 +645,31 @@ struct NameGreater         { static constexpr auto name = "greater"; };
 struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
+struct ComparisonParams
+{
+    bool check_decimal_overflow;
+    bool validate_enum_literals_in_operators;
+    bool allow_not_comparable_types;
+
+    explicit ComparisonParams(const ContextPtr & context)
+        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
+        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
+    {}
+};
 
 template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context), context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions]); }
 
-    explicit FunctionComparison(bool check_decimal_overflow_, bool allow_not_comparable_types_)
-        : check_decimal_overflow(check_decimal_overflow_), allow_not_comparable_types(allow_not_comparable_types_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(ComparisonParams(context)); }
+
+    explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
 private:
-    bool check_decimal_overflow = true;
-    bool allow_not_comparable_types = false;
+    const ComparisonParams params;
 
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
@@ -889,6 +901,25 @@ private:
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
         Field string_value = left_const ? left_const->getField() : right_const->getField();
+
+        auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
+        {
+            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
+                return false;
+            if (params.validate_enum_literals_in_operators)
+                return false;
+            if (!enum_values || string_value.getType() != Field::Types::String)
+                return false;
+            T res;
+            return !enum_values->tryGetValue(res, string_value.safeGet<String>());
+        };
+
+        if (is_string_not_in_enum(typeid_cast<const DataTypeEnum8 *>(type_to_compare.get()))
+         || is_string_not_in_enum(typeid_cast<const DataTypeEnum16 *>(type_to_compare.get())))
+        {
+            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+        }
+
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
@@ -1134,7 +1165,7 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!allow_not_comparable_types)
+        if (!params.allow_not_comparable_types)
         {
             if ((name == NameEquals::name || name == NameNotEquals::name))
             {
@@ -1185,7 +1216,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow, allow_not_comparable_types));
+            auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(params));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1344,7 +1375,7 @@ public:
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
                 ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
                 return executeDecimal<Op, Name>(
-                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow);
+                    {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow);
             }
 
             /// Check does another data type is comparable to Decimal, includes Int and Float.
@@ -1367,7 +1398,7 @@ public:
                     = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
                 return executeImpl(new_arguments, result_type, input_rows_count);
             }
-            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, check_decimal_overflow);
+            return executeDecimal<Op, Name>(col_with_type_and_name_left, col_with_type_and_name_right, params.check_decimal_overflow);
         }
         if (date_and_datetime)
         {
@@ -1378,7 +1409,7 @@ public:
                   || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
                   || (res = executeDecimal<Op, Name>(
-                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, check_decimal_overflow))))
+                          {c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}, params.check_decimal_overflow))))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }

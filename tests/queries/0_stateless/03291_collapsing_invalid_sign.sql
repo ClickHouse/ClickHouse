@@ -52,3 +52,14 @@ INSERT INTO TABLE t_03291_collapsing_invalid_sign_vertical_merge VALUES (1, 0);
 OPTIMIZE TABLE t_03291_collapsing_invalid_sign_vertical_merge;
 
 DROP TABLE t_03291_collapsing_invalid_sign_vertical_merge;
+
+-- CI found a SEGV, testing for it here: https://github.com/ClickHouse/ClickHouse/issues/74219
+DROP TABLE IF EXISTS t0;
+
+CREATE TABLE t0 (c0 Int8, c1 Int) ENGINE = CollapsingMergeTree(c0) ORDER BY (c1);
+
+INSERT INTO TABLE t0 (c1, c0) VALUES (69938204, 1), (-968049277, 1), (-1302413209, -1), (1059244139, DEFAULT);
+
+SELECT 1 FROM t0 FINAL;
+
+DROP TABLE t0;

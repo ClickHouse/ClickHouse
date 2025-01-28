@@ -390,7 +390,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
+        auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
         const auto read_settings_to_use = patchSettings(read_settings);
 
