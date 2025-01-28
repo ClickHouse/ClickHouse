@@ -183,12 +183,12 @@ public:
         }
     }
 
-    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_, bool read_meta = true, bool read_data = false)
+    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key_prefix, bool read_meta = true, bool read_data = false)
     {
         rocksdb::ReadOptions read_options;
         read_options.total_order_seek = true;
 
-        std::string key = key_;
+        std::string key = key_prefix;
         if (!key.ends_with('/'))
             key += '/';
         size_t len = key.size();
