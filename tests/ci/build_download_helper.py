@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import glob
 import json
 import logging
 import os
@@ -155,7 +154,7 @@ def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str
     artifact_report = Path(REPO_COPY) / "ci" / "tmp" / BUILD_TO_REPORT[build_name]
     if artifact_report.is_file():
         with open(artifact_report, "r", encoding="utf-8") as f:
-            return json.load(f)["build_urls"]
+            return json.load(f)["build_urls"]  # type: ignore
     for root, _, files in os.walk(reports_path):
         for file in files:
             if file.endswith(f"_{build_name}.json"):
@@ -240,7 +239,9 @@ def download_builds_filter(
     filter_fn: Callable[[str], bool] = lambda _: True,
 ) -> None:
     if (Path(reports_path) / "artifact_report.json").is_file():
-        with open(Path(reports_path) / "artifact_report.json") as f:
+        with open(
+            Path(reports_path) / "artifact_report.json", "r", encoding="utf-8"
+        ) as f:
             urls = json.load(f)["build_urls"]  # type: ignore
     else:
         build_name = CI.get_required_build_name(check_name)

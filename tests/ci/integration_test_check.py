@@ -163,7 +163,7 @@ def main():
     run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
 
     match = re.search(r"\(.*?\)", check_name)
-    options = match.group(0)[1:-1].split(",") if match else None
+    options = match.group(0)[1:-1].split(",") if match else []
     for option in options:
         if "/" in option:
             run_by_hash_num = int(option.split("/")[0]) - 1

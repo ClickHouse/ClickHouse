@@ -167,7 +167,7 @@ def main():
         args.push = False
 
     run_cpp_check = True
-    run_shell_check = True
+    # run_shell_check = True
     run_python_check = True
     if IS_CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
@@ -175,9 +175,9 @@ def main():
             is_style_image(file) or not (is_python(file) or is_shell(file))
             for file in pr_info.changed_files
         )
-        run_shell_check = any(
-            is_style_image(file) or is_shell(file) for file in pr_info.changed_files
-        )
+        # run_shell_check = any(
+        #     is_style_image(file) or is_shell(file) for file in pr_info.changed_files
+        # )
         run_python_check = any(
             is_style_image(file) or is_python(file) for file in pr_info.changed_files
         )

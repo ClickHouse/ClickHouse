@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import json
 import logging
 import os
 import subprocess
@@ -10,7 +9,7 @@ from build_download_helper import read_build_urls
 from ci_config import CI
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import IS_NEW_CI, REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch

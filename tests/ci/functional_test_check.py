@@ -292,7 +292,7 @@ def main():
     docker_image = get_docker_image(get_image_name(check_name))
 
     match = re.search(r"\(.*?\)", check_name)
-    options = match.group(0)[1:-1].split(",") if match else None
+    options = match.group(0)[1:-1].split(",") if match else []
     for option in options:
         if "/" in option:
             run_by_hash_num = int(option.split("/")[0]) - 1

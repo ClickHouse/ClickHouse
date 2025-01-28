@@ -21,7 +21,7 @@ from ci_cache import CiCache
 from ci_config import CI
 from ci_metadata import CiMetadata
 from ci_settings import CiSettings
-from ci_utils import GH, Envs, Shell, Utils
+from ci_utils import GH, Envs, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -40,14 +40,7 @@ from commit_status_helper import (
     set_status_comment,
 )
 from digest_helper import DockerDigester
-from env_helper import (
-    GITHUB_REPOSITORY,
-    GITHUB_RUN_ID,
-    IS_CI,
-    REPO_COPY,
-    REPORT_PATH,
-    TEMP_PATH,
-)
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_ID, IS_CI, REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
@@ -1440,7 +1433,7 @@ def main() -> int:
             assert (
                 job_report
             ), "BUG. There must be job report either real report, or pre-report if job was killed"
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
             print("Run failed")
 
@@ -1506,7 +1499,7 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
             print("Post failed")
     ### RUN FROM PRAKTIKA action: end
