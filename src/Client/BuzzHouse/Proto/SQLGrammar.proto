@@ -1862,6 +1862,7 @@ message ExprLike {
     enum PossibleKeywords {
         LIKE = 1;
         ILIKE = 2;
+        REGEXP = 3;
     }
     required PossibleKeywords keyword = 3;
     required Expr expr2 = 4;

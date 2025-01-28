@@ -1030,7 +1030,7 @@ CONV_FN(ExprLike, elike)
 {
     ExprToString(ret, elike.expr1());
     ret += " ";
-    if (elike.not_())
+    if (elike.not_() && elike.keyword() != ExprLike_PossibleKeywords::ExprLike_PossibleKeywords_REGEXP)
         ret += "NOT ";
     ret += ExprLike_PossibleKeywords_Name(elike.keyword());
     ret += " ";
