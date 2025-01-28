@@ -179,6 +179,9 @@ TEST(SchedulerRoot, Budget)
 
 TEST(SchedulerRoot, Cancel)
 {
+    // This barrier is used in the scheduler thread, so we should not destroy it before thread in ~ResourceTest
+    std::barrier destruct_sync(2);
+
     ResourceTest t;
 
     ResourceHolder r1(t);
@@ -188,7 +191,6 @@ TEST(SchedulerRoot, Cancel)
     auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
-    std::barrier destruct_sync(2);
     std::barrier sync(2);
     std::thread consumer1([&]
     {

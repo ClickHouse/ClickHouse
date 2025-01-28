@@ -33,7 +33,14 @@ workflow = Workflow.Config(
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
+    enable_cidb=True,
     enable_merge_ready_status=True,
+    pre_hooks=[
+        "python3 ./ci/jobs/scripts/prechecks/pr_description.py",
+        "python3 ./ci/jobs/scripts/prechecks/trusted.py",
+        "python3 ./ci/jobs/scripts/prechecks/version_log.py",
+    ],
+    post_hooks=[],
 )
 
 WORKFLOWS = [
