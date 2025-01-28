@@ -1778,7 +1778,7 @@ enum BinaryOperator {
     BINOP_NOTEQ = 7;
     BINOP_LEGR = 8;
     BINOP_IS_NOT_DISTINCT_FROM = 9;
-    BINOP_LEEQLE = 10;
+    BINOP_LEEQGR = 10;
     BINOP_AND = 11;
     BINOP_OR = 12;
     BINOP_CONCAT = 13;

@@ -435,7 +435,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
     bexpr->set_op(
         rg.nextSmallNumber() < 9
             ? BinaryOperator::BINOP_EQ
-            : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEEQLE)) + 1));
+            : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEEQGR)) + 1));
     const SQLRelationCol & col1 = rg.pickRandomlyFromVector(rel1->cols);
     const SQLRelationCol & col2 = rg.pickRandomlyFromVector(rel2->cols);
     Expr * expr1 = bexpr->mutable_lhs();
