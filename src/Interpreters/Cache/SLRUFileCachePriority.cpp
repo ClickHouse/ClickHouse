@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -51,6 +52,23 @@ SLRUFileCachePriority::SLRUFileCachePriority(
         "Protected queue {} in size and {} in elements",
         probationary_queue.max_size, probationary_queue.max_elements,
         protected_queue.max_size, protected_queue.max_elements);
+
+    if (probationary_queue.max_size == 0 || protected_queue.max_size == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Incorrect max size cache configuration. Max size: {}, size ratio: {}. "
+            "Cannot have zero max size after ratio is applied.",
+            max_size_, size_ratio_);
+    }
+    if (probationary_queue.max_elements == 0 || protected_queue.max_elements == 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Incorrect max elements cache configuration. Max size: {}, size ratio: {}. "
+            "Cannot have zero max elements after ratio is applied.",
+            max_elements_, size_ratio_);
+    }
 }
 
 FileCachePriorityPtr SLRUFileCachePriority::copy() const
