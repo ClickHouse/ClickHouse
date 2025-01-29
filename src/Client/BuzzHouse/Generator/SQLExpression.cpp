@@ -382,22 +382,18 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             BinaryExpr * bexpr = cexpr->mutable_binary_expr();
 
-            this->depth++;
-            if (rg.nextSmallNumber() < 5)
+            if (rg.nextBool())
             {
                 bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
-
-                this->generatePredicate(rg, bexpr->mutable_lhs());
-                this->width++;
-                this->generatePredicate(rg, bexpr->mutable_rhs());
             }
             else
             {
                 bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator_MAX)) + 1));
-                this->generateExpression(rg, bexpr->mutable_lhs());
-                this->width++;
-                this->generateExpression(rg, bexpr->mutable_rhs());
             }
+            this->depth++;
+            this->generateExpression(rg, bexpr->mutable_lhs());
+            this->width++;
+            this->generateExpression(rg, bexpr->mutable_rhs());
             this->width--;
             this->depth--;
         }
@@ -903,7 +899,14 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
         this->depth++;
-        bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % 7) + 10));
+        if (rg.nextSmallNumber() < 9)
+        {
+            bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % 6) + 13));
+        }
+        else
+        {
+            bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator_MAX)) + 1));
+        }
         this->generateExpression(rg, bexpr->mutable_lhs());
         this->width++;
         this->generateExpression(rg, bexpr->mutable_rhs());
