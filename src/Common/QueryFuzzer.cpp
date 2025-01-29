@@ -1318,7 +1318,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 select->group_by_with_totals = !select->group_by_with_totals;
             }
-            if (!select->having().get())
+            if (select->having().get())
             {
                 if (fuzz_rand() % 50 == 0)
                 {
