@@ -1,6 +1,5 @@
 #include <Formats/PngWriter.h>
 
-#ifdef   USE_LIBPNG
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <IO/WriteBuffer.h>
@@ -146,5 +145,3 @@ void PngWriter::cleanup()
 
 
 }
-
-#endif /// USE_LIBPNG
