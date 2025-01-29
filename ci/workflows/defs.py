@@ -7,12 +7,12 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == Settings.TEMP_DIR
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
-    BUILDER_AMD = "builder"
-    BUILDER_ARM = "builder-aarch64"
-    FUNC_TESTER_AMD = "func-tester"
-    FUNC_TESTER_ARM = "func-tester-aarch64"
-    STYLE_CHECK_AMD = "style-checker"
-    STYLE_CHECK_ARM = "style-checker-aarch64"
+    BUILDER_AMD = ["self-hosted", "builder"]
+    BUILDER_ARM = ["self-hosted", "builder-aarch64"]
+    FUNC_TESTER_AMD = ["self-hosted", "func-tester"]
+    FUNC_TESTER_ARM = ["self-hosted", "func-tester-aarch64"]
+    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
+    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 
 
 class CIFiles:
@@ -280,7 +280,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
     AMD_FREEBSD = "amd_freebsd"
-    PPC64LE = "amd_ppc64le"
+    PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
     AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
@@ -290,7 +290,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
 
 
 class JobNames:
-    STYLE_CHECK = "Style Check"
+    STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     STATELESS = "Stateless tests"
@@ -308,6 +308,8 @@ class JobNames:
     INSTALL_CHECK = "Install check"
     ASTFUZZER = "AST Fuzzer"
     BUZZHOUSE = "BuzzHouse"
+
+    BUILDOCKER = "BuildDockers"
 
 
 class ToolSet:
@@ -357,6 +359,7 @@ class ArtifactNames:
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
+    DEB_AMD_COV = "DEB_AMD_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
     DEB_AMD_MSAM = "DEB_AMD_MSAM"
@@ -373,10 +376,10 @@ class ArtifactNames:
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-    PERF_REPORTS_AMD_1_3 = "PERF_REPORTS_AMD_1_3"
-    PERF_REPORTS_AMD_2_3 = "PERF_REPORTS_AMD_2_3"
-    PERF_REPORTS_AMD_1_3_WITH_RELEASE = "PERF_REPORTS_AMD_1_3_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_3_WITH_RELEASE = "PERF_REPORTS_AMD_2_3_WITH_RELEASE"
+    PERF_REPORTS_AMD_1_2 = "PERF_REPORTS_AMD_1_2"
+    PERF_REPORTS_AMD_2_2 = "PERF_REPORTS_AMD_2_2"
+    PERF_REPORTS_AMD_1_2_WITH_RELEASE = "PERF_REPORTS_AMD_1_2_WITH_RELEASE"
+    PERF_REPORTS_AMD_2_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_2_WITH_RELEASE"
 
     PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
 
@@ -461,6 +464,11 @@ ARTIFACTS = [
         path=f"{TEMP_DIR}/*.deb",
     ),
     Artifact.Config(
+        name=ArtifactNames.DEB_AMD_COV,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/*.deb",
+    ),
+    Artifact.Config(
         name=ArtifactNames.RPM_AMD_RELEASE,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/*.rpm",
@@ -496,10 +504,10 @@ ARTIFACTS = [
         path=f"{TEMP_DIR}/perf_wd/*.html",
     ).parametrize(
         names=[
-            ArtifactNames.PERF_REPORTS_AMD_1_3,
-            ArtifactNames.PERF_REPORTS_AMD_2_3,
-            ArtifactNames.PERF_REPORTS_AMD_1_3_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_2_3_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_1_2,
+            ArtifactNames.PERF_REPORTS_AMD_2_2,
+            ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE,
+            ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
         ]
     ),
     # Artifact.Config(
@@ -513,14 +521,14 @@ ARTIFACTS = [
 class Jobs:
     style_check_job = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
     )
 
     fast_test_job = Job.Config(
         name=JobNames.FAST_TEST,
-        runs_on=[RunnerLabels.BUILDER_AMD],
+        runs_on=RunnerLabels.BUILDER_AMD,
         command="python3 ./ci/jobs/fast_test.py",
         run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
@@ -649,30 +657,30 @@ class Jobs:
             [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_AMD],
-            [RunnerLabels.BUILDER_ARM],
-            [RunnerLabels.BUILDER_ARM],
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_ARM,
             # special builds
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_COVERAGE
-            [RunnerLabels.BUILDER_ARM],  # BuildTypes.ARM_BINARY
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_TIDY,
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_DARWIN,
-            [RunnerLabels.BUILDER_ARM],  # BuildTypes.ARM_DARWIN,
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.ARM_V80COMPAT,
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_FREEBSD,
-            [RunnerLabels.BUILDER_ARM],  # BuildTypes.PPC64LE,
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_COMPAT,
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.AMD_MUSL,
-            [RunnerLabels.BUILDER_ARM],  # BuildTypes.RISCV64,
-            [RunnerLabels.BUILDER_AMD],  # BuildTypes.S390X,
-            [RunnerLabels.BUILDER_ARM],  # BuildTypes.LOONGARCH64
-            [RunnerLabels.BUILDER_ARM],  # BuildTypes.FUZZERS
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_TIDY,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.ARM_V80COMPAT,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_FREEBSD,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.PPC64LE,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COMPAT,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_MUSL,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.LOONGARCH64
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.FUZZERS
         ],
     )
 
@@ -697,12 +705,12 @@ class Jobs:
             # "arm_asan,non-parallel",
         ],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            # [RunnerLabels.FUNC_TESTER_AMD],
-            # [RunnerLabels.FUNC_TESTER_AMD],
-            # [RunnerLabels.FUNC_TESTER_ARM],
-            # [RunnerLabels.FUNC_TESTER_ARM],
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_AMD,
+            # RunnerLabels.FUNC_TESTER_ARM,
+            # RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[
             [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
@@ -714,34 +722,9 @@ class Jobs:
         ],
     )
 
-    # # TODO: non-refactored (legacy) stateless tests
-    # stateless_tests_jobs = Job.Config(
-    #     name=JobNames.STATELESS,
-    #     runs_on=[RunnerLabels.FUNC_TESTER_AMD],
-    #     command="python3 ./tests/ci/functional_test_check.py {PARAMETER}",
-    #     digest_config=Job.CacheDigestConfig(
-    #         include_paths=[
-    #             "./tests/ci/functional_test_check.py",
-    #             "./tests/queries/0_stateless/",
-    #             "./tests/clickhouse-test",
-    #             "./tests/config",
-    #             "./tests/*.txt",
-    #             "./tests/docker_scripts/",
-    #         ],
-    #     ),
-    # ).parametrize(
-    #     parameter=[
-    #         "amd_release",
-    #     ],
-    #     runs_on=[
-    #         [RunnerLabels.FUNC_TESTER_AMD],
-    #     ],
-    #     requires=[[ArtifactNames.DEB_AMD_RELEASE]],
-    # )
-
     stateful_tests_jobs = Job.Config(
         name=JobNames.STATEFUL,
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/functional_stateful_tests.py --test-options {PARAMETER}",
         run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
         digest_config=Job.CacheDigestConfig(
@@ -759,12 +742,12 @@ class Jobs:
             BuildTypes.AMD_DEBUG,
         ],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_ARM],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
             [ArtifactNames.CH_ARM_RELEASE],
@@ -791,14 +774,14 @@ class Jobs:
         timeout=3600 * 2,
     ).parametrize(
         parameter=[f"{BuildTypes.AMD_ASAN},{i+1}/5" for i in range(5)],
-        runs_on=[[RunnerLabels.FUNC_TESTER_AMD] for _ in range(5)],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(5)],
         requires=[[ArtifactNames.DEB_AMD_ASAN] for _ in range(5)],
     )
 
     # TODO: refactor job to be aligned with praktika style (remove wrappers, run in docker)
     stress_test_jobs = Job.Config(
         name=JobNames.STRESS,
-        runs_on=[RunnerLabels.BUILDER_ARM],
+        runs_on=RunnerLabels.BUILDER_ARM,
         command="python3 ./tests/ci/stress_check.py {PARAMETER}",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./tests/ci/stress_check.py", "./tests/docker_scripts/"]
@@ -808,7 +791,7 @@ class Jobs:
             BuildTypes.ARM_RELEASE,
         ],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_ARM],
+            RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[
             [ArtifactNames.DEB_ARM_RELEASE],
@@ -835,10 +818,10 @@ class Jobs:
             BuildTypes.ARM_ASAN,
         ],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_ARM],
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[
             [ArtifactNames.DEB_AMD_DEBUG],
@@ -880,15 +863,15 @@ class Jobs:
         ],
         # "arm_release,1/3"],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD]
+            RunnerLabels.FUNC_TESTER_AMD
             for _ in range(2)
-            # [RunnerLabels.FUNC_TESTER_ARM],
+            # RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         # [ArtifactNames.CH_ARM_RELEASE]],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_3],
-            [ArtifactNames.PERF_REPORTS_AMD_2_3],
+            [ArtifactNames.PERF_REPORTS_AMD_1_2],
+            [ArtifactNames.PERF_REPORTS_AMD_2_2],
         ],
         # [ArtifactNames.PERF_REPORTS_ARM]],
     )
@@ -913,15 +896,15 @@ class Jobs:
         ],
         # "arm_release,1/3"],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD]
+            RunnerLabels.FUNC_TESTER_AMD
             for _ in range(2)
-            # [RunnerLabels.FUNC_TESTER_ARM],
+            # RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
         # [ArtifactNames.CH_ARM_RELEASE]],
         provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_3_WITH_RELEASE],
-            [ArtifactNames.PERF_REPORTS_AMD_2_3_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE],
+            [ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE],
         ],
         # [ArtifactNames.PERF_REPORTS_ARM]],
     )
@@ -939,14 +922,14 @@ class Jobs:
     ).parametrize(
         parameter=["amd_release", "arm_release"],
         runs_on=[
-            [RunnerLabels.STYLE_CHECK_AMD],
-            [RunnerLabels.STYLE_CHECK_ARM],
+            RunnerLabels.STYLE_CHECK_AMD,
+            RunnerLabels.STYLE_CHECK_ARM,
         ],
         requires=[[ArtifactNames.DEB_AMD_RELEASE], [ArtifactNames.DEB_ARM_RELEASE]],
     )
     docs_job = Job.Config(
         name=JobNames.Docs,
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./tests/ci/docs_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
@@ -954,7 +937,7 @@ class Jobs:
     )
     clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
@@ -967,8 +950,8 @@ class Jobs:
             BuildTypes.ARM_RELEASE,
         ],
         runs_on=[
-            [RunnerLabels.FUNC_TESTER_AMD],
-            [RunnerLabels.FUNC_TESTER_ARM],
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[
             [ArtifactNames.CH_AMD_RELEASE],
@@ -977,7 +960,7 @@ class Jobs:
     )
     # docker_job = Job.Config(
     #     name=JobNames.DOCKER_SERVER,
-    #     runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+    #     runs_on=RunnerLabels.STYLE_CHECK_ARM,
     #     command="python3 ./ci/jobs/docker_server_job.py --from-binary",
     #     digest_config=Job.CacheDigestConfig(
     #         include_paths=[
@@ -990,7 +973,7 @@ class Jobs:
     docker_job = Job.Config(
         name=JobNames.DOCKER_SERVER,
         # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
-        runs_on=[RunnerLabels.STYLE_CHECK_AMD],
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/docker_server_job.py --from-deb",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1004,7 +987,7 @@ class Jobs:
     sqltest_job = Job.Config(
         name=JobNames.SQL_TEST,
         # on ARM clickhouse-local call in docker build for amd leads to an error: Instruction check fail. The CPU does not support SSSE3 instruction set
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/sqltest_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1017,7 +1000,7 @@ class Jobs:
     )
     sqlancer_job = Job.Config(
         name=JobNames.SQLANCER,
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="./ci/jobs/sqlancer_job.sh",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/sqlancer_job.sh"],
@@ -1041,8 +1024,8 @@ class Jobs:
             BuildTypes.ARM_RELEASE,
         ],
         runs_on=[
-            [RunnerLabels.STYLE_CHECK_AMD],
-            [RunnerLabels.STYLE_CHECK_ARM],
+            RunnerLabels.STYLE_CHECK_AMD,
+            RunnerLabels.STYLE_CHECK_ARM,
         ],
         requires=[
             [ArtifactNames.DEB_AMD_RELEASE, ArtifactNames.CH_AMD_RELEASE],
@@ -1051,7 +1034,7 @@ class Jobs:
     )
     # ast_fuzzer_jobs = Job.Config(
     #     name=JobNames.ASTFUZZER,
-    #     runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+    #     runs_on=RunnerLabels.FUNC_TESTER_ARM,
     #     command="python3 ./ci/jobs/fuzzers_job.py",
     #     requires=[ArtifactNames.CH_ARM_RELEASE],
     #     run_in_docker="clickhouse/stateless-test",
@@ -1071,7 +1054,7 @@ class Jobs:
             BuildTypes.AMD_MSAN,
             BuildTypes.AMD_UBSAN,
         ],
-        runs_on=[[RunnerLabels.FUNC_TESTER_AMD] for _ in range(5)],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(5)],
         requires=[
             [ArtifactNames.CH_AMD_DEBUG],
             [ArtifactNames.CH_AMD_ASAN],
@@ -1094,12 +1077,32 @@ class Jobs:
             BuildTypes.AMD_MSAN,
             BuildTypes.AMD_UBSAN,
         ],
-        runs_on=[[RunnerLabels.FUNC_TESTER_AMD] for _ in range(5)],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(5)],
         requires=[
             [ArtifactNames.CH_AMD_DEBUG],
             [ArtifactNames.CH_AMD_ASAN],
             [ArtifactNames.CH_AMD_TSAN],
             [ArtifactNames.CH_AMD_MSAN],
             [ArtifactNames.CH_AMD_UBSAN],
+        ],
+    )
+    docker_build_jobs = Job.Config(
+        name=JobNames.BUILDOCKER,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./tests/ci/docker_tests_images.py --arch {PARAMETER}",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./tests/ci/docker_tests_images.py", "./docker"],
+        ),
+    ).parametrize(
+        parameter=["arm", "amd", "multi"],
+        runs_on=[
+            RunnerLabels.STYLE_CHECK_ARM,
+            RunnerLabels.STYLE_CHECK_AMD,
+            RunnerLabels.STYLE_CHECK_ARM,
+        ],
+        requires=[
+            [],
+            [],
+            [JobNames.BUILDOCKER + " (amd)", JobNames.BUILDOCKER + " (arm)"],
         ],
     )

@@ -542,12 +542,14 @@ class CI:
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
+            run_command="fast_test_check.py",
             timeout=2400,
             runner_type=Runners.BUILDER,
         ),
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
             runner_type=Runners.STYLE_CHECKER_AARCH64,
+            run_command="style_check.py",
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
@@ -614,10 +616,14 @@ class CI:
 
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
+        # remove job batch if it exists in check name (hack for migration to praktika)
+        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
     @classmethod
     def get_required_build_name(cls, check_name: str) -> str:
+        # remove job batch if it exists in check name (hack for migration to praktika)
+        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
         assert check_name in cls.JOB_CONFIGS
         required_builds = cls.JOB_CONFIGS[check_name].required_builds
         assert required_builds and len(required_builds) == 1
