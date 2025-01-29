@@ -7,9 +7,6 @@
 #include <Core/Block.h>
 #include "base/types.h"
 
-#include <vector>
-#include <variant>
-
 namespace DB 
 {
 
@@ -28,8 +25,8 @@ private:
     void writeSuffix() override;
     void consume(Chunk) override;
 
-    void validatePixelFormat(const Block &);
-            
+    PngPixelFormat validateFormat(const String &);
+
     size_t width;
     size_t height;
     size_t row_count = 0; 
@@ -37,10 +34,8 @@ private:
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
-    std::unique_ptr<PngSerializer> png_serializer;
-
-    FormatSettings::PixelMode pixel_mode;
-
+    std::unique_ptr<PngSerializer> png_serializer;    
+    PngPixelFormat output_format;
 };
 
 }

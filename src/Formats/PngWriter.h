@@ -2,6 +2,7 @@
 
 #include <png.h>
 #include <Common/Exception.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB 
 {
@@ -13,24 +14,15 @@ namespace ErrorCodes
 
 class WriteBuffer;
 
-/// Utility class for writing in the PNG format.
-/// Provides useful functions to serialize data
-/// Follows the rule of 5
-class PngWriter
+/// Utility class for writing in the png format.
+/// Just provides useful functions to serialize data
+class PngWriter : boost::noncopyable
 {
 public:
     explicit PngWriter(WriteBuffer & out_);
     
     ~PngWriter();
 
-    PngWriter(const PngWriter &) = delete;
-    
-    PngWriter & operator=(const PngWriter &) = delete;
-    
-    PngWriter(PngWriter && other) noexcept;
-    
-    PngWriter & operator=(PngWriter && other) noexcept;
-    
     void startImage(size_t width_, size_t height_);
     
     void finishImage();

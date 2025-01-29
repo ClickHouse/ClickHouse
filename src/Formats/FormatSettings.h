@@ -479,7 +479,7 @@ struct FormatSettings
         bool map_column_names = true;
     } mysql_dump{};
 
-    enum class PixelMode : uint8_t
+    enum class PngPixelFormat : uint8_t
     {
         BINARY,     
         GRAYSCALE,  
@@ -489,9 +489,10 @@ struct FormatSettings
 
     struct
     {
-        UInt64 height = 800;
-        UInt64 width = 600;
-        PixelMode pixel_mode = PixelMode::RGBA;
+        UInt64 height;
+        UInt64 width;
+        String pixel_output_format = "RGBA";
+        /// String image_name = "placeholder";
     } png_image{};
 
     struct
