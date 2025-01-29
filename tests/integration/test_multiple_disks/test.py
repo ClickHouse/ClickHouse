@@ -2123,4 +2123,3 @@ def test_waiting_after_move(start_cluster):
     assert node1.contains_in_log(f"Sleeping [0-9]\+ ms after cloning part {first_part}")
 
     node1.query(f"DROP TABLE IF EXISTS {table}")
-
