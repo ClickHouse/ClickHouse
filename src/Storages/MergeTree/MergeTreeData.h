@@ -1814,11 +1814,13 @@ struct CurrentlySubmergingEmergingTagger
 void incrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands);
+    const MutationCommands & commands,
+    const LoggerPtr & log);
 
 void decrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands);
+    const MutationCommands & commands,
+    const LoggerPtr & log);
 
 }

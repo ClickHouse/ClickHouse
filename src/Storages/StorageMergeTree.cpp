@@ -583,7 +583,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
-        incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
+        incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands, log.load());
     }
 
     LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
@@ -903,7 +903,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         if (it != current_mutations_by_version.end())
         {
             if (!it->second.is_done)
-                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands, log.load());
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
@@ -987,7 +987,7 @@ void StorageMergeTree::loadMutations()
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
 
-                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry_it->second.commands);
+                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry_it->second.commands, log.load());
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -1567,7 +1567,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!entry.is_done)
             {
                 entry.is_done = true;
-                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands, log.load());
             }
 
             ++done_count;

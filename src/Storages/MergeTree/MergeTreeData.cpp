@@ -9172,7 +9172,8 @@ static void updateMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands,
-    Int64 increment)
+    Int64 increment,
+    const LoggerPtr & log)
 {
     if (num_data_mutations_to_apply < 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
@@ -9193,6 +9194,7 @@ static void updateMutationsCounters(
             if (num_data_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
 
+            LOG_TEST(log, "Changing ActiveDataMutations counter by {}", increment);
             CurrentMetrics::add(CurrentMetrics::ActiveDataMutations, increment);
         }
 
@@ -9204,6 +9206,7 @@ static void updateMutationsCounters(
             if (num_metadata_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
 
+            LOG_TEST(log, "Changing ActiveMetadataMutations counter by {}", increment);
             CurrentMetrics::add(CurrentMetrics::ActiveMetadataMutations, increment);
         }
     }
@@ -9212,17 +9215,19 @@ static void updateMutationsCounters(
 void incrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands)
+    const MutationCommands & commands,
+    const LoggerPtr & log)
 {
-    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1);
+    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1, log);
 }
 
 void decrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands)
+    const MutationCommands & commands,
+    const LoggerPtr & log)
 {
-    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1);
+    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1, log);
 }
 
 }
