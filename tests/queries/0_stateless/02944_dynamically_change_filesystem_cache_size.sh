@@ -24,8 +24,7 @@ for disk_name in 's3_cache_02944_lru' 's3_cache_02944_slru'; do
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
     $CLICKHOUSE_CLIENT --query "SELECT sum(size) FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
 
-    #config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf_02944.xml
-    config_path=~/workspace/ClickHouse4/programs/server/config.xml
+    config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf_02944.xml
     config_path_tmp=$config_path.tmp
 
     echo 'set max_size from 100 to 10'
