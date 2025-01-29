@@ -18,7 +18,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
@@ -1617,7 +1616,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }

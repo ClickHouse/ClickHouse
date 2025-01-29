@@ -50,6 +50,8 @@ class WorkflowStages(metaclass=WithIter):
     TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
     TESTS_2 = "Tests_2"
+    BUILDS_0 = "Builds_0"
+    TESTS_0 = "Tests_0"
 
 
 class Runners(metaclass=WithIter):
@@ -155,23 +157,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
-    STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
-
-    STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
-    STATEFUL_TEST_RELEASE = "Stateful tests (release)"
-    STATEFUL_TEST_RELEASE_COVERAGE = "Stateful tests (coverage)"
-    STATEFUL_TEST_AARCH64 = "Stateful tests (aarch64)"
-    STATEFUL_TEST_ASAN = "Stateful tests (asan)"
-    STATEFUL_TEST_AARCH64_ASAN = "Stateful tests (aarch64, asan)"
-    STATEFUL_TEST_TSAN = "Stateful tests (tsan)"
-    STATEFUL_TEST_MSAN = "Stateful tests (msan)"
-    STATEFUL_TEST_UBSAN = "Stateful tests (ubsan)"
-    STATEFUL_TEST_PARALLEL_REPL_RELEASE = "Stateful tests (release, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_DEBUG = "Stateful tests (debug, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_ASAN = "Stateful tests (asan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_MSAN = "Stateful tests (msan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_UBSAN = "Stateful tests (ubsan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_TSAN = "Stateful tests (tsan, ParallelReplicas)"
+    STATELESS_TEST_FLAKY_ASAN = "Stateless tests (asan, flaky check)"
 
     STRESS_TEST_ASAN = "Stress test (asan)"
     STRESS_TEST_TSAN = "Stress test (tsan)"
@@ -186,7 +172,7 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_AARCH64 = "Integration tests (aarch64)"
-    INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
+    INTEGRATION_TEST_FLAKY = "Integration tests (asan, flaky check)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
     UPGRADE_TEST_ASAN = "Upgrade check (asan)"
@@ -436,30 +422,11 @@ class CommonJobConfigs:
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
     )
-    STATEFUL_TEST = JobConfig(
-        job_name_keyword="stateful",
-        digest=DigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/1_stateful/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-            ],
-            exclude_files=[".md"],
-            docker=["clickhouse/stateful-test"],
-        ),
-        run_command='functional_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.FUNC_TESTER,
-        timeout=3600,
-    )
     STRESS_TEST = JobConfig(
         job_name_keyword="stress",
         digest=DigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
-                "./tests/queries/1_stateful/",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
@@ -655,13 +622,10 @@ REQUIRED_CHECKS = [
     JobNames.BUILD_CHECK,
     JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,
-    JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
     JobNames.STATELESS_TEST_ASAN,
     JobNames.STATELESS_TEST_AARCH64_ASAN,
-    JobNames.STATEFUL_TEST_AARCH64_ASAN,
     JobNames.STATELESS_TEST_FLAKY_ASAN,
-    JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,
     JobNames.UNIT_TEST_ASAN,
     JobNames.UNIT_TEST_MSAN,
