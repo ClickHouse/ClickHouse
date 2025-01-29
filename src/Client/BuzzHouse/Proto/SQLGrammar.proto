@@ -1777,14 +1777,16 @@ enum BinaryOperator {
     BINOP_EQEQ = 6;
     BINOP_NOTEQ = 7;
     BINOP_LEGR = 8;
-    BINOP_AND = 9;
-    BINOP_OR = 10;
-    BINOP_CONCAT = 11;
-    BINOP_STAR = 12;
-    BINOP_SLASH = 13;
-    BINOP_PERCENT = 14;
-    BINOP_PLUS = 15;
-    BINOP_MINUS = 16;
+    BINOP_IS_NOT_DISTINCT_FROM = 9;
+    BINOP_LEEQGR = 10;
+    BINOP_AND = 11;
+    BINOP_OR = 12;
+    BINOP_CONCAT = 13;
+    BINOP_STAR = 14;
+    BINOP_SLASH = 15;
+    BINOP_PERCENT = 16;
+    BINOP_PLUS = 17;
+    BINOP_MINUS = 18;
 }
 
 message BinaryExpr {
@@ -1855,14 +1857,15 @@ message ExprExists {
 }
 
 message ExprLike {
-    required Expr expr1 = 5;
-    required bool not = 1;
+    required Expr expr1 = 1;
+    required bool not = 2;
     enum PossibleKeywords {
         LIKE = 1;
         ILIKE = 2;
+        REGEXP = 3;
     }
-    required PossibleKeywords keyword = 2;
-    required Expr expr2 = 3;
+    required PossibleKeywords keyword = 3;
+    required Expr expr2 = 4;
 }
 
 message CondExpr {
