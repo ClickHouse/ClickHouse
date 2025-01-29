@@ -114,36 +114,7 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
-    std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const
-    {
-        if (forwarded_for.empty())
-            return {};
-        String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
-        boost::trim(last);
-
-        if (last[0] == '[')
-        {
-            /// IPv6 address with port
-            return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
-        }
-
-        if (last[0] == ':')
-        {
-            /// IPv6 address without port
-            return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
-        }
-
-        try
-        {
-            /// Probably IPv4 with port
-            return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
-        }
-        catch (const Poco::InvalidArgumentException &)
-        {
-            /// IPv4 or IPv6 without port
-            return Poco::Net::SocketAddress{last, 0};
-        }
-    }
+    std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const;
 
     String getLastForwardedForHost() const
     {
