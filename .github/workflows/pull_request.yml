@@ -124,7 +124,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   Tests_1:
     needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_0') }}
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_1
