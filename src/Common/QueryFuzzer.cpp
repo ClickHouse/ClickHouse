@@ -1115,6 +1115,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     // The fuzzing.
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
+        if (fuzz_rand() % 50 == 0)
+        {
+            with_union->union_mode = static_cast<SelectUnionMode>(fuzz_rand() % (static_cast<int>(SelectUnionMode::INTERSECT_DISTINCT) + 1));
+        }
         fuzz(with_union->list_of_selects);
         /// Fuzzing SELECT query to EXPLAIN query randomly.
         /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
@@ -1133,6 +1137,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
     {
+        if (fuzz_rand() % 50 == 0)
+        {
+            with_intersect_except->final_operator = static_cast<ASTSelectIntersectExceptQuery::Operator>(fuzz_rand() % (static_cast<int>(ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT) + 1));
+        }
         auto selects = with_intersect_except->getListOfSelects();
         fuzz(selects);
     }
@@ -1258,6 +1266,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * table_expr = typeid_cast<ASTTableExpression *>(ast.get()))
     {
+        if (fuzz_rand() % 50 == 0)
+        {
+            table_expr->final = !table_expr->final;
+        }
         fuzzTableName(*table_expr);
         fuzz(table_expr->children);
     }
