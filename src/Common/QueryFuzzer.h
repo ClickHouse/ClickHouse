@@ -97,8 +97,6 @@ private:
     ASTPtr getRandomExpressionList();
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
-    void replaceWithColumnLike(ASTPtr & ast);
-    void replaceWithTableLike(ASTPtr & ast);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
@@ -113,6 +111,7 @@ private:
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
+    ASTPtr generatePredicate();
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

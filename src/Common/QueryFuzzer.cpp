@@ -262,33 +262,6 @@ ASTPtr QueryFuzzer::getRandomExpressionList()
     return new_ast;
 }
 
-void QueryFuzzer::replaceWithColumnLike(ASTPtr & ast)
-{
-    if (column_like.empty())
-    {
-        return;
-    }
-
-    std::string old_alias = ast->tryGetAlias();
-    ast = getRandomColumnLike();
-    ast->setAlias(old_alias);
-}
-
-void QueryFuzzer::replaceWithTableLike(ASTPtr & ast)
-{
-    if (table_like.empty())
-    {
-        return;
-    }
-
-    ASTPtr new_ast = table_like[fuzz_rand() % table_like.size()].second->clone();
-
-    std::string old_alias = ast->tryGetAlias();
-    new_ast->setAlias(old_alias);
-
-    ast = new_ast;
-}
-
 void QueryFuzzer::fuzzOrderByElement(ASTOrderByElement * elem)
 {
     switch (fuzz_rand() % 10)
@@ -1038,6 +1011,78 @@ struct ScopedIncrement
     ~ScopedIncrement() { --counter; }
 };
 
+static const Strings comparison_comparators
+    = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
+
+ASTPtr QueryFuzzer::generatePredicate()
+{
+    const int prob = fuzz_rand() % 3;
+
+    if (prob == 0)
+    {
+        decltype(column_like) colids;
+
+        std::copy_if(
+            column_like.begin(),
+            column_like.end(),
+            std::back_inserter(colids),
+            [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); });
+        if (!colids.empty())
+        {
+            ASTPtr where_condition = nullptr;
+            const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
+
+            for (int i = 0; i < nconditions; i++)
+            {
+                ASTPtr next_condition = nullptr;
+                const int nprob = fuzz_rand() % 10;
+
+                /// Pick a random indentifier
+                auto rand_col1 = colids.begin();
+                std::advance(rand_col1, fuzz_rand() % colids.size());
+                ASTPtr exp1 = rand_col1->second->clone();
+                exp1->setAlias("");
+
+                if (nprob == 0)
+                {
+                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", exp1);
+                }
+                else
+                {
+                    /// Pick any other column reference
+                    auto rand_col2 = column_like.begin();
+                    std::advance(rand_col2, fuzz_rand() % column_like.size());
+                    ASTPtr exp2 = rand_col2->second->clone();
+                    exp2->setAlias("");
+
+                    if (fuzz_rand() % 3 == 0)
+                    {
+                        /// Swap sides
+                        auto exp3 = exp1;
+                        exp1 = exp2;
+                        exp2 = exp3;
+                    }
+                    /// Run mostly equality conditions
+                    /// No isNotDistinctFrom outside join conditions
+                    next_condition = makeASTFunction(
+                        comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % (comparison_comparators.size() - 1)) : 0],
+                        exp1,
+                        exp2);
+                }
+                /// Sometimes use multiple conditions
+                where_condition = where_condition ? makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", where_condition, next_condition)
+                                                  : next_condition;
+            }
+            return where_condition;
+        }
+    }
+    else if (prob == 1)
+    {
+        return getRandomColumnLike();
+    }
+    return {};
+}
+
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
     if (!ast)
@@ -1113,7 +1158,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             std::back_inserter(colids),
             [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); });
 
-        if (!tables->children.empty() && tables->children.size() < 8 && !tids.empty() && !colids.empty() && fuzz_rand() % 50 == 0)
+        if (!tables->children.empty() && !tids.empty() && !colids.empty() && fuzz_rand() % 50 == 0)
         {
             static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
             static const std::vector<JoinStrictness> all_strictness_values
@@ -1133,8 +1178,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                    JoinKind::Paste,
                    JoinKind::Cross,
                    JoinKind::Comma*/};
-            static const Strings join_comparators
-                = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
 
             auto table_join = std::make_shared<ASTTableJoin>();
             table_join->locality = locality_values[fuzz_rand() % locality_values.size()];
@@ -1191,8 +1234,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     exp2 = exp3;
                 }
                 /// Run mostly equi-joins
-                ASTPtr next_condition
-                    = makeASTFunction(join_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % join_comparators.size()) : 0], exp1, exp2);
+                ASTPtr next_condition = makeASTFunction(
+                    comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
                 /// Sometimes use multiple conditions
                 join_condition = join_condition ? makeASTFunction((fuzz_rand() % 10) == 0 ? "or" : "and", join_condition, next_condition)
                                                 : next_condition;
@@ -1275,6 +1318,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 select->group_by_with_totals = !select->group_by_with_totals;
             }
+            if (!select->having().get())
+            {
+                if (fuzz_rand() % 50 == 0)
+                {
+                    select->having()->children.clear();
+                    select->setExpression(ASTSelectQuery::Expression::HAVING, generatePredicate());
+                }
+            }
+            else if (fuzz_rand() % 50 == 0)
+            {
+                select->setExpression(ASTSelectQuery::Expression::HAVING, generatePredicate());
+            }
         }
         else if (fuzz_rand() % 50 == 0)
         {
@@ -1286,7 +1341,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (fuzz_rand() % 50 == 0)
             {
                 select->where()->children.clear();
-                select->setExpression(ASTSelectQuery::Expression::WHERE, {});
+                select->setExpression(ASTSelectQuery::Expression::WHERE, generatePredicate());
             }
             else if (!select->prewhere().get())
             {
@@ -1304,7 +1359,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            select->setExpression(ASTSelectQuery::Expression::WHERE, getRandomColumnLike());
+            select->setExpression(ASTSelectQuery::Expression::WHERE, generatePredicate());
         }
 
         if (select->prewhere().get())
@@ -1312,7 +1367,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (fuzz_rand() % 50 == 0)
             {
                 select->prewhere()->children.clear();
-                select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+                select->setExpression(ASTSelectQuery::Expression::PREWHERE, generatePredicate());
             }
             else if (!select->where().get())
             {
@@ -1330,7 +1385,20 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            select->setExpression(ASTSelectQuery::Expression::PREWHERE, getRandomColumnLike());
+            select->setExpression(ASTSelectQuery::Expression::PREWHERE, generatePredicate());
+        }
+
+        if (select->qualify().get())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->qualify()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::QUALIFY, generatePredicate());
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::QUALIFY, generatePredicate());
         }
 
         fuzzOrderByList(select->orderBy().get());
