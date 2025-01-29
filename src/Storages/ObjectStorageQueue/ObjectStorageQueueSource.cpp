@@ -261,7 +261,7 @@ ObjectStorageQueueSource::FileIterator::next()
                     file_metadatas.resize(num_successful_objects);
                 }
 
-                chassert(new_batch.size() == file_metadatas.size());
+                chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
             }
         }
 
