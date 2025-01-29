@@ -254,12 +254,9 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
                     formatReadableSizeWithBinarySuffix(ratio_in_bytes),
                     ratio,
                     formatReadableSizeWithBinarySuffix(*available_system_memory));
-            }
-            else
-            {
-                is_limit_ignored = true;
-            }
         }
+        else
+            is_limit_ignored = true;
     }
 
     if (is_limit_ignored)
