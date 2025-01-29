@@ -10,7 +10,9 @@ from .settings import Settings
 from .utils import Utils
 
 
-def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
+def _get_workflows(
+    name=None, file=None, _for_validation_check=False, _file_names_out=None
+) -> List[Workflow.Config]:
     """
     Gets user's workflow configs
     """
@@ -31,7 +33,7 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
                     f"NOTE: Workflow [{py_file.name}] disabled via Settings.DISABLED_WORKFLOWS - skip"
                 )
                 continue
-        if file and file not in str(py_file):
+        if file and str(file) not in str(py_file):
             continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
@@ -55,6 +57,8 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
                     print(
                         f"Read workflow configs from [{module_name}], workflow name [{workflow.name}]"
                     )
+                if isinstance(_file_names_out, list):
+                    _file_names_out.append(py_file.name.removeprefix(".py"))
         except Exception as e:
             print(
                 f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
@@ -62,11 +66,12 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
     if not res:
         Utils.raise_with_error(f"Failed to find [{name or file or 'any'}] workflow")
 
-    for wf in res:
-        # add native jobs
-        _update_workflow_with_native_jobs(wf)
-        # fill in artifact properties, e.g. _provided_by
-        _update_workflow_artifacts(wf)
+    if not _for_validation_check:
+        for wf in res:
+            # add native jobs
+            _update_workflow_with_native_jobs(wf)
+            # fill in artifact properties, e.g. _provided_by
+            _update_workflow_artifacts(wf)
     return res
 
 
