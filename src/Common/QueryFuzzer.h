@@ -67,6 +67,9 @@ private:
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
 
+    // Used to track added tables in join clauses
+    uint32_t alias_counter = 0;
+
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes

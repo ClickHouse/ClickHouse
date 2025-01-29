@@ -1093,7 +1093,119 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {
+        decltype(table_like) tids;
+        decltype(column_like) colids;
+
         fuzz(tables->children);
+        /// Add a join clause to the AST
+        std::copy_if(
+            table_like.begin(),
+            table_like.end(),
+            std::back_inserter(tids),
+            [](std::pair<std::string, ASTPtr> & p)
+            {
+                const auto * texp = typeid_cast<ASTTableExpression *>(p.second.get());
+                return texp && texp->database_and_table_name;
+            });
+        std::copy_if(
+            column_like.begin(),
+            column_like.end(),
+            std::back_inserter(colids),
+            [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); });
+
+        if (!tables->children.empty() && tables->children.size() < 8 && !tids.empty() && !colids.empty() && fuzz_rand() % 50 == 0)
+        {
+            static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
+            static const std::vector<JoinStrictness> all_strictness_values
+                = {JoinStrictness::Unspecified,
+                   JoinStrictness::Any,
+                   JoinStrictness::All,
+                   JoinStrictness::Semi,
+                   JoinStrictness::Anti,
+                   JoinStrictness::Asof};
+            static const std::vector<JoinStrictness> right_strictness_values
+                = {JoinStrictness::Unspecified, JoinStrictness::RightAny, JoinStrictness::All, JoinStrictness::Semi, JoinStrictness::Anti};
+            static const std::vector<JoinKind> kind_values
+                = {JoinKind::Left,
+                   JoinKind::Inner,
+                   JoinKind::Right,
+                   JoinKind::Full/*,
+                   JoinKind::Paste,
+                   JoinKind::Cross,
+                   JoinKind::Comma*/};
+            static const Strings join_comparators
+                = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
+
+            auto table_join = std::make_shared<ASTTableJoin>();
+            table_join->locality = locality_values[fuzz_rand() % locality_values.size()];
+            table_join->kind = kind_values[fuzz_rand() % kind_values.size()];
+            switch (table_join->kind)
+            {
+                case JoinKind::Left:
+                case JoinKind::Inner:
+                    table_join->strictness = all_strictness_values[fuzz_rand() % all_strictness_values.size()];
+                    break;
+                case JoinKind::Right:
+                    table_join->strictness = right_strictness_values[fuzz_rand() % right_strictness_values.size()];
+                    break;
+                case JoinKind::Full:
+                    table_join->strictness = fuzz_rand() % 2 == 0 ? JoinStrictness::Unspecified : JoinStrictness::All;
+                    break;
+                default:
+                    break;
+            }
+
+            /// Add a table to the query
+            auto table_exp = std::make_shared<ASTTableExpression>();
+            auto rand_table1 = tids.begin();
+            std::advance(rand_table1, fuzz_rand() % tids.size());
+
+            const std::string next_alias = "alias" + std::to_string(alias_counter++);
+            table_exp->database_and_table_name
+                = typeid_cast<ASTTableExpression *>(rand_table1->second.get())->database_and_table_name->clone();
+            table_exp->database_and_table_name->setAlias(next_alias);
+            table_exp->children.emplace_back(table_exp->database_and_table_name);
+
+            ASTPtr join_condition = nullptr;
+            const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
+            for (int i = 0; i < nconditions; i++)
+            {
+                /// Pick a random column
+                auto rand_col1 = colids.begin();
+                std::advance(rand_col1, fuzz_rand() % colids.size());
+                const auto * id1 = typeid_cast<ASTIdentifier *>(rand_col1->second.get());
+
+                /// Use another random column
+                auto rand_col2 = colids.begin();
+                std::advance(rand_col2, fuzz_rand() % colids.size());
+
+                ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, id1->shortName()});
+                ASTPtr exp2 = rand_col2->second->clone();
+
+                exp2->setAlias("");
+                if (fuzz_rand() % 3 == 0)
+                {
+                    /// Swap sides
+                    auto exp3 = exp1;
+                    exp1 = exp2;
+                    exp2 = exp3;
+                }
+                /// Run mostly equi-joins
+                ASTPtr next_condition
+                    = makeASTFunction(join_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % join_comparators.size()) : 0], exp1, exp2);
+                /// Sometimes use multiple conditions
+                join_condition = join_condition ? makeASTFunction((fuzz_rand() % 10) == 0 ? "or" : "and", join_condition, next_condition)
+                                                : next_condition;
+            }
+            chassert(join_condition);
+            table_join->on_expression = join_condition;
+            table_join->children.push_back(table_join->on_expression);
+
+            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
+            table->table_join = table_join;
+            table->table_expression = table_exp;
+            tables->children.push_back(table);
+        }
     }
     else if (auto * tables_element = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
