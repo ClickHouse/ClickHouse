@@ -313,6 +313,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
+    format_settings.png_image.pixel_output_format = settings[Setting::output_png_image_pixel_format];
+    format_settings.png_image.height = settings[Setting::output_png_image_height];
+    format_settings.png_image.width = settings[Setting::output_png_image_width];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context

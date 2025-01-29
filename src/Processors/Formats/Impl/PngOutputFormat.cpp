@@ -6,7 +6,6 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
@@ -35,17 +34,33 @@ PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, cons
 {
     height = format_settings.png_image.height;
     width = format_settings.png_image.width;
-    pixel_mode = format_settings.png_image.pixel_mode;
+    output_format = validateFormat(format_settings.png_image.pixel_output_format);
     writer = std::make_unique<PngWriter>(out_); 
     /// TODO: Extra fields {column_names & data_types could be used in serializer for debug information}, i.e PngSerializer::dump method
     Strings column_names = header_.getNames();
     DataTypes data_types = header_.getDataTypes();
-    png_serializer = PngSerializer::create(column_names, data_types, width, height, pixel_mode, *writer);
+    png_serializer = PngSerializer::create(column_names, data_types, width, height, output_format, *writer);
+}
+
+PngPixelFormat PngOutputFormat::validateFormat(const String & mode)
+{
+    if (mode == "BINARY") 
+        return PngPixelFormat::BINARY;
+    else if (mode == "GRAYSCALE")
+        return PngPixelFormat::GRAYSCALE;
+    else if (mode == "RGB")
+        return PngPixelFormat::RGB;
+    else if (mode == "RGBA")
+        return PngPixelFormat::RGBA;
+    else
+        throw Exception(
+            ErrorCodes::CANNOT_CONVERT_TYPE, 
+            "Invalid pixel mode: {}", mode
+        );
 }
 
 void PngOutputFormat::writePrefix()
 {
-    /// const auto & header = getPort(PortKind::Main).getHeader();
     if (png_serializer)
         png_serializer->reset();
 }
@@ -60,7 +75,7 @@ void PngOutputFormat::consume(Chunk chunk)
     
     std::vector<ColumnPtr> column_ptrs;
     column_ptrs.reserve(cols.size());
-    for (auto & c : cols)
+    for (const auto & c : cols)
         column_ptrs.push_back(c);
 
     png_serializer->setColumns(column_ptrs.data(), column_ptrs.size());
@@ -69,8 +84,9 @@ void PngOutputFormat::consume(Chunk chunk)
     {
         if (row_count >= width * height)
             throw Exception(ErrorCodes::TOO_MANY_ROWS,
-                            "Received more rows than total pixels ({}).",
-                            width*height);
+                "Received more rows than total pixels ({}).",
+                width * height
+            );
 
         png_serializer->writeRow(i);
         ++row_count;

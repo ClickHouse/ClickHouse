@@ -1,9 +1,9 @@
 #include <Formats/PngWriter.h>
-#include "Common/Exception.h"
+
+#ifdef   USE_LIBPNG
+#include <Common/Exception.h>
 #include <Common/Logger.h>
-#include "Common/logger_useful.h"
-#include "Core/Types.h"
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 namespace DB {
 
@@ -15,44 +15,6 @@ PngWriter::PngWriter(WriteBuffer & out_)
 PngWriter::~PngWriter()
 {
     cleanup();
-}
-
-PngWriter::PngWriter(PngWriter && other) noexcept
-    : out(other.out), started(false)
-{  
-    width     = other.width;
-    height    = other.height;
-    started   = other.started;
-    png_ptr   = other.png_ptr;
-    info_ptr  = other.info_ptr;
-
-    other.width    = 0;
-    other.height   = 0;
-    other.started  = false;
-    other.png_ptr  = nullptr;
-    other.info_ptr = nullptr;
-}
-
-PngWriter & PngWriter::operator=(PngWriter && other) noexcept
-{
-    if (this == &other) 
-        return *this;
-    
-    cleanup();
-
-    width     = other.width;
-    height    = other.height;
-    started   = other.started;
-    png_ptr   = other.png_ptr;
-    info_ptr  = other.info_ptr;
-
-    other.width    = 0;
-    other.height   = 0;
-    other.started  = false;
-    other.png_ptr  = nullptr;
-    other.info_ptr = nullptr;
-
-    return *this;
 }
 
 void PngWriter::writeDataCallback(png_struct_def * png_ptr_, unsigned char * data, size_t length)
@@ -139,7 +101,7 @@ void PngWriter::writeEntireImage(const unsigned char * data)
     size_t row_bytes = width * 4;
 
     for (size_t y = 0; y < height; ++y) 
-        row_pointers[y] = const_cast<png_bytep>(data + y * row_bytes);
+        row_pointers[y] = const_cast<png_bytep>(data + (y * row_bytes));
     
     png_write_info(png_ptr, info_ptr);
     png_write_image(png_ptr, row_pointers.data());
@@ -184,3 +146,5 @@ void PngWriter::cleanup()
 
 
 }
+
+#endif /// USE_LIBPNG
