@@ -77,6 +77,8 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_partition.clear();
     mutation_pointer.clear();
 
+    LOG_TEST(log, "Changing ActiveDataMutations counter by {}", num_data_mutations_to_apply);
+    LOG_TEST(log, "Changing ActiveMetadataMutations counter by {}", num_metadata_mutations_to_apply);
     CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
     CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 

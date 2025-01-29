@@ -245,6 +245,8 @@ StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
 
+    LOG_TEST(log.load(), "Changing ActiveDataMutations counter by {}", num_data_mutations_to_apply);
+    LOG_TEST(log.load(), "Changing ActiveMetadataMutations counter by {}", num_metadata_mutations_to_apply);
     CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
     CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
