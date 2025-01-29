@@ -149,7 +149,7 @@ namespace
                 if (create.isView())
                 {
                     auto select_copy = create.select->clone();
-                    ApplyWithSubqueryVisitor::visit(select_copy);
+                    ApplyWithSubqueryVisitor(global_context).visit(select_copy);
 
                     if (create.is_materialized_view)
                     {
