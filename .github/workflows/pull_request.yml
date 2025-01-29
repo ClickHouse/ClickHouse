@@ -132,7 +132,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   # stage for running non-required checks without being blocked by required checks (Test_1) if corresponding settings is selected
   Tests_2_ww:
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Builds_1, Builds_0]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2_ww') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
