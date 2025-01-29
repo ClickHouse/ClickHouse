@@ -7,12 +7,17 @@ For now this tool is not integrated into ClickHouse and requires manual actions.
 First of all [opentelemetry_span_log](https://clickhouse.com/docs/en/operations/opentelemetry/) system table must be enabled to save query traces. Then run a query you want to trace with a setting:
 ```sql
 SET opentelemetry_start_trace_probability=1;
+```
+After this is run, the `opentelemetry_span_log` table will be created as traces will be logged there.
+
+Run a simple query:
+```sql
 SELECT 1;
 ```
 
 To find out `trace_id` of a query run the following command:
 ```sql
-SELECT DISTINCT trace_id FROM system.opentelemetry_span_log ORDER BY query_start_time DESC;
+SELECT DISTINCT trace_id FROM system.opentelemetry_span_log ORDER BY start_time_us DESC;
 ```
 
 To obtain JSON data suitable for visualizing run:
