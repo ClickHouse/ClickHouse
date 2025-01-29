@@ -10,13 +10,13 @@ from typing import Tuple
 
 import docker_images_helper
 from ci_config import CI
+from ci_utils import Shell
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET
 from git_helper import Git
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ci_utils import Shell
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
@@ -161,12 +161,14 @@ def main():
 
     print("Unshallow repo")
     Shell.check(
-        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD) ||:"
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth=10000 --prune --no-recurse-submodules --filter=tree:0 origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* ||:",
+        verbose=True,
     )
 
     print("Sync submodules")
     Shell.check(
-        "git submodule sync --recursive && git submodule init && git submodule update --depth 1 --recursive --jobs 20"
+        "git submodule init && git submodule update --depth 1 --recursive --jobs 20",
+        verbose=True,
     )
 
     logging.info("Repo copy path %s", repo_path)
