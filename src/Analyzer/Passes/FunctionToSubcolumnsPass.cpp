@@ -386,6 +386,9 @@ private:
     void enterImpl(const TableNode & table_node)
     {
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
+
+        /// If table occurs in query several times (e.g., in subquery), process only once
+        /// because we collect only static properties of the table, which are the same for each occurrence.
         if (!processed_tables.emplace(table_name).second)
             return;
 
