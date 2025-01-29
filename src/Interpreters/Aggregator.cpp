@@ -242,23 +242,18 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         if (available_system_memory.has_value())
         {
             if (std::isnan(ratio))
-            {
                 is_limit_ignored = true;
-            }
 
-            double computed_value = static_cast<double>(*available_system_memory) * ratio;
-            if (!std::isnan(computed_value) && computed_value >= 0 && !is_limit_ignored)
-            {
-                size_t ratio_in_bytes = static_cast<size_t>(computed_value);
-                if (threshold)
-                    threshold = std::min(threshold.value(), ratio_in_bytes);
-                else
-                    threshold = ratio_in_bytes;
+            size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+            if (threshold)
+                threshold = std::min(threshold.value(), ratio_in_bytes);
+            else
+                threshold = ratio_in_bytes;
 
-                LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
-                        formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                        ratio,
-                        formatReadableSizeWithBinarySuffix(*available_system_memory));
+            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
+                    formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+                    ratio,
+                    formatReadableSizeWithBinarySuffix(*available_system_memory));
             }
             else
             {
