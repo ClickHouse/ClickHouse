@@ -64,15 +64,21 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.2",
+        {
+        });
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            /// Release closed. Please use 25.2
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
             {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
+            {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
@@ -86,6 +92,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
             {"output_format_pretty_highlight_trailing_spaces", false, true, "A new setting."},
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
+            {"allow_push_predicate_ast_for_distributed_subqueries", false, true, "A new setting"},
             {"output_format_pretty_squash_consecutive_ms", 0, 50, "Add new setting"},
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
@@ -93,13 +100,20 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_multiline_fields", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
-            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_columns", 0, 5, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 250, "A new setting"},
             {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
+            {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
+            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
+            {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
+            {"skip_redundant_aliases_in_udf", false, false, "New setting."},
+            /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -110,13 +124,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
-            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
-            {"skip_redundant_aliases_in_udf", false, false, "New setting."},
+            {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             /// Release closed. Please use 25.1
@@ -172,6 +185,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_binary_read_json_as_string", false, false, "Add new setting to read values of JSON type as JSON string in RowBinary input format"},
             {"min_free_disk_bytes_to_perform_insert", 0, 0, "New setting."},
             {"min_free_disk_ratio_to_perform_insert", 0.0, 0.0, "New setting."},
+            {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"enable_named_columns_in_function_tuple", false, false, "Disabled pending usability improvements"},
             {"cloud_mode_database_engine", 1, 1, "A setting for ClickHouse Cloud"},
             {"allow_experimental_shared_set_join", 0, 0, "A setting for ClickHouse Cloud"},
@@ -198,6 +212,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands", false, false, "Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to (0, 3, 6), corresponding to 'seconds', 'milliseconds', and 'microseconds'."},
             {"parallel_replicas_index_analysis_only_on_coordinator", false, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"},
+            {"distributed_cache_discard_connection_if_unread_data", true, true, "New setting"},
+            {"azure_check_objects_after_upload", false, false, "Check each uploaded object in azure blob storage to be sure that upload was successful"},
+            {"backup_restore_keeper_max_retries", 20, 1000, "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."},
+            {"backup_restore_failure_after_host_disconnected_for_seconds", 0, 3600, "New setting."},
+            {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
+            {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
+            {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "24.9",
         {
@@ -625,8 +646,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.2",
+        {
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
+            /// Release closed. Please use 25.2
+            {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", false, false, "New setting to fetch parts data from other replicas"},
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
             {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
             {"add_minmax_index_for_string_columns", false, false, "New setting"},
@@ -656,6 +683,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_use_metadata_hints_cache", true, true, "Cloud sync"},
             {"notify_newest_block_number", false, false, "Cloud sync"},
             {"allow_reduce_blocking_parts_task", false, false, "Cloud sync"},
+            /// Release closed. Please use 25.2
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {

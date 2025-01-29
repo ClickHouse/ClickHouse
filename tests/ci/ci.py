@@ -7,8 +7,9 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -108,6 +109,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     )
     parser.add_argument(
         "--run",
+        action="store_true",
+        help="Action that executes run action for specified --job-name. run_command must be configured for a given "
+        "job name.",
+    )
+    parser.add_argument(
+        "--run-from-praktika",
         action="store_true",
         help="Action that executes run action for specified --job-name. run_command must be configured for a given "
         "job name.",
@@ -647,9 +654,12 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             if CI.is_build_job(job):
                 # no GH status for build jobs
                 continue
-            job_config = CI.get_job_config(job)
-            if not job_config:
-                # there might be a new job that does not exist on this branch - skip it
+            try:
+                job_config = CI.get_job_config(job)
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to get job config for [{job}], it might have been removed from main branch, ex: [{e}]"
+                )
                 continue
             for batch in range(job_config.num_batches):
                 future = executor.submit(
@@ -1228,7 +1238,8 @@ def main() -> int:
                 # upload binaries only for normal builds in PRs
                 upload_binary = (
                     not pr_info.is_pr
-                    or CI.get_job_ci_stage(args.job_name) == CI.WorkflowStages.BUILDS_1
+                    or CI.get_job_ci_stage(args.job_name)
+                    not in (CI.WorkflowStages.BUILDS_2,)
                     or CiSettings.create_from_run_config(indata).upload_all
                 )
 
@@ -1400,6 +1411,98 @@ def main() -> int:
             _set_pending_statuses(pr_info)
         else:
             assert False, "BUG! Not supported scenario"
+
+    ### RUN action for migration to praktika: start
+    elif args.run_from_praktika:
+        check_name = ""
+        start_time = datetime.now(timezone.utc)
+        try:
+            jr = JobReport.create_dummy(status="error", job_skipped=False)
+            jr.dump()
+            check_name = os.environ["JOB_NAME"]
+            os.environ["CHECK_NAME"] = check_name
+            exit_code = _run_test(check_name, args.run_command)
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+            job_report.exit_code = exit_code
+            job_report.dump()
+
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+        except Exception:
+            traceback.print_exc()
+            print("Run failed")
+
+        # post
+        try:
+            job_report = JobReport.load()
+            gh = GitHub(get_best_robot_token(), per_page=100)
+            commit = get_commit(gh, pr_info.sha)
+            if not job_report.dummy:
+                check_url = upload_result_helper.upload_results(
+                    s3,
+                    pr_info.number,
+                    pr_info.sha,
+                    pr_info.head_ref,
+                    job_report.test_results,
+                    job_report.additional_files,
+                    check_name,  # TODO: make with batch
+                )
+                post_commit_status(
+                    commit,
+                    job_report.status,
+                    check_url,
+                    format_description(job_report.description),
+                    check_name,  # TODO: make with batch
+                    pr_info,
+                    dump_to_file=True,
+                )
+            else:
+                print("ERROR: Job was killed - generate evidence")
+                job_report.duration = (
+                    start_time - datetime.now(timezone.utc)
+                ).total_seconds()
+                if Utils.is_killed_with_oom():
+                    print("WARNING: OOM while job execution")
+                    print(subprocess.run("sudo dmesg -T", check=False))
+                    error_description = (
+                        f"Out Of Memory, exit_code {job_report.exit_code}"
+                    )
+                else:
+                    error_description = f"Unknown, exit_code {job_report.exit_code}"
+                CIBuddy().post_job_error(
+                    error_description + f" after {int(job_report.duration)}s",
+                    job_name=_get_ext_check_name(args.job_name),
+                )
+
+                check_url = ""
+                if job_report.test_results or job_report.additional_files:
+                    check_url = upload_result_helper.upload_results(
+                        s3,
+                        pr_info.number,
+                        pr_info.sha,
+                        pr_info.head_ref,
+                        job_report.test_results,
+                        job_report.additional_files,
+                        check_name,  # TODO: make with batch,
+                    )
+                post_commit_status(
+                    commit,
+                    ERROR,
+                    check_url,
+                    "Error: " + error_description,
+                    check_name,  # TODO: make with batch
+                    pr_info,
+                    dump_to_file=True,
+                )
+        except Exception:
+            traceback.print_exc()
+            print("Post failed")
+    ### RUN FROM PRAKTIKA action: end
 
     ### print results
     _print_results(result, args.outfile, args.pretty)

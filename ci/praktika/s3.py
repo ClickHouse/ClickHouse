@@ -186,3 +186,19 @@ class S3:
             )
             return html_link
         return f"file://{Path(local_file_path).absolute()}"
+
+    @classmethod
+    def _dump_urls(cls, s3_path):
+        # TODO: add support for path with '*'
+        bucket, name = s3_path.split("/")[0], s3_path.split("/")[-1]
+        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
+
+        with open(Settings.ARTIFACT_URLS_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    name: quote(
+                        f"https://{s3_path}".replace(bucket, endpoint), safe=":/?&="
+                    )
+                },
+                f,
+            )

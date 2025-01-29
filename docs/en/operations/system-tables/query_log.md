@@ -94,6 +94,8 @@ Columns:
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
+- `script_query_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The query number in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
+- `script_line_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The line number of the query start in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
