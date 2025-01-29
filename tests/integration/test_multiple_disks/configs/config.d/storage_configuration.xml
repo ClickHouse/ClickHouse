@@ -130,6 +130,7 @@
                     <max_wait_after_move_ms>500</max_wait_after_move_ms>
                 </waiting>
             </volumes>
+            <move_factor>0.0</move_factor>
         </policy_with_waiting>
 
     </policies>
