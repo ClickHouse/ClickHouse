@@ -92,6 +92,7 @@ RestorerFromBackup::RestorerFromBackup(
     std::shared_ptr<IRestoreCoordination> restore_coordination_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
+    const ContextPtr & query_context_,
     ThreadPool & thread_pool_,
     const std::function<void()> & after_task_callback_)
     : restore_query_elements(restore_query_elements_)
@@ -99,6 +100,7 @@ RestorerFromBackup::RestorerFromBackup(
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
+    , query_context(query_context_)
     , process_list_element(context->getProcessListElement())
     , after_task_callback(after_task_callback_)
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
@@ -711,7 +713,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     if (current_user_access_rights->contains(required_access_rights))
         return;
 
-    context->checkAccess(required_access_rights.getElements());
+    query_context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
@@ -780,11 +782,11 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
 
-        auto query_context = Context::createCopy(context);
-        query_context->setSetting("allow_deprecated_database_ordinary", 1);
+        auto create_query_context = Context::createCopy(query_context);
+        create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
 
         /// Execute CREATE DATABASE query.
-        InterpreterCreateQuery interpreter{create_database_query, query_context};
+        InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
         interpreter.execute();
     }
@@ -978,15 +980,15 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 table_info.database = database;
         }
 
-        auto query_context = Context::createCopy(context);
-        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
-        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+        auto create_query_context = Context::createCopy(query_context);
+        create_query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        create_query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            query_context,
+            create_query_context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }
