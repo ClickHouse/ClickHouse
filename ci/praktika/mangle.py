@@ -11,7 +11,11 @@ from .utils import Utils
 
 
 def _get_workflows(
-    name=None, file=None, _for_validation_check=False, _file_names_out=None, default=False
+    name=None,
+    file=None,
+    _for_validation_check=False,
+    _file_names_out=None,
+    default=False,
 ) -> List[Workflow.Config]:
     """
     Gets user's workflow configs
