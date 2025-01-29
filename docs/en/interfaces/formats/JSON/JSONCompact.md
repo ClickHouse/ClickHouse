@@ -2,15 +2,20 @@
 title : JSONCompact
 slug : /en/interfaces/formats/JSONCompact
 keywords : [JSONCompact]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-Differs from JSON only in that data rows are output in arrays, not in objects.
+Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not as objects.
 
 ## Example Usage
-
-Example:
 
 ```json
 {

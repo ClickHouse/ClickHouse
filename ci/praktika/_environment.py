@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Type
 
 from . import Workflow
 from .settings import Settings
-from .utils import MetaClasses, T
+from .utils import MetaClasses, Shell, T
 
 
 @dataclasses.dataclass
@@ -30,10 +30,12 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
     PR_BODY: str
+    PR_TITLE: str
     USER_LOGIN: str
     FORK_NAME: str
     PR_LABELS: str
     LOCAL_RUN: bool = False
+    PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
@@ -84,7 +86,8 @@ class _Environment(MetaClasses.Serializable):
         WORKFLOW_NAME = os.getenv("GITHUB_WORKFLOW", "")
         JOB_NAME = os.getenv("JOB_NAME", "")
         REPOSITORY = os.getenv("GITHUB_REPOSITORY", "")
-        BRANCH = os.getenv("GITHUB_HEAD_REF", "")
+        # GITHUB_HEAD_REF for pull_request, GITHUB_REF_NAME for push
+        BRANCH = os.getenv("GITHUB_HEAD_REF", "") or os.getenv("GITHUB_REF_NAME", "")
 
         EVENT_FILE_PATH = os.getenv("GITHUB_EVENT_PATH", "")
         JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "")
@@ -94,6 +97,7 @@ class _Environment(MetaClasses.Serializable):
         USER_LOGIN = os.getenv("GITHUB_ACTOR")
         FORK_NAME = ""
         PR_BODY = ""
+        PR_TITLE = ""
         PR_LABELS = []
 
         if EVENT_FILE_PATH:
@@ -107,6 +111,7 @@ class _Environment(MetaClasses.Serializable):
                 CHANGE_URL = github_event["pull_request"]["html_url"]
                 COMMIT_URL = CHANGE_URL + f"/commits/{SHA}"
                 PR_BODY = github_event["pull_request"]["body"]
+                PR_TITLE = github_event["pull_request"]["title"]
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
@@ -126,8 +131,36 @@ class _Environment(MetaClasses.Serializable):
                     github_event["repository"]["html_url"] + "/commit/" + SHA
                 )  # commit url
                 COMMIT_URL = CHANGE_URL
+            elif "inputs" in github_event:
+                # assume this is a dispatch
+                EVENT_TYPE = Workflow.Event.DISPATCH
+                SHA = os.getenv(
+                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
+                )
+                PR_NUMBER = 0
+                CHANGE_URL = (
+                    github_event["repository"]["html_url"] + "/commit/" + SHA
+                )  # commit url
+                COMMIT_URL = CHANGE_URL
             else:
                 assert False, "TODO: not supported"
+            INSTANCE_TYPE = (
+                os.getenv("INSTANCE_TYPE", None)
+                or Shell.get_output("ec2metadata --instance-type")
+                or ""
+            )
+            INSTANCE_ID = (
+                os.getenv("INSTANCE_ID", None)
+                or Shell.get_output("ec2metadata --instance-id")
+                or ""
+            )
+            INSTANCE_LIFE_CYCLE = (
+                os.getenv("INSTANCE_LIFE_CYCLE", None)
+                or Shell.get_output(
+                    "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+                )
+                or ""
+            )
         else:
             print("WARNING: Local execution - dummy Environment will be generated")
             SHA = "TEST"
@@ -135,24 +168,9 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TYPE = Workflow.Event.PUSH
             CHANGE_URL = ""
             COMMIT_URL = ""
-
-        INSTANCE_TYPE = (
-            os.getenv("INSTANCE_TYPE", None)
-            # or Shell.get_output("ec2metadata --instance-type")
-            or ""
-        )
-        INSTANCE_ID = (
-            os.getenv("INSTANCE_ID", None)
-            # or Shell.get_output("ec2metadata --instance-id")
-            or ""
-        )
-        INSTANCE_LIFE_CYCLE = (
-            os.getenv("INSTANCE_LIFE_CYCLE", None)
-            # or Shell.get_output(
-            #     "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-            # )
-            or ""
-        )
+            INSTANCE_TYPE = ""
+            INSTANCE_ID = ""
+            INSTANCE_LIFE_CYCLE = ""
 
         return _Environment(
             WORKFLOW_NAME=WORKFLOW_NAME,
@@ -172,6 +190,7 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_TYPE=INSTANCE_TYPE,
             INSTANCE_ID=INSTANCE_ID,
             PR_BODY=PR_BODY,
+            PR_TITLE=PR_TITLE,
             USER_LOGIN=USER_LOGIN,
             FORK_NAME=FORK_NAME,
             PR_LABELS=PR_LABELS,
@@ -180,34 +199,18 @@ class _Environment(MetaClasses.Serializable):
         )
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
+        return self.get_s3_prefix_static(self.PR_NUMBER, self.SHA, latest)
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
-        prefix = ""
+    def get_s3_prefix_static(cls, pr_number, sha, latest=False):
+        prefix = f"{pr_number}"
         assert sha or latest
-        if pr_number and pr_number > 0:
-            prefix += f"{pr_number}"
-        else:
-            prefix += f"{branch}"
+        assert pr_number >= 0
         if latest:
             prefix += f"/latest"
         elif sha:
             prefix += f"/{sha}"
         return prefix
-
-    # TODO: find a better place for the function. This file should not import praktika.settings
-    #   as it's requires reading users config, that's why imports nested inside the function
-    def get_report_url(self, settings, latest=False):
-        import urllib
-
-        path = settings.HTML_S3_PATH
-        for bucket, endpoint in settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
-            if bucket in path:
-                path = path.replace(bucket, endpoint)
-                break
-        REPORT_URL = f"https://{path}/{Path(settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={'latest' if latest else self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}"
-        return REPORT_URL
 
     def is_local_run(self):
         return self.LOCAL_RUN

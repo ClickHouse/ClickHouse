@@ -48,6 +48,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AvroFormatSettings
 AzureQueue
 Azurite
 BFloat
@@ -231,6 +232,7 @@ DataLens
 DataPacket
 DataTime
 DataTypes
+DataTypesMatching
 DatabaseCatalog
 DatabaseCatalogThreads
 DatabaseCatalogThreadsActive
@@ -838,6 +840,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyFormatSettings
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
@@ -936,6 +939,7 @@ RowBinary
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryFormatSettings
 Runtime
 SATA
 SELECTs
@@ -963,6 +967,7 @@ SaaS
 Sanjeev
 Sankey
 Scalable
+ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -1531,6 +1536,7 @@ corrmatrix
 corrstable
 cors
 cosineDistance
+cooldown
 countDigits
 countEqual
 countIf
@@ -1995,6 +2001,7 @@ infty
 initcap
 initcapUTF
 initialQueryID
+initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -2876,6 +2883,7 @@ sysctl
 syslog
 syslogd
 systemd
+sqlreference
 tabix
 tablum
 tabseparated
@@ -2910,8 +2918,8 @@ timeZoneOffset
 timezones
 tinylog
 tmp
-toBool
 toBFloat
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -2973,6 +2981,7 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
+toStartOfIntervalAllowNegative
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
@@ -3124,6 +3133,7 @@ userspace
 userver
 utils
 uuid
+uuids
 uuidv
 vCPU
 varPop

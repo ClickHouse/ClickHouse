@@ -192,6 +192,7 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, "If enabled too many parts counter will rely on shared data in Keeper, not on local replica state. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, "Enables requesting FS cache hints from in-memory cache on other replicas. Only available in ClickHouse Cloud", 0) \
+    DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, "If enabled all the replicas try to fetch part in memory data (like primary key, partition info and so on) from other replicas where it already exists.", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
@@ -232,7 +233,7 @@ namespace ErrorCodes
     DECLARE(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
     DECLARE(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
     DECLARE(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm.", 0) \
-    DECLARE(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
+    DECLARE(Bool, assign_part_uuids, false, "When enabled, a unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited. This setting is the default that can be overridden by the query-level setting with the same name.", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, "Max number of concurrently executed queries related to the MergeTree table (0 - disabled). Queries will still be limited by other max_concurrent_queries settings.", 0) \
     DECLARE(UInt64, min_marks_to_honor_max_concurrent_queries, 0, "Minimal number of marks to honor the MergeTree-level's max_concurrent_queries (0 - disabled). Queries will still be limited by other max_concurrent_queries settings.", 0) \

@@ -3289,6 +3289,40 @@ Result:
 └─────────┘
 ```
 
+## initialQueryStartTime
+
+Returns the start time of the initial current query.
+
+`initialQueryStartTime` returns the same results on different shards (see example).
+
+**Syntax**
+
+```sql
+initialQueryStartTime()
+```
+
+**Returned value**
+
+- The start time of the initial current query. [DateTime](../data-types/datetime.md)
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Result:
+
+```text
+┌─count()─┐
+│ 1       │
+└─────────┘
+```
+
 ## partitionID
 
 Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
