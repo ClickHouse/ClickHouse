@@ -43,9 +43,7 @@ SELECT * FROM t1 RIGHT JOIN t2 ON NULL ORDER BY t1.id NULLS FIRST, t2.id SETTING
 SELECT '- full -';
 SELECT * FROM t1 FULL JOIN t2 ON NULL ORDER BY t1.id NULLS FIRST, t2.id SETTINGS join_use_nulls = 1;
 
-SET query_plan_use_new_logical_join_step = 0;
-
--- in this cases in old analuyzer we have AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION
+-- in this cases in old analyzer we have AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION
 -- because there's some function in ON expression is not constant itself (result is constant)
 SELECT * FROM t1 JOIN t2 ON 1 = 1 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError AMBIGUOUS_COLUMN_NAME,NOT_IMPLEMENTED }
 SELECT * FROM t1 JOIN t2 ON 1 = 1 SETTINGS join_algorithm = 'partial_merge'; -- { serverError AMBIGUOUS_COLUMN_NAME,NOT_IMPLEMENTED }

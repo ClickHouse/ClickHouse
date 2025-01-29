@@ -362,7 +362,7 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
 }
 
 
-void buildDisjunctiveJoinConditions2(const QueryTreeNodePtr & join_expression, JoinInfoBuildContext & builder_context)
+void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_expression, JoinInfoBuildContext & builder_context)
 {
     using JoinConditions = std::vector<JoinCondition>;
     if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
@@ -485,8 +485,6 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
     const auto & join_algorithms = query_settings[Setting::join_algorithm];
-    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
 
     /// CROSS/PASTE JOIN: doesn't have expression
     if (join_expression_node == nullptr)
@@ -508,8 +506,11 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
                 "JOIN {} join expression expected function",
                 join_node.formatASTForErrorMessage());
 
-        if (is_hash_join_enabled && query_settings[Setting::allow_general_join_planning])
-            buildDisjunctiveJoinConditions2(join_expression_node, build_context);
+        bool use_general_join_planning = (TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+            || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO)) && query_settings[Setting::allow_general_join_planning];
+
+        if (use_general_join_planning)
+            buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context);
         else
             buildDisjunctiveJoinConditions(join_expression_node, build_context);
     }
@@ -517,7 +518,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     {
         auto & join_actions = build_context.result_join_expression_actions;
 
-        if (!is_hash_join_enabled)
+        if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
 
         /// Joined table expression always has __tableN prefix, other columns will appear only in projections, so these names are safe
