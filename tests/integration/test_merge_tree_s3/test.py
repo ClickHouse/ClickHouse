@@ -802,8 +802,8 @@ def test_cache_with_full_disk_space(cluster, node_name):
             "/usr/bin/dd",
             "if=/dev/zero",
             "of=/jbod1/dummy",
-            "bs=1M",
-            "count=2",
+            "bs=1000",
+            "count=2000",
         ]
     )
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
