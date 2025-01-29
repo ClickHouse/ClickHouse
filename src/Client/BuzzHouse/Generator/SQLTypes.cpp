@@ -989,7 +989,7 @@ String TupleType::typeName(const bool escape) const
             ret += std::to_string(sub.cname.value());
             ret += " ";
         }
-        sub.subtype->typeName(escape);
+        ret += sub.subtype->typeName(escape);
     }
     ret += ")";
     return ret;
