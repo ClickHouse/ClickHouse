@@ -147,7 +147,7 @@ ClickHouse's DateTime type with time zones can exhibit unexpected behavior durin
 
 - [`date_time_output_format`](../../operations/settings/settings-formats.md#date_time_output_format) is set to `simple`.
 - Clocks move backward ("Fall Back"), causing a one-hour overlap.
-- Clocks move forward ("Spring Forward"!), causing a one-hour gap.
+- Clocks move forward ("Spring Forward"), causing a one-hour gap.
 
 By default, ClickHouse always picks the earlier occurrence of an overlapping time and may interpret nonexistent times during forward shifts.
 
@@ -165,7 +165,7 @@ SELECT '2023-10-29 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 └─────────────────────┴─────────────────────┘
 ```
 
-Similarily, during the transition from Standard Time to Daylight Saving Time, an hour can appear to be skipped.
+Similarly, during the transition from Standard Time to Daylight Saving Time, an hour can appear to be skipped.
 
 For example:
 
