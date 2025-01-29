@@ -394,7 +394,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        path=f"{TEMP_DIR}/build/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -424,7 +424,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
+        path=f"{TEMP_DIR}/build/clickhouse-odbc-bridge",
     ).parametrize(
         names=[
             ArtifactNames.CH_ODBC_B_AMD_DEBUG,

@@ -165,7 +165,7 @@ def main():
         verbose=True,
     )
 
-    print("Sync submodules")
+    print("Fetch submodules")
     Shell.check(
         "git submodule init && git submodule update --depth 1 --recursive --jobs 20",
         verbose=True,
