@@ -1,16 +1,16 @@
-#include <Interpreters/ClientInfo.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <unistd.h>
 
 #include <Common/config_version.h>
 
 #include <format>
+#include <unistd.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -48,7 +48,7 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     catch (const Poco::InvalidArgumentException &)
     {
         /// IPv4 or IPv6 without port
-        return Poco::Net::SocketAddress{last, 0};
+       return Poco::Net::SocketAddress{last, 0};
     }
 }
 
@@ -256,11 +256,6 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 String ClientInfo::getVersionStr() const
 {
     return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-}
-
-VersionNumber ClientInfo::getVersionNumber() const
-{
-    return VersionNumber(client_version_major, client_version_minor, client_version_patch);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()

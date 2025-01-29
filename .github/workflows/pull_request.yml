@@ -31,6 +31,7 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get a version
           filter: tree:0
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Debug Info
         uses: ./.github/actions/debug
       - name: Set pending Sync status
@@ -124,7 +125,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
   Tests_1:
     needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_0') }}
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
       stage: Tests_1

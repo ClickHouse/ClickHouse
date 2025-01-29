@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Core/UUID.h>
-#include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/VersionNumber.h>
-#include <boost/algorithm/string/trim.hpp>
 
 
 namespace Poco::Net
@@ -162,7 +159,6 @@ public:
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
-    VersionNumber getVersionNumber() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();
