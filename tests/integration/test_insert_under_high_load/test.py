@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", with_zookeeper=True)
+instance = cluster.add_instance("instance")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -16,13 +16,16 @@ def start_cluster():
 
 
 def test_memory_based_pipeline_throttling(start_cluster):
+    if instance.is_built_with_thread_sanitizer() or instance.is_built_with_address_sanitizer():
+        pytest.skip("This test is time-limited and it can be too slow with Thread Sanitizer")
+
     instance.query("DROP TABLE IF EXISTS testing_memory SYNC")
     instance.query(
         "CREATE TABLE testing_memory (a UInt64, b String) ENGINE = MergeTree ORDER BY tuple()"
     )
     instance.query("SYSTEM STOP MERGES")
 
-    settings = "max_insert_threads=32, max_memory_usage=6e8, max_execution_time=150"
+    settings = "max_insert_threads=32, max_memory_usage=6e8, max_execution_time=100"
 
     # Test case 1: Insert with memory-based pipeline throttling enabled
     _, err = instance.query_and_get_answer_with_error(
