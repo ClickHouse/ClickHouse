@@ -50,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
 }
 
@@ -202,6 +203,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
+    format_settings.parquet.output_compression_level = settings[Setting::output_format_compression_level];
     format_settings.parquet.output_compliant_nested_types = settings[Setting::output_format_parquet_compliant_nested_types];
     format_settings.parquet.use_custom_encoder = settings[Setting::output_format_parquet_use_custom_encoder];
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
@@ -230,6 +232,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
     format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
+    format_settings.pretty.fallback_to_vertical_min_columns = settings[Setting::output_format_pretty_fallback_to_vertical_min_columns];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
@@ -530,7 +533,8 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, const Cont
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
-        format->onProgress(read_progress);
+        if (!read_progress.empty())
+            format->setProgress(std::move(read_progress));
 
         /// Update the start of the statistics to use the start of the query, and not the creation of the format class
         format->setStartTime(element_id->getQueryCPUStartTime(), true);

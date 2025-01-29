@@ -24,10 +24,10 @@ A function configuration contains the following settings:
 
 - `name` - a function name.
 - `command` - script name to execute or command if `execute_direct` is false.
-- `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](../../interfaces/formats.md#jsoneachrow). Default argument name value is `c` + argument_number.
+- `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/docs/en/interfaces/formats/Native) or [JSONEachRow](/docs/en/interfaces/formats/JSONEachRow). Default argument name value is `c` + argument_number.
 - `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
 - `return_type` - the type of a returned value.
-- `return_name` - name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](../../interfaces/formats.md#jsoneachrow). Optional. Default value is `result`.
+- `return_name` - name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](/docs/en/interfaces/formats.md/JSONEachRow). Optional. Default value is `result`.
 - `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
 - `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
 - `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. Optional. Default value is `10`.
