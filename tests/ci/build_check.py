@@ -159,11 +159,13 @@ def main():
 
     pr_info = PRInfo()
 
-    print("Unshallow repo")
-    Shell.check(
-        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth=10000 --prune --no-recurse-submodules --filter=tree:0 origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* ||:",
-        verbose=True,
-    )
+    if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
+        print("Unshallow repo")
+        branch = Shell.get_output("git branch  -r --contains HEAD").split("/")[-1]
+        Shell.check(
+            f"git fetch --prune --no-recurse-submodules --depth 10000 --filter=tree:0 origin {branch} +refs/tags/*:refs/tags/*",
+            verbose=True,
+        )
 
     print("Fetch submodules")
     Shell.check(

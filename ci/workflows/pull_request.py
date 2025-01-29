@@ -41,7 +41,7 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        #requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
+        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
         command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -54,7 +54,7 @@ class JobConfigs:
                 "./programs",
                 "./docker/packager/packager",
                 "./rust",
-                "./tests/ci/version_helper.py",
+                "./tests/ci/build_check.py",
                 "./tests/performance",
             ],
         ),

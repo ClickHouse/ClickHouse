@@ -13,6 +13,7 @@ from github import Github
 
 from build_download_helper import download_builds_filter
 from ci_config import CI
+from ci_utils import Shell
 from clickhouse_helper import get_instance_id, get_instance_type
 from commit_status_helper import get_commit
 from docker_images_helper import get_docker_image, pull_image
@@ -78,6 +79,12 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_tests_path = Path(REPO_COPY, "tests")
+
+    print("Unshallow repo")
+    Shell.check(
+        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth=10000 --prune --no-recurse-submodules --filter=tree:0 origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* ||:",
+        verbose=True,
+    )
 
     check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
     assert (
