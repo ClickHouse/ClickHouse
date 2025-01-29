@@ -31,7 +31,7 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get a version
           filter: tree:0
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.head_ref }}
       - name: Debug Info
         uses: ./.github/actions/debug
       - name: Set pending Sync status
