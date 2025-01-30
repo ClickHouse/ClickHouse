@@ -418,11 +418,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
                  rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "1", "1000", "1000000"},
-         false)}};
-
-/// We need to split the serverSettings because in order to initialize the values for the map it
-/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
-static std::unordered_map<String, CHSetting> serverSettings2 = {
+         false)},
     {"max_bytes_before_remerge_sort",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
@@ -450,7 +446,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "32", "64", "1024", "1000000"},
-         false)},
+         false)}};
+
+/// We need to split the serverSettings because in order to initialize the values for the map it
+/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
+static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"max_final_threads",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
