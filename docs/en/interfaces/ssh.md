@@ -5,12 +5,10 @@ sidebar_position: 60
 keywords: [client, ssh, putty]
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # SSH interface with PTY
 
 <ExperimentalBadge/>
-<CloudNotSupportedBadge/>
 
 ## Preface
 
