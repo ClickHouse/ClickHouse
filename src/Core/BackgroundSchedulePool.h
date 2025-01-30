@@ -5,9 +5,8 @@
 #include <functional>
 #include <map>
 #include <mutex>
-#include <thread>
 #include <vector>
-#include <base/scope_guard.h>
+#include <base/defines.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Notification.h>
 #include <Poco/NotificationQueue.h>
@@ -77,7 +76,7 @@ private:
     /// Tasks.
     std::condition_variable tasks_cond_var;
     std::mutex tasks_mutex;
-    std::deque<TaskInfoPtr> tasks;
+    std::deque<TaskInfoPtr> tasks TSA_GUARDED_BY(tasks_mutex);
     Threads threads;
 
     /// Delayed tasks.
@@ -87,7 +86,7 @@ private:
     /// Thread waiting for next delayed task.
     std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> delayed_thread;
     /// Tasks ordered by scheduled time.
-    DelayedTasks delayed_tasks;
+    DelayedTasks delayed_tasks TSA_GUARDED_BY(delayed_tasks_mutex);
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
@@ -131,7 +130,7 @@ private:
 
     void execute();
 
-    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
+    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex);
 
     BackgroundSchedulePool & pool;
     std::string log_name;
@@ -143,10 +142,10 @@ private:
     /// Invariants:
     /// * If deactivated is true then scheduled, delayed and executing are all false.
     /// * scheduled and delayed cannot be true at the same time.
-    bool deactivated = false;
-    bool scheduled = false;
-    bool delayed = false;
-    bool executing = false;
+    bool deactivated TSA_GUARDED_BY(schedule_mutex) = false;
+    bool scheduled TSA_GUARDED_BY(schedule_mutex) = false;
+    bool delayed TSA_GUARDED_BY(schedule_mutex) = false;
+    bool executing TSA_GUARDED_BY(schedule_mutex) = false;
 
     /// If the task is scheduled with delay, points to element of delayed_tasks.
     BackgroundSchedulePool::DelayedTasks::iterator iterator;

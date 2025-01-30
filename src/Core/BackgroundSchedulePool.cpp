@@ -3,6 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Common/LockGuard.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <chrono>
@@ -247,7 +248,7 @@ void BackgroundSchedulePool::scheduleTask(TaskInfoPtr task_info)
     tasks_cond_var.notify_one();
 }
 
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_t ms, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
+void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_t ms, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */) TSA_REQUIRES(task->schedule_mutex)
 {
     Poco::Timestamp current_time;
 
@@ -265,7 +266,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_
 }
 
 
-void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
+void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */) TSA_REQUIRES(task->schedule_mutex)
 {
     {
         std::lock_guard lock(delayed_tasks_mutex);
@@ -286,9 +287,11 @@ void BackgroundSchedulePool::threadFunction()
         TaskInfoPtr task;
 
         {
-            std::unique_lock<std::mutex> tasks_lock(tasks_mutex);
+            LockGuard tasks_lock(tasks_mutex);
 
-            tasks_cond_var.wait(tasks_lock, [&]()
+            /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't understand within the lambda that the
+            /// tasks_lock has already locked tasks_mutex.
+            tasks_cond_var.wait(tasks_lock.getUnderlyingLock(), [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
                 return shutdown || !tasks.empty();
             });
@@ -316,7 +319,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         bool found = false;
 
         {
-            std::unique_lock lock(delayed_tasks_mutex);
+            LockGuard lock(delayed_tasks_mutex);
 
             while (!shutdown)
             {
@@ -331,7 +334,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (!task)
                 {
-                    delayed_tasks_cond_var.wait(lock);
+                    delayed_tasks_cond_var.wait(lock.getUnderlyingLock());
                     continue;
                 }
 
@@ -339,7 +342,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (min_time > current_time)
                 {
-                    delayed_tasks_cond_var.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
                     continue;
                 }
 

@@ -19,7 +19,7 @@ template <typename Mutex>
 class TSA_SCOPED_LOCKABLE LockGuard
 {
 public:
-    explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : mutex(mutex_) { lock(); }
+    explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : unique_lock(mutex_) { }
     ~LockGuard() TSA_RELEASE() { if (locked) unlock(); }
 
     void lock() TSA_ACQUIRE()
@@ -27,7 +27,7 @@ public:
         /// Don't allow recursive_mutex for now.
         if (locked)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't lock twice the same mutex");
-        mutex.lock();
+        unique_lock.lock();
         locked = true;
     }
 
@@ -35,13 +35,15 @@ public:
     {
         if (!locked)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unlock the mutex without locking it first");
-        mutex.unlock();
+        unique_lock.unlock();
         locked = false;
     }
 
+    std::unique_lock<Mutex> & getUnderlyingLock() { return unique_lock; }
+
 private:
-    Mutex & mutex;
-    bool locked = false;
+    std::unique_lock<Mutex> unique_lock;
+    bool locked = true;
 };
 
 template <template<typename> typename TLockGuard, typename Mutex>
