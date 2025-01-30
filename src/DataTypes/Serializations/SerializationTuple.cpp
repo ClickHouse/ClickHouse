@@ -660,7 +660,7 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());
         for (const auto & state : states)
-            new_state->states.push_back(state->clone());
+            new_state->states.push_back(state ? state->clone() : nullptr);
 
         return new_state;
     }

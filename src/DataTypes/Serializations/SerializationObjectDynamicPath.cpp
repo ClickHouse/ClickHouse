@@ -33,8 +33,8 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDynamicPath>(*this);
-        new_state->structure_state = structure_state->clone();
-        new_state->nested_state = nested_state->clone();
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
         return new_state;
     }
 };

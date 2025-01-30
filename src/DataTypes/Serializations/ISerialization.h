@@ -107,7 +107,7 @@ public:
 
     struct DeserializeBinaryBulkState
     {
-        DeserializeBinaryBulkState() {}
+        DeserializeBinaryBulkState() = default;
         DeserializeBinaryBulkState(const DeserializeBinaryBulkState &) = default;
 
         virtual ~DeserializeBinaryBulkState() = default;
@@ -317,6 +317,8 @@ public:
 
         bool object_and_dynamic_read_statistics = false;
 
+        /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
+        StreamCallback dynamic_subcolumns_callback;
         /// Callback to start prefetches for specific substreams during prefixes deserialization.
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
@@ -340,11 +342,9 @@ public:
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & state,
+        DeserializeBinaryBulkStatePtr & /*state*/,
         SubstreamsDeserializeStatesCache * /*cache*/) const
     {
-        /// Create empty state to avoid working with nullptr state.
-        state = std::make_shared<DeserializeBinaryBulkState>();
     }
 
     /** 'offset' and 'limit' are used to specify range.

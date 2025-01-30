@@ -31,8 +31,8 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
-        new_state->structure_state = structure_state->clone();
-        new_state->variant_element_state = variant_element_state->clone();
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
         return new_state;
     }
 };

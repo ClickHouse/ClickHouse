@@ -1299,10 +1299,10 @@ Possible values:
 - Any positive integer.
 )", 0) \
 DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
-Enables caching of deserialization prefixes during reading from Wide parts in MergeTree.
+Enables caching of columns metadata from the file prefixes during reading from Wide parts in MergeTree.
 )", 0) \
 DECLARE(UInt64Auto, merge_tree_prefixes_deserialization_thread_pool_size, "auto", R"(
-The number of threads used in a thread pool for parallel prefixes reading in Wide parts in MergeTree.
+The number of threads used in a thread pool for parallel reading of columns metadata from file prefixes in Wide parts in MergeTree.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Merge parts only in one partition in select final

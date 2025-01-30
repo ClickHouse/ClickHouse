@@ -36,12 +36,11 @@ public:
         finished.notify_all();
     }
 
-    /// Wait until task is executed and rethrow an exception if any.
-    void wait()
+    /// Wait until task is executed and return an exception if any.
+    std::exception_ptr wait()
     {
         finished.wait(false);
-        if (exception)
-            std::rethrow_exception(exception);
+        return exception;
     }
 
 private:

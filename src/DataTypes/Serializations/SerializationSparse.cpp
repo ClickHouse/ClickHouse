@@ -39,7 +39,7 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeStateSparse>(*this);
-        new_state->nested = nested->clone();
+        new_state->nested = nested ? nested->clone() : nullptr;
         return new_state;
     }
 };
