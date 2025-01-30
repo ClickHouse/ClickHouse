@@ -446,18 +446,18 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "32", "64", "1024", "1000000"},
-         false)}};
-
-/// We need to split the serverSettings because in order to initialize the values for the map it
-/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
-static std::unordered_map<String, CHSetting> serverSettings2 = {
+         false)},
     {"max_final_threads",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"max_insert_block_size",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)}};
+
+/// We need to split the serverSettings because in order to initialize the values for the map it
+/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
+static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"max_insert_delayed_streams_for_parallel_write",
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 12)); }, {}, false)},
     {"max_insert_threads",
