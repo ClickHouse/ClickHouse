@@ -182,6 +182,9 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 
     finished = chunk.is_finished;
 
+    if (finished)
+        processor->onFinish();
+
     /// We can return a chunk with no rows even if are not finished.
     /// This allows to report progress when all the rows are filtered out inside MergeTreeSelectProcessor by PREWHERE logic.
     return std::move(chunk.chunk);
