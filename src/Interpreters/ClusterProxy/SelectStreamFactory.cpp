@@ -169,7 +169,7 @@ void SelectStreamFactory::createForShardImpl(
             query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
+    auto emplace_remote_stream = [&](bool lazy = false)
     {
         Block shard_header;
         PlannerContextPtr planner_context;
@@ -187,7 +187,6 @@ void SelectStreamFactory::createForShardImpl(
             .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
-            .local_delay = local_delay,
             .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
@@ -196,7 +195,7 @@ void SelectStreamFactory::createForShardImpl(
 
     fiu_do_on(FailPoints::use_delayed_remote_source,
     {
-        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
+        emplace_remote_stream(/*lazy=*/true);
         return;
     });
 
@@ -289,7 +288,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
         /// Do it lazily to avoid connecting in the main thread.
-        emplace_remote_stream(true /* lazy */, local_delay);
+        emplace_remote_stream(true /* lazy */);
     }
     else
         emplace_remote_stream();

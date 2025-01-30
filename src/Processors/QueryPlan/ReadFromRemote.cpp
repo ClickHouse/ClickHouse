@@ -31,6 +31,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
+#include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
@@ -38,6 +39,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <fmt/format.h>
 
@@ -61,6 +63,11 @@ namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char use_delayed_remote_source[];
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
@@ -431,12 +438,25 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     if (filter_actions_dag)
         pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
 
+    const StorageID resolved_id = context->resolveStorageID(main_table);
+    const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+    if (!storage)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage with id {} not found", resolved_id);
+    }
+
+    const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get());
+    if (!replicated_storage)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", storage->getName());
+    }
+
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, local_delay = shard.local_delay,
+            my_stage = stage, replicated_storage,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
             pushed_down_filters]() mutable
@@ -454,7 +474,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             else
                 try_results = my_shard.shard_info.pool->getManyChecked(
                     timeouts, current_settings, PoolMode::GET_MANY,
-                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
+                    my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());   
         }
         catch (const Exception & ex)
         {
@@ -472,7 +492,15 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 max_remote_delay = std::max(try_result.delay, max_remote_delay);
         }
 
-        if (try_results.empty() || local_delay < max_remote_delay)
+        const time_t local_delay = replicated_storage->getAbsoluteDelay();
+        
+        bool use_delayed_remote_source = false;
+        fiu_do_on(FailPoints::use_delayed_remote_source,
+        {
+            use_delayed_remote_source = true;
+        });
+
+        if (!use_delayed_remote_source && (try_results.empty() || local_delay < max_remote_delay))
         {
             auto plan = createLocalPlan(
                 query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
