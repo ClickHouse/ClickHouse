@@ -15,10 +15,6 @@ std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr> D
         return clonePrefixes();
 
     prefixes = read_prefixes();
-    LOG_DEBUG(getLogger("DeserializationPrefixesCache"), "Set prefixes");
-    for (const auto & [column, prefix] : *prefixes)
-        LOG_DEBUG(getLogger("DeserializationPrefixesCache"), "Column {}, prefix {}", column, prefix ? "yes" : "no");
-
     is_set = true;
     return clonePrefixes();
 }

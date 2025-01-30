@@ -338,7 +338,6 @@ void MergeTreeReaderWide::deserializePrefix(
     const auto & name = name_and_type.name;
     if (!deserialize_binary_bulk_state_map.contains(name))
     {
-        LOG_DEBUG(getLogger("MergeTreeReaderWide"), "Deserialize prefix for {}", name_and_type.name);
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
