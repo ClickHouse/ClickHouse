@@ -106,10 +106,11 @@ do
 done
 
 if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
-  # if clickhouse user is defined - create it (user "default" already exists out of box)
-  if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
-      echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
-      cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+    echo "$0: explicitly skip user changing user 'default'"
+# if clickhouse user is defined - create it (user "default" already exists out of box)
+elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
+    echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
+    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
   <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
   <users>
@@ -129,9 +130,9 @@ if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
   </users>
 </clickhouse>
 EOT
-  else
-      echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
-      cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+else
+    echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
+    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
   <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
   <users>
@@ -145,7 +146,6 @@ EOT
   </users>
 </clickhouse>
 EOT
-  fi
 fi
 
 CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS="${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS:-}"
