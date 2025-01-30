@@ -1038,7 +1038,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                 ASTPtr next_condition = nullptr;
                 const int nprob = fuzz_rand() % 10;
 
-                /// Pick a random indentifier
+                /// Pick a random identifier
                 auto rand_col1 = colids.begin();
                 std::advance(rand_col1, fuzz_rand() % colids.size());
                 ASTPtr exp1 = rand_col1->second->clone();
