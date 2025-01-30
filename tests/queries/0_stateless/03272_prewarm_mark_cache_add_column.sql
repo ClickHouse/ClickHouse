@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- no-parallel: if mark cache is dropped concurrently LoadedMarksCount event will be incorrect.
+-- no-parallel: SYSTEM DROP MARK CACHE is used.
 
 DROP TABLE IF EXISTS t_prewarm_add_column;
 
@@ -7,6 +7,7 @@ CREATE TABLE t_prewarm_add_column (a UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS prewarm_mark_cache = 1, min_bytes_for_wide_part = 0;
 
+-- Drop mark cache because it may be full and we will fail to add new entries to it.
 SYSTEM DROP MARK CACHE;
 SYSTEM STOP MERGES t_prewarm_add_column;
 
