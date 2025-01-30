@@ -61,6 +61,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"composed_data_type_output_format_mode",
      CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'default'" : "'spark'"; }, {}, false)},
     {"convert_query_to_cnf", CHSetting(trueOrFalse, {}, false)},
+    {"count_distinct_implementation",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
+         false)},
     {"count_distinct_optimization", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"create_table_empty_primary_key_by_default", CHSetting(trueOrFalse, {}, false)},
@@ -616,6 +625,9 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_use_implicit_projections", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_use_projections", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_using_constraints", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"os_thread_priority",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
     {"output_format_arrow_compression_method",
      CHSetting(
          [](RandomGenerator & rg)
@@ -740,6 +752,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"parallel_view_processing", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallelize_output_from_storages", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"partial_merge_join_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"partial_merge_join_rows_in_right_blocks",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.8, 1000, 100000)); },
+         {"1000", "10000", "100000"},
+         false)},
     {"partial_result_on_first_cancel", CHSetting(trueOrFalse, {}, false)},
     {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
     {"prefer_external_sort_block_bytes",
@@ -829,6 +846,15 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"send_progress_in_http_headers", CHSetting(trueOrFalse, {}, false)},
+    {"short_circuit_function_evaluation",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {"'enable'", "'force_enable'", "'disable'"},
+         false)},
     {"show_table_uuid_in_table_create_query_if_not_nil", CHSetting(trueOrFalse, {}, false)},
     {"single_join_prefer_left_table", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)},
@@ -848,6 +874,15 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
     {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
+    {"temporary_files_codec",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'lz4'", "'none'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {},
+         false)},
     {"totals_auto_threshold", CHSetting(probRange, {}, false)},
     {"totals_mode",
      CHSetting(
