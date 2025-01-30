@@ -136,7 +136,9 @@ class CacheRunnerHooks:
                 record = runtime_config.cache_artifacts[artifact.name]
                 print(f"Reuse artifact [{artifact.name}] from [{record}]")
                 path_prefixes.append(
-                    env.get_s3_prefix_static(record.pr_number, record.sha)
+                    env.get_s3_prefix_static(
+                        record.pr_number, record.branch, record.sha
+                    )
                 )
             else:
                 path_prefixes.append(env.get_s3_prefix())
@@ -154,4 +156,10 @@ class CacheRunnerHooks:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_fs(workflow.name)
             job_digest = workflow_runtime.digest_jobs[job.name]
-            Cache.push_success_record(job.name, job_digest, workflow_runtime.sha)
+            # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
+            Cache.push_success_record(
+                job.name,
+                job_digest,
+                workflow_runtime.sha,
+                if_not_exist=workflow.is_event_pull_request(),
+            )

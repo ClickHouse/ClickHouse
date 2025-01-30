@@ -58,6 +58,7 @@ class JobConfigs:
                 "./tests/performance",
             ],
         ),
+        requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -722,9 +723,9 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        # JobConfigs.style_check,
-        # JobConfigs.docs_job,
-        # JobConfigs.fast_test,
+        JobConfigs.style_check,
+        JobConfigs.docs_job,
+        JobConfigs.fast_test,
         *JobConfigs.build_jobs[0:2],
         # JobConfigs.docker_sever,
         # JobConfigs.docker_keeper,
@@ -738,7 +739,7 @@ workflow = Workflow.Config(
         # *JobConfigs.clickbench_jobs,
         # *JobConfigs.ast_fuzzer_jobs,
         # *JobConfigs.buzz_fuzzer_jobs,
-        JobConfigs.performance_comparison_jobs[0],
+        # JobConfigs.performance_comparison_jobs[0],
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
