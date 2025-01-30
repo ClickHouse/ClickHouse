@@ -288,6 +288,7 @@ struct FormatSettings
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
+        uint64_t output_compression_level;
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
@@ -320,6 +321,7 @@ struct FormatSettings
 
         bool fallback_to_vertical = true;
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
+        UInt64 fallback_to_vertical_min_columns = 5;
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         enum class Charset : uint8_t

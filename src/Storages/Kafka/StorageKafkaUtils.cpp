@@ -34,6 +34,7 @@
 #include <Common/setThreadName.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
 
