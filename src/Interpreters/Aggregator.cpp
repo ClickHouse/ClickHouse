@@ -231,7 +231,6 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
     if (max_bytes_before_external_group_by != 0)
         threshold = max_bytes_before_external_group_by;
 
-    bool is_limit_ignored = false;
     if (max_bytes_ratio_before_external_group_by != 0.)
     {
         double ratio = max_bytes_ratio_before_external_group_by;
@@ -239,11 +238,8 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
+        if (available_system_memory.has_value() && !std::isnan(ratio))
         {
-            if (std::isnan(ratio))
-                is_limit_ignored = true;
-
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
             if (threshold)
                 threshold = std::min(threshold.value(), ratio_in_bytes);
@@ -256,11 +252,10 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
                     formatReadableSizeWithBinarySuffix(*available_system_memory));
         }
         else
-            is_limit_ignored = true;
+        {
+            LOG_WARNING(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
+        }
     }
-
-    if (is_limit_ignored)
-        LOG_WARNING(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
 
     return threshold.value_or(0);
 }
