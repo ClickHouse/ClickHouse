@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pylint: disable=line-too-long
 import json
 import logging
 import os
@@ -13,7 +12,6 @@ from github import Github
 
 from build_download_helper import download_builds_filter
 from ci_config import CI
-from ci_utils import Shell
 from clickhouse_helper import get_instance_id, get_instance_type
 from commit_status_helper import get_commit
 from docker_images_helper import get_docker_image, pull_image
@@ -80,12 +78,6 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_tests_path = Path(REPO_COPY, "tests")
 
-    print("Unshallow repo")
-    Shell.check(
-        "git rev-parse --is-shallow-repository | grep -q true && git fetch --depth=10000 --prune --no-recurse-submodules --filter=tree:0 origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* ||:",
-        verbose=True,
-    )
-
     check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
     assert (
         check_name
@@ -114,15 +106,26 @@ def main():
         f'Job (actions)</a> <a href={pr_link}>Tested commit</a>"'
     )
 
-    if "RUN_BY_HASH_TOTAL" in os.environ:
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "1"))
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "1"))
+    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+
+    match = re.search(r"\(.*?\)", check_name)
+    options = match.group(0)[1:-1].split(",") if match else []
+    for option in options:
+        if "/" in option:
+            run_by_hash_num = int(option.split("/")[0]) - 1
+            run_by_hash_total = int(option.split("/")[1])
+            os.environ["RUN_BY_HASH_NUM"] = str(run_by_hash_num)
+            os.environ["RUN_BY_HASH_TOTAL"] = str(run_by_hash_total)
+            break
+
+    if run_by_hash_total:
+        check_name_with_group = (
+            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
+        )
         docker_env += (
             f" -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total}"
             f" -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}"
-        )
-        check_name_with_group = (
-            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
         )
     else:
         check_name_with_group = check_name
