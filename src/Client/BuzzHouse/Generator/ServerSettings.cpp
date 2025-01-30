@@ -379,7 +379,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
              return rg.pickRandomlyFromVector(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
-         false)},
+         false)}};
+
+static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"local_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"log_formatted_queries", CHSetting(trueOrFalse, {}, false)},
     {"log_processors_profiles", CHSetting(trueOrFalse, {}, false)},
@@ -453,11 +455,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {"1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"max_insert_block_size",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)}};
-
-/// We need to split the serverSettings because in order to initialize the values for the map it
-/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
-static std::unordered_map<String, CHSetting> serverSettings2 = {
+     CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_insert_delayed_streams_for_parallel_write",
      CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 12)); }, {}, false)},
     {"max_insert_threads",
@@ -756,185 +754,194 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.8, 1000, 100000)); },
          {"1000", "10000", "100000"},
-         false)},
-    {"partial_result_on_first_cancel", CHSetting(trueOrFalse, {}, false)},
-    {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
-    {"prefer_external_sort_block_bytes",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"0", "1", "1000", "1000000"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {"0", "1", "1000", "1000000"},
-         false)},
-    {"prefer_global_in_and_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"prefer_localhost_replica", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"print_pretty_type_names", CHSetting(trueOrFalse, {}, false)},
-    {"push_external_roles_in_interserver_queries", CHSetting(trueOrFalse, {}, false)},
-    {"query_cache_compress_entries", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_cache_share_between_users", CHSetting(trueOrFalse, {}, false)},
-    {"query_cache_squash_partial_results", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_aggregation_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_convert_outer_join_to_inner_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_enable_multithreading_after_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_enable_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_execute_functions_after_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_filter_push_down", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_join_swap_table",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {"'false'", "'true'", "'auto'"},
-         false)},
-    {"query_plan_lift_up_array_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_merge_filters", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_optimize_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_read_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_remove_redundant_distinct", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_remove_redundant_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_reuse_storage_ordering_for_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"query_plan_split_filter", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_in_order_two_level_merge_threshold",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); }, {"0", "1", "10", "100"}, false)},
-    {"read_in_order_use_buffering", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_in_order_use_virtual_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"read_through_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"regexp_dict_allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"regexp_dict_flag_case_insensitive", CHSetting(trueOrFalse, {}, false)},
-    {"regexp_dict_flag_dotall", CHSetting(trueOrFalse, {}, false)},
-    {"remote_filesystem_read_method",
-     CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},
-    {"reject_expensive_hyperscan_regexps", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"remerge_sort_lowered_memory_bytes_ratio",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.7, 0.0, 4.0)); }, {}, false)},
-    {"remote_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"replace_running_query", CHSetting(trueOrFalse, {}, false)},
-    {"rewrite_count_distinct_if_with_count_distinct_implementation", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"rows_before_aggregation", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"s3_allow_parallel_part_upload", CHSetting(trueOrFalse, {}, false)},
-    {"s3_check_objects_after_upload", CHSetting(trueOrFalse, {}, false)},
-    {"s3_create_new_file_on_insert", CHSetting(trueOrFalse, {}, false)},
-    {"s3_disable_checksum", CHSetting(trueOrFalse, {}, false)},
-    {"s3_ignore_file_doesnt_exist", CHSetting(trueOrFalse, {}, false)},
-    {"s3_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
-    {"s3_throw_on_zero_files_match", CHSetting(trueOrFalse, {}, false)},
-    {"s3_truncate_on_insert", CHSetting(trueOrFalse, {}, false)},
-    {"s3_use_adaptive_timeouts", CHSetting(trueOrFalse, {}, false)},
-    {"s3_validate_request_settings", CHSetting(trueOrFalse, {}, false)},
-    {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_cache_require_modification_time_for_url", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_use_cache_for_file", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_use_cache_for_s3", CHSetting(trueOrFalse, {}, false)},
-    {"schema_inference_use_cache_for_url", CHSetting(trueOrFalse, {}, false)},
-    {"select_sequential_consistency", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"send_logs_level",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {},
-         false)},
-    {"send_progress_in_http_headers", CHSetting(trueOrFalse, {}, false)},
-    {"short_circuit_function_evaluation",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {"'enable'", "'force_enable'", "'disable'"},
-         false)},
-    {"show_table_uuid_in_table_create_query_if_not_nil", CHSetting(trueOrFalse, {}, false)},
-    {"single_join_prefer_left_table", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)},
-    /// {"set_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false)},
-    {"split_intersecting_parts_ranges_into_layers_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"split_parts_ranges_into_intersecting_and_non_intersecting_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"splitby_max_substrings_includes_remaining_string", CHSetting(trueOrFalse, {}, false)},
-    {"storage_file_read_method",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {},
-         false)},
-    {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
-    {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
-    {"temporary_files_codec",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"'lz4'", "'none'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {},
-         false)},
-    {"totals_auto_threshold", CHSetting(probRange, {}, false)},
-    {"totals_mode",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices
-                 = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {},
-         false)},
-    {"trace_profile_events", CHSetting(trueOrFalse, {}, false)},
-    {"transform_null_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"traverse_shadow_remote_data_paths", CHSetting(trueOrFalse, {}, false)},
-    {"type_json_skip_duplicated_paths", CHSetting(trueOrFalse, {}, false)},
-    {"update_insert_deduplication_token_in_dependent_materialized_views", CHSetting(trueOrFalse, {}, false)},
-    {"use_async_executor_for_materialized_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_cache_for_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_client_time_zone", CHSetting(trueOrFalse, {}, false)},
-    {"use_compact_format_in_distributed_parts_names", CHSetting(trueOrFalse, {}, false)},
-    {"use_concurrency_control", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_hedged_requests", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_hive_partitioning", CHSetting(trueOrFalse, {}, false)},
-    {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_local_cache_for_remote_storage", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_query_cache",
-     CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices
-                 = {"1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'",
-                    "0, set_overflow_mode = 'break', group_by_overflow_mode = 'break', join_overflow_mode = 'break'"};
-             return rg.pickRandomlyFromVector(choices);
-         },
-         {},
-         false)},
-    {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
-    {"use_uncompressed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
-    {"use_with_fill_by_sorting_prefix", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"validate_experimental_and_suspicious_types_inside_nested_types", CHSetting(trueOrFalse, {}, false)},
-    {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
-    {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
-    /// {"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
-    {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
+         false)}};
+
+/// We need to split the serverSettings because in order to initialize the values for the map it
+/// needs to be able to fit into the stack. Note we may have to split it even more in the future.
+static std::unordered_map<String, CHSetting> serverSettings3
+    = {{"partial_result_on_first_cancel", CHSetting(trueOrFalse, {}, false)},
+       {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
+       {"prefer_external_sort_block_bytes",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"0", "1", "1000", "1000000"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {"0", "1", "1000", "1000000"},
+            false)},
+       {"prefer_global_in_and_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"prefer_localhost_replica", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"print_pretty_type_names", CHSetting(trueOrFalse, {}, false)},
+       {"push_external_roles_in_interserver_queries", CHSetting(trueOrFalse, {}, false)},
+       {"query_cache_compress_entries", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_cache_share_between_users", CHSetting(trueOrFalse, {}, false)},
+       {"query_cache_squash_partial_results", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_aggregation_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_convert_outer_join_to_inner_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_enable_multithreading_after_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_enable_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_execute_functions_after_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_filter_push_down", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_join_swap_table",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {"'false'", "'true'", "'auto'"},
+            false)},
+       {"query_plan_lift_up_array_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_merge_filters", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_optimize_prewhere", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_read_in_order", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_remove_redundant_distinct", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_remove_redundant_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_reuse_storage_ordering_for_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_split_filter", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_in_order_two_level_merge_threshold",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); }, {"0", "1", "10", "100"}, false)},
+       {"read_in_order_use_buffering", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_in_order_use_virtual_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"read_through_distributed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"regexp_dict_allow_hyperscan", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"regexp_dict_flag_case_insensitive", CHSetting(trueOrFalse, {}, false)},
+       {"regexp_dict_flag_dotall", CHSetting(trueOrFalse, {}, false)},
+       {"remote_filesystem_read_method",
+        CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {"'read'", "'threadpool'"}, false)},
+       {"reject_expensive_hyperscan_regexps", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"remerge_sort_lowered_memory_bytes_ratio",
+        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.7, 0.0, 4.0)); }, {}, false)},
+       {"remote_filesystem_read_prefetch", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"replace_running_query", CHSetting(trueOrFalse, {}, false)},
+       {"rewrite_count_distinct_if_with_count_distinct_implementation", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"rows_before_aggregation", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"s3_allow_parallel_part_upload", CHSetting(trueOrFalse, {}, false)},
+       {"s3_check_objects_after_upload", CHSetting(trueOrFalse, {}, false)},
+       {"s3_create_new_file_on_insert", CHSetting(trueOrFalse, {}, false)},
+       {"s3_disable_checksum", CHSetting(trueOrFalse, {}, false)},
+       {"s3_ignore_file_doesnt_exist", CHSetting(trueOrFalse, {}, false)},
+       {"s3_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
+       {"s3_throw_on_zero_files_match", CHSetting(trueOrFalse, {}, false)},
+       {"s3_truncate_on_insert", CHSetting(trueOrFalse, {}, false)},
+       {"s3_use_adaptive_timeouts", CHSetting(trueOrFalse, {}, false)},
+       {"s3_validate_request_settings", CHSetting(trueOrFalse, {}, false)},
+       {"s3queue_enable_logging_to_s3queue_log", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_cache_require_modification_time_for_url", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_use_cache_for_file", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_use_cache_for_s3", CHSetting(trueOrFalse, {}, false)},
+       {"schema_inference_use_cache_for_url", CHSetting(trueOrFalse, {}, false)},
+       {"select_sequential_consistency", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"send_logs_level",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices
+                    = {"'debug'", "'information'", "'trace'", "'error'", "'test'", "'warning'", "'fatal'", "'none'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {},
+            false)},
+       {"send_progress_in_http_headers", CHSetting(trueOrFalse, {}, false)},
+       {"short_circuit_function_evaluation",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {"'enable'", "'force_enable'", "'disable'"},
+            false)},
+       {"show_table_uuid_in_table_create_query_if_not_nil", CHSetting(trueOrFalse, {}, false)},
+       {"single_join_prefer_left_table", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)},
+       /// {"set_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'break'" : "'throw'"; }, {}, false)},
+       {"split_intersecting_parts_ranges_into_layers_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"split_parts_ranges_into_intersecting_and_non_intersecting_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"splitby_max_substrings_includes_remaining_string", CHSetting(trueOrFalse, {}, false)},
+       {"storage_file_read_method",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {},
+            false)},
+       {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
+       {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
+       {"temporary_files_codec",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'lz4'", "'none'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {},
+            false)},
+       {"totals_auto_threshold", CHSetting(probRange, {}, false)},
+       {"totals_mode",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices
+                    = {"'before_having'", "'after_having_exclusive'", "'after_having_inclusive'", "'after_having_auto'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {},
+            false)},
+       {"trace_profile_events", CHSetting(trueOrFalse, {}, false)},
+       {"transform_null_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"traverse_shadow_remote_data_paths", CHSetting(trueOrFalse, {}, false)},
+       {"type_json_skip_duplicated_paths", CHSetting(trueOrFalse, {}, false)},
+       {"update_insert_deduplication_token_in_dependent_materialized_views", CHSetting(trueOrFalse, {}, false)},
+       {"use_async_executor_for_materialized_views", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_cache_for_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_client_time_zone", CHSetting(trueOrFalse, {}, false)},
+       {"use_compact_format_in_distributed_parts_names", CHSetting(trueOrFalse, {}, false)},
+       {"use_concurrency_control", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_hedged_requests", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_hive_partitioning", CHSetting(trueOrFalse, {}, false)},
+       {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_local_cache_for_remote_storage", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_query_cache",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices
+                    = {"1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'",
+                       "0, set_overflow_mode = 'break', group_by_overflow_mode = 'break', join_overflow_mode = 'break'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {},
+            false)},
+       {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
+       {"use_uncompressed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
+       {"use_with_fill_by_sorting_prefix", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"validate_experimental_and_suspicious_types_inside_nested_types", CHSetting(trueOrFalse, {}, false)},
+       {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
+       {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
+       /// {"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
+       {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
     for (auto & setting : serverSettings2)
+    {
+        serverSettings.emplace(std::move(setting));
+    }
+    for (auto & setting : serverSettings3)
     {
         serverSettings.emplace(std::move(setting));
     }
