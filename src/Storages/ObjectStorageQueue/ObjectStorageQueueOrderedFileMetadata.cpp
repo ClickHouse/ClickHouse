@@ -6,6 +6,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <numeric>
 
 namespace DB
 {
@@ -121,6 +122,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     BucketInfoPtr bucket_info_,
     size_t buckets_num_,
     size_t max_loading_retries_,
+    std::atomic<size_t> & metadata_ref_count_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
@@ -129,6 +131,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
+        metadata_ref_count_,
         log_)
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
@@ -542,6 +545,73 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
     }
 
     throw zkutil::KeeperMultiException(code, requests, responses);
+}
+
+void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
+    std::vector<std::string> & paths,
+    const std::filesystem::path & zk_path_,
+    size_t buckets_num,
+    LoggerPtr log_)
+{
+    const auto zk_client = getZooKeeper();
+    const bool use_buckets_for_processing = buckets_num > 1;
+
+    buckets_num = std::max<size_t>(buckets_num, 1);
+    std::map<size_t, std::string> max_processed_file_per_bucket;
+
+    for (size_t i = 0; i < buckets_num; ++i)
+    {
+        auto processed_node_path = use_buckets_for_processing
+            ? getProcessedPathWithBucket(zk_path_, i)
+            : getProcessedPathWithoutBucket(zk_path_);
+
+        NodeMetadata max_processed_file;
+        if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, zk_client))
+            max_processed_file_per_bucket[i] = std::move(max_processed_file.file_path);
+    }
+
+    std::vector<std::string> failed_paths;
+    std::vector<size_t> check_paths_indexes;
+    for (size_t i = 0; i < paths.size(); ++i)
+    {
+        const auto & path = paths[i];
+        const auto bucket = use_buckets_for_processing ? getBucketForPathImpl(path, buckets_num) : 0;
+        if (!max_processed_file_per_bucket.empty()
+            && path <= max_processed_file_per_bucket[bucket])
+        {
+            LOG_TEST(log_, "Skipping file {}: Processed", path);
+            continue;
+        }
+        failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
+        check_paths_indexes.push_back(i);
+    }
+
+    std::vector<std::string> result;
+    if (failed_paths.empty())
+        return; /// All files are already processed.
+
+    auto check_code = [&](auto code, const std::string & path)
+    {
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    auto responses = zk_client->tryGet(failed_paths);
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        const auto filename = std::move(paths[check_paths_indexes[i]]);
+        check_code(responses[i].error, filename);
+        if (responses[i].error == Coordination::Error::ZNONODE)
+        {
+            result.push_back(filename);
+        }
+        else
+        {
+            LOG_TEST(log_, "Skipping file {}: Failed", filename);
+        }
+
+    }
+    paths = std::move(result);
 }
 
 }
