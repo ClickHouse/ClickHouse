@@ -236,8 +236,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayReverseSort, 0, 1, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayPartialReverseSort, 0, 1, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayReverseSort, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCarrayShuffle, 0, 0, 1, 2),
-    CHFunction(SQLFunc::FUNCarrayPartialShuffle, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCarrayUniq, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayJoin, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayDifference, 0, 0, 1, 1),
@@ -1186,6 +1184,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCgetTypeSerializationStreams, 0, 0, 1, 1),
     /// Not Deterministic
     /// Array
+    CHFunction(SQLFunc::FUNCarrayShuffle, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCarrayPartialShuffle, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCarrayRandomSample, 0, 0, 2, 2),
     /// UUID
     CHFunction(SQLFunc::FUNCgenerateUUIDv4, 0, 0, 1, 2),
