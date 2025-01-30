@@ -78,7 +78,7 @@ void IdentifierView::popFirst(size_t parts_to_remove_size)
 
 void IdentifierView::popLast(size_t parts_to_remove_size)
 {
-    assert(parts_to_remove_size <= getPartsSize());
+    chassert(parts_to_remove_size <= getPartsSize());
 
     for (size_t i = 0; i < parts_to_remove_size; ++i)
     {
