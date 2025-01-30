@@ -1,5 +1,6 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel-replicas
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel-replicas, no-parallel
 -- no-parallel-replicas: reading from s3 ('S3GetObject' event) can happened on any "replica", so we can see no 'S3GetObject' on initiator
+-- no-parallel: SYSTEM DROP MARK CACHE is used.
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
