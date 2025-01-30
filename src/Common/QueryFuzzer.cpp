@@ -1029,7 +1029,7 @@ ASTPtr QueryFuzzer::generatePredicate()
             [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); });
         if (!colids.empty())
         {
-            ASTPtr where_condition = nullptr;
+            ASTPtr predicate = nullptr;
             const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
 
             for (int i = 0; i < nconditions; i++)
@@ -1069,11 +1069,18 @@ ASTPtr QueryFuzzer::generatePredicate()
                         exp1,
                         exp2);
                 }
+                if (fuzz_rand() % 30 == 0)
+                {
+                    next_condition = makeASTFunction("not", next_condition);
+                }
                 /// Sometimes use multiple conditions
-                where_condition = where_condition ? makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", where_condition, next_condition)
-                                                  : next_condition;
+                predicate = predicate ? makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", predicate, next_condition) : next_condition;
+                if (fuzz_rand() % 50 == 0)
+                {
+                    predicate = makeASTFunction("not", predicate);
+                }
             }
-            return where_condition;
+            return predicate;
         }
     }
     else if (prob == 1)
@@ -1117,7 +1124,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         if (fuzz_rand() % 50 == 0)
         {
-            with_union->union_mode = static_cast<SelectUnionMode>(fuzz_rand() % (static_cast<int>(SelectUnionMode::INTERSECT_DISTINCT) + 1));
+            with_union->union_mode
+                = static_cast<SelectUnionMode>(fuzz_rand() % (static_cast<int>(SelectUnionMode::INTERSECT_DISTINCT) + 1));
         }
         fuzz(with_union->list_of_selects);
         /// Fuzzing SELECT query to EXPLAIN query randomly.
@@ -1139,7 +1147,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         if (fuzz_rand() % 50 == 0)
         {
-            with_intersect_except->final_operator = static_cast<ASTSelectIntersectExceptQuery::Operator>(fuzz_rand() % (static_cast<int>(ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT) + 1));
+            with_intersect_except->final_operator = static_cast<ASTSelectIntersectExceptQuery::Operator>(
+                fuzz_rand() % (static_cast<int>(ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT) + 1));
         }
         auto selects = with_intersect_except->getListOfSelects();
         fuzz(selects);
@@ -1244,9 +1253,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// Run mostly equi-joins
                 ASTPtr next_condition = makeASTFunction(
                     comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
+                if (fuzz_rand() % 30 == 0)
+                {
+                    next_condition = makeASTFunction("not", next_condition);
+                }
                 /// Sometimes use multiple conditions
                 join_condition = join_condition ? makeASTFunction((fuzz_rand() % 10) == 0 ? "or" : "and", join_condition, next_condition)
                                                 : next_condition;
+                if (fuzz_rand() % 50 == 0)
+                {
+                    join_condition = makeASTFunction("not", join_condition);
+                }
             }
             chassert(join_condition);
             table_join->on_expression = join_condition;
