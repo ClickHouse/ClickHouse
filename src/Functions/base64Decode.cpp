@@ -13,9 +13,9 @@ REGISTER_FUNCTION(Base64Decode)
     FunctionDocumentation::Arguments arguments = {{"encoded", "String column or constant. If the string is not a valid Base64-encoded value, an exception is thrown."}};
     FunctionDocumentation::ReturnedValue returned_value = "A string containing the decoded value of the argument.";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT base64Decode('Y2xpY2tob3VzZQ==')", "clickhouse"}};
-    FunctionDocumentation::Categories categories = {"String encoding"};
+    FunctionDocumentation::Category category = {"Encoding"};
 
-    factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, categories});
+    factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, category});
 
     /// MySQL compatibility alias.
     factory.registerAlias("FROM_BASE64", "base64Decode", FunctionFactory::Case::Insensitive);

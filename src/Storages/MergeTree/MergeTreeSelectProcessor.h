@@ -83,6 +83,8 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
+    void onFinish() const;
+
 private:
     static void injectLazilyReadColumns(
         size_t rows,
@@ -111,6 +113,8 @@ private:
     PrewhereExprStepPtr lightweight_delete_filter_step;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
+
+    ReadStepsPerformanceCounters read_steps_performance_counters;
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;

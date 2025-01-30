@@ -260,6 +260,12 @@ bool StorageInMemoryMetadata::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
+bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
+{
+    bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
+    return hasRowsTTL() && !has_any_other_ttl;
+}
+
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;

@@ -18,7 +18,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
@@ -58,6 +57,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/GinFilter.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/TemporaryReplaceTableName.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -1616,7 +1616,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -1897,7 +1897,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         if (!table_function->canBeUsedToCreateTable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} cannot be used to create a table", table_function->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -1915,7 +1915,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             properties.constraints,
             mode);
 
-        /// If schema wes inferred while storage creation, add columns description to create query.
+        /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
@@ -2043,28 +2043,28 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+    }
 
+    {
+        const String name_hash = getHexUIntLowercase(sipHash64(create.getDatabase() + create.getTable()));
+        const String random_suffix = [&]()
+        {
+            if (auto txn = current_context->getZooKeeperMetadataTransaction())
+            {
+                /// Avoid different table name on database replicas
+                UInt64 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
+                return getHexUIntLowercase(hashed_zk_path);
+            }
+            if (!current_context->getCurrentQueryId().empty())
+            {
+                const UInt32 hashed_query_id = static_cast<UInt32>(sipHash64(current_context->getCurrentQueryId()));
+                return getRandomASCIIString(/*length=*/8) + getHexUIntLowercase(hashed_query_id);
+            }
+            return getRandomASCIIString(/*length=*/16);
+        }();
 
-        UInt64 name_hash = sipHash64(create.getDatabase() + create.getTable());
-        String random_suffix;
-        if (auto txn = current_context->getZooKeeperMetadataTransaction())
-        {
-            /// Avoid different table name on database replicas
-            UInt64 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
-            random_suffix = getHexUIntLowercase(hashed_zk_path);
-        }
-        else if (!current_context->getCurrentQueryId().empty())
-        {
-            random_suffix = getRandomASCIIString(/*length=*/8);
-            UInt32 hashed_query_id = static_cast<UInt32>(sipHash64(current_context->getCurrentQueryId()));
-            random_suffix += getHexUIntLowercase(hashed_query_id);
-        }
-        else
-        {
-            random_suffix = getRandomASCIIString(/*length=*/16);
-        }
-
-        create.setTable(fmt::format("_tmp_replace_{}_{}", getHexUIntLowercase(name_hash), random_suffix));
+        const String tmp_replace_table_name = TemporaryReplaceTableName{.name_hash = name_hash, .random_suffix = random_suffix}.toString();
+        create.setTable(tmp_replace_table_name);
 
         ast_drop->setTable(create.getTable());
         ast_drop->is_dictionary = create.is_dictionary;

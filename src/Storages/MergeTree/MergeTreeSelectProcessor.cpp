@@ -237,10 +237,13 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
         all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
+    for (const auto & step : task->getInfo().mutation_steps)
+        all_prewhere_actions.steps.push_back(step);
+
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeRangeReaders(all_prewhere_actions);
+    task->initializeRangeReaders(all_prewhere_actions, read_steps_performance_counters);
 }
 
 void MergeTreeSelectProcessor::injectLazilyReadColumns(
@@ -306,6 +309,24 @@ Block MergeTreeSelectProcessor::transformHeader(
     auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
     injectLazilyReadColumns(0, transformed, nullptr, lazily_read_info);
     return transformed;
+}
+
+static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
+{
+    WriteBufferFromOwnString out;
+    const auto & all_counters = counters.getCounters();
+    for (size_t i = 0; i < all_counters.size(); ++i)
+    {
+        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read);
+        if (i + 1 < all_counters.size())
+            out << ", ";
+    }
+    return out.str();
+}
+
+void MergeTreeSelectProcessor::onFinish() const
+{
+    LOG_TRACE(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
 }
 
 }

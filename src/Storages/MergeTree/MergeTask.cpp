@@ -106,6 +106,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
     extern const MergeTreeSettingsBool vertical_merge_remote_filesystem_prefetch;
+    extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
 }
@@ -470,11 +471,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
-    auto storage_settings = global_ctx->data->getSettings();
+    auto merge_tree_settings = global_ctx->data->getSettings();
 
     SerializationInfo::Settings info_settings =
     {
-        .ratio_of_defaults_for_sparse = (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .ratio_of_defaults_for_sparse = (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         .choose_kind = true,
     };
 
@@ -567,8 +568,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge algorithm must be chosen");
     }
 
+    /// If setting 'materialize_skip_indexes_on_merge' is false, forget about skip indexes.
+    if (!(*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    {
+        global_ctx->merging_skip_indexes.clear();
+        global_ctx->skip_indexes_by_column.clear();
+    }
+
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
-    bool use_const_adaptive_granularity = (*storage_settings)[MergeTreeSetting::use_const_adaptive_granularity];
+    bool use_const_adaptive_granularity = (*merge_tree_settings)[MergeTreeSetting::use_const_adaptive_granularity];
 
     /// If merge is vertical we cannot calculate it.
     /// If granularity is constant we don't need to calculate it.
@@ -619,7 +627,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
         ctx->sum_uncompressed_bytes_upper_bound,
-        *storage_settings,
+        *merge_tree_settings,
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
@@ -627,6 +635,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
+        /// indices,
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
         getStatisticsForColumns(global_ctx->merging_columns, global_ctx->metadata_snapshot),
         ctx->compression_codec,
@@ -1098,12 +1107,12 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
     /// Add column gatherer step
     {
         bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
-        const auto data_settings = global_ctx->data->getSettings();
+        const auto merge_tree_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
-            (*data_settings)[MergeTreeSetting::merge_max_block_size],
-            (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
+            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             is_result_sparse);
         merge_step->setStepDescription("Gather column");
         merge_column_query_plan.addStep(std::move(merge_step));
@@ -1751,14 +1760,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// We count total amount of bytes in parts
     /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
     ctx->read_with_direct_io = false;
-    const auto data_settings = global_ctx->data->getSettings();
-    if ((*data_settings)[MergeTreeSetting::min_merge_bytes_to_use_direct_io] != 0)
+    const auto merge_tree_settings = global_ctx->data->getSettings();
+    if ((*merge_tree_settings)[MergeTreeSetting::min_merge_bytes_to_use_direct_io] != 0)
     {
         size_t total_size = 0;
         for (const auto & part : global_ctx->future_part->parts)
         {
             total_size += part->getBytesOnDisk();
-            if (total_size >= (*data_settings)[MergeTreeSetting::min_merge_bytes_to_use_direct_io])
+            if (total_size >= (*merge_tree_settings)[MergeTreeSetting::min_merge_bytes_to_use_direct_io])
             {
                 LOG_DEBUG(ctx->log, "Will merge parts reading files in O_DIRECT");
                 ctx->read_with_direct_io = true;
@@ -1859,7 +1868,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// If merge is vertical we cannot calculate it
         ctx->blocks_are_granules_size = is_vertical_merge;
 
-        if (global_ctx->cleanup && !(*data_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
+        if (global_ctx->cleanup && !(*merge_tree_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         auto merge_step = std::make_unique<MergePartsStep>(
@@ -1868,8 +1877,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             partition_key_columns,
             global_ctx->merging_params,
             (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""), /// rows_sources' temporary file is used only for vertical merge
-            (*data_settings)[MergeTreeSetting::merge_max_block_size],
-            (*data_settings)[MergeTreeSetting::merge_max_block_size_bytes],
+            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
+            (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             ctx->blocks_are_granules_size,
             global_ctx->cleanup,
             global_ctx->time_of_merge);
@@ -1968,11 +1977,11 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
 {
     const size_t total_rows_count = global_ctx->merge_list_element_ptr->total_rows_count;
     const size_t total_size_bytes_uncompressed = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
-    const auto data_settings = global_ctx->data->getSettings();
+    const auto merge_tree_settings = global_ctx->data->getSettings();
 
     if (global_ctx->deduplicate)
         return MergeAlgorithm::Horizontal;
-    if ((*data_settings)[MergeTreeSetting::enable_vertical_merge_algorithm] == 0)
+    if ((*merge_tree_settings)[MergeTreeSetting::enable_vertical_merge_algorithm] == 0)
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
@@ -1983,7 +1992,7 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     if (global_ctx->cleanup)
         return MergeAlgorithm::Horizontal;
 
-    if (!(*data_settings)[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
+    if (!(*merge_tree_settings)[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts])
     {
         for (const auto & part : global_ctx->future_part->parts)
         {
@@ -1998,11 +2007,11 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= (*data_settings)[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
+    bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
 
-    bool enough_total_rows = total_rows_count >= (*data_settings)[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate];
+    bool enough_total_rows = total_rows_count >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate];
 
-    bool enough_total_bytes = total_size_bytes_uncompressed >= (*data_settings)[MergeTreeSetting::vertical_merge_algorithm_min_bytes_to_activate];
+    bool enough_total_bytes = total_size_bytes_uncompressed >= (*merge_tree_settings)[MergeTreeSetting::vertical_merge_algorithm_min_bytes_to_activate];
 
     bool no_parts_overflow = global_ctx->future_part->parts.size() <= RowSourcePart::MAX_PARTS;
 

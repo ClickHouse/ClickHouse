@@ -5,10 +5,12 @@ description: Quickly find search terms in text.
 keywords: [full-text search, text search, index, indices]
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Full-text Search using Full-text Indexes
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Full-text indexes are an experimental type of [secondary indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
 capabilities for [String](/docs/en/sql-reference/data-types/string.md) or [FixedString](/docs/en/sql-reference/data-types/fixedstring.md)

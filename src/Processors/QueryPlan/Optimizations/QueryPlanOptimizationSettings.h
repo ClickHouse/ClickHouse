@@ -43,6 +43,11 @@ struct QueryPlanOptimizationSettings
     bool remove_redundant_distinct;
     bool try_use_vector_search;
 
+    /// If we can swap probe/build tables in join
+    /// true/false - always/never swap
+    /// nullopt - swap if it's beneficial
+    std::optional<bool> join_swap_table;
+
     /// --- Second-pass optimizations
     bool optimize_prewhere;
     bool read_in_order;
@@ -67,6 +72,8 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_lazy_materialization = 0;
 
     size_t max_limit_for_ann_queries;
+
+    bool keep_logical_steps;
 };
 
 }
