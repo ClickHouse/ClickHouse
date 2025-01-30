@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from ._environment import _Environment
@@ -60,16 +61,19 @@ class CacheRunnerHooks:
 
         # Step 1: Fetch records concurrently
         fetched_records = []
-        with ThreadPoolExecutor(max_workers=200) as executor:
-            futures = {
-                executor.submit(fetch_record, job_name, job_digest, cache): job_name
-                for job_name, job_digest in workflow_config.digest_jobs.items()
-            }
+        if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
+            print("NOTE: CI Cache disabled via GH Variable DISABLE_CI_CACHE=1")
+        else:
+            with ThreadPoolExecutor(max_workers=200) as executor:
+                futures = {
+                    executor.submit(fetch_record, job_name, job_digest, cache): job_name
+                    for job_name, job_digest in workflow_config.digest_jobs.items()
+                }
 
-            for future in futures:
-                result = future.result()
-                if result:  # If a record was found, add it to the fetched list
-                    fetched_records.append(result)
+                for future in futures:
+                    result = future.result()
+                    if result:  # If a record was found, add it to the fetched list
+                        fetched_records.append(result)
 
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:

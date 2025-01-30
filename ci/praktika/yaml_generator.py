@@ -38,8 +38,9 @@ jobs:
 {JOBS}\
 """
         TEMPLATE_ENV_CHECKOUT_REF_PR = """\
-  USE_MERGE_COMMIT: ${{{{ vars.USE_MERGE_COMMIT || '0' }}}}
-  CHECKOUT_REF: ${{{{ vars.USE_MERGE_COMMIT == '1' && github.event.pull_request.merge_commit_sha || github.head_ref }}}}
+  DISABLE_CI_MERGE_COMMIT: ${{{{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}}}
+  DISABLE_CI_CACHE: ${{{{ vars.DISABLE_CI_CACHE || '0' }}}}
+  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && '' || github.event.pull_request.head.sha }}}}
 """
         TEMPLATE_ENV_CHECKOUT_REF_PUSH = """\
   CHECKOUT_REF: ${{{{ github.head_ref }}}}
