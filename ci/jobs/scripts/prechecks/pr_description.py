@@ -1,7 +1,9 @@
 import re
 import sys
+from typing import Tuple
 
 from praktika.info import Info
+from praktika.utils import Shell
 
 LABEL_CATEGORIES = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
@@ -35,6 +37,36 @@ LABEL_CATEGORIES = {
     "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
 }
 
+CATEGORY_TO_LABEL = {
+    c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
+}
+
+
+class Labels:
+    PR_BUGFIX = "pr-bugfix"
+    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
+    CAN_BE_TESTED = "can be tested"
+    DO_NOT_TEST = "do not test"
+    MUST_BACKPORT = "pr-must-backport"
+    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
+    JEPSEN_TEST = "jepsen-test"
+    SKIP_MERGEABLE_CHECK = "skip mergeable check"
+    PR_BACKPORT = "pr-backport"
+    PR_BACKPORTS_CREATED = "pr-backports-created"
+    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
+    PR_CHERRYPICK = "pr-cherrypick"
+    PR_CI = "pr-ci"
+    PR_FEATURE = "pr-feature"
+    PR_PERFORMANCE = "pr-performance"
+    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
+    PR_SYNC_UPSTREAM = "pr-sync-upstream"
+    RELEASE = "release"
+    RELEASE_LTS = "release-lts"
+    SUBMODULE_CHANGED = "submodule changed"
+
+    # automatic backport for critical bug fixes
+    AUTO_BACKPORT = {"pr-critical-bugfix"}
+
 
 def normalize_category(cat: str) -> str:
     """Drop everything after open parenthesis, drop leading/trailing whitespaces, normalize case"""
@@ -51,7 +83,7 @@ CATEGORIES_FOLD = [
 ]
 
 
-def is_ok(pr_body: str):
+def check_category(pr_body: str) -> Tuple[bool, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
@@ -120,9 +152,53 @@ def is_ok(pr_body: str):
             description_error = f"Changelog entry required for category '{category}'"
 
     print(description_error)
-    return not description_error
+    return not description_error, category
+
+
+def check_labels(category, info):
+    pr_labels_to_add = []
+    pr_labels_to_remove = []
+    labels = info.pr_labels
+    if category in CATEGORY_TO_LABEL and CATEGORY_TO_LABEL[category] not in labels:
+        pr_labels_to_add.append(CATEGORY_TO_LABEL[category])
+
+    for label in labels:
+        if (
+            label in CATEGORY_TO_LABEL.values()
+            and category in CATEGORY_TO_LABEL
+            and label != CATEGORY_TO_LABEL[category]
+        ):
+            pr_labels_to_remove.append(label)
+
+    if info.pr_number:
+        changed_files = Shell.get_output(
+            "git diff --name-only $(git merge-base HEAD master) --cached"
+        )
+        if "contrib/" in changed_files:
+            pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
+
+    if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
+        backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
+        pr_labels_to_add += [label for label in backport_labels if label not in labels]
+        print(f"Add backport labels [{backport_labels}] for PR category [{category}]")
+
+    cmd = f"pr edit {info.pr_number}"
+    if pr_labels_to_add:
+        print(f"Add labels [{pr_labels_to_add}]")
+        for label in pr_labels_to_add:
+            cmd += f" --add-label {label}"
+
+    if pr_labels_to_remove:
+        print(f"Remove labels [{pr_labels_to_remove}]")
+        for label in pr_labels_to_add:
+            cmd += f" --remove-label {label}"
+
+    Shell.check(cmd, verbose=True, strict=True)
 
 
 if __name__ == "__main__":
-    if not is_ok(Info().pr_body):
+    info = Info()
+    is_ok, category = check_category(info.pr_body)
+    if not is_ok:
         sys.exit(1)
+    check_labels(category, info)

@@ -49,6 +49,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
