@@ -343,9 +343,7 @@ public:
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
         DeserializeBinaryBulkStatePtr & /*state*/,
-        SubstreamsDeserializeStatesCache * /*cache*/) const
-    {
-    }
+        SubstreamsDeserializeStatesCache * /*cache*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
