@@ -1138,9 +1138,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         bool use_buffering = false;
         const SortDescription * max_sort_descr = nullptr;
 
-        std::vector<InputOrderInfoPtr> infos;
-        infos.reserve(node.children.size());
-
         for (const auto * child : union_node->children)
         {
             /// in case of parallel replicas
@@ -1150,6 +1147,9 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             if (readingFromParallelReplicas(child))
                 return;
         }
+
+        std::vector<InputOrderInfoPtr> infos;
+        infos.reserve(node.children.size());
 
         for (auto * child : union_node->children)
         {
@@ -1262,6 +1262,13 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     if (!distinct->getSortDescription().empty())
+        return;
+
+    /// in case of parallel replicas
+    /// avoid applying read-in-order optimization for local replica
+    /// since it will lead to different parallel replicas modes
+    /// between local and remote nodes
+    if (readingFromParallelReplicas(&node))
         return;
 
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
