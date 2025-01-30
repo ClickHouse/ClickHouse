@@ -41,9 +41,11 @@
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
 
 namespace CurrentMetrics
@@ -54,6 +56,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char storage_merge_tree_background_clear_old_parts_pause[];
+};
 
 namespace Setting
 {
@@ -1512,7 +1519,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
                 size_t cleared_count = 0;
-                cleared_count += clearOldPartsFromFilesystem();
+                cleared_count += clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */true);
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
                 cleared_count += unloadPrimaryKeysAndClearCachesOfOutdatedParts();
@@ -1598,6 +1605,34 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     }
 
     return mutations_to_delete.size();
+}
+
+size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
+{
+    DataPartsVector parts_to_remove = grabOldParts(force);
+    if (parts_to_remove.empty())
+        return 0;
+
+    if (with_pause_fail_point)
+    {
+        // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
+        // It allows the use case
+        // - firstly SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause
+        // - after do operation like merge / optimize final (operations like drop part / drop partition / truncate do not fit here, they remove old parts synchronously without timeout)
+        // All parts which are dropped in that operations are not removed until failpoint is released
+        // If we would set this failpoint before grabOldParts, it leads us to a case when
+        // background thread already passed the failpoint but did not reach grabOldParts yet
+        // if failpoint is enabled at that time, background thead could grab parts from those operations and remove them regardless enabled failpoint
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
+    }
+
+    clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old");
+
+    /// This is needed to close files to avoid they reside on disk after being deleted.
+    /// NOTE: we can drop files from cache more selectively but this is good enough.
+    getContext()->clearMMappedFileCache();
+
+    return parts_to_remove.size();
 }
 
 bool StorageMergeTree::optimize(
