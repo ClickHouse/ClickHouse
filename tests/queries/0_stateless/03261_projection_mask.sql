@@ -31,6 +31,13 @@ GROUP BY age
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 SELECT
+    name,
+    uid
+FROM users_compact
+ORDER BY age ASC
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT
     count()
 FROM users_compact
 GROUP BY name
@@ -68,6 +75,13 @@ SELECT
     avg(age)
 FROM users_wide
 GROUP BY age
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT
+    name,
+    uid
+FROM users_wide
+ORDER BY age ASC
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 SELECT

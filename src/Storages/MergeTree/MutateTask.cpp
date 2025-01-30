@@ -1395,12 +1395,21 @@ bool PartMergerWriter::iterateThroughAllProjections()
 
 bool PartMergerWriter::iterateThroughAllProjectionsToMask()
 {
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = (*ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
+
     for (const auto & mutation_context : ctx->projection_mutation_contexts)
     {
         Block cur_block;
-        while (mutation_context->mutating_executor->pull(cur_block))
+        while (watch.elapsedMilliseconds() < step_time_ms && mutation_context->mutating_executor->pull(cur_block))
             mutation_context->out->write(cur_block);
+
+        if (watch.elapsedMilliseconds() >= step_time_ms)
+            /// Need execute again
+            return true;
     }
+
+    /// Done
     return false;
 }
 
@@ -2556,8 +2565,7 @@ bool MutateTask::prepare()
                 mutation_context->metadata_snapshot = proj_desc.metadata;
                 mutation_context->source_part = projections_name_and_part.find(proj_desc.name)->second;
 
-                projection_commands.emplace_back(MutationCommands{});
-                auto & commands= projection_commands.back();
+                auto & commands= projection_commands.emplace_back();
 
                 MutationHelpers::splitAndModifyMutationCommands(
                     mutation_context->source_part,
