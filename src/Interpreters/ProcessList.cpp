@@ -110,7 +110,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     std::shared_ptr<QueryStatus> query;
 
     {
-        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); // To avoid deadlock in case of OOM
+        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
         IAST::QueryKind query_kind = ast->getQueryKind();
 

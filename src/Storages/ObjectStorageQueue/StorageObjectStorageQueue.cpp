@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>

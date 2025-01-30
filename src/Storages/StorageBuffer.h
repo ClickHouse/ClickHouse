@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Common/ThreadPool.h>

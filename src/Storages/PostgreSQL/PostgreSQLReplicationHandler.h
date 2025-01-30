@@ -141,9 +141,9 @@ private:
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
 
-    BackgroundSchedulePool::TaskHolder startup_task;
-    BackgroundSchedulePool::TaskHolder consumer_task;
-    BackgroundSchedulePool::TaskHolder cleanup_task;
+    BackgroundSchedulePoolTaskHolder startup_task;
+    BackgroundSchedulePoolTaskHolder consumer_task;
+    BackgroundSchedulePoolTaskHolder cleanup_task;
 
     const UInt64 reschedule_backoff_min_ms;
     const UInt64 reschedule_backoff_max_ms;
