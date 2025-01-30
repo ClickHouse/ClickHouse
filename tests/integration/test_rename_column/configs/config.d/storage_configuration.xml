@@ -33,7 +33,7 @@
 </merge_tree>
 <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 
-<!-- consume huge amout of memory in sanitizers builds -->
+<!-- consume huge amout of memory in sanitizers builds when min_bytes_for_wide_part=0 -->
 <query_metric_log remove="remove"/>
 <metric_log remove="remove"/>
 
