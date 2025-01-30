@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# pylint: disable=line-too-long
 import json
 import logging
 import os
