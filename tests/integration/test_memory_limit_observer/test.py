@@ -30,7 +30,7 @@ def get_latest_mem_limit():
                 node1.query(
                     """
                         select extract(message, '\\d+\\.\\d+') from system.text_log
-                        where message like '%Setting max_server_memory_usage was set to%' and
+                        where message like '%Changed setting \'max_server_memory_usage\' to%' and
                         message not like '%like%' order by event_time desc limit 1
                     """
                 ).strip()
