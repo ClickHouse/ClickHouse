@@ -231,7 +231,7 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --query "drop table {}"
+        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
     }
 }
 
