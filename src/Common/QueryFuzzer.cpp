@@ -29,6 +29,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -1122,7 +1123,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     // The fuzzing.
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
-        if (fuzz_rand() % 50 == 0)
+        if (fuzz_rand() % 20 == 0)
         {
             with_union->union_mode
                 = static_cast<SelectUnionMode>(fuzz_rand() % (static_cast<int>(SelectUnionMode::INTERSECT_DISTINCT) + 1));
@@ -1145,7 +1146,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
     {
-        if (fuzz_rand() % 50 == 0)
+        if (fuzz_rand() % 20 == 0)
         {
             with_intersect_except->final_operator = static_cast<ASTSelectIntersectExceptQuery::Operator>(
                 fuzz_rand() % (static_cast<int>(ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT) + 1));
@@ -1283,7 +1284,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * table_expr = typeid_cast<ASTTableExpression *>(ast.get()))
     {
-        if (fuzz_rand() % 50 == 0)
+        if (fuzz_rand() % 30 == 0)
         {
             table_expr->final = !table_expr->final;
         }
@@ -1297,6 +1298,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
     {
         fuzzOrderByElement(order_by_element);
+        fuzz(order_by_element->children);
     }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
@@ -1320,6 +1322,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzzColumnLikeExpressionList(select->select().get());
 
+        if (fuzz_rand() % 50 == 0)
+        {
+            select->distinct = !select->distinct;
+        }
         if (select->groupBy().get())
         {
             if (fuzz_rand() % 50 == 0)
@@ -1431,6 +1437,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         fuzzOrderByList(select->orderBy().get());
+        if (fuzz_rand() % 50 == 0)
+        {
+            select->order_by_all = !select->order_by_all;
+        }
+        if (fuzz_rand() % 50 == 0)
+        {
+            select->limit_with_ties = !select->limit_with_ties;
+        }
 
         fuzz(select->children);
     }
@@ -1459,6 +1473,27 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * create_query = typeid_cast<ASTCreateQuery *>(ast.get()))
     {
         fuzzCreateQuery(*create_query);
+        fuzz(create_query->children);
+    }
+    else if (auto * optimize_query = typeid_cast<ASTOptimizeQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 20 == 0)
+        {
+            optimize_query->final = !optimize_query->final;
+        }
+        if (fuzz_rand() % 20 == 0)
+        {
+            optimize_query->deduplicate = !optimize_query->deduplicate;
+        }
+        if (fuzz_rand() % 20 == 0)
+        {
+            optimize_query->cleanup = !optimize_query->cleanup;
+        }
+        if (optimize_query->deduplicate_by_columns && fuzz_rand() % 20 == 0)
+        {
+            fuzz(optimize_query->deduplicate_by_columns);
+        }
+        fuzz(optimize_query->children);
     }
     else if (auto * explain_query = typeid_cast<ASTExplainQuery *>(ast.get()))
     {
