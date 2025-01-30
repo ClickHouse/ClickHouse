@@ -4508,7 +4508,7 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
             /// all_1_3_1. If this replica will fetch all_1_3_1 first and then tries
             /// to drop all_2_2_2 after that it will receive the LOGICAL ERROR.
             /// So here we just check that all_1_3_1 covers blocks from drop
-            /// all_2_2_2. The same situation can occur if the `all_2_2_0`
+            /// all_2_2_2. The same situation can occur if the all_2_2_0
             /// part mutates several times, after which it will be deleted, for
             /// example if it becomes empty.
             ///
