@@ -9,17 +9,22 @@ namespace DB
 {
 
 /// Create Identifier from parts
-Identifier::Identifier(const std::vector<std::string> & parts_) : parts(parts_), full_name(boost::algorithm::join(parts, "."))
+Identifier::Identifier(const std::vector<std::string> & parts_)
+    : parts(parts_)
+    , full_name(boost::algorithm::join(parts, "."))
 {
 }
 
 /// Create Identifier from parts
-Identifier::Identifier(std::vector<std::string> && parts_) : parts(std::move(parts_)), full_name(boost::algorithm::join(parts, "."))
+Identifier::Identifier(std::vector<std::string> && parts_)
+    : parts(std::move(parts_))
+    , full_name(boost::algorithm::join(parts, "."))
 {
 }
 
 /// Create Identifier from full name, full name is split with '.' as separator.
-Identifier::Identifier(const std::string & full_name_) : full_name(full_name_)
+Identifier::Identifier(const std::string & full_name_)
+    : full_name(full_name_)
 {
     boost::split(parts, full_name, [](char c) { return c == '.'; });
 }
