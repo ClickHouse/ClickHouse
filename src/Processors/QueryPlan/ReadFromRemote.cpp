@@ -493,7 +493,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         }
 
         const time_t local_delay = replicated_storage->getAbsoluteDelay();
-        
+
         bool use_delayed_remote_source = false;
         fiu_do_on(FailPoints::use_delayed_remote_source,
         {
