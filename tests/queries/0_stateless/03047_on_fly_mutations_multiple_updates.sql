@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
