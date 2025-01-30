@@ -1,3 +1,5 @@
+import sys
+
 from praktika.info import Info
 
 TRUSTED_CONTRIBUTORS = {
@@ -28,3 +30,8 @@ def can_be_trusted():
         return ""
 
     return "'can be tested' label is required"
+
+
+if __name__ == "__main__":
+    if can_be_trusted() != "":
+        sys.exit(1)
