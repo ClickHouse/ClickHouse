@@ -60,6 +60,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
+    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
+        return configuration->getPath();
+
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -71,9 +74,6 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         nullptr, // read_keys
         {} // file_progress_callback
     );
-
-    if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
-        return configuration->getPath();
 
     if (auto file = file_iterator->next(0))
         return file->getPath();

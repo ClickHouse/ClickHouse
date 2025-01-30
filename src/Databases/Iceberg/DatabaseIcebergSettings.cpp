@@ -23,6 +23,7 @@ namespace ErrorCodes
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)             \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, object_storage_cluster, "", "Cluster for distributed requests", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS)

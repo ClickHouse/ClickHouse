@@ -4,14 +4,19 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
-
 
 namespace DB
 {
@@ -23,13 +28,19 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_FUNCTION;
 }
+
 
 String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+
+    if (!configuration->isArchive() && !configuration->isPathWithGlobs())
+        return configuration->getPath();
+
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
@@ -44,6 +55,7 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
+
     return "";
 }
 
@@ -82,12 +94,103 @@ std::string StorageObjectStorageCluster::getName() const
     return configuration->getEngineName();
 }
 
+void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr & query)
+{
+    // Change table engine on table function for distributed request
+    // CREATE TABLE t (...) ENGINE=IcebergS3(...)
+    // SELECT * FROM t
+    // change on
+    // SELECT * FROM icebergS3(...)
+    // to execute on cluster nodes
+
+    auto * select_query = query->as<ASTSelectQuery>();
+    if (!select_query || !select_query->tables())
+        return;
+
+    auto * tables = select_query->tables()->as<ASTTablesInSelectQuery>();
+    auto * table_expression = tables->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>();
+    if (!table_expression->database_and_table_name)
+        return;
+
+    auto & table_identifier_typed = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
+
+    auto table_alias = table_identifier_typed.tryGetAlias();
+
+    std::unordered_map<std::string, std::string> engine_to_function = {
+        {"S3", "s3"},
+        {"Azure", "azureBlobStorage"},
+        {"HDFS", "hdfs"},
+        {"IcebergS3", "icebergS3"},
+        {"IcebergAzure", "icebergAzure"},
+        {"IcebergHDFS", "icebergHDFS"},
+        {"DeltaLake", "deltaLake"},
+        {"Hudi", "hudi"}
+    };
+
+    auto p = engine_to_function.find(configuration->getEngineName());
+    if (p == engine_to_function.end())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't find table function for engine {}",
+            configuration->getEngineName()
+        );
+    }
+
+    std::string table_function_name = p->second;
+
+    auto function_ast = std::make_shared<ASTFunction>();
+    function_ast->name = table_function_name;
+    auto arguments = std::make_shared<ASTExpressionList>();
+
+    auto cluster_name = getClusterName();
+
+    if (cluster_name.empty())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't be here without cluster name, no cluster name in query {}",
+            queryToString(query));
+    }
+
+    configuration->setFunctionArgs(arguments->children);
+
+    function_ast->arguments = arguments;
+    function_ast->children.push_back(arguments);
+    function_ast->setAlias(table_alias);
+
+    ASTPtr function_ast_ptr(function_ast);
+
+    table_expression->database_and_table_name = nullptr;
+    table_expression->table_function = function_ast_ptr;
+    table_expression->children[0].swap(function_ast_ptr);
+
+    auto settings = select_query->settings();
+    if (settings)
+    {
+        auto & settings_ast = settings->as<ASTSetQuery &>();
+        settings_ast.changes.insertSetting("object_storage_cluster", cluster_name);
+    }
+    else
+    {
+        auto settings_ast_ptr = std::make_shared<ASTSetQuery>();
+        settings_ast_ptr->is_standalone = false;
+        settings_ast_ptr->changes.setSetting("object_storage_cluster", cluster_name);
+        select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_ast_ptr));
+    }
+
+    cluster_name_in_settings = true;
+}
+
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
+    updateQueryForDistributedEngineIfNeeded(query);
+
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+
     if (!expression_list)
     {
         throw Exception(

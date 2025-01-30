@@ -42,6 +42,8 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
+    const String & getClusterName() const { return cluster_name; }
+
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}

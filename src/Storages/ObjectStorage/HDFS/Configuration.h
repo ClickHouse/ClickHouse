@@ -65,6 +65,8 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    void setFunctionArgs(ASTs & args) const override;
+
 private:
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;

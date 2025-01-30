@@ -247,6 +247,10 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
+    virtual void setFunctionArgs(ASTs & /* args */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setFunctionArgs is not supported by storage {}", getEngineName());
+    }
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

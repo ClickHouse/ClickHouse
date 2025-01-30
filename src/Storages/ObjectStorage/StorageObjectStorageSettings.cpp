@@ -17,7 +17,13 @@ namespace DB
         allow_dynamic_metadata_for_data_lakes, \
         false, \
         "If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.", \
-        0)
+        0) \
+    DECLARE( \
+        String, \
+        object_storage_cluster, \
+        "", \
+        "Cluster for distributed requests", \
+        0) \
 
 #define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
     STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \

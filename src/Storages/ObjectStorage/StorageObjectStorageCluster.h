@@ -37,6 +37,8 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
+    void updateQueryForDistributedEngineIfNeeded(ASTPtr & query);
+
     const String engine_name;
     const StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;

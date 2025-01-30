@@ -79,6 +79,8 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    void setFunctionArgs(ASTs & args) const override;
+
 protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
@@ -86,6 +88,7 @@ protected:
     std::string blob_path;
     std::vector<String> blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
+    std::vector<std::string> saved_params;
 };
 
 }

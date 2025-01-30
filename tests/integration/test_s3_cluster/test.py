@@ -719,3 +719,70 @@ def test_remote_no_hedged(started_cluster):
     )
 
     assert TSV(pure_s3) == TSV(s3_distributed)
+
+
+def test_distributed_s3_table_engine(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    resp_def = node.query(
+        """
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+        """
+    )
+
+    node.query("DROP TABLE IF EXISTS single_node");
+    node.query(
+        """
+        CREATE TABLE single_node
+            (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
+            ENGINE=S3('http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV')
+        """
+    )
+    query_id_engine_single_node = str(uuid.uuid4())
+    resp_engine_single_node = node.query(
+        """
+        SELECT * FROM single_node ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_engine_single_node
+    )
+    assert resp_def == resp_engine_single_node
+
+    node.query("DROP TABLE IF EXISTS distributed");
+    node.query(
+        """
+        CREATE TABLE distributed
+            (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
+            ENGINE=S3('http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV')
+            SETTINGS object_storage_cluster='cluster_simple'
+        """
+    )
+    query_id_engine_distributed = str(uuid.uuid4())
+    resp_engine_distributed = node.query(
+        """
+        SELECT * FROM distributed ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_engine_distributed
+    )
+    assert resp_def == resp_engine_distributed
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
+
+    hosts_engine_single_node = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_engine_single_node}'
+        """
+    )
+    assert int(hosts_engine_single_node) == 1
+    hosts_engine_distributed = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_engine_distributed}'
+        """
+    )
+    assert int(hosts_engine_distributed) == 3

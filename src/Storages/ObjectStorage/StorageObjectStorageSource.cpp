@@ -132,6 +132,8 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
 
     const bool is_archive = configuration->isArchive();
 
+    configuration->update(object_storage, local_context);
+
     std::unique_ptr<IIterator> iterator;
     if (configuration->isPathWithGlobs())
     {

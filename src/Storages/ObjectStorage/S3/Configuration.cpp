@@ -363,11 +363,11 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     if (engine_args_to_idx.contains("format"))
     {
-        format = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["format"]], "format");
+        auto format_ = checkAndGetLiteralArgument<String>(args[engine_args_to_idx["format"]], "format");
         /// Set format to configuration only of it's not 'auto',
         /// because we can have default format set in configuration.
-        if (format != "auto")
-            format = format;
+        if (format_ != "auto")
+            format = format_;
     }
 
     if (engine_args_to_idx.contains("structure"))
@@ -582,6 +582,31 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             if (with_structure && checkAndGetLiteralArgument<String>(args[5], "format") == "auto")
                 args[5] = structure_literal;
         }
+    }
+}
+
+void StorageS3Configuration::setFunctionArgs(ASTs & args) const
+{
+    if (!args.empty())
+    { /// Just check
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");
+    }
+
+    args.push_back(std::make_shared<ASTLiteral>(url.uri_str));
+    if (auth_settings[S3AuthSetting::no_sign_request])
+    {
+        args.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
+    }
+    else
+    {
+        args.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::access_key_id].value));
+        args.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::secret_access_key].value));
+        if (!auth_settings[S3AuthSetting::session_token].value.empty())
+            args.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::session_token].value));
+        if (format != "auto")
+            args.push_back(std::make_shared<ASTLiteral>(format));
+        if (!compression_method.empty())
+            args.push_back(std::make_shared<ASTLiteral>(compression_method));
     }
 }
 
