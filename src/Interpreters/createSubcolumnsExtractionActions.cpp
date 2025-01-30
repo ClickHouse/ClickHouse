@@ -1,9 +1,8 @@
-#include <iostream>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 namespace DB
 {
