@@ -96,7 +96,6 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCgroupArrayInsertAt, 2, 2, 2, 2, false, false),
     CHAggregate(SQLFunc::FUNCgroupArrayMovingAvg, 0, 1, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupArrayMovingSum, 0, 1, 1, 1, false, false),
-    CHAggregate(SQLFunc::FUNCgroupArraySample, 1, 2, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupArraySorted, 1, 1, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupArrayIntersect, 0, 0, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupBitAnd, 0, 0, 1, 1, false, false),
@@ -162,7 +161,9 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCwindowFunnel, 2, ulimited_params, 1, ulimited_params, false, false),
     CHAggregate(SQLFunc::FUNCretention, 0, 0, 1, ulimited_params, false, false),
     CHAggregate(SQLFunc::FUNCuniqUpTo, 1, 1, 1, 1, false, false),
-    CHAggregate(SQLFunc::FUNCsequenceNextNode, 2, 2, 4, ulimited_params, false, false)};
+    CHAggregate(SQLFunc::FUNCsequenceNextNode, 2, 2, 4, ulimited_params, false, false),
+    /// Not deterministic
+    CHAggregate(SQLFunc::FUNCgroupArraySample, 1, 2, 1, 1, false, false)};
 
 const CHFunction materialize = CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1);
 
