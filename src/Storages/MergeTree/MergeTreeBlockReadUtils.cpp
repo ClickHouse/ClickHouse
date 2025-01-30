@@ -303,7 +303,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
 
-        bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
+        const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
 
         /// If part has non-adaptive granularity we always have to read at least one column
         /// because we cannot determine the correct size of the last granule without reading data.
