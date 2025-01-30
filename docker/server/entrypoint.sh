@@ -59,7 +59,7 @@ fi
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
-CLICKHOUSE_SKIP_USER_SETUP="${$CLICKHOUSE_SKIP_USER_SETUP:-0}"
+CLICKHOUSE_SKIP_USER_SETUP="${CLICKHOUSE_SKIP_USER_SETUP:-0}"
 
 function create_directory_and_do_chown() {
     local dir=$1
@@ -106,7 +106,7 @@ do
 done
 
 if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
-    echo "$0: explicitly skip user changing user 'default'"
+    echo "$0: explicitly skip changing user 'default'"
 # if clickhouse user is defined - create it (user "default" already exists out of box)
 elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
