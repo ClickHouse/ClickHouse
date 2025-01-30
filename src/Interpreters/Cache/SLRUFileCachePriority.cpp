@@ -382,7 +382,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// Entry could not be chosen for eviction
         /// in case there is at least one reference to the corresponding file segment.
         /// But if someone called increasePriority(), then there must be one.
-        chassert(false);
+        iterator.lru_iterator.increasePriority(lock);
         return;
     }
 
