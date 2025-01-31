@@ -12,6 +12,7 @@ QUERY_OPTIONS=(
     "--log_queries=1"
     "--format=Null"
     "--use_concurrency_control=0"
+    "--paranoid_check_in_pipeline=1"
 )
 
 UNIQUE_QUERY_ID="02871_1_$$"

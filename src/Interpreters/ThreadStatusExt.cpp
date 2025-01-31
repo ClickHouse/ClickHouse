@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsInt64 os_thread_priority;
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
+    extern const SettingsBool paranoid_check_in_pipeline;
 }
 
 namespace ErrorCodes
@@ -106,12 +107,16 @@ void ThreadGroup::linkThread(UInt64 thread_id, bool paranoid_mode)
     if (auto [_, inserted] = thread_ids.insert(thread_id); !inserted && paranoid_mode)
     {
         // #if defined(DEBUG_OR_SANITIZER_BUILD)
-        threads_to_trace.insert(thread_id);
-        LOG_DEBUG(
-            getLogger("ThreadGroup"),
-            "Thread {} already was linked to the current group. Stack of the current call:\n{}",
-            thread_id,
-            StackTrace().toString());
+        const bool check_enabled = query_context.lock()->getSettingsRef()[Setting::paranoid_check_in_pipeline];
+        if (check_enabled)
+        {
+            threads_to_trace.insert(thread_id);
+            LOG_DEBUG(
+                getLogger("ThreadGroup"),
+                "Thread {} already was linked to the current group. Stack of the current call:\n{}",
+                thread_id,
+                StackTrace().toString());
+        }
         // #endif
     }
 
