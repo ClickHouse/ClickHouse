@@ -1321,20 +1321,27 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     if (!resolved_identifier)
         return {};
 
-    /** From parent scopes we can resolve table identifiers only as CTE.
+    /** From parent scopes we can resolve table identifiers only as CTE (except the case when initial scope is not query).
         * Example: SELECT (SELECT 1 FROM a) FROM test_table AS a;
         *
-        * During child scope table identifier resolve a, table node test_table with alias a from parent scope
+        * During table identifier resolution `a` in (SELECT 1 FROM a) scope, table node test_table with alias a from parent scope
         * is invalid.
+        * Table identifier can be resolved from aliases or join tree in the parent scope
+        * inside of lambda body expression. Example:
+        *
+        * SELECT map(x > x in a, [1, 2]) FROM numbers(3) as a;
         */
     if (identifier_lookup.isTableExpressionLookup())
     {
         auto * subquery_node = resolved_identifier->as<QueryNode>();
         auto * union_node = resolved_identifier->as<UnionNode>();
 
+        /// Resolved to CTE in parent scope.
         bool is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+        /// Resolved to lambda argument.
         bool is_table_from_expression_arguments = resolve_result.isResolvedFromExpressionArguments() &&
             resolved_identifier->getNodeType() == QueryTreeNodeType::TABLE;
+        /// Resolved from alias or join tree in the parent scope when initial scope is not query.
         bool is_from_join_tree_or_aliases = !initial_scope_is_query && (resolve_result.isResolvedFromJoinTree() || resolve_result.isResolvedFromAliases());
         bool is_valid_table_expression = is_cte || is_table_from_expression_arguments || is_from_join_tree_or_aliases;
 
@@ -1526,10 +1533,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
 
     it->second.count--;
-
-    /** If identifier was not resolved, or during expression resolution identifier was explicitly added into non cached set,
-      * or identifier caching was disabled in resolve scope we remove identifier lookup result from identifier lookup to result table.
-      */
     if (it->second.count == 0)
     {
         scope.identifier_in_lookup_process.erase(it);
@@ -2925,7 +2928,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     auto & function_node = *function_node_ptr;
-    // bool rewrite_to_negate_has = false;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
     if (is_special_function_in)

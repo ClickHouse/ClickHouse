@@ -190,7 +190,11 @@ struct IdentifierResolveContext
     /// Allow to check join tree during identifier resolution
     bool allow_to_check_join_tree = true;
 
-    /// Allow to check aliases during identifier resolution
+    /// Allow to check aliases during identifier resolution.
+    /// It's not allowed to use aliases during identifier resolution in parent scopes:
+    /// 1. If enable_global_with_statement is disabled.
+    /// 2. If initial scope is a QueryNode and it's TableExpression lookup,
+    ///    identifier is allowed to be resolved only as CTE.
     bool allow_to_check_aliases = true;
 
     /// Allow to check CTEs during table identifier resolution
@@ -205,6 +209,8 @@ struct IdentifierResolveContext
     /// Allow to resolve subquery during identifier resolution
     bool allow_to_resolve_subquery_during_identifier_resolution = true;
 
+    /// Initial scope where identifier resolution started.
+    /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
 
     IdentifierResolveContext & resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_)
