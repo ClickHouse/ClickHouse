@@ -110,6 +110,16 @@ struct ProjectionMutationContext
     };
 
     MutationKind kind;
+
+    void prepareAllPart(bool always_use_copy_instead_of_hardlinks,
+        CompressionCodecPtr compression_codec, const WriteSettings & write_settings);
+
+    void finalizeAllPart(MergeTreeData::MutableDataPartPtr parent_new_data_part,
+        bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context);
+
+    void prepareSomePart(bool always_use_copy_instead_of_hardlinks, CompressionCodecPtr compression_codec);
+
+    void finalizeSomePart(bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context);
 };
 
 using ProjectionMutationContextPtr = std::shared_ptr<ProjectionMutationContext>;
@@ -1138,6 +1148,128 @@ void finalizeMutatedPart(
 
 }
 
+void ProjectionMutationContext::prepareAllPart(bool always_use_copy_instead_of_hardlinks,
+    CompressionCodecPtr compression_codec, const WriteSettings & write_settings)
+{
+    chassert (mutating_pipeline_builder.initialized());
+    if (kind == ProjectionMutationContext::MutationKind::ALL)
+    {
+        auto builder = std::make_unique<QueryPipelineBuilder>(std::move(mutating_pipeline_builder));
+
+        out = std::make_shared<MergedBlockOutputStream>(
+            new_part,
+            metadata_snapshot,
+            new_part->getColumns(),
+            MergeTreeIndices{},
+            ColumnsStatistics{},
+            compression_codec,
+            source_part->index_granularity,
+            Tx::PrehistoricTID,
+            source_part->getBytesUncompressedOnDisk(),
+            /*reset_columns=*/ false,
+            /*blocks_are_granules_size=*/ false,
+            write_settings);
+
+        mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        mutating_pipeline.disableProfileEventUpdate();
+        mutating_executor = std::make_unique<PullingPipelineExecutor>(mutating_pipeline);
+    }
+    else
+    {
+        prepareSomePart(always_use_copy_instead_of_hardlinks, compression_codec);
+    }
+}
+
+void ProjectionMutationContext::finalizeAllPart(
+    MergeTreeData::MutableDataPartPtr parent_new_data_part,
+    bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context)
+{
+    if (kind == ProjectionMutationContext::MutationKind::ALL)
+    {
+        mutating_executor.reset();
+        mutating_pipeline.reset();
+
+        static_pointer_cast<MergedBlockOutputStream>(out)->finalizePart(new_part, need_sync, nullptr, nullptr);
+
+        parent_new_data_part->addProjectionPart(name, std::move(new_part));
+
+        out.reset();
+    }
+    else if (kind == ProjectionMutationContext::MutationKind::SOME)
+    {
+        finalizeSomePart(need_sync, compression_codec, context);
+    }
+}
+
+void ProjectionMutationContext::prepareSomePart(
+    bool always_use_copy_instead_of_hardlinks, CompressionCodecPtr compression_codec)
+{
+    chassert (mutating_pipeline_builder.initialized());
+
+    new_part->getDataPartStorage().createDirectories();
+
+    /// Create hardlinks for unchanged files
+    for (auto it = source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
+    {
+        if (files_to_skip.contains(it->name()))
+            continue;
+
+        String destination = it->name();
+
+        if (it->isFile())
+        {
+            if (always_use_copy_instead_of_hardlinks)
+            {
+                new_part->getDataPartStorage().copyFileFrom(
+                    source_part->getDataPartStorage(), it->name(), destination);
+            }
+            else
+            {
+                new_part->getDataPartStorage().createHardLinkFrom(
+                    source_part->getDataPartStorage(), it->name(), destination);
+            }
+        }
+    }
+
+    new_part->checksums = source_part->checksums;
+
+    auto builder = std::make_unique<QueryPipelineBuilder>(std::move(mutating_pipeline_builder));
+
+    out = std::make_shared<MergedColumnOnlyOutputStream>(
+        new_part,
+        metadata_snapshot,
+        updated_header.getNamesAndTypesList(),
+        MergeTreeIndices{},
+        ColumnsStatistics{},
+        compression_codec,
+        source_part->index_granularity,
+        source_part->getBytesUncompressedOnDisk());
+
+    mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    mutating_pipeline.disableProfileEventUpdate();
+    mutating_executor = std::make_unique<PullingPipelineExecutor>(mutating_pipeline);
+}
+
+void ProjectionMutationContext::finalizeSomePart(
+    bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context)
+{
+    if (mutating_executor)
+    {
+        mutating_executor.reset();
+        mutating_pipeline.reset();
+
+        auto changed_checksums =
+            static_pointer_cast<MergedColumnOnlyOutputStream>(out)->fillChecksums(new_part, new_part->checksums);
+        new_part->checksums.add(std::move(changed_checksums));
+
+        static_pointer_cast<MergedColumnOnlyOutputStream>(out)->finish(need_sync);
+
+        out.reset();
+    }
+
+    MutationHelpers::finalizeMutatedPart(source_part, new_part, ExecuteTTLType::NONE,
+        compression_codec, context, metadata_snapshot, need_sync, {});
+}
 
 // This class is responsible for:
 // 1. get projection pipeline and a sink to write parts
@@ -1731,75 +1863,10 @@ private:
 
         for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
-            chassert (mutation_context->mutating_pipeline_builder.initialized());
-            if (mutation_context->kind == ProjectionMutationContext::MutationKind::ALL)
-            {
-                builder = std::make_unique<QueryPipelineBuilder>(std::move(mutation_context->mutating_pipeline_builder));
-
-                mutation_context->out = std::make_shared<MergedBlockOutputStream>(
-                    mutation_context->new_part,
-                    mutation_context->metadata_snapshot,
-                    mutation_context->new_part->getColumns(),
-                    MergeTreeIndices{},
-                    ColumnsStatistics{},
-                    ctx->data->getContext()->chooseCompressionCodec(0, 0),
-                    mutation_context->source_part->index_granularity,
-                    Tx::PrehistoricTID,
-                    mutation_context->source_part->getBytesUncompressedOnDisk(),
-                    /*reset_columns=*/ false,
-                    /*blocks_are_granules_size=*/ false,
-                    ctx->data->getContext()->getWriteSettings());
-
-                mutation_context->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                mutation_context->mutating_pipeline.disableProfileEventUpdate();
-                mutation_context->mutating_executor = std::make_unique<PullingPipelineExecutor>(mutation_context->mutating_pipeline);
-            }
-            else
-            {
-                auto settings = ctx->source_part->storage.getSettings();
-                mutation_context->new_part->getDataPartStorage().createDirectories();
-
-                /// Create hardlinks for unchanged files
-                for (auto it = mutation_context->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
-                {
-                    if (mutation_context->files_to_skip.contains(it->name()))
-                        continue;
-
-                    String destination = it->name();
-
-                    if (it->isFile())
-                    {
-                        if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-                        {
-                            mutation_context->new_part->getDataPartStorage().copyFileFrom(
-                                mutation_context->source_part->getDataPartStorage(), it->name(), destination);
-                        }
-                        else
-                        {
-                            mutation_context->new_part->getDataPartStorage().createHardLinkFrom(
-                                mutation_context->source_part->getDataPartStorage(), it->name(), destination);
-                        }
-                    }
-                }
-
-                mutation_context->new_part->checksums = mutation_context->source_part->checksums;
-
-                builder = std::make_unique<QueryPipelineBuilder>(std::move(mutation_context->mutating_pipeline_builder));
-
-                mutation_context->out = std::make_shared<MergedColumnOnlyOutputStream>(
-                    mutation_context->new_part,
-                    mutation_context->metadata_snapshot,
-                    mutation_context->updated_header.getNamesAndTypesList(),
-                    MergeTreeIndices{},
-                    ColumnsStatistics{},
-                    ctx->data->getContext()->chooseCompressionCodec(0, 0),
-                    mutation_context->source_part->index_granularity,
-                    mutation_context->source_part->getBytesUncompressedOnDisk());
-
-                mutation_context->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                mutation_context->mutating_pipeline.disableProfileEventUpdate();
-                mutation_context->mutating_executor = std::make_unique<PullingPipelineExecutor>(mutation_context->mutating_pipeline);
-            }
+            mutation_context->prepareAllPart(
+                (*(ctx->source_part->storage.getSettings()))[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+                ctx->data->getContext()->chooseCompressionCodec(0, 0),
+                ctx->data->getContext()->getWriteSettings());
         }
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -1810,29 +1877,7 @@ private:
     {
         for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
-            mutation_context->mutating_executor.reset();
-            mutation_context->mutating_pipeline.reset();
-
-            if (mutation_context->kind == ProjectionMutationContext::MutationKind::ALL)
-            {
-                static_pointer_cast<MergedBlockOutputStream>(mutation_context->out)->finalizePart(
-                    mutation_context->new_part, ctx->need_sync, nullptr, nullptr);
-
-                ctx->new_data_part->addProjectionPart(mutation_context->name, std::move(mutation_context->new_part));
-            }
-            else if (mutation_context->kind == ProjectionMutationContext::MutationKind::SOME)
-            {
-                auto changed_checksums =
-                    static_pointer_cast<MergedColumnOnlyOutputStream>(mutation_context->out)->fillChecksums(
-                        mutation_context->new_part, mutation_context->new_part->checksums);
-                mutation_context->new_part->checksums.add(std::move(changed_checksums));
-
-                static_pointer_cast<MergedColumnOnlyOutputStream>(mutation_context->out)->finish(ctx->need_sync);
-
-                MutationHelpers::finalizeMutatedPart(mutation_context->source_part, mutation_context->new_part, ExecuteTTLType::NONE,
-                    ctx->compression_codec, ctx->context, mutation_context->metadata_snapshot, ctx->need_sync, {});
-            }
-            mutation_context->out.reset();
+            mutation_context->finalizeAllPart(ctx->new_data_part, ctx->need_sync, ctx->compression_codec, ctx->context);
         }
 
         bool noop;
@@ -2081,50 +2126,13 @@ private:
 
             for (const auto & mutation_context : ctx->projection_mutation_contexts)
             {
-                chassert (mutation_context->mutating_pipeline_builder.initialized());
+                if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expect to mutate some part for projection, but turns out of all part.");
 
-                mutation_context->new_part->getDataPartStorage().createDirectories();
-
-                /// Create hardlinks for unchanged files
-                for (auto it = mutation_context->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
-                {
-                    if (mutation_context->files_to_skip.contains(it->name()))
-                        continue;
-
-                    String destination = it->name();
-
-                    if (it->isFile())
-                    {
-                        if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-                        {
-                            mutation_context->new_part->getDataPartStorage().copyFileFrom(
-                                mutation_context->source_part->getDataPartStorage(), it->name(), destination);
-                        }
-                        else
-                        {
-                            mutation_context->new_part->getDataPartStorage().createHardLinkFrom(
-                                mutation_context->source_part->getDataPartStorage(), it->name(), destination);
-                        }
-                    }
-                }
-
-                mutation_context->new_part->checksums = mutation_context->source_part->checksums;
-
-                builder = std::make_unique<QueryPipelineBuilder>(std::move(mutation_context->mutating_pipeline_builder));
-
-                mutation_context->out = std::make_shared<MergedColumnOnlyOutputStream>(
-                    mutation_context->new_part,
-                    mutation_context->metadata_snapshot,
-                    mutation_context->updated_header.getNamesAndTypesList(),
-                    MergeTreeIndices{},
-                    ColumnsStatistics{},
-                    ctx->data->getContext()->chooseCompressionCodec(0, 0),
-                    mutation_context->source_part->index_granularity,
-                    mutation_context->source_part->getBytesUncompressedOnDisk());
-
-                mutation_context->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                mutation_context->mutating_pipeline.disableProfileEventUpdate();
-                mutation_context->mutating_executor = std::make_unique<PullingPipelineExecutor>(mutation_context->mutating_pipeline);
+                mutation_context->prepareSomePart(
+                    (*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+                    ctx->data->getContext()->chooseCompressionCodec(0, 0));
             }
 
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -2134,27 +2142,6 @@ private:
 
     void finalize()
     {
-        for (const auto & mutation_context : ctx->projection_mutation_contexts)
-        {
-            if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
-                continue;
-
-            if (mutation_context->mutating_executor)
-            {
-                mutation_context->mutating_executor.reset();
-                mutation_context->mutating_pipeline.reset();
-
-                auto changed_checksums =
-                    static_pointer_cast<MergedColumnOnlyOutputStream>(mutation_context->out)->fillChecksums(
-                        mutation_context->new_part, mutation_context->new_part->checksums);
-                mutation_context->new_part->checksums.add(std::move(changed_checksums));
-
-                static_pointer_cast<MergedColumnOnlyOutputStream>(mutation_context->out)->finish(ctx->need_sync);
-
-                mutation_context->out.reset();
-            }
-        }
-
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -2186,10 +2173,10 @@ private:
         for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
             if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
-                continue;
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expect to mutate some part for projection, but turns out of all part.");
 
-            MutationHelpers::finalizeMutatedPart(mutation_context->source_part, mutation_context->new_part, ExecuteTTLType::NONE,
-                ctx->compression_codec, ctx->context, mutation_context->metadata_snapshot, ctx->need_sync, {});
+            mutation_context->finalizeSomePart(ctx->need_sync, ctx->compression_codec, ctx->context);
         }
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type,
