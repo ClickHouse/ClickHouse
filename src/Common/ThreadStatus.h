@@ -131,6 +131,10 @@ private:
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);
 
+    // #if defined(DEBUG_OR_SANITIZER_BUILD)
+    std::unordered_set<UInt64> threads_to_trace TSA_GUARDED_BY(mutex);
+    // #endif
+
     /// Count of simultaneously working threads
     size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;
 

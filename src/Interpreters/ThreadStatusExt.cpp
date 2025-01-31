@@ -104,7 +104,16 @@ void ThreadGroup::linkThread(UInt64 thread_id, bool paranoid_mode)
 {
     std::lock_guard lock(mutex);
     if (auto [_, inserted] = thread_ids.insert(thread_id); !inserted && paranoid_mode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread {} is already linked to the group", thread_id);
+    {
+        // #if defined(DEBUG_OR_SANITIZER_BUILD)
+        threads_to_trace.insert(thread_id);
+        LOG_DEBUG(
+            getLogger("ThreadGroup"),
+            "Thread {} already was linked to the current group. Stack of the current call:\n{}",
+            thread_id,
+            StackTrace().toString());
+        // #endif
+    }
 
     ++active_thread_count;
     peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
@@ -113,6 +122,16 @@ void ThreadGroup::linkThread(UInt64 thread_id, bool paranoid_mode)
 void ThreadGroup::unlinkThread([[maybe_unused]] UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
+    // #if defined(DEBUG_OR_SANITIZER_BUILD)
+    if (threads_to_trace.contains(thread_id))
+    {
+        LOG_DEBUG(
+            getLogger("ThreadGroup"),
+            "Thread {} was unlinked from the current group. Stack of the current call:\n{}",
+            thread_id,
+            StackTrace().toString());
+    }
+    // #endif
     chassert(active_thread_count > 0);
     --active_thread_count;
 }
@@ -295,7 +314,7 @@ void ThreadStatus::detachFromGroup()
     memory_tracker.setParent(&total_memory_tracker);
 
     if (!internal_thread)
-        thread_group->unlinkThread();
+        thread_group->unlinkThread(thread_id);
 
     thread_group.reset();
 
