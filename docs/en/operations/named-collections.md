@@ -573,7 +573,7 @@ BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
 
 ## Named collections for accessing MongoDB Table and Dictionary
 
-The description of parameters see [mongodb](../sql-reference/table-functions/mongodb.md).
+For the description of parameters see [mongodb](../sql-reference/table-functions/mongodb.md).
 
 ### DDL example
 
