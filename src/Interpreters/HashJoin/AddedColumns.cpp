@@ -36,38 +36,50 @@ void AddedColumns<true>::buildOutput()
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
-        else if (join_data_sorted)
-        {
-            for (size_t i = 0; i < this->size(); ++i)
-            {
-                auto & col = columns[i];
-                for (auto row_ref_i : lazy_output.row_refs)
-                {
-                    if (row_ref_i)
-                    {
-                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                        col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
-                    }
-                    else
-                        type_name[i].type->insertDefaultInto(*col);
-                }
-            }
-        }
         else
         {
-            for (size_t i = 0; i < this->size(); ++i)
+            /// Compute total number of rows to preallocate memory
+            size_t output_row_count = 0;
+            for (auto row_ref_i : lazy_output.row_refs)
             {
-                auto & col = columns[i];
-                for (auto row_ref_i : lazy_output.row_refs)
+                output_row_count += row_ref_i ? reinterpret_cast<const RowRefList *>(row_ref_i)->rows : 1;
+            }
+
+            if (join_data_sorted)
+            {
+                for (size_t i = 0; i < this->size(); ++i)
                 {
-                    if (row_ref_i)
+                    auto & col = columns[i];
+                    col->reserve(col->size() + output_row_count);
+                    for (auto row_ref_i : lazy_output.row_refs)
                     {
-                        const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-                        for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                            col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                        if (row_ref_i)
+                        {
+                            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                            col->insertRangeFrom(*row_ref_list->block->getByPosition(right_indexes[i]).column, row_ref_list->row_num, row_ref_list->rows);
+                        }
+                        else
+                            type_name[i].type->insertDefaultInto(*col);
                     }
-                    else
-                        type_name[i].type->insertDefaultInto(*col);
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < this->size(); ++i)
+                {
+                    auto & col = columns[i];
+                    col->reserve(col->size() + output_row_count);
+                    for (auto row_ref_i : lazy_output.row_refs)
+                    {
+                        if (row_ref_i)
+                        {
+                            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+                            for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                                col->insertFrom(*it->block->getByPosition(right_indexes[i]).column, it->row_num);
+                        }
+                        else
+                            type_name[i].type->insertDefaultInto(*col);
+                    }
                 }
             }
         }
@@ -136,6 +148,7 @@ void AddedColumns<true>::buildOutputFromBlocks()
     for (size_t i = 0; i < this->size(); ++i)
     {
         auto & col = columns[i];
+        col->reserve(col->size() + blocks.size());
         for (size_t j = 0; j < blocks.size(); ++j)
         {
             if (blocks[j])
