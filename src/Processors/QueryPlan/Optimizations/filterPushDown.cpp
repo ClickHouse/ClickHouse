@@ -490,7 +490,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         const bool filter_column_is_not_among_aggregation_keys
             = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
         const bool can_remove_filter = filter_column_is_not_among_aggregation_keys
-            && filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+            && (filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName()) || merging_aggregated);
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
             return updated_steps;
