@@ -148,12 +148,13 @@ namespace
             {
                 if (create.isView())
                 {
-                    auto select_copy = create.select->clone();
-                    ApplyWithSubqueryVisitor(global_context).visit(select_copy);
 
                     if (create.is_materialized_view)
                     {
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy /*select_not_owning_ptr*/, create.refresh_strategy != nullptr /*refresheable*/, global_context);
+                        auto select_copy = create.select->clone();
+                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
+
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, global_context);
                         if (!select_query.select_table_id.empty())
                         {
                             mv_from_dependency = select_query.select_table_id;
