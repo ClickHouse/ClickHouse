@@ -21,7 +21,8 @@ bool haveEqualSortingKeyValues(const Block & block, const SortDescription & sort
     {
         const String & sort_col = sort_column.column_name;
         const IColumn & column = *block.getByName(sort_col).column;
-        if (column.compareAt(left_row, right_row, column, 1) != 0)
+
+        if (!column.equalsAt(left_row, right_row, column))
             return false;
     }
     return true;
