@@ -180,6 +180,15 @@ def test_backup_table():
 
 def test_create_table():
     password = new_password()
+    azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    account_key_pattern = re.compile("AccountKey=.*?(;|$)")
+    masked_azure_conn_string = re.sub(
+        account_key_pattern, "AccountKey=[HIDDEN]\\1", azure_conn_string
+    )
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
 
     table_engines = [
         f"MySQL('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
@@ -284,6 +293,15 @@ def test_create_table():
             "CREATE TABLE table19 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV') SETTINGS mode = 'ordered'",
             "CREATE TABLE table20 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV', 'gzip') SETTINGS mode = 'ordered'",
             "CREATE TABLE table21 (`x` int) ENGINE = Iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE table22 (`x` int) ENGINE = AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
+            f"CREATE TABLE table23 (`x` int) ENGINE = AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
+            f"CREATE TABLE table24 (`x` int) ENGINE = AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
+            f"CREATE TABLE table25 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '{azure_account_key}')",
+            f"CREATE TABLE table26 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '{azure_account_key}', 'CSV')",
+            f"CREATE TABLE table27 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_5.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')",
+            f"CREATE TABLE table28 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
+            f"CREATE TABLE table29 (`x` int) ENGINE = AzureBlobStorage(named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')",
+            f"CREATE TABLE table30 (`x` int) ENGINE = AzureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         ],
         must_not_contain=[password],
     )
