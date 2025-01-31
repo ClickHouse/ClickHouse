@@ -296,20 +296,24 @@ class JobNames:
     STATELESS = "Stateless tests"
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
-    STRESS = "Stress tests"
-    UPGRADE = "Upgrade tests"
-    PERFORMANCE = "Performance comparison"
+    STRESS = "Stress test"
+    UPGRADE = "Upgrade check"
+    PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
     CLICKBENCH = "ClickBench"
-    DOCKER_SERVER = "Docker server"
+    DOCKER_SERVER = "Docker server image"
+    DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
-    INSTALL_CHECK = "Install check"
-    ASTFUZZER = "AST Fuzzer"
+    INSTALL_TEST = "Install packages"
+    ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
-
     BUILDOCKER = "BuildDockers"
+    BUGFIX_VALIDATE = "Bugfix validation"
+    JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
+    JEPSEN_SERVER = "ClickHouse Server Jepsen"
+    LIBFUZZER_TEST = "libFuzzer tests"
 
 
 class ToolSet:
@@ -372,6 +376,8 @@ class ArtifactNames:
 
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
+    PERFORMANCE_PACKAGE_AMD = "PERFORMANCE_PACKAGE_AMD"
+    PERFORMANCE_PACKAGE_ARM = "PERFORMANCE_PACKAGE_ARM"
 
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
@@ -388,7 +394,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        path=f"{TEMP_DIR}/build/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -418,7 +424,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
+        path=f"{TEMP_DIR}/build/clickhouse-odbc-bridge",
     ).parametrize(
         names=[
             ArtifactNames.CH_ODBC_B_AMD_DEBUG,
@@ -434,7 +440,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_DEBUG,
@@ -461,42 +467,52 @@ ARTIFACTS = [
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_COV,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.RPM_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.rpm",
+        path=f"{TEMP_DIR}/build/*.rpm",
     ),
     Artifact.Config(
         name=ArtifactNames.TGZ_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*64.tgz*",
+        path=f"{TEMP_DIR}/build/*64.tgz*",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.PERFORMANCE_PACKAGE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/performance.tar.zst",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.PERFORMANCE_PACKAGE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/performance.tar.zst",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.RPM_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.rpm",
+        path=f"{TEMP_DIR}/build/*.rpm",
     ),
     Artifact.Config(
         name=ArtifactNames.TGZ_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*64.tgz*",
+        path=f"{TEMP_DIR}/build/*64.tgz*",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_ASAN,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     *Artifact.Config(
         name="",
@@ -1011,7 +1027,7 @@ class Jobs:
     )
     # TODO: add tgz and rpm
     install_check_job = Job.Config(
-        name=JobNames.INSTALL_CHECK,
+        name=JobNames.INSTALL_TEST,
         runs_on=["..."],
         command="python3 ./tests/ci/install_check.py dummy_check_name --no-rpm --no-tgz --no-download",
         digest_config=Job.CacheDigestConfig(

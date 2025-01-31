@@ -2981,7 +2981,6 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
-toStartOfIntervalAllowNegative
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
