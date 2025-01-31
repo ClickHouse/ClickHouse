@@ -18,7 +18,7 @@ CREATE TABLE table_file (
     \`v.z\`   Array(Array(UInt32))
 ) ENGINE File(Protobuf) SETTINGS format_schema = '03234_proto_simple_nested_repeated_noexception.proto:M';
 INSERT INTO table_file SELECT * FROM generateRandom() limit 1000000;
-DROP TABLE table_file;" | $CLICKHOUSE_CLIENT -nm &
+DROP TABLE table_file;" | $CLICKHOUSE_CLIENT -m &
 
 for i in $(seq 1 100)
 do
