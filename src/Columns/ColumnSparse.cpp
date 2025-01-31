@@ -702,11 +702,12 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     {
         if (!offset_it.isDefault())
         {
+            size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
             for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
-                res_values->insertFrom(*values, offset_it.getValueIndex());
             }
+            res_values->insertManyFrom(*values, offset_it.getValueIndex(), replicate_size);
         }
     }
 
