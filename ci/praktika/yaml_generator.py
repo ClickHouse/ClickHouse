@@ -29,12 +29,21 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   GH_TOKEN: ${{{{{{{{ github.token }}}}}}}}
+{ENV_CHECKOUT_REFERENCE}
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all
 
 jobs:
 {JOBS}\
+"""
+        TEMPLATE_ENV_CHECKOUT_REF_PR = """\
+  DISABLE_CI_MERGE_COMMIT: ${{{{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}}}
+  DISABLE_CI_CACHE: ${{{{ vars.DISABLE_CI_CACHE || '0' }}}}
+  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && '' || github.event.pull_request.head.sha }}}}
+"""
+        TEMPLATE_ENV_CHECKOUT_REF_PUSH = """\
+  CHECKOUT_REF: ${{{{ github.head_ref }}}}
 """
 
         TEMPLATE_SCHEDULE = """\
@@ -47,6 +56,7 @@ on:
 
 env:
   PYTHONUNBUFFERED: 1
+{ENV_CHECKOUT_REFERENCE}
 
 jobs:
 {JOBS}\
@@ -66,6 +76,7 @@ on:
 
 env:
   PYTHONUNBUFFERED: 1
+{ENV_CHECKOUT_REFERENCE}
 
 jobs:
 {JOBS}\
@@ -101,14 +112,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{{{ github.head_ref }}}}
+          ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
           rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
           mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.
+          export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
           cat > {WORKFLOW_STATUS_FILE} << 'EOF'
           ${{{{ toJson(needs) }}}}
@@ -195,24 +206,23 @@ jobs:
         self.py_workflows = []  # type: List[Workflow.Config]
 
     @classmethod
-    def _get_workflow_file_name(cls, workflow_name):
-        return f"{Settings.WORKFLOW_PATH_PREFIX}/{Utils.normalize_string(workflow_name)}.yaml"
+    def _get_workflow_file_name(cls, file_name):
+        yaml_name = file_name.removesuffix(".py") + ".yml"
+        return f"{Settings.WORKFLOW_PATH_PREFIX}/{Utils.normalize_string(yaml_name)}"
 
-    def generate(self, workflow_file="", workflow_config=None):
+    def generate(self):
         print("---Start generating yaml pipelines---")
-        if workflow_config:
-            self.py_workflows = [workflow_config]
-        else:
-            self.py_workflows = _get_workflows(file=workflow_file)
-            assert self.py_workflows
-        for workflow_config in self.py_workflows:
+        files = []
+        self.py_workflows = _get_workflows(_file_names_out=files)
+        assert self.py_workflows and files
+        for workflow_config, workflow_file_name in zip(self.py_workflows, files):
             print(f"Generate workflow [{workflow_config.name}]")
             parser = WorkflowConfigParser(workflow_config).parse()
             yaml_workflow_str = PullRequestPushYamlGen(parser).generate()
-            with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
+            with open(self._get_workflow_file_name(workflow_file_name), "w") as f:
                 f.write(yaml_workflow_str)
 
-        Shell.check("git add ./.github/workflows/*.yaml")
+        Shell.check("git add ./.github/workflows/*.yml")
 
 
 class PullRequestPushYamlGen:
@@ -320,6 +330,7 @@ class PullRequestPushYamlGen:
                 TEMP_DIR=Settings.TEMP_DIR,
                 INPUT_DIR=Settings.INPUT_DIR,
                 OUTPUT_DIR=Settings.OUTPUT_DIR,
+                PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)
 
@@ -351,12 +362,26 @@ class PullRequestPushYamlGen:
                 ),
                 "EVENT": self.workflow_config.event,
             }
+            if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
+                ENV_CHECKOUT_REFERENCE = (
+                    YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
+                )
+            else:
+                ENV_CHECKOUT_REFERENCE = (
+                    YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+                )
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {"CRON_TEMPLATES": cron_items}
+            ENV_CHECKOUT_REFERENCE = (
+                YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+            )
         elif self.workflow_config.event in (Workflow.Event.DISPATCH,):
             base_template = YamlGenerator.Templates.TEMPLATE_DISPATCH_WORKFLOW
             format_kwargs = {"DISPATCH_INPUTS": dispatch_inputs}
+            ENV_CHECKOUT_REFERENCE = (
+                YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PUSH
+            )
         else:
             assert (
                 False
@@ -365,6 +390,7 @@ class PullRequestPushYamlGen:
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,
             JOBS="{}" * len(job_items),
+            ENV_CHECKOUT_REFERENCE=ENV_CHECKOUT_REFERENCE,
             **format_kwargs,
         )
         res = template_1.format(*job_items)
@@ -389,7 +415,7 @@ class AuxConfig:
             suffix += "_uplgh"
         for _ in self.downloads_gh:
             suffix += "_dnlgh"
-        return f"{Settings.WORKFLOW_PATH_PREFIX}/aux_job{suffix}.yaml"
+        return f"{Settings.WORKFLOW_PATH_PREFIX}/aux_job{suffix}.yml"
 
     def get_aux_workflow_input(self):
         res = ""
