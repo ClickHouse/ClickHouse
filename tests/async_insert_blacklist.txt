@@ -1,0 +1,49 @@
+    Deduplication in dependent materialized view cannot work together with async inserts. Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting
+00633_materialized_view_and_too_many_parts_zookeeper
+02912_ingestion_mv_deduplication
+03008_deduplication_cases_from_docs
+03008_deduplication_insert_into_partitioned_table
+
+    Cannot insert column value, because it is MATERIALIZED column
+00952_insert_into_distributed_with_materialized_column
+
+    https://github.com/ClickHouse/clickhouse-private/issues/24047
+    UNKNOWN_PACKET_FROM_SERVER
+03005_input_function_in_join
+02249_insert_select_from_input_schema_inference
+02458_use_structure_from_insertion_table
+
+    !!!performance degradation (timeout)
+02046_low_cardinality_parallel_group_by
+03221_insert_timeout_overflow_mode
+
+    !!!insert deduplication doesn't work
+02124_insert_deduplication_token_multiple_blocks
+02124_insert_deduplication_token_multiple_blocks_replica
+
+    Not a bugs
+
+    Transactions
+    Async inserts inside transactions are not supported. (NOT_IMPLEMENTED)
+01133_begin_commit_race
+01169_old_alter_partition_isolation_stress
+01170_alter_partition_isolation
+01171_mv_select_insert_isolation_long
+01172_transaction_counters
+01173_transaction_control_queries
+01174_select_insert_isolation
+02421_truncate_isolation_no_merges
+02421_truncate_isolation_with_mutations
+03167_transactions_are_really_disabled
+
+    Async inserts with 'implicit_transaction' are not supported. (NOT_IMPLEMENTED)
+01168_mutations_isolation
+    Cannot execute query because current transaction failed. Expecting ROLLBACK statement. (INVALID_TRANSACTION
+01169_alter_partition_isolation_stress
+
+    Processing async inserts with both inlined and external data (from stdin or infile) is not supported. (NOT_IMPLEMENTED)
+02270_stdin_with_query_or_infile_data
+02435_rollback_cancelled_queries
+
+    nothing interesting
+01825_type_json_schema_race_long
