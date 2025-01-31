@@ -74,7 +74,7 @@ private:
     size_t no_work_done_count = 0;
 
     /// Scheduling task which assign jobs in background pool
-    BackgroundSchedulePoolTaskHolder holder TSA_GUARDED_BY(holder_mutex);
+    BackgroundSchedulePool::TaskHolder holder;
     /// Mutex for thread safety
     std::mutex holder_mutex;
 

@@ -117,8 +117,7 @@ void BackgroundJobsAssignee::start()
 
 void BackgroundJobsAssignee::finish()
 {
-    std::lock_guard lock(holder_mutex);
-
+    /// No lock here, because scheduled tasks could call trigger method
     if (holder)
     {
         holder->deactivate();
