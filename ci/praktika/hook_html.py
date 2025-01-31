@@ -114,7 +114,11 @@ class HtmlRunnerHooks:
         env = _Environment.get()
         results = []
         for job in _workflow.jobs:
-            result = Result.generate_pending(job.name)
+            if job.name == Settings.CI_CONFIG_JOB_NAME:
+                # fetch running status with start_time for current job
+                result = Result.from_fs(job.name)
+            else:
+                result = Result.generate_pending(job.name)
             results.append(result)
         summary_result = Result.generate_pending(_workflow.name, results=results)
         summary_result.links.append(env.CHANGE_URL)
