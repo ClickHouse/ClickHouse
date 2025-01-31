@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,5 +20,19 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE ${CLICKHOUSE_DATABASE}.t1 (c0, c
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE ${CLICKHOUSE_DATABASE}.t2 (c0, c1) VALUES (-3, 0), (1, 0), (-2, 0);";
 
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t0 tx RIGHT JOIN ${CLICKHOUSE_DATABASE}.t1 ty ON ty.c1 = tx.c0 WHERE tx.c0 < 1;"
-echo "-----"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t0 tx RIGHT JOIN ${CLICKHOUSE_DATABASE}.t2 ty ON ty.c1 = tx.c0 WHERE tx.c0 < 1;"
+echo "-----"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t1 ty FULL JOIN ${CLICKHOUSE_DATABASE}.t0 tx ON tx.c0 = ty.c0 WHERE ty.c1 = 0 OR tx.c0 IS NOT NULL;"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t2 ty FULL JOIN ${CLICKHOUSE_DATABASE}.t0 tx ON tx.c0 = ty.c0 WHERE ty.c1 = 0 OR tx.c0 IS NOT NULL;"
+echo "-----"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t1 a JOIN ${CLICKHOUSE_DATABASE}.t1 b ON a.c0 < b.c0 WHERE a.c1 = 0 AND b.c1 = 0;"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t2 a JOIN ${CLICKHOUSE_DATABASE}.t2 b ON a.c0 < b.c0 WHERE a.c1 = 0 AND b.c1 = 0;"
+echo "-----"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t1 ty INNER JOIN ${CLICKHOUSE_DATABASE}.t0 tx ON tx.c0 + 2 = ty.c0 WHERE ty.c1 = 0;"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t2 ty INNER JOIN ${CLICKHOUSE_DATABASE}.t0 tx ON tx.c0 + 2 = ty.c0 WHERE ty.c1 = 0;"
+echo "-----"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t1 ty FULL OUTER JOIN ${CLICKHOUSE_DATABASE}.t0 tx ON ty.c0 = tx.c0 WHERE ty.c0 IS NOT NULL;"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t2 ty FULL OUTER JOIN ${CLICKHOUSE_DATABASE}.t0 tx ON ty.c0 = tx.c0 WHERE ty.c0 IS NOT NULL;"
+echo "-----"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t0 tx JOIN ${CLICKHOUSE_DATABASE}.t1 ty ON tx.c0 = ty.c0 JOIN ${CLICKHOUSE_DATABASE}.t1 tz ON ty.c0 < tz.c0 WHERE ty.c1 = 0 AND tz.c1 = 0;"
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM ${CLICKHOUSE_DATABASE}.t0 tx JOIN ${CLICKHOUSE_DATABASE}.t2 ty ON tx.c0 = ty.c0 JOIN ${CLICKHOUSE_DATABASE}.t2 tz ON ty.c0 < tz.c0 WHERE ty.c1 = 0 AND tz.c1 = 0;"

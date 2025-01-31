@@ -975,7 +975,7 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNo
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
 }
 
-bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacement_table_expression)
+bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)
 {
     QueryTreeNodes stack = { node };
     while (!stack.empty())
@@ -991,7 +991,7 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacemen
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                if (source != replacement_table_expression)
+                if (source != table_expression)
                     return true;
                 break;
             }
@@ -1008,9 +1008,9 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacemen
     return false;
 }
 
-void replaceFilterExpression(
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
     QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & replacement_table_expression,
+    const QueryTreeNodePtr & table_expression,
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
@@ -1019,7 +1019,7 @@ void replaceFilterExpression(
 
     if (function->getFunctionName() != "and")
     {
-        if (hasUnknownColumn(expression, replacement_table_expression))
+        if (hasUnknownColumn(expression, table_expression))
             expression = nullptr;
         return;
     }
@@ -1053,7 +1053,7 @@ void replaceFilterExpression(
 
     for (const auto & node : processing)
     {
-        if (!hasUnknownColumn(node, replacement_table_expression))
+        if (!hasUnknownColumn(node, table_expression))
             conjunctions.push_back(node);
     }
 

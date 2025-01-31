@@ -802,9 +802,9 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // For backward compatibility we need to leave all filters related to this table.
     // It may lead to some incorrect result.
     if (query_node->hasPrewhere())
-        replaceFilterExpression(query_node->getPrewhere(), replacement_table_expression, context);
+        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
     if (query_node->hasWhere())
-        replaceFilterExpression(query_node->getWhere(), replacement_table_expression, context);
+        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
 
     query_node->getGroupBy().getNodes().clear();
     query_node->getHaving() = {};

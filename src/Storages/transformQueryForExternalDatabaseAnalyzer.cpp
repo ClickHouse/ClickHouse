@@ -84,9 +84,9 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (allow_where)
     {
         if (query_node->hasPrewhere())
-            replaceFilterExpression(query_node->getPrewhere(), table_expression, context);
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), table_expression, context);
         if (query_node->hasWhere())
-            replaceFilterExpression(query_node->getWhere(), table_expression, context);
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), table_expression, context);
     }
 
     auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
