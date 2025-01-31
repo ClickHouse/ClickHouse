@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from typing import List
 
+from praktika.utils import Shell
+
 from ._environment import _Environment
 from .gh import GH
 from .info import Info

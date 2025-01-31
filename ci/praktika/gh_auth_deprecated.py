@@ -59,3 +59,4 @@ class GHAuth:
         access_token = cls._get_access_token(jwt_token, installation_id)
         Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
         Shell.check(f"gh auth status", strict=True)
+        return access_token

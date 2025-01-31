@@ -236,6 +236,9 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
         if cd is None or cd == CHECK_DESCRIPTIONS[-1]:
             # This is the case for either non-found description or a fallback
+            if status.context == "PR":
+                # skip praktika's status
+                continue
             cd = CheckDescription(
                 status.context,
                 CHECK_DESCRIPTIONS[-1].description,

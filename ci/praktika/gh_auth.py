@@ -64,7 +64,7 @@ class GHAuth:
 # if __name__ == "__main__":
 #     from praktika.mangle import _get_workflows
 #     wf = _get_workflows("PR")
-#     pem = wf[0].get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+#     pem = wf[0].get_secret("clickhouse_github_secret_key.clickhouse-app-key").get_value()
 #     assert pem
-#     app_id = wf[0].get_secret(Settings.SECRET_GH_APP_ID).get_value()
+#     app_id = wf[0].get_secret("clickhouse_github_secret_key.clickhouse-app-id").get_value()
 #     GHAuth.auth(app_id, pem)

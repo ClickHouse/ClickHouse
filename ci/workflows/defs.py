@@ -45,12 +45,20 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_VAR,
     ),
     azure_secret,
+    # Secret.Config(
+    #     name="clickhouse_github_secret_key.clickhouse-app-id",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
+    # Secret.Config(
+    #     name="clickhouse_github_secret_key.clickhouse-app-key",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
     Secret.Config(
-        name="clickhouse_github_secret_key.clickhouse-app-id",
+        name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
     ),
     Secret.Config(
-        name="clickhouse_github_secret_key.clickhouse-app-key",
+        name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
     ),
 ]
