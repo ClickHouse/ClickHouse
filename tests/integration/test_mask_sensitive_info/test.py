@@ -133,7 +133,7 @@ def check_secrets_for_tables(test_cases, password):
                 f"{show_secrets}=1"
             )
 
-
+# TODO: test backup to AzureBlobStorage
 def test_backup_table():
     password = new_password()
 
@@ -308,7 +308,7 @@ def test_create_table():
         if not error:
             node.query(f"DROP TABLE {table_name}")
 
-
+# TODO: test create database with AzureBlobStorage
 def test_create_database():
     password = new_password()
 
