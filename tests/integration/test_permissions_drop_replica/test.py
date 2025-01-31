@@ -50,7 +50,7 @@ def test_drop_permissions(start_cluster):
         "DB::Exception: Access denied for SYSTEM DROP REPLICA. Not enough permissions to drop these databases:"
         in got_error
     )
-    # ensure that the replica still exists
+    # assert that the replica still exists
     assert (
         node1.query("SELECT host_name FROM system.clusters WHERE replica_num=1") != ""
     )
@@ -61,4 +61,5 @@ def test_drop_permissions(start_cluster):
         node1.query("SELECT host_name FROM system.clusters WHERE replica_num=3").strip()
         == ""
     )
+    node1.query("DROP USER foo;")
     node1.query("DROP DATABASE r")
