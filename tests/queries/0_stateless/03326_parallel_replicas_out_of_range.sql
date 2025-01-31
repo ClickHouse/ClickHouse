@@ -1,6 +1,8 @@
 -- There are no settings to enable parallel replicas explicitly, because
 -- we have a separate test run with them and they will be enabled automatically.
 
+SET enable_analyzer=1;
+
 SELECT
     count(materialize(toLowCardinality(1))) IGNORE NULLS AS num,
     hostName() AS hostName
