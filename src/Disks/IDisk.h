@@ -289,6 +289,9 @@ public:
     /// StoredObject::remote_path for each stored object combined with the name of the objects' namespace.
     virtual Strings getBlobPath(const String & path) const = 0;
 
+    /// Returns whether the blob paths this disk uses are randomly generated.
+    virtual bool areBlobPathsRandom() const = 0;
+
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
     /// Write a file using a custom function to write a blob representing the file.

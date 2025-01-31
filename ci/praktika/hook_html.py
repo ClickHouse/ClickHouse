@@ -72,11 +72,20 @@ class GitCommit:
             json.dump(commits_, f)
 
     @classmethod
+    def get_s3_path(cls):
+        env = _Environment.get()
+        if env.PR_NUMBER:
+            s3suffix = f"PRs/{env.PR_NUMBER}"
+        else:
+            assert env.BRANCH
+            s3suffix = f"REFs/{env.BRANCH}"
+        return f"{Settings.HTML_S3_PATH}/{s3suffix}"
+
+    @classmethod
     def pull_from_s3(cls):
         local_path = Path(cls.file_name())
         file_name = local_path.name
-        env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.PR_NUMBER}/{file_name}"
+        s3_path = f"{cls.get_s3_path()}/{file_name}"
         if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
@@ -88,8 +97,7 @@ class GitCommit:
         cls.dump(commits)
         local_path = Path(cls.file_name())
         file_name = local_path.name
-        env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.PR_NUMBER}/{file_name}"
+        s3_path = f"{cls.get_s3_path()}/{file_name}"
         if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
