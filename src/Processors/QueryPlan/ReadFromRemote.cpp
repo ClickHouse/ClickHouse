@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
 }
 
 namespace ErrorCodes
@@ -493,6 +494,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         }
 
         const time_t local_delay = replicated_storage->getAbsoluteDelay();
+        const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
 
         bool use_delayed_remote_source = false;
         fiu_do_on(FailPoints::use_delayed_remote_source,
@@ -500,12 +502,24 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             use_delayed_remote_source = true;
         });
 
-        if (!use_delayed_remote_source && (try_results.empty() || local_delay < max_remote_delay))
+        if (!use_delayed_remote_source)
         {
-            auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+            if (try_results.empty() && local_delay >= max_allowed_delay)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "There are no replicas except the local one and the local replica's delay is {} higher than max_replica_delay_for_distributed_queries",
+                    local_delay
+                );
+            }
 
-            return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+            if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
+            {
+                auto plan = createLocalPlan(
+                    query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+
+                return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+            }
         }
 
         std::vector<IConnectionPool::Entry> connections;
