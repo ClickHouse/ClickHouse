@@ -1436,11 +1436,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         fuzzOrderByList(select->orderBy().get());
-        if (fuzz_rand() % 50 == 0)
+        if (select->orderBy().get() && fuzz_rand() % 50 == 0)
         {
             select->order_by_all = !select->order_by_all;
         }
-        if (fuzz_rand() % 50 == 0)
+        if (select->limitLength() && fuzz_rand() % 50 == 0)
         {
             select->limit_with_ties = !select->limit_with_ties;
         }
