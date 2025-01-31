@@ -133,7 +133,7 @@ def check_secrets_for_tables(test_cases, password):
                 f"{show_secrets}=1"
             )
 
-# TODO: test backup to AzureBlobStorage
+
 def test_backup_table():
     password = new_password()
 
@@ -177,6 +177,55 @@ def test_backup_table():
         assert password not in base_backup_name
         assert password not in name
 
+def test_backup_table_AzureBlobStorage():
+    azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    setup_queries = [
+        "CREATE TABLE backup_test (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test SELECT * FROM numbers(10)",
+    ]
+
+    endpoints_with_credentials = [
+        (
+            f"AzureBlobStorage('{azure_conn_string}', 'cont', 'backup_test_base')",
+            f"AzureBlobStorage('{azure_conn_string}', 'cont', 'backup_test_incremental')",
+            f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'second_backup_test_base', '{azure_account_name}', '{azure_account_key}')",
+            f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'second_backup_test_incremental', '{azure_account_name}', '{azure_account_key}')",
+        )
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Actually need to make two backups to have base_backup
+    def make_test_case(endpoint_specs):
+        # Run ASYNC so it returns the backup id
+        return (
+            f"BACKUP TABLE backup_test TO {endpoint_specs[0]} ASYNC",
+            f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}",
+            f"BACKUP TABLE backup_test TO {endpoint_specs[2]} ASYNC",
+            f"BACKUP TABLE backup_test TO {endpoint_specs[3]} SETTINGS async=1, base_backup={endpoint_specs[2]}",
+        )
+
+    test_cases = [
+        make_test_case(endpoint_spec) for endpoint_spec in endpoints_with_credentials
+    ]
+    for base_query, inc_query in test_cases:
+        node.query_and_get_answer_with_error(base_query)[0]
+
+        inc_backup_query_output = node.query_and_get_answer_with_error(inc_query)[0]
+        inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+        names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+            f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+        )
+
+        base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+        assert azure_account_key not in base_backup_name
+        assert azure_account_key not in name
 
 def test_create_table():
     password = new_password()
@@ -308,7 +357,6 @@ def test_create_table():
         if not error:
             node.query(f"DROP TABLE {table_name}")
 
-# TODO: test create database with AzureBlobStorage
 def test_create_database():
     password = new_password()
 
