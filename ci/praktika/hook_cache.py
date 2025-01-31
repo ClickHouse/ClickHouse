@@ -75,9 +75,14 @@ class CacheRunnerHooks:
                     if result:  # If a record was found, add it to the fetched list
                         fetched_records.append(result)
 
+        env = _Environment.get()
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
+            if workflow.is_event_push() and record.branch != env.BRANCH:
+                # TODO: make this behaviour configurable?
+                print(f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH")
+                continue
             workflow_config.cache_success.append(job_name)
             workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
             workflow_config.cache_jobs[job_name] = record
@@ -107,7 +112,7 @@ class CacheRunnerHooks:
                         )
 
         print(f"Write config to GH's job output")
-        with open(_Environment.get().JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"DATA={workflow_config.to_json()}",
                 file=f,

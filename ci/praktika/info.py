@@ -97,7 +97,7 @@ class Info:
             ref_param = f"PR={pr_number}"
         else:
             assert branch
-            ref_param = f"REF={pr_number}"
+            ref_param = f"REF={branch}"
         path = Settings.HTML_S3_PATH
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:

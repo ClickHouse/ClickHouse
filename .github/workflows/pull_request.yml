@@ -3,8 +3,8 @@
 name: PR
 
 on:
-  pull_request:
-    branches: ['master']
+  push:
+    branches: ['ci_prepare_for_migration_3']
 
 # Cancel the previous wf run in PRs.
 concurrency:
@@ -15,9 +15,7 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   GH_TOKEN: ${{ github.token }}
-  DISABLE_CI_MERGE_COMMIT: ${{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}
-  DISABLE_CI_CACHE: ${{ vars.DISABLE_CI_CACHE || '0' }}
-  CHECKOUT_REF: ${{ vars.DISABLE_CI_MERGE_COMMIT == '1' && '' || github.event.pull_request.head.sha }}
+  CHECKOUT_REF: ${{ github.head_ref }}
 
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
@@ -252,47 +250,9 @@ jobs:
             python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_amd_release:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow, docker_builds, style_check, fast_test]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
-    name: "Build (amd_release)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_release)' --workflow "PR" --ci |& tee ./ci/tmp/job.log
-          fi
-
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, docker_builds, style_check, docs_check, fast_test, build_amd_debug, build_amd_release]
+    needs: [config_workflow, docker_builds, style_check, docs_check, fast_test, build_amd_debug]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

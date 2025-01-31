@@ -50,7 +50,7 @@ class Cache:
         assert (
             Settings.CACHE_S3_PATH
         ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
-        record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}"
+        record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
         S3.put(

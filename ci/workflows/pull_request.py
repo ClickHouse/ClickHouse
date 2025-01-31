@@ -720,13 +720,14 @@ class JobConfigs:
 
 workflow = Workflow.Config(
     name="PR",
-    event=Workflow.Event.PULL_REQUEST,
-    base_branches=[BASE_BRANCH],
+    event=Workflow.Event.PUSH,
+    branches=["ci_prepare_for_migration_3"],
+    #base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
-        *JobConfigs.build_jobs[0:2],
+        *JobConfigs.build_jobs[0:1],
         # JobConfigs.docker_sever,
         # JobConfigs.docker_keeper,
         # *JobConfigs.install_check_jobs,
@@ -749,10 +750,10 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     pre_hooks=[
-        "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/trusted.py",
+        #"python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
+        #"python3 ./ci/jobs/scripts/workflow_hooks/trusted.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        #"python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
     ],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
