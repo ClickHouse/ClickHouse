@@ -2503,7 +2503,9 @@ bool MutateTask::prepare()
                     continue;
                 }
 
-                if (proj_desc.type == ProjectionDescription::Type::Aggregate)
+                /// TODO: might extend to more cases in the future.
+                if (proj_desc.type == ProjectionDescription::Type::Aggregate
+                    || proj_desc.type == ProjectionDescription::Type::Normal)
                 {
                     const auto & sort_columns = proj_desc.metadata->sorting_key.column_names;
                     NameSet groupby_columns(sort_columns.begin(), sort_columns.end());
@@ -2511,23 +2513,6 @@ bool MutateTask::prepare()
                         update_where_columns.begin(),
                         update_where_columns.end(),
                         [&](const auto & col) { return groupby_columns.contains(col); });
-
-                    if (!is_subset_of_groupby)
-                    {
-                        if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
-                            == LightweightMutationProjectionMode::REBUILD)
-                            ctx->materialized_projections.insert(proj_desc.name);
-
-                        continue;
-                    }
-                }
-                else if (proj_desc.type == ProjectionDescription::Type::Normal)
-                {
-                    NameSet stored_columns(proj_desc.required_columns.begin(), proj_desc.required_columns.end());
-                    bool is_subset_of_groupby = std::all_of(
-                        update_where_columns.begin(),
-                        update_where_columns.end(),
-                        [&](const auto & col) { return stored_columns.contains(col); });
 
                     if (!is_subset_of_groupby)
                     {

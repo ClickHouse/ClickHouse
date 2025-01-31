@@ -8,7 +8,8 @@ CREATE TABLE users_compact (
     projection p1 (SELECT age, count() GROUP BY age),
     projection p2 (SELECT age, avg(age) GROUP BY age),
     projection p3 (SELECT name, uid ORDER BY age),
-    projection p4 (SELECT count() GROUP BY name)
+    projection p4 (SELECT count() GROUP BY name),
+    projection p5 (SELECT name, uid ORDER BY age/2),
 ) ENGINE = MergeTree order by uid
 SETTINGS lightweight_mutation_projection_mode = 'rebuild', min_bytes_for_wide_part = 10485760;
 
@@ -55,7 +56,8 @@ CREATE TABLE users_wide (
     projection p1 (SELECT age, count() GROUP BY age),
     projection p2 (SELECT age, avg(age) GROUP BY age),
     projection p3 (SELECT name, uid ORDER BY age),
-    projection p4 (SELECT count() GROUP BY name)
+    projection p4 (SELECT count() GROUP BY name),
+    projection p5 (SELECT name, uid ORDER BY age/2)
 ) ENGINE = MergeTree order by uid
 SETTINGS lightweight_mutation_projection_mode = 'rebuild', min_bytes_for_wide_part = 0;
 
