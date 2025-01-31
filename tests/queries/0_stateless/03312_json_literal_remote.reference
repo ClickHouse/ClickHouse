@@ -1,11 +1,11 @@
-{"a":0}	{'a':'UInt8'}
+{"a":false}	{'a':'Bool'}
 {}	{}
-{"a":42}	{'a':'Int8'}
+{"a":"42"}	{'a':'Int64'}
 {"a":42.42}	{'a':'Float64'}
-{"a":[1,2,3]}	{'a':'Array(Int8)'}
-{"a":{"b":42}}	{'a.b':'Int8'}
-{"a":[{"b":42}]}	{'a':'Array(JSON)'}
-{"a":[1,"str",[1]]}	{'a':'Tuple(Int8, String, Array(Int8))'}
+{"a":["1","2","3"]}	{'a':'Array(Nullable(Int64))'}
+{"a":{"b":"42"}}	{'a.b':'Int64'}
+{"a":[{"b":"42"}]}	{'a':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))'}
+{"a":["1","str",["1"]]}	{'a':'Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))'}
 {"a":false}	{'a':'Bool'}
 {"a":null}	{'a':'Nullable(UInt32)'}
 {"a":"42"}	{'a':'Int64'}
@@ -27,3 +27,19 @@
 {"a":{"b":"1","c":"str","d":["1"]}}	{'a':'Tuple(b Int64, c String, d Array(Int64))'}
 {"a":{"b":"1","c":"2","d":"3"}}	{'a':'Map(String, Int64)'}
 {"a":[{"b":"42"}]}	{'a':'Array(JSON(b Int64))'}
+{"a":false}	{'a':'Bool'}
+{}	{}
+{"a":"42"}	{'a':'Int64'}
+{"a":42.42}	{'a':'Float64'}
+{"a":["1","2","3"]}	{'a':'Array(Nullable(Int64))'}
+{"a":{"b":"42"}}	{'a.b':'Int64'}
+{"a":[{"b":"42"}]}	{'a':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=0))'}
+{"a":["1","str",["1"]]}	{'a':'Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))'}
+{"a":false}	{'a':'Bool'}
+{}	{}
+{"a":"42"}	{'a':'Int64'}
+{"a":42.42}	{'a':'Float64'}
+{"a":["1","2","3"]}	{'a':'Array(Nullable(Int64))'}
+{"a":{"b":"42"}}	{'a.b':'Int64'}
+{"a":[{"b":"42"}]}	{'a':'Array(JSON(max_dynamic_types=0, max_dynamic_paths=256))'}
+{"a":["1","str",["1"]]}	{'a':'Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64)))'}

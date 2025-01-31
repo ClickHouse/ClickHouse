@@ -35,5 +35,20 @@ select '{"a" : {"b" : 1, "c" : "str", "d" : [1]}}'::JSON(a Tuple(b Int64, c Stri
 select '{"a" : {"b" : 1, "c" : 2, "d" : 3}}'::JSON(a Map(String, Int64)) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
 select '{"a" : [{"b" : 42}]}'::JSON(a Array(JSON(b Int64))) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
 
+select '{"a" : false}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : null}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : 42}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : 42.42}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : [1, 2, 3]}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : {"b" : 42}}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : [{"b" : 42}]}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : [1, "str", [1]]}'::JSON(max_dynamic_paths=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
 
-
+select '{"a" : false}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : null}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : 42}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : 42.42}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : [1, 2, 3]}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : {"b" : 42}}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : [{"b" : 42}]}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
+select '{"a" : [1, "str", [1]]}'::JSON(max_dynamic_types=0) as json, JSONAllPathsWithTypes(json) from remote('127.0.0.2', 'system.one');
