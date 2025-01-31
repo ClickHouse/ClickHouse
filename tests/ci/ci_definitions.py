@@ -581,16 +581,7 @@ class CommonJobConfigs:
         digest=DigestConfig(
             include_paths=[
                 "./src",
-                "./contrib/*-cmake",
-                "./contrib/consistent-hashing",
-                "./contrib/murmurhash",
-                "./contrib/libfarmhash",
-                "./contrib/pdqsort",
-                "./contrib/cityhash102",
-                "./contrib/sparse-checkout",
-                "./contrib/libmetrohash",
-                "./contrib/update-submodules.sh",
-                "./contrib/CMakeLists.txt",
+                "./contrib",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
