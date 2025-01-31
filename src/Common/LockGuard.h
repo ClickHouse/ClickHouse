@@ -20,7 +20,7 @@ class TSA_SCOPED_LOCKABLE LockGuard
 {
 public:
     explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : unique_lock(mutex_) { }
-    ~LockGuard() TSA_RELEASE() { if (locked) unlock(); }
+    ~LockGuard() TSA_RELEASE() = default;
 
     void lock() TSA_ACQUIRE()
     {
