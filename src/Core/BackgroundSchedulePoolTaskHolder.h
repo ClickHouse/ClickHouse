@@ -6,7 +6,6 @@ namespace DB
 {
 
 class BackgroundSchedulePoolTaskInfo;
-class BackgroundSchedulePoolTaskHolder;
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
 

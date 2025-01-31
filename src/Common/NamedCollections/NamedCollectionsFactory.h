@@ -11,7 +11,6 @@ namespace DB
 class ASTCreateNamedCollectionQuery;
 class ASTDropNamedCollectionQuery;
 class ASTAlterNamedCollectionQuery;
-class BackgroundSchedulePoolTaskHolder;
 
 class NamedCollectionFactory : boost::noncopyable
 {
