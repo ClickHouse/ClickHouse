@@ -164,7 +164,7 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
                         {
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
-                                "Setting {} is duplicated", change.name);
+                                "Setting {} is defined multiple times", change.name);
                         }
                     }
                 }
