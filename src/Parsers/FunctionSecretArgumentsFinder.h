@@ -560,8 +560,8 @@ protected:
             return;
 
         /// We should check other arguments first because we don't need to do any replacement in case of
-        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
-        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
+        /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key
+        /// AzureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key
         size_t count = function->arguments->size();
         if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
         {
