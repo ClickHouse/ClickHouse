@@ -100,16 +100,17 @@ size_t ThreadGroup::getPeakThreadsUsage() const
 }
 
 
-void ThreadGroup::linkThread(UInt64 thread_id)
+void ThreadGroup::linkThread(UInt64 thread_id, bool paranoid_mode)
 {
     std::lock_guard lock(mutex);
-    thread_ids.insert(thread_id);
+    if (auto [_, inserted] = thread_ids.insert(thread_id); !inserted && paranoid_mode)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread {} is already linked to the group", thread_id);
 
     ++active_thread_count;
     peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
 }
 
-void ThreadGroup::unlinkThread()
+void ThreadGroup::unlinkThread([[maybe_unused]] UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
@@ -252,12 +253,12 @@ void ThreadStatus::applyQuerySettings()
 #endif
 }
 
-void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
+void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_, bool paranoid_mode)
 {
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
     if (!internal_thread)
-        thread_group->linkThread(thread_id);
+        thread_group->linkThread(thread_id, paranoid_mode);
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
@@ -324,7 +325,7 @@ void ThreadStatus::setInternalThread()
     internal_thread = true;
 }
 
-void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
+void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached, bool paranoid_mode)
 {
     if (thread_group && check_detached)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't attach query to the thread, it is already attached");
@@ -336,7 +337,7 @@ void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool chec
         return;
 
     deleter = [this] () { detachFromGroup(); };
-    attachToGroupImpl(thread_group_);
+    attachToGroupImpl(thread_group_, paranoid_mode);
 }
 
 ProfileEvents::Counters * ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
@@ -665,18 +666,18 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
     views_log->add(std::move(element));
 }
 
-void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)
+void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group, bool paranoid_mode)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->attachToGroup(thread_group, true);
+    current_thread->attachToGroup(thread_group, /*check_detached*/ true, paranoid_mode);
 }
 
 void CurrentThread::attachToGroupIfDetached(const ThreadGroupPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->attachToGroup(thread_group, false);
+    current_thread->attachToGroup(thread_group, /*check_detached=*/false, /*paranoid_mode=*/false);
 }
 
 void CurrentThread::finalizePerformanceCounters()

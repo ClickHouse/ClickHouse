@@ -280,7 +280,7 @@ std::optional<Chain> generateViewChain(
     std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
     /// Copy of a ThreadStatus should be internal.
     view_thread_status_ptr->setInternalThread();
-    view_thread_status_ptr->attachToGroup(running_group);
+    view_thread_status_ptr->attachToGroup(running_group, /*check_detached=*/true, /*paranoid_mode=*/false);
 
     auto * view_thread_status = view_thread_status_ptr.get();
     views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));

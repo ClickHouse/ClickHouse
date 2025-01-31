@@ -354,7 +354,7 @@ try
         // which is required for client timezone (pushed from server) to work.
         auto thread_group = std::make_shared<ThreadGroup>();
         const_cast<ContextWeakPtr &>(thread_group->global_context) = global_context;
-        thread_status.attachToGroup(thread_group, false);
+        thread_status.attachToGroup(thread_group, /*check_detached=*/false, /*paranoid_mode=*/false);
     }
 
     /// Includes delayed_interactive.

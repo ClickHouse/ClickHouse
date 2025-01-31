@@ -75,7 +75,7 @@ public:
 
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
-    static void attachToGroup(const ThreadGroupPtr & thread_group);
+    static void attachToGroup(const ThreadGroupPtr & thread_group, bool paranoid_mode = false);
     /// Is useful for a ThreadPool tasks
     static void attachToGroupIfDetached(const ThreadGroupPtr & thread_group);
 

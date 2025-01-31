@@ -119,8 +119,8 @@ public:
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
 
-    void linkThread(UInt64 thread_id);
-    void unlinkThread();
+    void linkThread(UInt64 thread_id, bool paranoid_mode);
+    void unlinkThread(UInt64 thread_id);
 
 private:
     mutable std::mutex mutex;
@@ -278,7 +278,7 @@ public:
     void setInternalThread();
 
     /// Attaches slave thread to existing thread group
-    void attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached = true);
+    void attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached, bool paranoid_mode);
 
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachFromGroup();
@@ -334,7 +334,7 @@ private:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
-    void attachToGroupImpl(const ThreadGroupPtr & thread_group_);
+    void attachToGroupImpl(const ThreadGroupPtr & thread_group_, bool paranoid_mode);
 };
 
 /**

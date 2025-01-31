@@ -410,7 +410,7 @@ void PipelineExecutor::spawnThreadsImpl()
             setThreadName("QueryPipelineEx");
 
             if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
+                CurrentThread::attachToGroup(thread_group, /*paranoid_mode=*/true);
 
             try
             {
