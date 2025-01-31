@@ -160,4 +160,14 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
 
 
+bool hasUnknownColumn(
+    const QueryTreeNodePtr & node,
+    QueryTreeNodePtr replacement_table_expression);
+
+void replaceFilterExpression(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & replacement_table_expression,
+    const ContextPtr & context);
+
+
 }
