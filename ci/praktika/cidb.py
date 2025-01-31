@@ -1,10 +1,12 @@
 import copy
 import dataclasses
 import json
+import traceback
 import urllib
 from typing import Optional
 
 import requests
+from praktika.info import Info
 
 from ._environment import _Environment
 from .result import Result
@@ -66,9 +68,9 @@ class CIDB:
             commit_url=env.COMMIT_URL,
             check_name=result.name,
             check_status=result.status,
-            check_duration_ms=int(result.duration * 1000),
+            check_duration_ms=int(result.duration * 1000) if result.duration else None,
             check_start_time=Utils.timestamp_to_str(result.start_time),
-            report_url=env.get_report_url(settings=Settings),
+            report_url=Info().get_report_url(),
             pull_request_url=env.CHANGE_URL,
             base_ref=env.BASE_BRANCH,
             base_repo=env.REPOSITORY,
@@ -112,17 +114,27 @@ class CIDB:
         }
 
         session = requests.Session()
+        MAX_RETRIES = 3
         for json_str in self.json_data_generator(result):
-            try:
-                session.post(
-                    url=self.url,
-                    params=params,
-                    data=json_str,
-                    headers=self.auth,
-                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                )
-            except Exception as ex:
-                raise ex
+            for retry in range(MAX_RETRIES):
+                try:
+                    response = session.post(
+                        url=self.url,
+                        params=params,
+                        data=json_str,
+                        headers=self.auth,
+                        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                    )
+                    if response.ok:
+                        break
+                    else:
+                        if retry == MAX_RETRIES - 1:
+                            raise RuntimeError(
+                                f"Failed to write to CI DB, response code [{response.status_code}]"
+                            )
+                except Exception as ex:
+                    if retry == MAX_RETRIES - 1:
+                        raise ex
         session.close()
 
     def check(self):
@@ -131,27 +143,26 @@ class CIDB:
             "database": Settings.CI_DB_DB_NAME,
             "query": f"SELECT 1",
         }
-        try:
-            response = requests.post(
-                url=self.url,
-                params=params,
-                data="",
-                headers=self.auth,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            )
-            if not response.ok:
-                print("ERROR: No connection to CI DB")
-                return (
-                    False,
-                    f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]",
+        error = ""
+        for retry in range(2):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data="",
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
-            if not response.json() == 1:
-                print("ERROR: CI DB smoke test failed select 1 == 1")
-                return (
-                    False,
-                    f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]",
-                )
-        except Exception as ex:
-            print(f"ERROR: Exception [{ex}]")
-            return False, f"CIDB: ERROR: Exception [{ex}]"
-        return True, ""
+                if not response.ok:
+                    error = f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]"
+                elif not response.json() == 1:
+                    print("ERROR: CI DB smoke test failed select 1 == 1")
+                    error = f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]"
+                else:
+                    return True, ""
+
+            except Exception as ex:
+                print(f"ERROR: Exception [{ex}]")
+                error = f"CIDB: ERROR: Exception [{ex}]"
+
+        return False, error
