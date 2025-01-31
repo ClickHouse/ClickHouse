@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
