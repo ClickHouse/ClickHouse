@@ -8,11 +8,6 @@ namespace DB
 
 class Block;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /// Class which represents current merging chunk of data.
 /// Also it calculates the number of merged rows and other profile info.
 class MergedData

@@ -43,8 +43,9 @@ public:
     {
 #if !defined(USE_SSL) || USE_SSL == 0
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
-#endif
+#else
         return std::make_shared<FunctionShowCertificate>(ctx->getQueryContext()->getClientInfo().certificate);
+#endif
     }
 
     std::string certificate;

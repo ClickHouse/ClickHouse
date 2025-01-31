@@ -5,6 +5,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
