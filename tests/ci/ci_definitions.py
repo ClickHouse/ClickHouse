@@ -154,6 +154,9 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
         "Stateless tests (release, ParallelReplicas, s3 storage)"
     )
+    STATELESS_TEST_ASYNC_INSERTS_RELEASE = (
+        "Stateless tests (release, AsyncInserts, s3 storage)"
+    )
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
@@ -627,6 +630,7 @@ REQUIRED_CHECKS = [
     JobNames.INTEGRATION_TEST_FLAKY,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
     JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
+    JobNames.STATELESS_TEST_ASYNC_INSERTS_RELEASE,
     JobNames.INSTALL_TEST_AMD,
     JobNames.INSTALL_TEST_AARCH64,
 ]

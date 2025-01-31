@@ -62,6 +62,8 @@ def get_additional_envs(
         result.append("USE_POLYMORPHIC_PARTS=1")
     if "ParallelReplicas" in check_name:
         result.append("USE_PARALLEL_REPLICAS=1")
+    if "AsyncInserts" in check_name:
+        result.append("USE_ASYNC_INSERTS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")

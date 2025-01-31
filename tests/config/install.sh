@@ -217,6 +217,10 @@ if [[ "$USE_PARALLEL_REPLICAS" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/enable_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
 fi
 
+if [[ "$USE_ASYNC_INSERTS" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/enable_async_inserts.xml $DEST_SERVER_PATH/users.d/
+fi
+
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
