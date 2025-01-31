@@ -1,3 +1,4 @@
+-- Tags: atomic-database
 {% macro show_dependencies(msg="") %}
     select '<<<', '{{msg}}';
     select dependencies_table, substr(name,1,10) from system.tables where database=currentDatabase() order by name;
@@ -44,4 +45,3 @@ exchange tables a and c;
 
 drop table mv1;
 {{ show_dependencies("drop mv1") }}
-
