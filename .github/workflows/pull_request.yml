@@ -3,8 +3,8 @@
 name: PR
 
 on:
-  push:
-    branches: ['ci_prepare_for_migration_3']
+  pull_request:
+    branches: ['master']
 
 # Cancel the previous wf run in PRs.
 concurrency:
@@ -15,7 +15,9 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
   GH_TOKEN: ${{ github.token }}
-  CHECKOUT_REF: ${{ github.head_ref }}
+  DISABLE_CI_MERGE_COMMIT: ${{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}
+  DISABLE_CI_CACHE: ${{ vars.DISABLE_CI_CACHE || '0' }}
+  CHECKOUT_REF: ${{ vars.DISABLE_CI_MERGE_COMMIT == '1' && '' || github.event.pull_request.head.sha }}
 
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link

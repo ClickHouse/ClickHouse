@@ -720,9 +720,8 @@ class JobConfigs:
 
 workflow = Workflow.Config(
     name="PR",
-    event=Workflow.Event.PUSH,
-    branches=["ci_prepare_for_migration_3"],
-    #base_branches=[BASE_BRANCH],
+    event=Workflow.Event.PULL_REQUEST,
+    base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
         JobConfigs.docs_job,
