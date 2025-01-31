@@ -85,7 +85,10 @@ class Info:
             sha = "latest"
         return self.get_specific_report_url(pr_number=self.env.PR_NUMBER, sha=sha)
 
-    def get_specific_report_url(self, pr_number, sha):
+    def dump(self):
+        self.env.dump()
+
+    def get_specific_report_url(self, pr_number, sha, job_name=""):
         from praktika.settings import Settings
 
         path = Settings.HTML_S3_PATH
@@ -93,7 +96,10 @@ class Info:
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        return f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={pr_number}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={pr_number}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        if job_name:
+            res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
+        return res
 
     @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:
