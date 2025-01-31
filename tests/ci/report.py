@@ -588,7 +588,7 @@ class BuildResult:
         loads report from a report file matched with given @pr_number and/or a @head_ref
         """
         report_path = Path(REPORT_PATH) / BuildResult.get_report_name(
-            build_name, pr_number or head_ref
+            build_name, pr_number or CI.Utils.normalize_string(head_ref)
         )
         return cls.load_from_file(report_path)
 
@@ -607,12 +607,13 @@ class BuildResult:
         master_report = None
         any_report = None
         Path(REPORT_PATH).mkdir(parents=True, exist_ok=True)
+        normalized_head_ref = CI.Utils.normalize_string(head_ref)
         for file in Path(REPORT_PATH).iterdir():
             if f"{build_name}.json" in file.name:
                 any_report = file
                 if "_master_" in file.name:
                     master_report = file
-                elif f"_{head_ref}_" in file.name:
+                elif f"_{normalized_head_ref}_" in file.name:
                     ref_report = file
                 elif pr_number and f"_{pr_number}_" in file.name:
                     pr_report = file

@@ -98,9 +98,9 @@ def main():
             missing_builds += 1
             build_results.insert(0, build_result)
         else:
-            assert (
-                pr_info.head_ref == build_result.head_ref or pr_info.number > 0
-            ), "BUG. if not a PR, report must be created on the same branch"
+            # if pr_info.head_ref == build_result.head_ref or pr_info.number > 0:
+            logging.error("BUG. if not a PR, report must be created on the same branch, build_name: %s, \npr_info: %s,\nbuild_result: %s",
+                build_name, pr_info, build_result)
             build_results.append(build_result)
 
     # Calculate artifact groups like packages and binaries

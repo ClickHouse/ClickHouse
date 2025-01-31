@@ -179,8 +179,8 @@ def main():
     official_flag = True
 
     if pr_info.event_type == EventType.PUSH \
-        and pr_info.ref.startswith('/ref/tags/'):
-        tag_name = pr_info.ref.removeprefix('/ref/tags/')
+            and pr_info.ref.startswith('refs/tags/'):
+        tag_name = pr_info.ref.removeprefix('refs/tags/')
         version_type = tag_name.split('.')[-1]
         version._flavour = version_type
         logging.info("Using version from tag: %s => %s", tag_name, version)
