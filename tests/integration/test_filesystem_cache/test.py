@@ -498,6 +498,7 @@ def test_system_sync_filesystem_cache(cluster):
     node.query(
         """
 DROP TABLE IF EXISTS test;
+SYSTEM DROP FILESYSTEM CACHE;
 
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
@@ -564,6 +565,7 @@ INSERT INTO test SELECT 1, 'test';
     cache_path = node.query(
         f"SELECT cache_path FROM system.filesystem_cache WHERE key = '{key}' and file_segment_range_begin = {offset}"
     )
+    assert len(cache_path) > 0
 
     node.exec_in_container(["bash", "-c", f"echo -n 'fff' > {cache_path}"])
 
