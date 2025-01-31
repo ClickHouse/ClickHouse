@@ -642,5 +642,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 :::note
-The named collection specify `my_collection` for the collection name. In the function call it is overwritten by `collection = 'my_dict'` to select another collection.
+The named collection specifies `my_collection` for the collection name. In the function call it is overwritten by `collection = 'my_dict'` to select another collection.
 :::
