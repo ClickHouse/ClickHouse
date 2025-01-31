@@ -69,6 +69,10 @@ public:
     using FatalErrorCallback = std::function<void()>;
     explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
+    // #if defined(DEBUG_OR_SANITIZER_BUILD)
+    ~ThreadGroup();
+    // #endif
+
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 

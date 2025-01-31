@@ -1,12 +1,12 @@
-#include <Common/Exception.h>
-#include <Common/ThreadProfileEvents.h>
-#include <Common/QueryProfiler.h>
-#include <Common/ThreadStatus.h>
-#include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
-#include <base/getPageSize.h>
-#include <base/errnoToString.h>
 #include <Interpreters/Context.h>
+#include <base/errnoToString.h>
+#include <base/getPageSize.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/QueryProfiler.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Logger.h>
 
@@ -126,6 +126,20 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     }
 #endif
 }
+
+// #if defined(DEBUG_OR_SANITIZER_BUILD)
+ThreadGroup::~ThreadGroup()
+{
+    if (!threads_to_trace.empty())
+    {
+        LOG_FATAL(
+            getLogger("ThreadGroup"),
+            "Some suspicious threads were detected. thread_ids: {}, threads_to_trace: {}",
+            fmt::join(thread_ids, ", "),
+            fmt::join(threads_to_trace, ", "));
+    }
+}
+// #endif
 
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
