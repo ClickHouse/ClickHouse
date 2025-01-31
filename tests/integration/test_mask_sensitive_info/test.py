@@ -177,6 +177,7 @@ def test_backup_table():
         assert password not in base_backup_name
         assert password not in name
 
+
 def test_backup_table_AzureBlobStorage():
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
@@ -227,6 +228,7 @@ def test_backup_table_AzureBlobStorage():
         assert azure_account_key not in base_backup_name
         assert azure_account_key not in name
 
+
 def test_create_table():
     password = new_password()
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
@@ -237,7 +239,6 @@ def test_create_table():
     azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     azure_account_name = "devstoreaccount1"
     azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-
 
     table_engines = [
         f"MySQL('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
@@ -356,6 +357,7 @@ def test_create_table():
     for table_name, query, error in test_cases:
         if not error:
             node.query(f"DROP TABLE {table_name}")
+
 
 def test_create_database():
     password = new_password()
