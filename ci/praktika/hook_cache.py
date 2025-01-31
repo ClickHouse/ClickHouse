@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from ._environment import _Environment
@@ -39,12 +40,8 @@ class CacheRunnerHooks:
             if job.requires:
                 # include digest of required artifact to the job digest, so that they affect job state
                 for artifact_name in job.requires:
-                    if artifact_name not in [
-                        artifact.name for artifact in workflow.artifacts
-                    ]:
-                        # phony artifact assumed to be not affecting jobs that depend on it
-                        continue
-                    digests_combined_list.append(artifact_digest_map[artifact_name])
+                    if artifact_name in artifact_digest_map:
+                        digests_combined_list.append(artifact_digest_map[artifact_name])
             digests_combined_list.append(job_digest_map[job.name])
             final_digest = "-".join(digests_combined_list)
             workflow_config.digest_jobs[job.name] = final_digest
@@ -64,16 +61,19 @@ class CacheRunnerHooks:
 
         # Step 1: Fetch records concurrently
         fetched_records = []
-        with ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(fetch_record, job_name, job_digest, cache): job_name
-                for job_name, job_digest in workflow_config.digest_jobs.items()
-            }
+        if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
+            print("NOTE: CI Cache disabled via GH Variable DISABLE_CI_CACHE=1")
+        else:
+            with ThreadPoolExecutor(max_workers=200) as executor:
+                futures = {
+                    executor.submit(fetch_record, job_name, job_digest, cache): job_name
+                    for job_name, job_digest in workflow_config.digest_jobs.items()
+                }
 
-            for future in futures:
-                result = future.result()
-                if result:  # If a record was found, add it to the fetched list
-                    fetched_records.append(result)
+                for future in futures:
+                    result = future.result()
+                    if result:  # If a record was found, add it to the fetched list
+                        fetched_records.append(result)
 
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:

@@ -278,7 +278,9 @@ class Result(MetaClasses.Serializable):
             files=[],
             links=[
                 Info().get_specific_report_url(
-                    pr_number=cache_record.pr_number, sha=cache_record.sha
+                    pr_number=cache_record.pr_number,
+                    sha=cache_record.sha,
+                    job_name=name,
                 )
             ],
             info=f"from cache",
@@ -482,10 +484,8 @@ class _ResultS3:
         filename = Path(result.file_name()).name
         file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
-        s3_path_versioned = (
-            f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name_versioned}"
-        )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        s3_path_versioned = f"{s3_path}{file_name_versioned}"
         if version == 0:
             S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
