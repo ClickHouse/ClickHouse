@@ -81,7 +81,9 @@ class CacheRunnerHooks:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
             if workflow.is_event_push() and record.branch != env.BRANCH:
                 # TODO: make this behaviour configurable?
-                print(f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH")
+                print(
+                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH"
+                )
                 continue
             workflow_config.cache_success.append(job_name)
             workflow_config.cache_success_base64.append(Utils.to_base64(job_name))

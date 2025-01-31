@@ -142,15 +142,22 @@ class HtmlRunnerHooks:
         page_url = Info().get_report_url(latest=True)
         print(f"CI Status page url [{page_url}]")
 
+        if Settings.USE_CUSTOM_GH_AUTH:
+            from praktika.gh_auth_deprecated import GHAuth
+
+            pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+            app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+            GHAuth.auth(app_key=pem, app_id=app_id)
+
+        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
+            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
+            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
+        )
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
             url=page_url,
-        )
-        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         if not (res1 or res2):
             Utils.raise_with_error(
@@ -262,6 +269,13 @@ class HtmlRunnerHooks:
         )
 
         if updated_status:
+            if Settings.USE_CUSTOM_GH_AUTH:
+                from praktika.gh_auth_deprecated import GHAuth
+
+                pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+                app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+                GHAuth.auth(app_key=pem, app_id=app_id)
+
             print(f"Update GH commit status [{result.name}]: [{updated_status}]")
             GH.post_commit_status(
                 name=_workflow.name,

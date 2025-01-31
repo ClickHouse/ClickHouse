@@ -749,10 +749,10 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     pre_hooks=[
-        #"python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
-        #"python3 ./ci/jobs/scripts/workflow_hooks/trusted.py",
+        # "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
+        # "python3 ./ci/jobs/scripts/workflow_hooks/trusted.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
-        #"python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        # "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
     ],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
