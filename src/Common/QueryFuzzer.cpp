@@ -1298,7 +1298,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
     {
         fuzzOrderByElement(order_by_element);
-        fuzz(order_by_element->children);
     }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
@@ -1473,7 +1472,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * create_query = typeid_cast<ASTCreateQuery *>(ast.get()))
     {
         fuzzCreateQuery(*create_query);
-        fuzz(create_query->children);
     }
     else if (auto * optimize_query = typeid_cast<ASTOptimizeQuery *>(ast.get()))
     {
@@ -1493,7 +1491,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             fuzz(optimize_query->deduplicate_by_columns);
         }
-        fuzz(optimize_query->children);
     }
     else if (auto * explain_query = typeid_cast<ASTExplainQuery *>(ast.get()))
     {
