@@ -7,5 +7,5 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # We need to see exceptions from both queries
 echo "SELECT 1 LIMIT 1 WITH TIES BY 1; SELECT 1 FROM idontexist;" |
     $CLICKHOUSE_CLIENT --send-logs-level fatal --ignore-error 2>&1 |
-    grep -Fao -e 'DB::Exception: Can not use WITH TIES alongside LIMIT BY' -e 'DB::Exception: Unknown table expression identifier' |
+    grep -Fao -e 'Can not use WITH TIES alongside LIMIT BY' -e 'Unknown table expression identifier' |
     wc -l
