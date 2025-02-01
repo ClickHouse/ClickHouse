@@ -28,6 +28,8 @@ public:
     size_t byteSize() const override { return src_col->byteSize(); }
     size_t allocatedBytes() const override { return src_col->allocatedBytes(); }
 
+    const ColumnPtr & getNestedColumn() const { return src_col; }
+
     /// Helper methods for compression / decompression.
 
     /// If data is not worth to be compressed - returns nullptr.

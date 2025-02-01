@@ -1,10 +1,15 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 /** Serialization for sparse representation.
  *  Only '{serialize,deserialize}BinaryBulk' makes sense.
@@ -55,41 +60,34 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextEscaped(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeTextEscaped(IColumn &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextQuoted(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeTextQuoted(IColumn &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextCSV(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeTextCSV(IColumn &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeWholeText(IColumn &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextJSON(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
+    void deserializeTextJSON(IColumn &, ReadBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextXML(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
 private:
-    struct SubcolumnCreator : public ISubcolumnCreator
+    [[noreturn]] static void throwInapplicable()
     {
-        const ColumnPtr offsets;
-        const size_t size;
-
-        SubcolumnCreator(const ColumnPtr & offsets_, size_t size_) : offsets(offsets_), size(size_) { }
-
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
-    };
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage");
+    }
 
     template <typename Reader>
     void deserialize(IColumn & column, Reader && reader) const;

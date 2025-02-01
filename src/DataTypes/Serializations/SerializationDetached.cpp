@@ -1,18 +1,30 @@
 #include <DataTypes/Serializations/SerializationDetached.h>
+#include "Columns/ColumnBlob.h"
 
 namespace DB
 {
+SerializationDetached::SerializationDetached(const SerializationPtr & nested_) : nested(nested_)
+{
+}
+
+void SerializationDetached::enumerateStreams(
+    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
+{
+    nested->enumerateStreams(settings, callback, data);
+}
 
 void SerializationDetached::serializeBinaryBulkStatePrefix(
     const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
-    nested->serializeBinaryBulkStatePrefix(column, settings, state);
+    const IColumn & nested_column = *typeid_cast<const ColumnBlob &>(column).getNestedColumn();
+    nested->serializeBinaryBulkStatePrefix(nested_column, settings, state);
 }
 
 void SerializationDetached::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
-    nested->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+    const IColumn & nested_column = *typeid_cast<const ColumnBlob &>(column).getNestedColumn();
+    nested->serializeBinaryBulkWithMultipleStreams(nested_column, offset, limit, settings, state);
 }
 
 void SerializationDetached::serializeBinaryBulkStateSuffix(
@@ -34,7 +46,8 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+    auto nested_column = typeid_cast<const ColumnBlob &>(*column).getNestedColumn();
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, limit, settings, state, cache);
 }
 
 }

@@ -10,6 +10,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -23,13 +25,21 @@ namespace ErrorCodes
 
 ISerialization::Kind ISerialization::getKind(const IColumn & column)
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "column.getName()={}, typeid(column).name()={}", column.getName(), typeid(column).name());
     if (column.isSparse())
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return Kind::SPARSE;
+    }
 
     // TODO(nickitat): create dedicated method
     if (typeid_cast<const ColumnBlob *>(&column))
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return Kind::DETACHED;
+    }
 
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     return Kind::DEFAULT;
 }
 
