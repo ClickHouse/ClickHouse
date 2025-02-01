@@ -1,5 +1,5 @@
 from praktika import Job, Workflow
-from praktika.utils import MetaClasses, Utils
+from praktika.utils import Utils
 
 from ci.workflows.defs import (
     ARTIFACTS,
@@ -7,65 +7,13 @@ from ci.workflows.defs import (
     DOCKERS,
     SECRETS,
     ArtifactNames,
+    BuildTypes,
+    JobNames,
     RunnerLabels,
 )
 
 S3_BUILDS_BUCKET = "clickhouse-builds"
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"
-
-
-class JobNames:
-    STYLE_CHECK = "Style check"
-    FAST_TEST = "Fast test"
-    BUILD = "Build"
-    STATELESS = "Stateless tests"
-    STATEFUL = "Stateful tests"
-    INTEGRATION = "Integration tests"
-    STRESS = "Stress test"
-    UPGRADE = "Upgrade check"
-    PERFORMANCE = "Performance comparison"
-    COMPATIBILITY = "Compatibility check"
-    Docs = "Docs check"
-    CLICKBENCH = "ClickBench"
-    DOCKER_SERVER = "Docker server image"
-    DOCKER_KEEPER = "Docker keeper image"
-    SQL_TEST = "SQLTest"
-    SQLANCER = "SQLancer"
-    INSTALL_TEST = "Install packages"
-    ASTFUZZER = "AST fuzzer"
-    BUZZHOUSE = "BuzzHouse"
-    BUILDOCKER = "BuildDockers"
-    BUGFIX_VALIDATE = "Bugfix validation"
-    JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
-    JEPSEN_SERVER = "ClickHouse Server Jepsen"
-    LIBFUZZER_TEST = "libFuzzer tests"
-
-
-class BuildTypes(metaclass=MetaClasses.WithIter):
-    AMD_DEBUG = "amd_debug"
-    AMD_RELEASE = "amd_release"
-    AMD_BINARY = "amd_binary"
-    AMD_ASAN = "amd_asan"
-    AMD_TSAN = "amd_tsan"
-    AMD_MSAN = "amd_msan"
-    AMD_UBSAN = "amd_ubsan"
-    ARM_RELEASE = "arm_release"
-    ARM_ASAN = "arm_asan"
-
-    AMD_COVERAGE = "amd_coverage"
-    ARM_BINARY = "arm_binary"
-    AMD_TIDY = "amd_tidy"
-    AMD_DARWIN = "amd_darwin"
-    ARM_DARWIN = "arm_darwin"
-    ARM_V80COMPAT = "arm_v80compat"
-    AMD_FREEBSD = "amd_freebsd"
-    PPC64LE = "ppc64le"
-    AMD_COMPAT = "amd_compat"
-    AMD_MUSL = "amd_musl"
-    RISCV64 = "riscv64"
-    S390X = "s390x"
-    LOONGARCH64 = "loongarch"
-    FUZZERS = "fuzzers"
 
 
 class JobConfigs:
@@ -93,10 +41,8 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
-        command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
-        run_in_docker="clickhouse/binary-builder+--network=host",
-        timeout=3600 * 2,
+        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
+        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./src",
@@ -108,10 +54,11 @@ class JobConfigs:
                 "./programs",
                 "./docker/packager/packager",
                 "./rust",
-                "./tests/ci/version_helper.py",
-                "./ci/jobs/build_clickhouse.py",
+                "./tests/ci/build_check.py",
+                "./tests/performance",
             ],
         ),
+        requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -151,6 +98,7 @@ class JobConfigs:
                 ArtifactNames.CH_ODBC_B_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
+                ArtifactNames.PERFORMANCE_PACKAGE_AMD,
             ],
             [
                 ArtifactNames.CH_AMD_ASAN,
@@ -181,6 +129,7 @@ class JobConfigs:
                 ArtifactNames.CH_ODBC_B_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
+                ArtifactNames.PERFORMANCE_PACKAGE_ARM,
             ],
             [
                 ArtifactNames.CH_ARM_ASAN,
@@ -634,30 +583,26 @@ class JobConfigs:
             ["Build (amd_ubsan)"],
         ],
     )
-    performance_comparison_head_jobs = Job.Config(
+    performance_comparison_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
-        runs_on=["#from param"],
-        command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
-        run_in_docker="clickhouse/stateless-test",
+        runs_on=["..params.."],
+        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
+                "./tests/ci/performance_comparison_check.py",
                 "./tests/performance/",
-                "./ci/jobs/scripts/perf/",
-                "./ci/jobs/performance_tests.py",
             ],
         ),
         allow_merge_on_failure=True,
-        timeout=2 * 3600,
     ).parametrize(
         parameter=[
-            "amd_release,head_master,1/2",
-            "amd_release,head_master,2/2",
+            "release",
+            "aarch64",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(2)],
-        requires=[[ArtifactNames.CH_AMD_RELEASE] for _ in range(2)],
-        provides=[
-            [ArtifactNames.PERF_REPORTS_AMD_1_2],
-            [ArtifactNames.PERF_REPORTS_AMD_2_2],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD, RunnerLabels.FUNC_TESTER_ARM],
+        requires=[
+            ["Build (amd_release)"],
+            ["Build (arm_release)"],
         ],
     )
     clickbench_jobs = Job.Config(
@@ -668,7 +613,6 @@ class JobConfigs:
             include_paths=["./tests/ci/clickbench.py", "./docker"],
         ),
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             "release",
@@ -782,20 +726,20 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
-        *JobConfigs.build_jobs,
-        JobConfigs.docker_sever,
-        JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
-        *JobConfigs.functional_tests_jobs,
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        *JobConfigs.integration_test_jobs,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        *JobConfigs.stress_test_jobs,
-        *JobConfigs.upgrade_test_jobs,
-        *JobConfigs.clickbench_jobs,
-        *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_head_jobs,
+        *JobConfigs.build_jobs[0:1],
+        # JobConfigs.docker_sever,
+        # JobConfigs.docker_keeper,
+        # *JobConfigs.install_check_jobs,
+        # *JobConfigs.functional_tests_jobs,
+        # *JobConfigs.stateless_tests_flaky_pr_jobs,
+        # *JobConfigs.integration_test_jobs,
+        # *JobConfigs.integration_test_asan_flaky_pr_jobs,
+        # *JobConfigs.stress_test_jobs,
+        # *JobConfigs.upgrade_test_jobs,
+        # *JobConfigs.clickbench_jobs,
+        # *JobConfigs.ast_fuzzer_jobs,
+        # *JobConfigs.buzz_fuzzer_jobs,
+        # JobConfigs.performance_comparison_jobs[0],
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
@@ -805,14 +749,15 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     pre_hooks=[
-        "python3 ./ci/jobs/scripts/prechecks/pr_description.py",
-        "python3 ./ci/jobs/scripts/prechecks/trusted.py",
-        "python3 ./ci/jobs/scripts/prechecks/docker_digests.py",
-        "python3 ./ci/jobs/scripts/prechecks/version_log.py",
+        #"python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
+        #"python3 ./ci/jobs/scripts/workflow_hooks/trusted.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
+        #"python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
     ],
     post_hooks=[
+        "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         # TODO: legacy Mergeable check, remove after transition to praktika's Ready For Merge feature
-        "WORKFLOW_RESULT_FILE=$(pwd)/ci/tmp/workflow_status.json cd ./tests/ci & python3 ./merge_pr.py --set-ci-status",
+        "WORKFLOW_RESULT_FILE=$(pwd)/ci/tmp/workflow_status.json python3 ./tests/ci/merge_pr.py --set-ci-status",
     ],
 )
 

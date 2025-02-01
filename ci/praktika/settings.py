@@ -1,7 +1,7 @@
 import dataclasses
 import importlib.util
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional
 
 
 @dataclasses.dataclass
