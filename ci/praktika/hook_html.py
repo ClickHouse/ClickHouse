@@ -72,11 +72,20 @@ class GitCommit:
             json.dump(commits_, f)
 
     @classmethod
+    def get_s3_path(cls):
+        env = _Environment.get()
+        if env.PR_NUMBER:
+            s3suffix = f"PRs/{env.PR_NUMBER}"
+        else:
+            assert env.BRANCH
+            s3suffix = f"REFs/{env.BRANCH}"
+        return f"{Settings.HTML_S3_PATH}/{s3suffix}"
+
+    @classmethod
     def pull_from_s3(cls):
         local_path = Path(cls.file_name())
         file_name = local_path.name
-        env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.PR_NUMBER}/{file_name}"
+        s3_path = f"{cls.get_s3_path()}/{file_name}"
         if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
@@ -88,8 +97,7 @@ class GitCommit:
         cls.dump(commits)
         local_path = Path(cls.file_name())
         file_name = local_path.name
-        env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.PR_NUMBER}/{file_name}"
+        s3_path = f"{cls.get_s3_path()}/{file_name}"
         if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
@@ -108,6 +116,48 @@ class GitCommit:
 
 
 class HtmlRunnerHooks:
+    @classmethod
+    def push_pending_ci_report(cls, _workflow):
+        # generate pending Results for all jobs in the workflow
+        env = _Environment.get()
+        results = []
+        for job in _workflow.jobs:
+            if job.name == Settings.CI_CONFIG_JOB_NAME:
+                # fetch running status with start_time for current job
+                result = Result.from_fs(job.name)
+            else:
+                result = Result.generate_pending(job.name)
+            results.append(result)
+        summary_result = Result.generate_pending(_workflow.name, results=results)
+        summary_result.links.append(env.CHANGE_URL)
+        summary_result.links.append(env.RUN_URL)
+        summary_result.start_time = Utils.timestamp()
+        info = Info()
+        summary_result.set_info(
+            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
+            if info.pr_number
+            else f"{info.git_branch}  |  {info.git_sha}"
+        )
+        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
+        page_url = Info().get_report_url(latest=True)
+        print(f"CI Status page url [{page_url}]")
+
+        res1 = GH.post_commit_status(
+            name=_workflow.name,
+            status=Result.Status.PENDING,
+            description="",
+            url=page_url,
+        )
+        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
+            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
+            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
+        )
+        if not (res1 or res2):
+            Utils.raise_with_error(
+                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
+            )
+        GitCommit.update_s3_data()
+
     @classmethod
     def configure(cls, _workflow):
         # generate pending Results for all jobs in the workflow
@@ -135,26 +185,7 @@ class HtmlRunnerHooks:
             if info.pr_number
             else f"{info.git_branch}  |  {info.git_sha}"
         )
-
-        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = Info().get_report_url(latest=True)
-        print(f"CI Status page url [{page_url}]")
-
-        res1 = GH.post_commit_status(
-            name=_workflow.name,
-            status=Result.Status.PENDING,
-            description="",
-            url=page_url,
-        )
-        res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
-        )
-        if not (res1 or res2):
-            Utils.raise_with_error(
-                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
-            )
-        GitCommit.update_s3_data()
+        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=1)
 
     @classmethod
     def pre_run(cls, _workflow, _job):
@@ -195,21 +226,34 @@ class HtmlRunnerHooks:
                 "Current job failed - find dependee jobs in the workflow and set their statuses to skipped"
             )
             workflow_config_parsed = WorkflowConfigParser(_workflow).parse()
-            for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
-                if _job.name in dependee_job.needs:
-                    if _workflow.get_job(dependee_job.name).run_unless_cancelled:
+
+            dependees = set()
+
+            def add_dependees(job_name):
+                for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
+                    if dependee_job.run_unless_cancelled:
                         continue
-                    print(
-                        f"NOTE: Set job [{dependee_job.name}] status to [{Result.Status.SKIPPED}] due to current failure"
+                    if (
+                        job_name in dependee_job.needs
+                        and dependee_job.name not in dependees
+                    ):
+                        dependees.add(dependee_job.name)
+                        add_dependees(dependee_job.name)
+
+            add_dependees(_job.name)
+
+            for dependee in dependees:
+                print(
+                    f"NOTE: Set job [{dependee}] status to [{Result.Status.SKIPPED}] due to current failure"
+                )
+                new_sub_results.append(
+                    Result(
+                        name=dependee,
+                        status=Result.Status.SKIPPED,
+                        info=ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE
+                        + f" [{_job.name}]",
                     )
-                    new_sub_results.append(
-                        Result(
-                            name=dependee_job.name,
-                            status=Result.Status.SKIPPED,
-                            info=ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE
-                            + f" [{_job.name}]",
-                        )
-                    )
+                )
 
         updated_status = _ResultS3.update_workflow_results(
             new_info=new_result_info,

@@ -289,6 +289,7 @@ function run_tests
         --order random
         --print-time
         --report-logs-stats
+        --no-stateful
         --jobs "${NPROC}"
         --timeout 45 # We don't want slow test being introduced again in this check
     )
