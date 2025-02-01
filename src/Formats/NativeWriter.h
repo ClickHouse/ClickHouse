@@ -30,7 +30,7 @@ public:
     Block getHeader() const { return header; }
 
     /// Returns the number of bytes written.
-    size_t write(const Block & block);
+    size_t write(const Block & block_);
     void flush();
 
     static String getContentType() { return "application/octet-stream"; }

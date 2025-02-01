@@ -1,12 +1,14 @@
-#include <DataTypes/Serializations/ISerialization.h>
-#include <Compression/CompressionFactory.h>
+#include <Columns/ColumnBlob.h>
 #include <Columns/IColumn.h>
-#include <IO/WriteHelpers.h>
+#include <Compression/CompressionFactory.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Common/escapeForFileName.h>
-#include <DataTypes/NestedUtils.h>
+#include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -24,6 +26,10 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
     if (column.isSparse())
         return Kind::SPARSE;
 
+    // TODO(nickitat): create dedicated method
+    if (typeid_cast<const ColumnBlob *>(&column))
+        return Kind::DETACHED;
+
     return Kind::DEFAULT;
 }
 
@@ -35,6 +41,8 @@ String ISerialization::kindToString(Kind kind)
             return "Default";
         case Kind::SPARSE:
             return "Sparse";
+        case Kind::DETACHED:
+            return "Detached";
     }
 }
 
@@ -44,6 +52,8 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
         return Kind::DEFAULT;
     if (str == "Sparse")
         return Kind::SPARSE;
+    if (str == "Detached")
+        return Kind::DETACHED;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 

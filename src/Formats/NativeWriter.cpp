@@ -16,6 +16,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 
+#include <Columns/ColumnBlob.h>
+
 namespace DB
 {
 
@@ -78,9 +80,23 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-
-size_t NativeWriter::write(const Block & block)
+Block prepare(const Block & block)
 {
+    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
+    Block res;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+        column.column = ColumnBlob::create(column.column);
+        res.insert(std::move(column));
+    }
+    return res;
+}
+
+size_t NativeWriter::write(const Block & block_)
+{
+    Block block = prepare(block_);
+
     size_t written_before = ostr.count();
 
     /// Additional information about the block.
