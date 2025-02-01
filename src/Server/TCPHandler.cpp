@@ -810,35 +810,53 @@ void TCPHandler::runImpl()
                 return;
             }
 
-            try
+            /// When it make sense to terminate the connection gracefully, i.e.:
+            /// - send Logs
+            /// - send EndOfStream/Exception
+            /// - skip Data
+            bool terminate_gracefully =
+                /// In case of SOCKET_TIMEOUT during write graceful termination:
+                /// a) will likely fail, and will lead to double timeout
+                /// b) in case of SOCKET_TIMEOUT had been trown during writing Data packet, it may lead to CHECKSUM_DOESNT_MATCH on the receiver
+                exception->code() != ErrorCodes::SOCKET_TIMEOUT &&
+                /// Also it does not make sense to try to send something after NETWORK_ERROR, since likely connection already had been terminated (i.e. reset by peer).
+                exception->code() != ErrorCodes::NETWORK_ERROR;
+
+            bool close_connection = !terminate_gracefully ||
+                exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT ||
+                exception->code() == ErrorCodes::USER_EXPIRED;
+
+            if (terminate_gracefully)
             {
-                std::lock_guard lock(callback_mutex);
+                try
+                {
+                    std::lock_guard lock(callback_mutex);
 
-                /// Try to send logs to client, but it could be risky too
-                /// Assume that we can't break output here
-                sendLogs(query_state.value());
+                    /// Try to send logs to client, but it could be risky too
+                    /// Assume that we can't break output here
+                    sendLogs(query_state.value());
 
-                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                    sendEndOfStream(query_state.value());
-                else
-                    sendException(*exception, send_exception_with_stack_trace);
+                    if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                        sendEndOfStream(query_state.value());
+                    else
+                        sendException(*exception, send_exception_with_stack_trace);
 
-                /// A query packet is always followed by one or more data packets.
-                /// If some of those data packets are left, try to skip them.
-                if (!query_state->read_all_data)
-                    skipData(query_state.value());
+                    /// A query packet is always followed by one or more data packets.
+                    /// If some of those data packets are left, try to skip them.
+                    if (!query_state->read_all_data)
+                        skipData(query_state.value());
 
-                LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
+                    LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
+                }
+                catch (...)
+                {
+                    query_state->cancelOut(out);
+                    tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
+                    return;
+                }
             }
-            catch (...)
-            {
-                query_state->cancelOut(out);
-                tryLogCurrentException(log, "Can't send logs or exception to client. Close connection.");
-                return;
-            }
 
-            if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
-                || exception->code() == ErrorCodes::USER_EXPIRED)
+            if (close_connection)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
