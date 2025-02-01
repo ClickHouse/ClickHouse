@@ -3,6 +3,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : block(block_)
@@ -194,7 +200,7 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 }
 
 template <>
-__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool) 
+__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
 }
