@@ -84,3 +84,7 @@ do
     FROM system.query_log 
     WHERE type = 'QueryFinish' AND query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()"
 done
+
+#
+# rerun tests
+#
