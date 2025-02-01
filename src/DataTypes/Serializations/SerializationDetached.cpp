@@ -16,15 +16,17 @@ void SerializationDetached::enumerateStreams(
 void SerializationDetached::serializeBinaryBulkStatePrefix(
     const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
-    const IColumn & nested_column = *typeid_cast<const ColumnBlob &>(column).getNestedColumn();
-    nested->serializeBinaryBulkStatePrefix(nested_column, settings, state);
+    auto nested_column = typeid_cast<const ColumnBlob &>(column).getNestedColumn();
+    nested_column = nested_column->convertToFullColumnIfConst();
+    nested->serializeBinaryBulkStatePrefix(*nested_column, settings, state);
 }
 
 void SerializationDetached::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
-    const IColumn & nested_column = *typeid_cast<const ColumnBlob &>(column).getNestedColumn();
-    nested->serializeBinaryBulkWithMultipleStreams(nested_column, offset, limit, settings, state);
+    auto nested_column = typeid_cast<const ColumnBlob &>(column).getNestedColumn();
+    nested_column = nested_column->convertToFullColumnIfConst();
+    nested->serializeBinaryBulkWithMultipleStreams(*nested_column, offset, limit, settings, state);
 }
 
 void SerializationDetached::serializeBinaryBulkStateSuffix(

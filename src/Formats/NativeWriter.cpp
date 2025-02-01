@@ -76,14 +76,13 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     settings.write_json_as_string = format_settings && format_settings->native.write_json_as_string;
     settings.use_v1_object_and_dynamic_serialization = client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION;
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "typeid(serialization).name()={}", typeid(serialization).name());
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
     serialization.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-Block prepare(const Block & block)
+static Block prepare(const Block & block)
 {
     /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
     Block res;

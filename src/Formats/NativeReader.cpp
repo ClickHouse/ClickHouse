@@ -7,8 +7,9 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/typeid_cast.h>
 #include <base/range.h>
+#include <Common/typeid_cast.h>
+#include "Columns/ColumnBlob.h"
 
 #include <Formats/NativeReader.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -105,6 +106,19 @@ Block NativeReader::getHeader() const
     return header;
 }
 
+static Block prepare(const Block & block)
+{
+    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
+    Block res;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+        if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
+            column.column = col->getNestedColumn();
+        res.insert(std::move(column));
+    }
+    return res;
+}
 
 Block NativeReader::read()
 {
@@ -302,7 +316,7 @@ Block NativeReader::read()
     if (res.rows() != rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
-    return res;
+    return prepare(res);
 }
 
 void NativeReader::updateAvgValueSizeHints(const Block & block)
