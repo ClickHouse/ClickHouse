@@ -284,18 +284,11 @@ SerializationPtr IDataType::getDetachedSerialization() const
 SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return getSparseSerialization();
-    }
 
     if (kind == ISerialization::Kind::DETACHED)
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return getDetachedSerialization();
-    }
 
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     return getDefaultSerialization();
 }
 

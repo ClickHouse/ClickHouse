@@ -46,8 +46,8 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto nested_column = typeid_cast<const ColumnBlob &>(*column).getNestedColumn();
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+    column = ColumnBlob::create(column);
 }
 
 }
