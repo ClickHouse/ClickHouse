@@ -493,7 +493,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 max_remote_delay = std::max(try_result.delay, max_remote_delay);
         }
 
-        const time_t local_delay = replicated_storage->getAbsoluteDelay();
+        const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
         const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
 
         bool use_delayed_remote_source = false;
