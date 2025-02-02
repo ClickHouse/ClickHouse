@@ -26,15 +26,15 @@ extern const int ILLEGAL_COLUMN;
 
 DECLARE_MULTITARGET_CODE(
 
-    struct Quantize16BitImpl { static void execute(const Float32 * input, UInt8 * output, size_t size); };
+    struct Quantize8BitImpl { static void execute(const Float32 * input, UInt8 * output, size_t size); };
 
 )
 
-template <typename Quantize16BitImpl>
-class FunctionQuantize16BitImpl : public IFunction
+template <typename Quantize8BitImpl>
+class FunctionQuantize8BitImpl : public IFunction
 {
 public:
-    static constexpr auto name = "quantize16Bit";
+    static constexpr auto name = "quantize8Bit";
 
     String getName() const override { return name; }
 
@@ -104,7 +104,7 @@ public:
             size_t offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Quantize16BitImpl::execute(
+                Quantize8BitImpl::execute(
                     col_float32->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
                 offset += array_size;
             }
@@ -116,15 +116,15 @@ public:
     }
 };
 
-class FunctionQuantize16Bit : public FunctionQuantize16BitImpl<TargetSpecific::Default::Quantize16BitImpl>
+class FunctionQuantize8Bit : public FunctionQuantize8BitImpl<TargetSpecific::Default::Quantize8BitImpl>
 {
 public:
-    explicit FunctionQuantize16Bit(ContextPtr context) : selector(context)
+    explicit FunctionQuantize8Bit(ContextPtr context) : selector(context)
     {
-        selector.registerImplementation<TargetArch::Default, FunctionQuantize16BitImpl<TargetSpecific::Default::Quantize16BitImpl>>();
+        selector.registerImplementation<TargetArch::Default, FunctionQuantize8BitImpl<TargetSpecific::Default::Quantize8BitImpl>>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX512F, FunctionQuantize16BitImpl<TargetSpecific::AVX512F::Quantize16BitImpl>>();
+        selector.registerImplementation<TargetArch::AVX2, FunctionQuantize8BitImpl<TargetSpecific::AVX2::Quantize8BitImpl>>();
 #endif
     }
 
@@ -133,7 +133,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionQuantize16Bit>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionQuantize8Bit>(context); }
 
 private:
     ImplementationSelector<IFunction> selector;

@@ -1,14 +1,14 @@
 #include "FunctionQuantizedL2Distance.h"
+#include "Functions/FunctionDequantize16Bit.h"
+#include "Functions/FunctionDequantize8Bit.h"
 
 namespace DB
 {
 
-FunctionPtr FunctionQuantizedL2Distance::dequantize_function;
-FunctionPtr FunctionQuantizedL2Distance::l2_distance_function;
-
-REGISTER_FUNCTION(QuantizedL2Distance)
+REGISTER_FUNCTION(Quantized8BitL2Distance)
 {
-    factory.registerFunction<FunctionQuantizedL2Distance>();
+    static constexpr char name[] = "quantized8BitL2Distance";
+    factory.registerFunction<FunctionQuantizedL2Distance<TargetSpecific::Default::Dequantize8BitImpl, name>>();
 }
 
 }

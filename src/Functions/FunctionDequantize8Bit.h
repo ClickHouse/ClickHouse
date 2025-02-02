@@ -12,7 +12,6 @@
 #include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
 #include "Functions/FunctionHelpers.h"
-#include "base/types.h"
 
 namespace DB
 {
@@ -26,15 +25,18 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 DECLARE_MULTITARGET_CODE(
 
-    struct Dequantize16BitImpl { static void execute(const UInt8 * input, float * output, size_t size); };
+    struct Dequantize8BitImpl {
+        static void execute(const UInt8 * input, float * output, size_t size);
+        static float dequantize(UInt8 x);
+    };
 
 )
 
-template <typename Dequantize16BitImpl>
-class FunctionDequantize16BitImpl : public IFunction
+template <typename Dequantize8BitImpl>
+class FunctionDequantize8BitImpl : public IFunction
 {
 public:
-    static constexpr auto name = "dequantize16Bit";
+    static constexpr auto name = "dequantize8Bit";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -51,8 +53,8 @@ public:
                 arguments.size());
 
         const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(arguments[0].get());
-        if (!fixed_string_type || fixed_string_type->getN() % 2 != 0)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a FixedString with even length", getName());
+        if (!fixed_string_type)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a FixedString", getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
@@ -60,48 +62,70 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnFixedString * col_fixed_string = nullptr;
+        bool is_const = false;
+
         if (const auto * col_const = checkAndGetColumnConst<ColumnFixedString>(arguments[0].column.get()))
+        {
             col_fixed_string = checkAndGetColumn<ColumnFixedString>(col_const->getDataColumnPtr().get());
+            is_const = true;
+        }
         else
+        {
             col_fixed_string = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get());
+        }
 
         if (!col_fixed_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a FixedString", getName());
 
         size_t fixed_string_length = col_fixed_string->getN();
-        size_t array_size = fixed_string_length / 2;
+        size_t array_size = fixed_string_length;
 
-        auto result_column = ColumnArray::create(ColumnFloat32::create());
-        auto & result_data = typeid_cast<ColumnFloat32 &>(result_column->getData()).getData();
-        auto & result_offsets = result_column->getOffsets();
-
-        result_data.resize(input_rows_count * array_size);
-        result_offsets.resize(input_rows_count);
-
-        const auto & fixed_string_data = col_fixed_string->getChars();
-        size_t offset_in_src = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (is_const)
         {
-            Dequantize16BitImpl::execute(fixed_string_data.data() + offset_in_src, result_data.data() + i * array_size, array_size);
-            offset_in_src += fixed_string_length;
-            result_offsets[i] = (i + 1) * array_size;
+            auto result_data_column = ColumnFloat32::create();
+            auto & result_data = result_data_column->getData();
+            result_data.resize(array_size);
+
+            const auto & fixed_string_data = col_fixed_string->getChars();
+            Dequantize8BitImpl::execute(fixed_string_data.data(), result_data.data(), array_size);
+
+            auto offsets_column = ColumnUInt64::create();
+            offsets_column->insert(array_size);
+            ColumnPtr array_column = ColumnArray::create(std::move(result_data_column), std::move(offsets_column));
+
+            return ColumnConst::create(array_column, input_rows_count);
         }
+        else
+        {
+            auto result_column = ColumnArray::create(ColumnFloat32::create());
+            auto & result_data = typeid_cast<ColumnFloat32 &>(result_column->getData()).getData();
+            auto & result_offsets = result_column->getOffsets();
 
-        if (isColumnConst(*arguments[0].column))
-            return ColumnConst::create(std::move(result_column), input_rows_count);
+            result_data.resize(input_rows_count * array_size);
+            result_offsets.resize(input_rows_count);
 
-        return result_column;
+            const auto & fixed_string_data = col_fixed_string->getChars();
+            size_t offset_in_src = 0;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                Dequantize8BitImpl::execute(fixed_string_data.data() + offset_in_src, result_data.data() + i * array_size, array_size);
+                offset_in_src += fixed_string_length;
+                result_offsets[i] = (i + 1) * array_size;
+            }
+
+            return result_column;
+        }
     }
 };
 
-class FunctionDequantize16Bit : public FunctionDequantize16BitImpl<TargetSpecific::Default::Dequantize16BitImpl>
+class FunctionDequantize8Bit : public FunctionDequantize8BitImpl<TargetSpecific::Default::Dequantize8BitImpl>
 {
 public:
-    explicit FunctionDequantize16Bit(ContextPtr context) : selector(context)
+    explicit FunctionDequantize8Bit(ContextPtr context) : selector(context)
     {
-        selector.registerImplementation<TargetArch::Default, FunctionDequantize16BitImpl<TargetSpecific::Default::Dequantize16BitImpl>>();
+        selector.registerImplementation<TargetArch::Default, FunctionDequantize8BitImpl<TargetSpecific::Default::Dequantize8BitImpl>>();
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX512F, FunctionDequantize16BitImpl<TargetSpecific::AVX512F::Dequantize16BitImpl>>();
+        selector.registerImplementation<TargetArch::AVX2, FunctionDequantize8BitImpl<TargetSpecific::AVX2::Dequantize8BitImpl>>();
 #endif
     }
 
@@ -110,7 +134,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDequantize16Bit>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDequantize8Bit>(context); }
 
 private:
     ImplementationSelector<IFunction> selector;
