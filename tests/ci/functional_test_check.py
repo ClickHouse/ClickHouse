@@ -79,7 +79,7 @@ def get_additional_envs(
 
 
 def get_image_name(check_name: str) -> str:
-    if "stateless" in check_name.lower():
+    if "stateless" in check_name.lower() or "validation" in check_name.lower():
         return "clickhouse/stateless-test"
     if "stateful" in check_name.lower():
         return "clickhouse/stateful-test"
