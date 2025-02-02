@@ -327,6 +327,19 @@ protected:
         typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
+        const size_t limit_size = 2;
+        if (data.size() >= limit_size + 1) { // TODO do == and assert <=
+            auto min_key = key_holder;
+            for (const auto& data_it : data) {
+                if (data_it.first < min_key) {
+                    min_key = data_it.first;
+                }
+            }
+            data.erase(min_key);
+            if (min_key == key_holder) {
+                return EmplaceResult(false);
+            }
+        }
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
