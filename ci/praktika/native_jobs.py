@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 import traceback
 from pathlib import Path
@@ -417,14 +416,21 @@ def _finish_workflow(workflow, job_name):
         else:
             ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
 
-    if not GH.post_commit_status(
-        name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",
-        status=ready_for_merge_status,
-        description=ready_for_merge_description,
-        url="",
-    ):
-        print(f"ERROR: failed to set status [{Settings.READY_FOR_MERGE_STATUS_NAME}]")
-        env.add_info(ResultInfo.GH_STATUS_ERROR)
+    if workflow.enable_merge_ready_status:
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        from praktika.gh_auth_deprecated import GHAuth
+
+        GHAuth.auth(app_key=pem, app_id=app_id)
+        if not GH.post_commit_status(
+            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+            or f"Ready For Merge [{workflow.name}]",
+            status=ready_for_merge_status,
+            description=ready_for_merge_description,
+            url="",
+        ):
+            print(f"ERROR: failed to set ReadyForMerge status")
+            env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)

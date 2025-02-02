@@ -13,6 +13,7 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.build_jobs,
+        *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,

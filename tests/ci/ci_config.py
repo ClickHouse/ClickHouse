@@ -201,7 +201,7 @@ class CI:
                 compiler="clang-19-aarch64-v80compat",
                 package_type="binary",
                 static_binary_name="aarch64v80compat",
-                comment="For ARMv8.1 and older",
+                comment="ARMv8.1_and_older",
             ),
         ),
         BuildNames.BINARY_FREEBSD: CommonJobConfigs.BUILD.with_properties(

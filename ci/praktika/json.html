@@ -475,6 +475,150 @@
         }
     }
 
+    function addTimeTraceWidget(results) {
+        console.log(results);
+        const statusContainer = document.getElementById("status-container");
+        if (!results || results.length === 0) {
+            console.error("No results to visualize.");
+            return;
+        }
+
+        // Constants
+        const lineWidth = 5; // Height per task
+        const padding = 1; // Space between lines
+        const totalHeight = (lineWidth + padding) * results.length;
+
+        // Create and configure canvas
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const tooltip = document.createElement("div");
+
+        canvas.style.position = "absolute";
+        canvas.style.left = "0px"; // Force canvas to start from the very left
+        canvas.style.width = "100%"; // Make it stretch within container
+        canvas.style.height = `${totalHeight}px`;
+
+        function resizeCanvas() {
+            canvas.width = statusContainer.clientWidth; // Full width of container
+            canvas.height = totalHeight;
+            drawTimeline(); // Redraw after resizing
+        }
+
+        statusContainer.appendChild(canvas);
+        resizeCanvas();
+
+        // Tooltip styles
+        tooltip.style.position = "absolute";
+        tooltip.style.background = "black";
+        tooltip.style.color = "white";
+        tooltip.style.padding = "5px 10px";
+        tooltip.style.borderRadius = "4px";
+        tooltip.style.fontSize = "12px";
+        tooltip.style.display = "none";
+        tooltip.style.pointerEvents = "none";
+        statusContainer.appendChild(tooltip);
+
+        window.addEventListener("resize", resizeCanvas);
+
+        function getColorFromName(name) {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash); // Simple hash function
+            }
+            const hue = Math.abs(hash % 360); // Map hash to 0-360 for color hue
+            return `hsl(${hue}, 70%, 60%)`; // Use HSL for vibrant, distinct colors
+        }
+
+        function drawTimeline() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Store task positions for hover detection
+            let taskRects = [];
+
+            // Filter only valid results
+            const validResults = results.filter(d => d.start_time !== null && d.duration !== null);
+            if (validResults.length === 0) return;
+
+            // Get min start time
+            const minStartTime = Math.min(...validResults.map(d => d.start_time));
+            const currentUtcTimestamp = Date.now() / 1000;
+            const maxTaskTime = Math.max(...validResults.map(d => d.start_time + d.duration));
+            const maxTime = runtimeCache.json0?.duration ?? (Math.max(maxTaskTime, currentUtcTimestamp) - minStartTime);
+            const scaleX = canvas.width / maxTime;
+
+            results.forEach((task, index) => {
+                const y = index * (lineWidth + padding);
+                const height = lineWidth;
+
+                let x, width, color;
+                if (task.start_time === null) {
+                    x = 0;
+                    width = canvas.width;
+                    color = "#ccc";
+                } else if (task.duration === null) {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = (maxTime - (task.start_time - minStartTime)) * scaleX;
+                    color = getColorFromName(task.name);
+                } else {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = task.duration * scaleX;
+                    color = getColorFromName(task.name);
+                }
+
+                // Draw the bar
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, width, height);
+
+                // Store task row position (entire row for hover detection)
+                taskRects.push({ x, y, width, height, name: task.name });
+            });
+
+            console.log(taskRects);
+
+            // Mouse move event for hover detection
+            canvas.addEventListener("mousemove", (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const tooltipRect = tooltip.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+
+                let hoveredTask = null;
+                for (let task of taskRects) {
+                    if (mouseY >= task.y && mouseY <= task.y + task.height) {
+                        hoveredTask = task;
+                        break;
+                    }
+                }
+
+                if (hoveredTask) {
+                    let tooltipX = event.clientX + 10; // Default tooltip position (right of mouse)
+                    // Prevent tooltip from going outside the right edge
+                    if (tooltipX + tooltipRect.width > rect.right) {
+                        tooltipX = rect.right - tooltipRect.width; // Stop moving right
+                    }
+                    tooltip.textContent = hoveredTask.name;
+                    tooltip.style.left = `${tooltipX}px`;
+                    tooltip.style.top = `${event.clientY + 10}px`;
+                    tooltip.style.display = "block";
+                } else {
+                    tooltip.style.display = "none";
+                }
+            });
+
+            // Hide tooltip on mouse out
+            canvas.addEventListener("mouseleave", () => {
+                tooltip.style.display = "none";
+            });
+        }
+
+        drawTimeline();
+
+        // Redraw traces every 5 seconds
+        setInterval(() => {
+            drawTimeline();
+        }, 5000);
+    }
+
     function addStatusToStatus(status, start_time, duration) {
         const statusContainer = document.getElementById('status-container')
 
@@ -869,6 +1013,8 @@
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
+        } else {
+            addTimeTraceWidget(result.results)
         }
         const infoElement = document.getElementById('info-container');
         infoElement.innerHTML = (result.info || '').replace(/\n/g, '<br>');

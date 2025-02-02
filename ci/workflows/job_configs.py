@@ -324,6 +324,43 @@ class JobConfigs:
             ["Build (arm_release)"],
         ],
     )
+    unittest_jobs = Job.Config(
+        name=JobNames.UNITTEST,
+        runs_on=["..params.."],
+        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./tests/ci/unit_tests_check.py", "./docker"],
+        ),
+    ).parametrize(
+        parameter=[
+            "amd_binary",
+            "arm_asan",
+            "arm_tsan",
+            "arm_msan",
+            "arm_ubsan",
+        ],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+        ],
+        provides=[
+            [ArtifactNames.UNITTEST_AMD_BINARY],
+            [ArtifactNames.UNITTEST_AMD_ASAN],
+            [ArtifactNames.UNITTEST_AMD_TSAN],
+            [ArtifactNames.UNITTEST_AMD_MSAN],
+            [ArtifactNames.UNITTEST_AMD_UBSAN],
+        ],
+        requires=[
+            ["Build (amd_binary)"],
+            ["Build (amd_asan)"],
+            ["Build (amd_tsan)"],
+            ["Build (amd_msan)"],
+            ["Build (amd_ubsan)"],
+        ],
+    )
     stress_test_jobs = Job.Config(
         name=JobNames.STRESS,
         runs_on=["..."],
@@ -583,12 +620,19 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "release",
-            "aarch64",
+            "release,1/3",
+            "release,2/3",
+            "release,3/3",
+            # "aarch64",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD, RunnerLabels.FUNC_TESTER_ARM],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,
+        ],
         requires=[
             ["Build (amd_release)"],
+            ["Build (arm_release)"],
             ["Build (arm_release)"],
         ],
     )

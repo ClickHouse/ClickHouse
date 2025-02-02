@@ -293,7 +293,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
-    LOONGARCH64 = "loongarch"
+    LOONGARCH64 = "loongarch64"
     FUZZERS = "fuzzers"
 
 
@@ -301,6 +301,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
+    UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
@@ -399,6 +400,19 @@ class ArtifactNames:
 
 
 ARTIFACTS = [
+    *Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/unit_tests_dbms",
+    ).parametrize(
+        names=[
+            ArtifactNames.UNITTEST_AMD_ASAN,
+            ArtifactNames.UNITTEST_AMD_TSAN,
+            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_AMD_UBSAN,
+            ArtifactNames.UNITTEST_AMD_BINARY,
+        ]
+    ),
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
@@ -534,11 +548,6 @@ ARTIFACTS = [
             ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
         ]
     ),
-    # Artifact.Config(
-    #     name=ArtifactNames.PERF_REPORTS_ARM,
-    #     type=Artifact.Type.S3,
-    #     path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
-    # ),
 ]
 
 
@@ -630,27 +639,29 @@ class Jobs:
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.CH_ODBC_B_AMD_ASAN,
-                # ArtifactNames.UNITTEST_AMD_ASAN,
+                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.CH_ODBC_B_AMD_TSAN,
-                # ArtifactNames.UNITTEST_AMD_TSAN,
+                ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.CH_ODBC_B_AMD_MSAN,
-                # ArtifactNames.UNITTEST_AMD_MSAN,
+                ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.CH_ODBC_B_AMD_UBSAN,
+                ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
+                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
