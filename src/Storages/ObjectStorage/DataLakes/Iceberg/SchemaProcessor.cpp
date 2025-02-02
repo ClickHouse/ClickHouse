@@ -1,4 +1,6 @@
 #include <optional>
+#include <memory>
+#include <stdexcept>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 #include <Poco/JSON/Array.h>
@@ -9,6 +11,9 @@
 #include <Common/Exception.h>
 #include "base/scope_guard.h"
 #include <Common/logger_useful.h>
+#include "Columns/ColumnTuple.h"
+#include "Core/Field.h"
+#include "Functions/IFunction.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
 #include "base/types.h"
 
@@ -28,6 +33,7 @@
 
 #include <IO/ReadHelpers.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 
 namespace DB
 {
@@ -295,24 +301,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
         old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, "type", required))};
-        /*if (!field->get("type").isString() && field->getObject("type")->getValue<String>("type") == "struct")
-        {
-            auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-            for (size_t j = 0; j < subfields->size(); ++j)
-            {
-                auto subfield = subfields->getObject(static_cast<UInt32>(j));
-                size_t subid = subfield->getValue<size_t>("id");
-                auto subname = subfield->getValue<String>("name");
-                bool subrequired = subfield->getValue<bool>("required");
-                old_schema_entries[subid] = {subfield, &dag->addInput(subname, getFieldType(subfield, "type", subrequired))};
-            }
-        }*/
     }
     auto new_schema_fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
-    std::ostringstream oss_nsf;
-    Poco::JSON::Stringifier::stringify(new_schema_fields, oss_nsf);
-
-    std::cerr << "start " << oss_nsf.str() << '\n';
     for (size_t i = 0; i != new_schema_fields->size(); ++i)
     {
         auto field = new_schema_fields->getObject(static_cast<UInt32>(i));
@@ -321,55 +311,70 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         bool required = field->getValue<bool>("required");
         auto type = getFieldType(field, "type", required);
         auto old_node_it = old_schema_entries.find(id);
-        std::cerr << "rename bp1 " << name << '\n';
         if (old_node_it != old_schema_entries.end())
         {
-            std::cerr << "rename bp2 " << name << '\n';
-            auto [old_json, old_node] = old_node_it->second;
+            auto [old_json,  old_node] = old_node_it->second;
             if (field->isObject("type"))
-            {
-                std::ostringstream oss;
-                Poco::JSON::Stringifier::stringify(field, oss);
-                std::cerr << "rename bp3 " << name << ' ' << oss.str() << '\n';
-                const ActionsDAG::Node * node = old_node;
-                if (old_json->getValue<String>("name") != name)
-                {
-                    node = &dag->addAlias(*old_node, name);
-                }
+            {   
+                std::stack<std::pair<Poco::JSON::Array::Ptr, Poco::JSON::Array::Ptr>> walk_stack;
+
                 auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-
-                std::ostringstream oss2;
-                Poco::JSON::Stringifier::stringify(subfields, oss2);
-                std::cerr << "result new arr " << oss2.str() << '\n';
-
                 auto old_subfields = old_json->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-                std::ostringstream oss3;
-                Poco::JSON::Stringifier::stringify(old_subfields, oss3);
-                std::cerr << "result old arr " << oss3.str() << '\n';
+                auto old_type = getFieldType(old_json, "type", required);
 
-                for (size_t j = 0; j < subfields->size(); ++j)
+                walk_stack.push({old_subfields, subfields});
+                std::vector<std::string> current_path;
+
+                while (!walk_stack.empty())
                 {
-                    std::cerr << "iter " << j << '\n';
-                    auto subfield = subfields->getObject(static_cast<UInt32>(j));
-                    auto old_subfield = old_subfields->getObject(static_cast<UInt32>(j));
-                    if (subfield->getValue<String>("name") != old_subfield->getValue<String>("name"))
+                    auto [current_old_subfields, current_subfields] = walk_stack.top();
+                    walk_stack.pop();
+
+                    std::vector<std::string> initial_field_names;
+                    std::vector<std::string> result_field_names;
+
+                    for (size_t j = 0; j < subfields->size(); ++j)
                     {
-                        std::cerr << "rename subfield from " << subfield->getValue<String>("name") << " to " << old_subfield->getValue<String>("name") << '\n';
-                        /*if (old_schema_entries.contains(old_subfield->getValue<size_t>("id")))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "not found elem");
-                        const ActionsDAG::Node * sub_node = old_schema_entries.at(old_subfield->getValue<size_t>("id")).second;
-                        sub_node = &dag->addAlias(*sub_node, subfield->getValue<String>("name"));
-                        outputs.push_back(sub_node);*/
-                        //node = &dag->addAlias(*node, name + "." + subfield->getValue<String>("name"));
-                        node = &dag->addCast(*node, getFieldType(field, "type", required), name);
+                        auto subfield = subfields->getObject(static_cast<UInt32>(j));
+                        auto old_subfield = old_subfields->getObject(static_cast<UInt32>(j));
+                        initial_field_names.push_back(old_subfield->getValue<String>("name"));
+                        result_field_names.push_back(subfield->getValue<String>("name"));
+                    }
+
+                    for (size_t j = 0; j < subfields->size(); ++j)
+                    {
+                        auto subfield = subfields->getObject(static_cast<UInt32>(j));
+                        auto old_subfield = old_subfields->getObject(static_cast<UInt32>(j));
+
+                        if (subfield->getValue<String>("name") != old_subfield->getValue<String>("name"))
+                        {
+                            auto operation = IcebergIdentityOperation();
+                            auto transform = std::make_shared<IdentityFunctionStruct>(operation, std::vector{type}, std::vector{old_type});
+                            old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
+                        }
+
+                        if (subfield->isObject("type"))
+                        {
+                            auto child_subfields = subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
+                            auto child_old_subfields = old_subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
+                            walk_stack.push({child_old_subfields, child_subfields});
+                        }
+                        else
+                        {
+                            String old_subfield_type = old_subfield->getValue<String>("type");
+                            String new_subfield_type = subfield->getValue<String>("type");
+
+                            if (old_subfield_type != new_subfield_type && allowPrimitiveTypeConversion(old_subfield_type, new_subfield_type))
+                            {
+                                old_node = &dag->addCast(*old_node, getFieldType(field, "type", required), name);
+                            }
+                        }
                     }
                 }
-
-                outputs.push_back(node);
+                outputs.push_back(old_node);
             }
             else
             {
-                std::cerr << "rename bp4 " << name << '\n';
                 if (old_json->isObject("type"))
                 {
                     throw Exception(
@@ -399,7 +404,6 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            std::cerr << "rename bp5 " << name << '\n';
             if (!type->isNullable() && !field->isObject("type"))
             {
                 throw Exception(
