@@ -173,9 +173,8 @@ because `CollapsingMergeTree` does not save the history of the collapsed states.
 :::note
 If you need to extract data without aggregation 
 (for example, to check whether rows whose newest values match certain conditions are present), 
-you can use the `FINAL` modifier for the `FROM` clause. 
-
-This approach is significantly less efficient.
+you can use the [`FINAL`](../../../sql-reference/statements/select/from.md#final-modifier) modifier for the `FROM` clause. It will merge the data before returning the result.
+For CollapsingMergeTree, only the latest state row for each key is returned.
 :::
 
 ## Examples
@@ -312,7 +311,7 @@ ORDER BY UserID
 ```
 
 Let’s test the approach by inserting data into our table. 
-Recall that use of the [`FINAL`](/docs/en/sql-reference/statements/select/from#final-modifier) keyword is not recommended production cases.
+
 For examples or small tables, it is, however, acceptable:
 
 ``` sql
