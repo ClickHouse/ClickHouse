@@ -21,7 +21,6 @@ ENV PATH=$PATH:/usr/bin
 # Despite using libc6-compat we are still missing some files
 # See https://github.com/ClickHouse/ClickHouse/issues/26350
 RUN git clone https://github.com/ClickHouse/libc-blobs.git -b master --depth=1
-RUN mv /lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1.bak
 RUN cp -r libc-blobs/aarch64/lib/* /lib/
 
 # At this point we want to really update /opt/clickhouse-docs directory
