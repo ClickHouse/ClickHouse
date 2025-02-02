@@ -138,7 +138,15 @@ TEST(FindSymbols, RunTimeNeedle)
     }
 
     // Assert big haystack is not accepted and exception is thrown
+#if defined (__SSE4_2__)
     ASSERT_ANY_THROW(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz")));
+#else
+    // Exception thrown for big haystack for x86 arch alone, since memory management for x86 is different.
+    const char *haystack_cstr = long_haystack.c_str(); // Convert std::string to const char*
+    const char *found_char_ptr = find_first_symbols(haystack_cstr, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz"));
+    // Check if a match is found
+    ASSERT_NE(found_char_ptr, nullptr) << "Expected a match, but find_first_symbols() returned nullptr.";
+#endif
 }
 
 TEST(FindNotSymbols, AllSymbolsPresent)

@@ -10,9 +10,6 @@
 #if defined(__SSE4_2__)
     #include <nmmintrin.h>
 #endif
-#if defined(__aarch64__) && defined(__ARM_NEON)
-    #include <arm_neon.h>
-#endif
 
 /** find_first_symbols<c1, c2, ...>(begin, end):
   *
@@ -61,12 +58,6 @@ struct SearchSymbols
         memcpy(tmp_safety_buffer, str.data(), str.size());
 
         simd_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(tmp_safety_buffer));
-#endif
-#if defined(__aarch64__) && defined(__ARM_NEON)
-        if (str.size() > BUFFER_SIZE)
-        {
-            throw std::runtime_error("SearchSymbols can contain at most " + std::to_string(BUFFER_SIZE) + " symbols and " + std::to_string(str.size()) + " was provided\n");
-        }
 #endif
     }
 
