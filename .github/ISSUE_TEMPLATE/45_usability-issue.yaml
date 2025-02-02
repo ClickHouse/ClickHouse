@@ -28,7 +28,6 @@ body:
         * `CREATE TABLE` statements for all tables involved
         * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/master/programs/obfuscator/Obfuscator.cpp#L42-L80) if necessary
         * Queries to run that lead to unexpected result
-      render: markdown
     validations:
       required: true
   - type: textarea

@@ -2,27 +2,38 @@
 title : ProtobufList
 slug : /en/interfaces/formats/ProtobufList
 keywords : [ProtobufList]
+input_format: true
+output_format: true
+alias: []
 ---
+
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge/>
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
+The `ProtobufList` format is similar to the [`Protobuf`](./Protobuf.md) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
 
 ## Example Usage
 
-Usage example:
+For example:
 
-``` sql
+```sql
 SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
 ```
 
-``` bash
+```bash
 cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
 ```
 
-where the file `schemafile.proto` looks like this:
+Where the file `schemafile.proto` looks like this:
 
-``` capnp
+```capnp title="schemafile.proto"
 syntax = "proto3";
 message Envelope {
   message MessageType {

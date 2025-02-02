@@ -2,7 +2,14 @@
 title : ArrowStream
 slug : /en/interfaces/formats/ArrowStream
 keywords : [ArrowStream]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 

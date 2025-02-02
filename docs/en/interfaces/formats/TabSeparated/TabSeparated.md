@@ -1,8 +1,15 @@
 ---
 title : TabSeparated
 slug : /en/interfaces/formats/TabSeparated
-keywords : [TabSeparated]
+keywords : [TabSeparated, TSV]
+input_format: true
+output_format: true
+alias: ['TSV']
 ---
+
+| Input | Output | Alias  |
+|-------|--------|--------|
+| ✔     | ✔      | `TSV`  |
 
 ## Description
 
@@ -16,9 +23,7 @@ The `TabSeparated` format supports outputting total values (when using WITH TOTA
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
-```
 
-``` response
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -85,16 +90,14 @@ CREATE TABLE nestedt
 )
 ENGINE = TinyLog
 ```
-
-``` sql
+```sql
 INSERT INTO nestedt Values ( 1, [1], ['a'])
 ```
-
-``` sql
+```sql
 SELECT * FROM nestedt FORMAT TSV
 ```
 
-``` response
+```response
 1  [1]    ['a']
 ```
 
@@ -102,14 +105,16 @@ SELECT * FROM nestedt FORMAT TSV
 
 ## Format Settings
 
-- [format_tsv_null_representation](/docs/en/operations/settings/settings-formats.md/#format_tsv_null_representation) - custom NULL representation in TSV format. Default value - `\N`.
-- [input_format_tsv_empty_as_default](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_empty_as_default) - treat empty fields in TSV input as default values. Default value - `false`. For complex default expressions [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too.
-- [input_format_tsv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number) - treat inserted enum values in TSV formats as enum indices. Default value - `false`.
-- [input_format_tsv_use_best_effort_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_use_best_effort_in_schema_inference) - use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings. Default value - `true`.
-- [output_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#output_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`. Default value - `false`.
-- [input_format_tsv_crlf_end_of_line](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_crlf_end_of_line) - if it is set true, end of line in TSV input format will be `\r\n` instead of `\n`. Default value - `false`.
-- [input_format_tsv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
-- [input_format_tsv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_detect_header) - automatically detect header with names and types in TSV format. Default value - `true`.
-- [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
-- [input_format_tsv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_allow_variable_number_of_columns) - allow variable number of columns in TSV format, ignore extra columns and use default values on missing columns. Default value - `false`.
+| Setting                                                                                                                                                          | Description                                                                                                                                                                                                                                    | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_tsv_null_representation`](/docs/en/operations/settings/settings-formats.md/#format_tsv_null_representation)                                             | Custom NULL representation in TSV format.                                                                                                                                                                                                      | `\N`    |
+| [`input_format_tsv_empty_as_default`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_empty_as_default)                                       | treat empty fields in TSV input as default values. For complex default expressions [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too. | `false` |
+| [`input_format_tsv_enum_as_number`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number)                                           | treat inserted enum values in TSV formats as enum indices.                                                                                                                                                                                     | `false` |
+| [`input_format_tsv_use_best_effort_in_schema_inference`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_use_best_effort_in_schema_inference) | use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings.                                                                                                                             | `true`  |
+| [`output_format_tsv_crlf_end_of_line`](/docs/en/operations/settings/settings-formats.md/#output_format_tsv_crlf_end_of_line)                                     | if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`.                                                                                                                                                            | `false` |
+| [`input_format_tsv_crlf_end_of_line`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_crlf_end_of_line)                                       | if it is set true, end of line in TSV input format will be `\r\n` instead of `\n`.                                                                                                                                                             | `false` |
+| [`input_format_tsv_skip_first_lines`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines)                                       | skip specified number of lines at the beginning of data.                                                                                                                                                                                       | `0`     |
+| [`input_format_tsv_detect_header`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_detect_header)                                             | automatically detect header with names and types in TSV format.                                                                                                                                                                                | `true`  |
+| [`input_format_tsv_skip_trailing_empty_lines`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines)                     | skip trailing empty lines at the end of data.                                                                                                                                                                                                  | `false` |
+| [`input_format_tsv_allow_variable_number_of_columns`](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_allow_variable_number_of_columns)       | allow variable number of columns in TSV format, ignore extra columns and use default values on missing columns.                                                                                                                                | `false` |
 

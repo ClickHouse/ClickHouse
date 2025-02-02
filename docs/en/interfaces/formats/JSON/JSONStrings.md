@@ -2,11 +2,18 @@
 title : JSONStrings
 slug : /en/interfaces/formats/JSONStrings
 keywords : [JSONStrings]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-Differs from JSON only in that data fields are output in strings, not in typed JSON values.
+Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values.
 
 ## Example Usage
 
