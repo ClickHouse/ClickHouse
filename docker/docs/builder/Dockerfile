@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
 # nodejs 17 prefers ipv6 and is broken in our environment
 FROM node:20-alpine
 
-RUN apk add --no-cache git openssh bash curl
+RUN apk add --no-cache git openssh bash curl libc6-compat
 
 # At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
