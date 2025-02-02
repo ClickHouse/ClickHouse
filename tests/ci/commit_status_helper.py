@@ -462,7 +462,6 @@ def set_mergeable_check(
 def trigger_mergeable_check(
     commit: Commit,
     statuses: CommitStatuses,
-    set_from_sync: bool = False,
     workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update CI.StatusNames.MERGEABLE"""
@@ -502,12 +501,7 @@ def trigger_mergeable_check(
 
     description = format_description(description)
 
-    if set_from_sync:
-        # update Mergeable Check from sync WF only if its status already present or its new status is FAILURE
-        #   to avoid false-positives
-        if mergeable_status or state == FAILURE:
-            set_mergeable_check(commit, description, state)
-    elif mergeable_status is None or mergeable_status.description != description:
+    if mergeable_status is None or mergeable_status.description != description:
         set_mergeable_check(commit, description, state)
 
     return state
@@ -536,11 +530,6 @@ def update_upstream_sync_status(
         "",
         description,
         CI.StatusNames.SYNC,
-    )
-    trigger_mergeable_check(
-        last_synced_upstream_commit,
-        get_commit_filtered_statuses(last_synced_upstream_commit),
-        set_from_sync=True,
     )
 
 
