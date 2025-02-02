@@ -71,7 +71,7 @@ class JobConfigs:
             BuildTypes.RISCV64,
             BuildTypes.S390X,
             BuildTypes.LOONGARCH64,
-            BuildTypes.FUZZERS,
+            # BuildTypes.FUZZERS,
         ],
         provides=[
             [
@@ -91,24 +91,29 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.CH_ODBC_B_AMD_ASAN,
+                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.CH_ODBC_B_AMD_TSAN,
+                ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.CH_ODBC_B_AMD_MSAN,
+                ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.CH_ODBC_B_AMD_UBSAN,
+                ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
+                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
@@ -137,7 +142,7 @@ class JobConfigs:
             [ArtifactNames.CH_RISCV64],
             [ArtifactNames.CH_S390X],
             [ArtifactNames.CH_LOONGARCH64],
-            [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+            # [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -163,7 +168,7 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.LOONGARCH64
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.FUZZERS
+            # RunnerLabels.BUILDER_ARM,  # BuildTypes.FUZZERS
         ],
     )
     install_check_jobs = Job.Config(
@@ -345,13 +350,6 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
-        ],
-        provides=[
-            [ArtifactNames.UNITTEST_AMD_BINARY],
-            [ArtifactNames.UNITTEST_AMD_ASAN],
-            [ArtifactNames.UNITTEST_AMD_TSAN],
-            [ArtifactNames.UNITTEST_AMD_MSAN],
-            [ArtifactNames.UNITTEST_AMD_UBSAN],
         ],
         requires=[
             ["Build (amd_binary)"],
@@ -632,8 +630,8 @@ class JobConfigs:
         ],
         requires=[
             ["Build (amd_release)"],
-            ["Build (arm_release)"],
-            ["Build (arm_release)"],
+            ["Build (amd_release)"],
+            ["Build (amd_release)"],
         ],
     )
     clickbench_jobs = Job.Config(

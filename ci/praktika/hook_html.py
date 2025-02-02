@@ -170,7 +170,21 @@ class HtmlRunnerHooks:
 
     @classmethod
     def configure(cls, _workflow):
-        pass
+        # generate pending Results for all jobs in the workflow
+        if _workflow.enable_cache:
+            skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
+            job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
+            results = []
+            for job in _workflow.jobs:
+                if job.name in skip_jobs:
+                    result = Result.generate_skipped(
+                        job.name, job_cache_records[job.name]
+                    )
+                    results.append(result)
+            if results:
+                assert _ResultS3.update_workflow_results(
+                    _workflow.name, new_sub_results=results
+                )
 
     @classmethod
     def pre_run(cls, _workflow, _job):
