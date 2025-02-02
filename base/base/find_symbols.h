@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include <string_view>
 
 #if defined(__SSE2__)
     #include <emmintrin.h>
@@ -178,6 +179,32 @@ inline const char * find_first_symbols_sse2(const char * const begin, const char
 
     for (; pos < end; ++pos)
         if (maybe_negate<positive>(is_in<symbols...>(*pos)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
+
+template <bool positive, ReturnMode return_mode>
+inline const char * find_last_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    const char * pos = end;
+
+#if defined(__SSE2__)
+    const auto needles = mm_is_in_prepare(symbols, num_chars);
+    for (; pos - 16 >= begin; pos -= 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos - 16));
+
+        __m128i eq = mm_is_in_execute(bytes, needles);
+
+        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
+        if (bit_mask)
+            return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
+    }
+#endif
+    --pos;
+    for (; pos >= begin; --pos)
+        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
             return pos;
 
     return return_mode == ReturnMode::End ? end : nullptr;
@@ -387,6 +414,12 @@ inline const char * find_first_not_symbols(std::string_view haystack, const Sear
     return detail::find_first_symbols_dispatch<false, detail::ReturnMode::End>(haystack, symbols);
 }
 
+
+inline const char * find_first_not_symbols(const char * begin, const char * end, const SearchSymbols & symbols)
+{
+    return detail::find_first_symbols_dispatch<false, detail::ReturnMode::End>(std::string_view(begin, end - begin), symbols);
+}
+
 template <char... symbols>
 inline const char * find_first_symbols_or_null(const char * begin, const char * end)
 {
@@ -443,6 +476,11 @@ template <char... symbols>
 inline char * find_last_not_symbols_or_null(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_last_symbols_sse2<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
+}
+
+inline const char * find_last_not_symbols_or_null(const char * begin, const char * end, const SearchSymbols & symbols)
+{
+    return detail::find_last_symbols_sse2<false, detail::ReturnMode::Nullptr>(begin, end, symbols.str.data(), symbols.str.size());
 }
 
 template <char... symbols>
