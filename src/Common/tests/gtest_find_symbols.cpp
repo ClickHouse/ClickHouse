@@ -137,15 +137,15 @@ TEST(FindSymbols, RunTimeNeedle)
         test_haystack(short_haystack, unfindable_short_needle);
     }
 
-    // Assert big haystack is not accepted and exception is thrown
+    const std::string excessively_long_needle = "ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz";
 #if defined (__SSE4_2__)
-    ASSERT_ANY_THROW(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz")));
+    // Only x86 & SSE4.2: Assert big haystack is not accepted and exception is thrown
+    ASSERT_ANY_THROW(find_first_symbols(long_haystack, SearchSymbols(excessively_long_needle.c_str())));
 #else
-    // Exception thrown for big haystack for x86 arch alone, since memory management for x86 is different.
-    const char *haystack_cstr = long_haystack.c_str(); // Convert std::string to const char*
-    const char *found_char_ptr = find_first_symbols(haystack_cstr, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz"));
-    // Check if a match is found
-    ASSERT_NE(found_char_ptr, nullptr) << "Expected a match, but find_first_symbols() returned nullptr.";
+    // On other platforms, this should work fine:
+    const char * long_haystack_cstr = long_haystack.c_str();
+    const char * res = find_first_symbols(long_haystack_cstr, SearchSymbols(excessively_long_needle.c_str()));
+    ASSERT_NE(res, nullptr);
 #endif
 }
 
