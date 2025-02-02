@@ -37,7 +37,7 @@ class CacheRunnerHooks:
                 artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
-            if job.requires:
+            if job.requires and job.digest_config:
                 # include digest of required artifact to the job digest, so that they affect job state
                 for artifact_name in job.requires:
                     if artifact_name in artifact_digest_map:
@@ -59,6 +59,7 @@ class CacheRunnerHooks:
                 return job_name, record
             return None
 
+        # implement algorithm to skip dependee jobs if dependency is not in the cache
         # Step 1: Fetch records concurrently
         fetched_records = []
         if os.environ.get("DISABLE_CI_CACHE", "0") == "1":

@@ -318,7 +318,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res = True
         except Exception as e:
             res = False
-            info = f"Exception while cache lookup [{e}]"
+            traceback.print_exc()
+            info = traceback.format_exc()
         results.append(
             Result(
                 name="Cache Lookup",

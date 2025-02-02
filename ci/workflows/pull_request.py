@@ -29,7 +29,7 @@ workflow = Workflow.Config(
         *JobConfigs.performance_comparison_jobs,
     ],
     artifacts=ARTIFACTS,
-    dockers=DOCKERS,
+    # dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,

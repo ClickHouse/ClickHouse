@@ -52,6 +52,7 @@ class Result(MetaClasses.Serializable):
     files: List[str] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     def create_from(

@@ -333,11 +333,11 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            "amd_binary",
-            "arm_asan",
-            "arm_tsan",
-            "arm_msan",
-            "arm_ubsan",
+            "binary",
+            "asan",
+            "tsan",
+            "msan",
+            "ubsan",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -620,9 +620,9 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "release,1/3",
-            "release,2/3",
-            "release,3/3",
+            "release, 1/3",
+            "release, 2/3",
+            "release, 3/3",
             # "aarch64",
         ],
         runs_on=[
