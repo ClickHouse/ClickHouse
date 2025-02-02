@@ -11,6 +11,7 @@
     #include <nmmintrin.h>
 #endif
 
+
 /** find_first_symbols<c1, c2, ...>(begin, end):
   *
   * Allow to search for next character from the set of 'symbols...' in a string.
