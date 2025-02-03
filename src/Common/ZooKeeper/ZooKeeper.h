@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.h"
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <future>
 #include <memory>

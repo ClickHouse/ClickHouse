@@ -1,15 +1,12 @@
 #pragma once
 
+#include <memory>
+
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
-#include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
-
-#include <memory>
-
-#include "config.h"
 
 
 namespace Poco
@@ -22,6 +19,14 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
+}
+
+namespace zkutil
+{
+    class ZooKeeper;
+
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+    using GetZooKeeper = std::function<ZooKeeperPtr()>;
 }
 
 namespace DB

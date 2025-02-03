@@ -19,7 +19,7 @@ if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAK
     return()
 endif()
 
-set (LLVM_VERSION "18.0.0bundled")
+set (LLVM_VERSION "19.0.0bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"

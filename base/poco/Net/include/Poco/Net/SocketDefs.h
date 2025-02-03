@@ -53,6 +53,14 @@ extern "C" {
 #        include <sys/sockio.h>
 #        include <sys/filio.h>
 #    endif
+/// Macros collision between LLVM
+/// https://github.com/ClickHouse/llvm-project/blob/782c1a9153d491b5244fe3417807701a899b3089/llvm/include/llvm/IR/ConstantRange.h#L131-L141
+/// and sysroot
+/// https://github.com/ClickHouse/sysroot/blob/738138e665809a5b28c453983c5f48f23a340ed6/linux-powerpc64le/powerpc64le-linux-gnu/libc/usr/include/powerpc64le-linux-gnu/bits/termios.h#L107-L108
+#    if (defined(__PPC64__) || defined(__powerpc64__))
+#        undef CR1
+#        undef CR2
+#    endif
 #    define POCO_INVALID_SOCKET -1
 #    define poco_socket_t int
 #    define poco_socklen_t socklen_t
