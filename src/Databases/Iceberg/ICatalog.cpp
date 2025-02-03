@@ -100,7 +100,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
     if (!endpoint_.ends_with(bucket))
         location /= bucket;
     location /= path;
-    return location;
+    return std::filesystem::path(location) / "";
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)
