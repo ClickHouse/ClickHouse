@@ -48,6 +48,8 @@ private:
     DB::NamesAndTypesList schema;
 
     std::string bucket;
+    /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
+    /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
 
     /// Storage credentials, which are called "vended credentials".
