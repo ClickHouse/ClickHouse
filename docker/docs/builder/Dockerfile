@@ -6,22 +6,13 @@ ARG HTMLTEST_VERSION=0.17.0
 RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
     && mv "${GOPATH}/bin/htmltest" /usr/bin/htmltest
 
-# we need clickhouse for running of the settings autogeneration script
-FROM clickhouse/clickhouse-server AS clickhouse-provider
+FROM node:20-bookworm-slim
 
-# nodejs 17 prefers ipv6 and is broken in our environment
-FROM node:20-alpine
+RUN apt-get update && \
+    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/*:
 
-RUN apk add --no-cache git openssh bash curl libc6-compat
-
-# Copy ClickHouse binary from the clickhouse-provider stage
-COPY --from=clickhouse-provider /usr/bin/clickhouse /usr/bin/clickhouse
-ENV PATH=$PATH:/usr/bin
-
-# Despite using libc6-compat we are still missing some files
-# See https://github.com/ClickHouse/ClickHouse/issues/26350
-RUN git clone https://github.com/ClickHouse/libc-blobs.git -b master --depth=1
-RUN cp -r libc-blobs/aarch64/lib/* /lib/
+RUN curl https://clickhouse.com/ | sh
 
 # At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
