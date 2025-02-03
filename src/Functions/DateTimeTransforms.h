@@ -670,7 +670,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     {
         return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
     }
-    static Int32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
+    static UInt32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
         return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
     }
@@ -691,7 +691,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
     }
-    static Int32 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(Int32 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
     {
         return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
     }
@@ -714,7 +714,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
     {
         return time_zone.toStartOfMonthInterval(DayNum(d), months);
     }
-    static Int32 execute(Int32 d, Int64 months, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(Int32 d, Int64 months, const DateLUTImpl & time_zone, Int64)
     {
         return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
     }
@@ -747,7 +747,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
     }
-    static Int32 execute(Int32 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(Int32 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
     {
         return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
     }
@@ -770,7 +770,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         return time_zone.toStartOfYearInterval(DayNum(d), years);
     }
-    static Int32 execute(Int32 d, Int64 years, const DateLUTImpl & time_zone, Int64)
+    static UInt16 execute(Int32 d, Int64 years, const DateLUTImpl & time_zone, Int64)
     {
         return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
     }
