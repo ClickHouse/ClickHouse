@@ -43,7 +43,10 @@ void NATSHandler::runLoop()
 
         loop_state = Loop::RUN;
     }
-    SCOPE_EXIT(nats_ReleaseThreadMemory());
+    SCOPE_EXIT({
+        nats_ReleaseThreadMemory();
+        resetThreadLocalLoop();
+    });
 
     LOG_DEBUG(log, "Background loop started");
 
@@ -63,7 +66,6 @@ void NATSHandler::runLoop()
             task();
         }
 
-        //std::this_thread::sleep_for(std::chrono::milliseconds(50));
         num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
     }
 
@@ -179,6 +181,11 @@ bool NATSHandler::isRunning()
 {
     std::scoped_lock lock(loop_state_mutex, tasks_mutex);
     return loop_state == Loop::RUN || !tasks.empty();
+}
+
+void NATSHandler::resetThreadLocalLoop()
+{
+    uv_key_set(&uvLoopThreadKey, nullptr);
 }
 
 }
