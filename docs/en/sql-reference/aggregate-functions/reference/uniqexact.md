@@ -21,7 +21,7 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 **Example**
 
-In this example we'll use the `uniqExact` function to count the number of unique type codes in the [opensky data set](https://sql.clickhouse.com?query=U0VMRUNUIHVuaXFFeGFjdCh0eXBlY29kZSkgRlJPTSBvcGVuc2t5Lm9wZW5za3k&).
+In this example we'll use the `uniqExact` function to count the number of unique type codes (a short identifier for the type of aircraft) in the [opensky data set](https://sql.clickhouse.com?query=U0VMRUNUIHVuaXFFeGFjdCh0eXBlY29kZSkgRlJPTSBvcGVuc2t5Lm9wZW5za3k&).
 
 ```sql title="Query"
 SELECT uniqExact(typecode) FROM opensky.opensky
