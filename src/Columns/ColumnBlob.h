@@ -6,9 +6,11 @@
 #include <Core/Field.h>
 #include <Formats/NativeWriter.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Common/WeakHash.h>
-#include "base/types.h"
+#include "Compression/CompressedReadBuffer.h"
+#include "Formats/NativeReader.h"
 
 
 namespace DB
@@ -35,6 +37,7 @@ public:
         , client_revision(client_revision_)
         , format_settings(std::move(format_settings_))
     {
+        preprocess();
     }
 
     const char * getFamilyName() const override { return "Blob"; }
@@ -127,6 +130,17 @@ private:
     UInt64 client_revision;
     std::optional<FormatSettings> format_settings;
 
+    // void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
+    // {
+    //     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
+    // }
+    //
+    // void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
+    // {
+    //     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
+    // }
+
+    /// Creates serialized and compressed blob from the source column.
     void preprocess()
     {
         WriteBufferFromVector<Blob> wbuf(blob);
@@ -134,6 +148,19 @@ private:
         auto serialization = NativeWriter::getSerialization(client_revision, src_col);
         NativeWriter::writeData(
             *serialization, src_col.column, compressed_buffer, format_settings, 0, src_col.column->size(), client_revision);
+        compressed_buffer.finalize();
+    }
+
+    /// Decompresses and deserializes blob into the source column.
+    void postprocess()
+    {
+        ReadBufferFromMemory rbuf(blob.data(), blob.size());
+        CompressedReadBuffer decompressed_buffer(rbuf);
+        auto serialization = NativeWriter::getSerialization(client_revision, src_col);
+        // TODO(nickitat): support
+        size_t rows = 0;
+        double avg_value_size_hint = 0;
+        NativeReader::readData(*serialization, src_col.column, decompressed_buffer, format_settings, rows, avg_value_size_hint);
     }
 
     [[noreturn]] static void throwInapplicable()
