@@ -754,6 +754,12 @@ The server successfully detected this situation and will download merged part fr
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \
     M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data", ValueType::Microseconds) \
     M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries", ValueType::Microseconds) \
+    M(BackupPreparingFileInfosMicroseconds, "Time spent preparing file infos for backup entries", ValueType::Microseconds) \
+    M(BackupReadLocalFilesToCalculateChecksums, "Number of files read locally to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupReadLocalBytesToCalculateChecksums, "Total size of files read locally to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupReadRemoteFilesToCalculateChecksums, "Number of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupReadRemoteBytesToCalculateChecksums, "Total size of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupLockFileReads, "How many times the '.lock' file was read while making backup", ValueType::Number) \
     M(RestorePartsSkippedFiles, "Number of files skipped while restoring parts", ValueType::Number) \
     M(RestorePartsSkippedBytes, "Total size of files skipped while restoring parts", ValueType::Number) \
     \

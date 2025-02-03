@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt64 bg_reconnect_mysql_dict_interval;
+    extern const ServerSettingsUInt64 dictionary_background_reconnect_interval;
 }
 
 class ReplicasReconnector : private boost::noncopyable
@@ -83,7 +83,7 @@ private:
 
     void run()
     {
-        auto interval_milliseconds = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::bg_reconnect_mysql_dict_interval];
+        auto interval_milliseconds = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::dictionary_background_reconnect_interval];
         std::unique_lock lock(mutex);
 
         for (auto it = reconnectors.cbegin(); !emergency_stop && it != reconnectors.end();)
@@ -109,7 +109,7 @@ private:
         }
 
         if (!reconnectors.empty())
-            task_handle->scheduleAfter(Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::bg_reconnect_mysql_dict_interval]);
+            task_handle->scheduleAfter(Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::dictionary_background_reconnect_interval]);
     }
 };
 
