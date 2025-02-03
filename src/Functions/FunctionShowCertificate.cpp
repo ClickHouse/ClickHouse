@@ -39,7 +39,7 @@ class FunctionShowCertificate : public IFunction
 public:
     static constexpr auto name = "showCertificate";
 
-    static FunctionPtr create(ContextPtr ctx)
+    static FunctionPtr create(ContextPtr ctx [[maybe_unused]])
     {
 #if !defined(USE_SSL) || USE_SSL == 0
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
