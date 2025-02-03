@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>

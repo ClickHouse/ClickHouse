@@ -1,3 +1,4 @@
+#include <exception>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
@@ -44,6 +45,8 @@ MergeTreeSink::~MergeTreeSink()
     if (!delayed_chunk)
         return;
 
+    chassert(isCancelled() || std::uncaught_exceptions());
+
     for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part.cancel();
@@ -76,6 +79,7 @@ void MergeTreeSink::onStart()
 void MergeTreeSink::onFinish()
 {
     chassert(!isCancelled());
+
     finishDelayedChunk();
 }
 
@@ -220,7 +224,7 @@ void MergeTreeSink::finishDelayedChunk()
 
             if (settings[Setting::insert_deduplicate] && deduplication_log)
             {
-                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                const String block_id = part->getNewPartBlockID(partition.block_dedup_token);
                 auto res = deduplication_log->addPart(block_id, part->info);
                 if (!res.second)
                 {
@@ -247,14 +251,7 @@ void MergeTreeSink::finishDelayedChunk()
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
-            if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache);
-                }
-            }
+            partition.temp_part.prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));

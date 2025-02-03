@@ -278,6 +278,26 @@ struct ConverterDateTime64WithMultiplier
     }
 };
 
+/// Multiply DateTime by 1000 to get milliseconds (because Parquet doesn't support seconds).
+struct ConverterDateTime
+{
+    using Statistics = StatisticsNumeric<Int64, Int64>;
+
+    using Col = ColumnVector<UInt32>;
+    const Col & column;
+    PODArray<Int64> buf;
+
+    explicit ConverterDateTime(const ColumnPtr & c) : column(assert_cast<const Col &>(*c)) {}
+
+    const Int64 * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+            buf[i] = static_cast<Int64>(column.getData()[offset + i]) * 1000;
+        return buf.data();
+    }
+};
+
 struct ConverterString
 {
     using Statistics = StatisticsStringRef;
@@ -360,8 +380,9 @@ struct ConverterNumberAsFixedString
     size_t fixedStringSize() { return sizeof(T); }
 };
 
-/// Like ConverterNumberAsFixedString, but converts to big-endian. Because that's the byte order
-/// Parquet uses for decimal types and literally nothing else, for some reason.
+/// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
+/// for INT32 and INT64, but big-endian for decimals represented as FIXED_LEN_BYTE_ARRAY, presumably
+/// to make them comparable lexicographically.)
 template <typename T>
 struct ConverterDecimal
 {
@@ -390,7 +411,7 @@ struct ConverterDecimal
 };
 
 /// Returns either `source` or `scratch`.
-PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, CompressionMethod method)
+PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, CompressionMethod method, int level)
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
@@ -447,7 +468,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             auto compressed_buf = wrapWriteBufferWithCompressionMethod(
                 std::move(dest_buf),
                 method,
-                /*level*/ 3,
+                level,
                 /*zstd_window_log*/ 0,
                 source.size(),
                 /*existing_memory*/ source.data());
@@ -576,7 +597,7 @@ void writeColumnImpl(
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
 
         size_t uncompressed_size = encoded.size();
-        auto & compressed = compress(encoded, compressed_maybe, s.compression);
+        auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
 
         if (compressed.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed page is too big: {}", compressed.size());
@@ -654,7 +675,7 @@ void writeColumnImpl(
         encoded.resize(static_cast<size_t>(dict_size));
         dict_encoder->WriteDict(reinterpret_cast<uint8_t *>(encoded.data()));
 
-        auto & compressed = compress(encoded, compressed_maybe, s.compression);
+        auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
 
         if (compressed.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed dictionary page is too big: {}", compressed.size());
@@ -819,20 +840,24 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                     ConverterNumeric<ColumnVector<UInt8>, bool, bool>(s.primitive_column));
             else
                 N(UInt8, Int32Type);
-         break;
+            break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
-        case TypeIndex::UInt32 : N(UInt32, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
         case TypeIndex::Int8   : N(Int8,   Int32Type); break;
         case TypeIndex::Int16  : N(Int16,  Int32Type); break;
         case TypeIndex::Int32  : N(Int32,  Int32Type); break;
         case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 
-        case TypeIndex::Enum8:      N(Int8,   Int32Type); break;
-        case TypeIndex::Enum16:     N(Int16,  Int32Type); break;
-        case TypeIndex::Date:       N(UInt16, Int32Type); break;
-        case TypeIndex::Date32:     N(Int32,  Int32Type); break;
-        case TypeIndex::DateTime:   N(UInt32, Int32Type); break;
+        case TypeIndex::UInt32:
+            if (s.datetime_multiplier == 1)
+                N(UInt32, Int32Type);
+            else
+            {
+                /// It's actually a DateTime that needs to be converted to milliseconds.
+                chassert(s.datetime_multiplier == 1000);
+                writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterDateTime(s.primitive_column));
+            }
+            break;
 
         #undef N
 
@@ -849,14 +874,14 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
             break;
 
         case TypeIndex::DateTime64:
-            if (s.datetime64_multiplier == 1)
+            if (s.datetime_multiplier == 1)
                 writeColumnImpl<parquet::Int64Type>(
                     s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
                         s.primitive_column));
             else
                 writeColumnImpl<parquet::Int64Type>(
                     s, options, out, ConverterDateTime64WithMultiplier(
-                        s.primitive_column, s.datetime64_multiplier));
+                        s.primitive_column, s.datetime_multiplier));
             break;
 
         case TypeIndex::IPv4:

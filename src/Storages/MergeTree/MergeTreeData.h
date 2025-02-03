@@ -31,6 +31,8 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MarkCache.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -423,8 +425,6 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
-
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isMergeTree() const override { return true; }
@@ -484,6 +484,7 @@ public:
         virtual NameSet getAllUpdatedColumns() const = 0;
 
         bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
+        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
         virtual ~IMutationsSnapshot() = default;
     };
@@ -506,9 +507,15 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
-    /// Prewarm mark cache for the most recent data parts.
-    void prewarmMarkCache(ThreadPool & pool);
-    void prewarmMarkCacheIfNeeded(ThreadPool & pool);
+    /// Returns a pointer to primary index cache if it is enabled.
+    PrimaryIndexCachePtr getPrimaryIndexCache() const;
+    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
+    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const;
+    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
+    MarkCachePtr getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const;
+
+    /// Prewarm mark cache and primary index cache for the most recent data parts.
+    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
 
     String getLogName() const { return log.loadName(); }
 
@@ -729,11 +736,19 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
 
-    /// Delete irrelevant parts from memory and disk.
-    /// If 'force' - don't wait for old_parts_lifetime.
-    size_t clearOldPartsFromFilesystem(bool force = false);
-    /// Try to clear parts from filesystem. Throw exception in case of errors.
-    void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
+    /// Try to clear parts from filesystem.
+    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
+
+    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
+    /// Throw exception in case of errors.
+    /// Otherwise, in non-parallel case will break and return.
+    void clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed);
+
+    /// Try to clear parts from filesystem.
+    /// In case of error at some point for the rest of the parts its part's state is rollback Deleting - > Outdated.
+    /// That allows to schedule them for deletion a bit later
+    size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
@@ -1152,12 +1167,13 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
-    /// Unloads primary keys of all parts.
+    /// Load/unload primary keys of all data parts
+    void loadPrimaryKeys() const;
     void unloadPrimaryKeys();
 
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
-    size_t unloadPrimaryKeysOfOutdatedParts();
+    size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1326,7 +1342,7 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-    /// The same for unloadPrimaryKeysOfOutdatedParts.
+    /// The same for unloadPrimaryKeysAndClearCachesOfOutdatedParts.
     std::mutex unload_primary_key_mutex;
 
     void checkProperties(
@@ -1334,6 +1350,7 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
+        bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
@@ -1525,7 +1542,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1714,7 +1731,8 @@ private:
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 
-    bool allow_nullable_key{};
+    bool allow_nullable_key = false;
+    bool allow_reverse_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
@@ -1761,11 +1779,6 @@ private:
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
     virtual bool waitZeroCopyLockToDisappear(const ZeroCopyLock &, size_t) { return false; }
-
-    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
-    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 

@@ -58,21 +58,21 @@ CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 {
     /// The compression methods are ordered from most to least preferred.
 
-    if (std::string::npos != list.find("zstd"))
+    if (list.contains("zstd"))
         return CompressionMethod::Zstd;
-    if (std::string::npos != list.find("br"))
+    if (list.contains("br"))
         return CompressionMethod::Brotli;
-    if (std::string::npos != list.find("lz4"))
+    if (list.contains("lz4"))
         return CompressionMethod::Lz4;
-    if (std::string::npos != list.find("snappy"))
+    if (list.contains("snappy"))
         return CompressionMethod::Snappy;
-    if (std::string::npos != list.find("gzip"))
+    if (list.contains("gzip"))
         return CompressionMethod::Gzip;
-    if (std::string::npos != list.find("deflate"))
+    if (list.contains("deflate"))
         return CompressionMethod::Zlib;
-    if (std::string::npos != list.find("xz"))
+    if (list.contains("xz"))
         return CompressionMethod::Xz;
-    if (std::string::npos != list.find("bz2"))
+    if (list.contains("bz2"))
         return CompressionMethod::Bzip2;
     return CompressionMethod::None;
 }

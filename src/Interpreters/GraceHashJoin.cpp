@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 
 #include <numeric>
+#include <shared_mutex>
 #include <fmt/format.h>
 
 
@@ -25,8 +26,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsUInt64 grace_hash_join_max_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 namespace ErrorCodes
@@ -429,6 +430,9 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
+    if (rightTableCanBeReranged())
+        tryRerangeRightTableData();
+
     if (block.rows() == 0)
     {
         hash_join->joinBlock(block, not_processed);
@@ -524,6 +528,7 @@ public:
     Block nextImpl() override
     {
         ExtraBlockPtr not_processed = nullptr;
+        std::shared_lock shared(eof_mutex);
 
         {
             std::lock_guard lock(extra_block_mutex);
@@ -557,7 +562,24 @@ public:
             block = left_reader.read();
             if (!block)
             {
-                return {};
+                shared.unlock();
+                bool there_are_still_might_be_rows_to_process = false;
+                {
+                    /// The following race condition could happen without this mutex:
+                    /// * we're called from `IBlocksStream::next()`
+                    /// * another thread just read the last block from `left_reader` and now is in the process of or about to call `joinBlock()`
+                    /// * it might be that `joinBlock()` will leave some rows in the `not_processed`
+                    /// * but if the current thread will return now an empty block `finished` will be set to true in `IBlocksStream::next()` and
+                    ///   these not processed rows will be lost
+                    /// So we shouldn't finish execution while there is at least one in-flight `joinBlock()` call. Let's wait until we're alone
+                    /// and double check if there are any not processed rows left.
+                    std::unique_lock exclusive(eof_mutex);
+
+                    std::lock_guard lock(extra_block_mutex);
+                    if (!not_processed_blocks.empty())
+                        there_are_still_might_be_rows_to_process = true;
+                }
+                return there_are_still_might_be_rows_to_process ? nextImpl() : Block();
             }
 
             // block comes from left_reader, need to join with right table to get the result.
@@ -592,7 +614,7 @@ public:
         return block;
     }
 
-    size_t current_bucket;
+    const size_t current_bucket;
     Buckets buckets;
     InMemoryJoinPtr hash_join;
 
@@ -603,6 +625,8 @@ public:
 
     std::mutex extra_block_mutex;
     std::list<ExtraBlockPtr> not_processed_blocks TSA_GUARDED_BY(extra_block_mutex);
+
+    std::shared_mutex eof_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -637,6 +661,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             num_rows += block.rows();
             addBlockToJoinImpl(std::move(block));
         }
+        hash_join->onBuildPhaseFinish();
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
@@ -692,11 +717,12 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
             if (!current_block.rows())
                 return;
         }
-
         auto prev_keys_num = hash_join->getTotalRowCount();
-        hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
 
-        if (!hasMemoryOverflow(hash_join))
+        hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+        size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+        size_t hash_join_total_bytes = hash_join->getTotalByteCount();
+        if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
             return;
 
         current_block = {};
@@ -735,10 +761,30 @@ size_t GraceHashJoin::getNumBuckets() const
     return buckets.size();
 }
 
+bool GraceHashJoin::rightTableCanBeReranged() const
+{
+    if (hash_join && getNumBuckets() <= 1)
+        return hash_join->rightTableCanBeReranged();
+    return false;
+}
+
+void GraceHashJoin::tryRerangeRightTableData()
+{
+    std::lock_guard lock(hash_join_mutex);
+    if (hash_join)
+        hash_join->tryRerangeRightTableData();
+}
+
 GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const
 {
     std::shared_lock lock(rehash_mutex);
     return buckets;
 }
 
+void GraceHashJoin::onBuildPhaseFinish()
+{
+    // It cannot be called concurrently with other IJoin methods
+    if (hash_join)
+        hash_join->onBuildPhaseFinish();
+}
 }

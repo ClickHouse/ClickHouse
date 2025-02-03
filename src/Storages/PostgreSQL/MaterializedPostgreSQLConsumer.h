@@ -132,7 +132,8 @@ private:
     /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
-        UInt32 upper_half, lower_half;
+        UInt32 upper_half;
+        UInt32 lower_half;
         std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }

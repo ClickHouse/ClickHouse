@@ -24,14 +24,15 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
             --header-background-color: #f4f4f4;
         }
 
         body.night-theme {
             --background-color: #1F1F1C;
-            --text-color: #fff;
-            --tile-background: black;
+            --text-color: #dedede;
+            --tile-background: #1F1F1C;
             --header-background-color: #1F1F1C;
         }
 
@@ -54,6 +55,8 @@
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
+            overflow-y: auto;
+            margin-bottom: 40px;
         }
 
         #status-container a {
@@ -63,9 +66,16 @@
             cursor: pointer;
             display: inline-block;
             margin-top: 5px;
-            margin-left: 20px;
+            margin-left: 10px;
             padding: 2px 0;
-            font-size: 0.8em;
+            font-size: 0.7em;
+            font-family: 'Roboto Condensed', sans-serif;
+            font-stretch: ultra-condensed;
+
+            max-width: 270px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         #status-container a:hover {
@@ -88,7 +98,12 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
         }
-
+        .json-value-small {
+            font-weight: normal;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
+            font-size: 0.75rem;
+        }
         .dropdown-value {
             width: 100px;
             font-weight: normal;
@@ -110,6 +125,8 @@
             font-weight: normal;
             flex-grow: 1;
             margin-bottom: 40px;
+            overflow-x: auto;
+            white-space: nowrap;
         }
 
         #footer {
@@ -144,6 +161,7 @@
         #footer .right, #footer .settings {
             display: flex;
             align-items: center;
+            margin-right: 20px;
         }
 
         #footer .right a::before {
@@ -275,9 +293,10 @@
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
-    <div class="settings">
-        <span id="theme-toggle">☀️</span>
-    </div>
+<!--    TODO: fix night theme and enable-->
+<!--    <div class="settings">-->
+<!--        <span id="theme-toggle">☀️</span>-->
+<!--    </div>-->
 </footer>
 
 <script>
@@ -298,7 +317,8 @@
     }
 
     // Attach the toggle function to the click event of the icon
-    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    // TODO: fix night theme and enable
+    // document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -369,7 +389,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = key + ':';
+        keyElement.textContent = key !== "" ? key + ":" : "";
 
         let valueElement;
 
@@ -399,7 +419,11 @@
         } else {
             // Create a simple text display if no options are provided
             valueElement = document.createElement('div');
-            valueElement.className = 'json-value';
+            if (key !== "") {
+                valueElement.className = "json-value";
+            } else {
+                valueElement.className = "json-value-small";
+            }
             valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
         }
 
@@ -409,23 +433,41 @@
     }
 
     function addFileButtonToStatus(key, links) {
+        function getPRandShaFromLink(link) {
+            const url = new URL(link);
+            const params = new URLSearchParams(url.search);
+
+            const PR = params.get('PR');
+            const sha = params.get('sha');
+
+            return { PR, sha };
+        }
 
         if (links == null) {
             return
         }
-
         const statusContainer = document.getElementById('status-container');
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = columnSymbols[key] + ':' || key;
+        //keyElement.textContent = columnSymbols[key] + ':' || key;
+        keyElement.textContent = '';
         statusContainer.appendChild(keyElement);
 
         if (Array.isArray(links) && links.length > 0) {
+            let base_url = window.location.origin + window.location.pathname;
             links.forEach(link => {
                 const textLink = document.createElement('a');
                 textLink.href = link;
-                textLink.textContent = link.split('/').pop();
+
+                if (!link.includes(base_url)) {
+                    textLink.textContent = link.split('/').pop();
+                } else {
+                    // it's a link to another report:
+                    const {PR, sha} = getPRandShaFromLink(link)
+                    textLink.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
+                }
+
                 textLink.target = '_blank';
                 statusContainer.appendChild(textLink);
                 statusContainer.appendChild(document.createElement('br'));
@@ -442,7 +484,8 @@
         let valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
+        //keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
+        keyElement.textContent = '';
         valueElement.classList.add('status-value');
         valueElement.classList.add(getStatusClass(status));
         valueElement.textContent = status;
@@ -456,7 +499,8 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
+        //keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
+        keyElement.textContent = ''
         valueElement.textContent = formatTimestamp(start_time);
         keyValuePair.appendChild(keyElement);
         keyValuePair.appendChild(valueElement);
@@ -468,11 +512,19 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
+        //keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
+        keyElement.textContent = ''
         if (duration === null) {
             // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
             valueElement.textContent = '00:00:00';
             valueElement.setAttribute('id', 'duration-value');
+            if (start_time) {
+                let duration = Math.floor(Date.now() / 1000 - start_time);
+                const intervalId = setInterval(() => {
+                    duration++;
+                    valueElement.textContent = formatDuration(duration, true);
+                }, 1000);
+            }
         } else {
             // Format the duration if it's a valid number
             valueElement.textContent = formatDuration(duration, true);
@@ -482,57 +534,15 @@
         statusContainer.appendChild(keyValuePair);
     }
 
-    function navigatePath(jsonObj, nameArray) {
-        let baseParams = new URLSearchParams(window.location.search);
-        let keysToDelete = [];
-        baseParams.forEach((value, key) => {
-            if (key.startsWith('name_')) {
-                keysToDelete.push(key); // Collect the keys to delete
-            }
-        });
-        keysToDelete.forEach((key) => baseParams.delete(key));
-        let pathNames = [];
-        let pathLinks = [];
-        let currentObj = jsonObj;
-
-        // Add the first entry (root level)
-        baseParams.set(`name_0`, currentObj.name);
-        pathNames.push(currentObj.name);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
-        // Iterate through the nameArray starting at index 0
-        for (const [index, name] of nameArray.entries()) {
-            if (index === 0) continue;
-            if (currentObj && Array.isArray(currentObj.results)) {
-                const nextResult = currentObj.results.find(result => result.name === name);
-                if (nextResult) {
-                    baseParams.set(`name_${index}`, nextResult.name);
-                    pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
-                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
-                    currentObj = nextResult; // Move to the next object in the hierarchy
-                } else {
-                    console.error(`Name "${name}" not found in results array.`);
-                    return null; // Name not found in results array
-                }
-            } else {
-                console.error(`Current object is not structured as expected.`);
-                return null; // Current object is not structured as expected
-            }
-        }
-        const footerLeft = document.querySelector('#footer .left');
-        footerLeft.innerHTML = pathLinks.join('');
-
-        return currentObj;
-    }
-
     // Define the fixed columns globally, so both functions can use it
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '🗂️',
-        status: '🧾',
-        start_time: '🕒',
-        duration: '⏳',
-        info: '📝',
+        // name: '🗂️',
+        // status: '✅',
+        start_time: 'ts',
+        duration: 'dur',
+        // info: '📝',
         files: '📎'
     };
 
@@ -601,7 +611,7 @@
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
-                    td.textContent = value.includes('\n') ? '↵' : (value || '');
+                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
                     td.classList.add('info-column');
                 }
 
@@ -638,116 +648,260 @@
         populateTableRows(tbody, results, columns, nest_level);
     }
 
-    function loadResultsJSON(PR, sha, nameParams) {
+    async function fetchJson(suffix, sha, name) {
         const infoElement = document.getElementById('info-container');
-        let lastModifiedTime = null;
-        const task = nameParams[0].toLowerCase();
+        const task = name
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/_+$/, '');
 
-        // Construct the URL dynamically based on PR, sha, and name_X
+        // Construct the URL dynamically based on PR, sha, and task
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-        const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
+        const path = `${baseUrl}/${suffix}/${encodeURIComponent(sha)}/result_${task}.json`;
 
-        fetch(path, {cache: "no-cache"})
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                lastModifiedTime = response.headers.get('Last-Modified');
-                return response.json();
-            })
-            .then(data => {
-                const linksDiv = document.getElementById('links');
-                const resultsDiv = document.getElementById('result-container');
-                const footerRight = document.querySelector('#footer .right');
+        try {
+            const response = await fetch(path, { cache: "no-cache" });
 
-                let targetData = navigatePath(data, nameParams);
-                let nest_level = nameParams.length;
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
 
-                // Add footer links from top-level  Result
-                if (Array.isArray(data.links) && data.links.length > 0) {
-                    data.links.forEach(link => {
-                        const a = document.createElement('a');
-                        a.href = link;
-                        a.textContent = link.split('/').pop();
-                        a.target = '_blank';
-                        footerRight.appendChild(a);
-                    });
-                }
-
-                if (targetData) {
-                    //infoElement.style.display = 'none';
-                    infoElement.innerHTML = (targetData.info || '').replace(/\n/g, '<br>');
-
-                    addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
-
-                    // Handle links
-                    addFileButtonToStatus('files', targetData.links)
-
-
-                    // Handle duration update if duration is null and start_time exists
-                    if (targetData.duration === null && targetData.start_time) {
-                        let duration = Math.floor(Date.now() / 1000 - targetData.start_time);
-                        const durationElement = document.getElementById('duration-value');
-
-                        const intervalId = setInterval(() => {
-                            duration++;
-                            durationElement.textContent = formatDuration(duration, true);
-                        }, 1000);
-                    }
-
-                    // If 'results' exists and is non-empty, create the table
-                    const resultsData = targetData.results;
-                    if (Array.isArray(resultsData) && resultsData.length > 0) {
-                        const table = createResultsTable(resultsData, nest_level);
-                        if (table) {
-                            resultsDiv.appendChild(table);
-                        }
-                    }
-                } else {
-                    infoElement.textContent = 'Object Not Found';
-                    infoElement.style.display = 'block';
-                }
-
-                // Set up auto-reload if Last-Modified header is present
-                if (lastModifiedTime) {
-                    setInterval(() => {
-                        checkForUpdate(path, lastModifiedTime);
-                    }, 30000); // 30000 milliseconds = 30 seconds
-                }
-            })
-            .catch(error => {
-                console.error('Error loading JSON:', error);
-                infoElement.textContent = 'Error loading data';
+            //const lastModifiedTime = response.headers.get('Last-Modified');
+            return await response.json();
+        } catch (error) {
+            console.error('Error loading Results:', error);
+            if (infoElement) {
+                infoElement.textContent = 'Error loading Results';
                 infoElement.style.display = 'block';
-            });
+            }
+        }
+    }
+    const runtimeCache = {
+        json0: null,
+        json1: null,
+        prLink: null,
+        commitLink: null,
+        runLink: null,
+        commits: null
+    };
+
+    function storeLink(link) {
+        if (link.includes('/pull/')) runtimeCache.prLink = link;
+        else if (link.includes('/commit/')) runtimeCache.commitLink = link;
+        else if (link.includes('/actions/runs/')) runtimeCache.runLink = link;
     }
 
-    // Function to check if the JSON file is updated
-    function checkForUpdate(path, lastModifiedTime) {
-        fetch(path, {method: 'HEAD'})
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const newLastModifiedTime = response.headers.get('Last-Modified');
-                if (newLastModifiedTime && new Date(newLastModifiedTime) > new Date(lastModifiedTime)) {
-                    // If the JSON file has been updated, reload the page
-                    window.location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error checking for update:', error);
-            });
+    async function fetch0Json(suffix, sha, name) {
+        try {
+            const resultData = await fetchJson(suffix, sha, name);
+            runtimeCache.json0 = resultData;
+            if (Array.isArray(resultData.links)) {
+                resultData.links.forEach(storeLink);
+            }
+        } catch (error) {
+            console.error('Error fetching JSON0:', error);
+        }
     }
+
+    async function fetch1Json(suffix, sha, name) {
+        try {
+            runtimeCache.json1 = await fetchJson(suffix, sha, name);
+        } catch (error) {
+            console.error('Error fetching JSON1:', error);
+        }
+    }
+    async function loadCommitsArray(path) {
+        try {
+            const response = await fetch(path, { cache: "no-cache" });
+            if (!response.ok) {
+                console.error(`HTTP error! status: ${response.status}`);
+                runtimeCache.commits = []; // Set to empty if request fails
+                return;
+            }
+
+            const data = await response.json();
+            if (Array.isArray(data) && data.every(item => typeof item === 'object' && item.hasOwnProperty('sha'))) {
+                runtimeCache.commits = data.map(item => item.sha);
+            } else {
+                console.error('Invalid data format: expected array of objects with a "sha" key');
+                runtimeCache.commits = []; // Set to empty if validation fails
+            }
+        } catch (error) {
+            console.error('Error loading commits JSON:', error);
+            runtimeCache.commits = []; // Set to empty if an error occurs
+        }
+    }
+
+    function getTargetResults(nameParams) {
+        let resolvedNames = [];
+        let data = runtimeCache.json0;
+
+        if (data !== null) {
+            resolvedNames.push(nameParams[0]);  // Initialize resolvedNames with the first parameter
+        } else {
+            return null;  // Return an object containing data and resolvedNames
+        }
+
+        // Check if we have more than one name to resolve
+        if (nameParams.length > 1) {
+            if (runtimeCache.json1) {
+                data = runtimeCache.json1;  // If json1 exists, use it directly
+            } else {
+                let found = false;
+                // Iterate through data.results to find the target name in json0
+                for (let result of data.results) {
+                    if (result.name === nameParams[1]) {
+                        resolvedNames.push(nameParams[1]);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.log("No data for", nameParams[1]);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+
+            // Now resolve remaining names starting from index 2
+            for (let i = 2; i < nameParams.length; i++) {
+                let name = nameParams[i];
+                let found = false;
+
+                // Iterate through data.results to find the target name
+                for (let result of data.results) {
+                    if (result.name === name) {
+                        resolvedNames.push(name);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    console.log("No data for", name);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+        }
+
+        return data;  // Return the resolved data and names at the end
+    }
+
+    function fillInNavigationBar(nameArray) {
+        let baseParams = new URLSearchParams(window.location.search);
+        let keysToDelete = [];
+        baseParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach((key) => baseParams.delete(key));
+        let pathNames = [];
+        let pathLinks = [];
+        for (const [index, name] of nameArray.entries()) {
+                    baseParams.set(`name_${index}`, name);
+                    pathNames.push(name);
+                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${name}</a>`);
+        }
+        const footerLeft = document.querySelector('#footer .left');
+        footerLeft.innerHTML = pathLinks.join('');
+    }
+
+    async function renderResults(PR, REF, sha, nameParams) {
+        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
+        let suffix = '';
+        if (PR) {
+            suffix = `PRs/${encodeURIComponent(PR)}`;
+        } else if (REF) {
+            suffix = `REFs/${encodeURIComponent(REF)}`;
+        }
+        if (suffix) {
+            await loadCommitsArray(`${baseUrl}/${suffix}/commits.json`);
+        } else {
+            console.error("PR or REF must be defined to load commits.");
+        }
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1] : sha;
+        if (runtimeCache.json0 === null) {
+            await fetch0Json(suffix, shaToLoad, nameParams[0]);
+        }
+        if (nameParams.length > 1 && runtimeCache.json1 === null) {
+            await fetch1Json(suffix, shaToLoad, nameParams[1]);
+        }
+        const footerRight = document.querySelector('#footer .right');
+        function createLinkElement(href, textContent, footer) {
+            const a = document.createElement('a');
+            a.href = href;
+            a.textContent = textContent;
+            a.target = '_blank';
+            footer.appendChild(a);
+        }
+        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
+        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
+        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+        // Result table
+        const resultsDiv = document.getElementById('result-container');
+        const resultsData = result.results;
+        if (Array.isArray(resultsData) && resultsData.length > 0) {
+            const table = createResultsTable(resultsData, i);
+            if (table) {
+                resultsDiv.appendChild(table);
+            }
+        }
+        // Navigation bar
+        fillInNavigationBar(nameParams.slice(0, i + 1))
+        // Status and info
+        if (PR > 0) {
+            addKeyValueToStatus("PR", PR);
+        }
+        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
+        addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
+        addKeyValueToStatus("", current_sha);
+        addStatusToStatus(result.status, result.start_time, result.duration);
+        if (nameParams.length > 1) {
+            addFileButtonToStatus('files', result.links);
+        }
+        const infoElement = document.getElementById('info-container');
+        infoElement.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+    }
+
+    // TODO: implement autoupdate or remove
+    // Function to check if the JSON file is updated
+    // function checkForUpdate(path, lastModifiedTime) {
+    //     fetch(path, {method: 'HEAD'})
+    //         .then(response => {
+    //             if (!response.ok) {
+    //                 throw new Error(`HTTP error! status: ${response.status}`);
+    //             }
+    //             const newLastModifiedTime = response.headers.get('Last-Modified');
+    //             if (newLastModifiedTime && new Date(newLastModifiedTime) > new Date(lastModifiedTime)) {
+    //                 // If the JSON file has been updated, reload the page
+    //                 window.location.reload();
+    //             }
+    //         })
+    //         .catch(error => {
+    //             console.error('Error checking for update:', error);
+    //         });
+    // }
 
     // Initialize the page and load JSON from URL parameter
-    function init() {
+    async function init() {
         const urlParams = new URLSearchParams(window.location.search);
         const PR = urlParams.get('PR');
+        const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
-        const root_name = urlParams.get('name_0');
         const nameParams = [];
 
+        // Collect all `name_*` parameters into `nameParams` array
         urlParams.forEach((value, key) => {
             if (key.startsWith('name_')) {
                 const index = parseInt(key.split('_')[1], 10);
@@ -755,65 +909,17 @@
             }
         });
 
-        let path_commits_json = '';
-        let commitsArray = [];
-
-        if (PR) {
-            addKeyValueToStatus("PR", PR);
-            const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-            path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
-        } else {
-            // Placeholder for a different path when PR is missing
-            console.error("PR parameter is missing. Setting alternate commits path.");
-            path_commits_json = '/path/to/alternative/commits.json';
-        }
-
-        function loadCommitsArray(path) {
-            return fetch(path, { cache: "no-cache" })
-                .then(response => {
-                    if (!response.ok) {
-                        console.error(`HTTP error! status: ${response.status}`)
-                        return [];
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (Array.isArray(data) && data.every(item => typeof item === 'object' && item.hasOwnProperty('sha'))) {
-                        return data.map(item => item.sha);
-                    } else {
-                        throw new Error('Invalid data format: expected array of objects with a "sha" key');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading commits JSON:', error);
-                    return []; // Return an empty array if an error occurs
-                });
-        }
-
-        loadCommitsArray(path_commits_json)
-            .then(data => {
-                commitsArray = data;
-            })
-            .finally(() => {
-                // Proceed with the rest of the initialization
-                addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
-
-                if (nameParams[1]) {
-                    addKeyValueToStatus("job", nameParams[1]);
-                }
-                addKeyValueToStatus("workflow", nameParams[0]);
-
-                // Check if all required parameters are present to load JSON
-                if (PR && sha && root_name) {
-                    const shaToLoad = (sha === 'latest') ? commitsArray[commitsArray.length - 1] : sha;
-                    loadResultsJSON(PR, shaToLoad, nameParams);
-                } else {
-                    document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
-                }
-            });
+        // Render results using the extracted parameters
+        await renderResults(PR, REF, sha, nameParams);
     }
 
-    window.onload = init;
+    document.addEventListener('DOMContentLoaded', init);
+    // document.querySelectorAll("a").forEach(link => {
+    //     link.addEventListener("click", function (event) {
+    //         event.preventDefault(); // Prevent full-page reload
+    //         history.pushState(null, "", this.href); // Update URL without reload
+    //     });
+    // });
 </script>
 </body>
 </html>

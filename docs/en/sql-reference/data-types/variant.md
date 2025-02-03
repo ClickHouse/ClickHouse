@@ -3,8 +3,11 @@ slug: /en/sql-reference/data-types/variant
 sidebar_position: 40
 sidebar_label: Variant(T1, T2, ...)
 ---
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # Variant(T1, T2, ...)
+
+<BetaBadge/>
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
@@ -18,7 +21,7 @@ because working with values of such types can lead to ambiguity. By default, cre
 :::
 
 :::note
-The Variant data type is an experimental feature. To use it, set `allow_experimental_variant_type = 1`.
+The Variant data type is a beta feature. To use it, set `enable_variant_type = 1`.
 :::
 
 ## Creating Variant

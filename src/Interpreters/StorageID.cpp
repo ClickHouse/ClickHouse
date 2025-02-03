@@ -2,6 +2,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -104,6 +105,14 @@ String StorageID::getShortName() const
     if (database_name.empty())
         return table_name;
     return database_name + "." + table_name;
+}
+
+size_t StorageID::DatabaseAndTableNameHash::operator()(const StorageID & storage_id) const
+{
+    SipHash hash_state;
+    hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
+    hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
+    return hash_state.get64();
 }
 
 }

@@ -21,6 +21,8 @@ More precisely and according to the [origin of this data](https://github.com/aws
     - Snow depth
     - Other elements where available
 
+The sections below give a brief overview of the steps that were involved in bringing this dataset into ClickHouse. If you're interested in reading about each step in more detail, we recommend to take a look at our blog post titled ["Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse"](https://clickhouse.com/blog/real-world-data-noaa-climate-data).
+
 ## Downloading the data
 
 - A [pre-prepared version](#pre-prepared-data) of the data for ClickHouse, which has been cleansed, re-structured, and enriched. This data covers the years 1900 to 2022.

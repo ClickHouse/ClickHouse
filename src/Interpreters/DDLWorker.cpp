@@ -1054,12 +1054,12 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 }
 
 
-String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info, QueryStatusPtr process_list_element)
+String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info)
 {
     String node_path;
     if (retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info};
         retries_ctl.retryLoop([&]{
             node_path = enqueueQueryAttempt(entry);
         });

@@ -18,7 +18,7 @@ class StorageFromMergeTreeDataPart final : public IStorage
 {
 public:
     /// Used in part mutation.
-    explicit StorageFromMergeTreeDataPart(
+    StorageFromMergeTreeDataPart(
         const MergeTreeData::DataPartPtr & part_,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
         : IStorage(getIDFromPart(part_))
@@ -32,10 +32,13 @@ public:
     }
 
     /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }

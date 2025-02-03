@@ -49,13 +49,13 @@ public:
 
     virtual size_t getNumberOfOpenStreams() const = 0;
 
-    Columns releaseIndexColumns();
+    std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
 
-    virtual Block getColumnsSample() const = 0;
+    virtual const Block & getColumnsSample() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;

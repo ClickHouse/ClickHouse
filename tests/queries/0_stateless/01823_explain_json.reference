@@ -81,7 +81,7 @@
           "Node Type": "ArrayJoin",
           "Node Id": "ArrayJoin_4",
           "Left": false,
-          "Columns": ["__table1.x", "__table1.y"],
+          "Columns": ["__array_join_exp_1", "__array_join_exp_2"],
 --------
           "Node Type": "Distinct",
           "Node Id": "Distinct_4",
