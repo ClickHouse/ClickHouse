@@ -991,7 +991,7 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                if (!source->isEqual(*table_expression))
+                if (source && table_expression && !source->isEqual(*table_expression))
                     return true;
                 break;
             }
