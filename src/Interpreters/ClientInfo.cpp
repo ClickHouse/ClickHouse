@@ -42,7 +42,7 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     if (colons == 1)
         return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
 
-    /// IPv4 addrtess without port
+    /// IPv4 address without port
     return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
 }
 
