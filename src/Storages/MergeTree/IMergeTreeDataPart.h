@@ -304,7 +304,7 @@ public:
     void setState(MergeTreeDataPartState new_state) const;
     ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
-    static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
+    static std::string_view stateString(MergeTreeDataPartState state);
     constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }

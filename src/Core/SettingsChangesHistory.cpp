@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
