@@ -4,9 +4,6 @@ import subprocess as sp
 import tempfile
 from threading import Timer
 
-import numpy as np
-import pandas as pd
-
 DEFAULT_QUERY_TIMEOUT = 600
 
 
@@ -62,7 +59,6 @@ class Client:
         host=None,
         ignore_error=False,
         query_id=None,
-        parse=False,
     ):
         return self.get_query_request(
             sql,
@@ -75,7 +71,6 @@ class Client:
             host=host,
             ignore_error=ignore_error,
             query_id=query_id,
-            parse=parse,
         ).get_answer()
 
     def get_query_request(
@@ -90,7 +85,6 @@ class Client:
         host=None,
         ignore_error=False,
         query_id=None,
-        parse=False,
     ):
         command = self.command[:]
 
@@ -113,10 +107,8 @@ class Client:
             command += ["--host", host]
         if query_id is not None:
             command += ["--query_id", query_id]
-        if parse:
-            command += ["--format=TabSeparatedWithNames"]
 
-        return CommandRequest(command, stdin, timeout, ignore_error, parse)
+        return CommandRequest(command, stdin, timeout, ignore_error)
 
     @stacktraces_on_timeout_decorator
     def query_and_get_error(
@@ -177,9 +169,7 @@ class QueryRuntimeException(Exception):
 
 
 class CommandRequest:
-    def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False
-    ):
+    def __init__(self, command, stdin=None, timeout=None, ignore_error=False):
         # Write data to tmp file to avoid PIPEs and execution blocking
         stdin_file = tempfile.TemporaryFile(mode="w+")
         stdin_file.write(stdin)
@@ -187,7 +177,7 @@ class CommandRequest:
         self.stdout_file = tempfile.TemporaryFile()
         self.stderr_file = tempfile.TemporaryFile()
         self.ignore_error = ignore_error
-        self.parse = parse
+
         # print " ".join(command)
 
         # we suppress stderror on client becase sometimes thread sanitizer
@@ -251,15 +241,6 @@ class CommandRequest:
                 ),
                 self.process.returncode,
                 stderr,
-            )
-
-        if self.parse:
-            from io import StringIO
-
-            return (
-                pd.read_csv(StringIO(stdout), sep="\t")
-                .replace(r"\N", None)
-                .replace(np.nan, None)
             )
 
         return stdout

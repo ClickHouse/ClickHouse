@@ -1,69 +1,25 @@
 import glob
+import sys
 from itertools import chain
 from pathlib import Path
 
-from praktika import Job
-
-from . import Workflow
-from .mangle import _get_workflows
-from .settings import GHRunners, Settings
+from praktika import Workflow
+from praktika.mangle import _get_workflows
+from praktika.settings import GHRunners, Settings
 
 
 class Validator:
     @classmethod
     def validate(cls):
         print("---Start validating Pipeline and settings---")
-
-        if Settings.DISABLED_WORKFLOWS:
-            for file in Settings.DISABLED_WORKFLOWS:
-                cls.evaluate_check_simple(
-                    Path(file).is_file()
-                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
-                    f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
-                )
-
-        workflows = _get_workflows(_for_validation_check=True)
+        workflows = _get_workflows()
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-
-            for job in workflow.jobs:
-                cls.evaluate_check(
-                    isinstance(job, Job.Config),
-                    f"Invalid job type [{job}]",
-                    workflow.name,
-                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
             cls.validate_requirements_txt_files(workflow)
             cls.validate_dockers(workflow)
-
-            if workflow.event == Workflow.Event.SCHEDULE:
-                cls.evaluate_check(
-                    workflow.cron_schedules
-                    and isinstance(workflow.cron_schedules, list),
-                    f".crone_schedules str must be non-empty list of cron strings .event===SCHEDULE, provided value [{workflow.cron_schedules}]",
-                    workflow.name,
-                )
-                for cron_schedule in workflow.cron_schedules:
-                    cls.evaluate_check(
-                        len(cron_schedule.split(" ")) == 5,
-                        f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * *', provided value [{cron_schedule}]",
-                        workflow.name,
-                    )
-                    for cron_token in cron_schedule.split(" ")[:-1]:
-                        cls.evaluate_check(
-                            cron_token == "*" or str.isdigit(cron_token),
-                            f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{cron_token}]",
-                            workflow.name,
-                        )
-                    days_of_weak = cron_schedule.split(" ")[-1]
-                    cls.evaluate_check(
-                        days_of_weak == "*"
-                        or any([str.isdigit(v) for v in days_of_weak.split(",")]),
-                        f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{days_of_weak}]",
-                        workflow.name,
-                    )
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
@@ -144,31 +100,18 @@ class Validator:
                     ), f"GitHub Runners must not be used for workflow with enabled: workflow.enable_cache, workflow.enable_html or workflow.enable_merge_ready_status as s3 access is required, workflow [{workflow.name}], job [{job.name}]"
 
             if workflow.enable_cidb:
-                cls.evaluate_check(
-                    Settings.SECRET_CI_DB_URL,
-                    "Settings.SECRET_CI_DB_URL must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
-                cls.evaluate_check(
-                    Settings.SECRET_CI_DB_USER,
-                    "Settings.SECRET_CI_DB_USER must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
-                cls.evaluate_check(
-                    Settings.SECRET_CI_DB_PASSWORD,
-                    "Settings.SECRET_CI_DB_PASSWORD must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
-                cls.evaluate_check(
-                    Settings.CI_DB_DB_NAME,
-                    "Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
-                cls.evaluate_check(
-                    Settings.CI_DB_TABLE_NAME,
-                    "Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
+                assert (
+                    Settings.SECRET_CI_DB_URL
+                ), f"Settings.CI_DB_URL_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
+                assert (
+                    Settings.SECRET_CI_DB_PASSWORD
+                ), f"Settings.CI_DB_PASSWORD_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
+                assert (
+                    Settings.CI_DB_DB_NAME
+                ), f"Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
+                assert (
+                    Settings.CI_DB_TABLE_NAME
+                ), f"Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
 
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
@@ -184,7 +127,6 @@ class Validator:
                     assert (
                         Path(part).is_file() or Path(part).is_dir()
                     ), f"Apparently run command [{run_command}] for job [{job}] has invalid path [{part}]. Setting to disable check: VALIDATE_FILE_PATHS"
-                    break
 
     @classmethod
     def validate_file_paths_in_digest_configs(cls, workflow: Workflow.Config) -> None:
@@ -256,16 +198,4 @@ class Validator:
             )
             for message in messages:
                 print(" ||  " + message)
-            raise
-
-    @classmethod
-    def evaluate_check_simple(cls, check_ok, message):
-        message = message.split("\n")
-        messages = [message] if not isinstance(message, list) else message
-        if check_ok:
-            return
-        else:
-            print(f"ERROR: Validation failed:")
-            for message in messages:
-                print(" ||  " + message)
-            raise
+            sys.exit(1)

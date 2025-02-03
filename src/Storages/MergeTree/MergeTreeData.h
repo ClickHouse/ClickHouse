@@ -31,8 +31,6 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/MarkCache.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -425,6 +423,8 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
+
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isMergeTree() const override { return true; }
@@ -484,7 +484,6 @@ public:
         virtual NameSet getAllUpdatedColumns() const = 0;
 
         bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
-        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
         virtual ~IMutationsSnapshot() = default;
     };
@@ -507,15 +506,9 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
-    /// Returns a pointer to primary index cache if it is enabled.
-    PrimaryIndexCachePtr getPrimaryIndexCache() const;
-    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
-    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const;
-    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
-    MarkCachePtr getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const;
-
-    /// Prewarm mark cache and primary index cache for the most recent data parts.
-    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
+    /// Prewarm mark cache for the most recent data parts.
+    void prewarmMarkCache(ThreadPool & pool);
+    void prewarmMarkCacheIfNeeded(ThreadPool & pool);
 
     String getLogName() const { return log.loadName(); }
 
@@ -1167,13 +1160,12 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
-    /// Load/unload primary keys of all data parts
-    void loadPrimaryKeys() const;
+    /// Unloads primary keys of all parts.
     void unloadPrimaryKeys();
 
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
-    size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+    size_t unloadPrimaryKeysOfOutdatedParts();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1342,7 +1334,7 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-    /// The same for unloadPrimaryKeysAndClearCachesOfOutdatedParts.
+    /// The same for unloadPrimaryKeysOfOutdatedParts.
     std::mutex unload_primary_key_mutex;
 
     void checkProperties(
@@ -1350,7 +1342,6 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
-        bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
@@ -1731,8 +1722,7 @@ private:
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 
-    bool allow_nullable_key = false;
-    bool allow_reverse_key = false;
+    bool allow_nullable_key{};
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);

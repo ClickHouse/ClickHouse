@@ -326,7 +326,13 @@ public:
 
     struct WatchInfoHash
     {
-        UInt64 operator()(WatchInfo info) const;
+        auto operator()(WatchInfo info) const
+        {
+            SipHash hash;
+            hash.update(info.path);
+            hash.update(info.is_list_watch);
+            return hash.get64();
+        }
     };
 
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<WatchInfo, WatchInfoHash>>;

@@ -1,9 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
-#include <Common/Stopwatch.h>
-
-#include <shared_mutex>
 #include <stack>
-
+#include <Common/Stopwatch.h>
 
 namespace DB
 {

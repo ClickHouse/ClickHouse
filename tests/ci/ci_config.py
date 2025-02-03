@@ -75,10 +75,10 @@ class CI:
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
                 BuildNames.PACKAGE_ASAN,
-                BuildNames.BINARY_TIDY,
                 JobNames.STYLE_CHECK,
                 JobNames.BUILD_CHECK,
                 JobNames.UNIT_TEST_ASAN,
+                JobNames.STATEFUL_TEST_ASAN,
             ]
         ),
     }  # type: Dict[str, LabelConfig]
@@ -274,7 +274,6 @@ class CI:
             build_config=BuildConfig(
                 name=BuildNames.FUZZERS,
                 compiler="clang-19",
-                sanitizer="address",
                 package_type="fuzzers",
             ),
             run_by_labels=[Tags.libFuzzer],
@@ -286,6 +285,58 @@ class CI:
         JobNames.INSTALL_TEST_AARCH64: CommonJobConfigs.INSTALL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             runner_type=Runners.STYLE_CHECKER_AARCH64,
+        ),
+        JobNames.STATEFUL_TEST_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ASAN]
+        ),
+        JobNames.STATEFUL_TEST_AARCH64_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            runner_type=Runners.FUNC_TESTER_AARCH64,
+        ),
+        JobNames.STATEFUL_TEST_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_TSAN]
+        ),
+        JobNames.STATEFUL_TEST_MSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_MSAN]
+        ),
+        JobNames.STATEFUL_TEST_UBSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_UBSAN]
+        ),
+        JobNames.STATEFUL_TEST_DEBUG: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG]
+        ),
+        JobNames.STATEFUL_TEST_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_RELEASE]
+        ),
+        JobNames.STATEFUL_TEST_RELEASE_COVERAGE: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE]
+        ),
+        JobNames.STATEFUL_TEST_AARCH64: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.FUNC_TESTER_AARCH64,
+        ),
+        JobNames.STATEFUL_TEST_PARALLEL_REPL_RELEASE: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_RELEASE]
+        ),
+        JobNames.STATEFUL_TEST_PARALLEL_REPL_DEBUG: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_DEBUG]
+        ),
+        JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            random_bucket="parrepl_with_sanitizer",
+        ),
+        JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_MSAN],
+            random_bucket="parrepl_with_sanitizer",
+        ),
+        JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_UBSAN],
+            random_bucket="parrepl_with_sanitizer",
+        ),
+        JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
+            required_builds=[BuildNames.PACKAGE_TSAN],
+            random_bucket="parrepl_with_sanitizer",
+            timeout=3600,
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
@@ -319,9 +370,6 @@ class CI:
         ),
         JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=2
-        ),
-        JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=1
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
@@ -446,21 +494,6 @@ class CI:
         JobNames.AST_FUZZER_TEST_UBSAN: CommonJobConfigs.ASTFUZZER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_UBSAN],
         ),
-        JobNames.BUZZHOUSE_TEST_DEBUG: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG],
-        ),
-        JobNames.BUZZHOUSE_TEST_ASAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN],
-        ),
-        JobNames.BUZZHOUSE_TEST_MSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN],
-        ),
-        JobNames.BUZZHOUSE_TEST_TSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN],
-        ),
-        JobNames.BUZZHOUSE_TEST_UBSAN: CommonJobConfigs.BUZZHOUSE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN],
-        ),
         JobNames.STATELESS_TEST_FLAKY_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
@@ -512,7 +545,7 @@ class CI:
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
             run_by_labels=[Tags.libFuzzer],
-            timeout=10800,
+            timeout=5400,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.FUNC_TESTER,
         ),
@@ -542,14 +575,12 @@ class CI:
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),
-            run_command="fast_test_check.py",
             timeout=2400,
             runner_type=Runners.BUILDER,
         ),
         JobNames.STYLE_CHECK: JobConfig(
             run_always=True,
             runner_type=Runners.STYLE_CHECKER_AARCH64,
-            run_command="style_check.py",
         ),
         JobNames.BUGFIX_VALIDATE: JobConfig(
             run_by_labels=[Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX],
@@ -585,28 +616,12 @@ class CI:
                     break
             else:
                 stage_type = WorkflowStages.BUILDS_2
-            if job_name in (
-                BuildNames.PACKAGE_RELEASE,
-                BuildNames.PACKAGE_AARCH64,
-            ):
-                stage_type = WorkflowStages.BUILDS_0
         elif cls.is_docs_job(job_name):
             stage_type = WorkflowStages.TESTS_1
         elif cls.is_test_job(job_name):
             if job_name in CI.JOB_CONFIGS:
                 if job_name in REQUIRED_CHECKS:
                     stage_type = WorkflowStages.TESTS_1
-                    required_builds = cls.get_job_config(job_name).required_builds
-                    if required_builds:
-                        if any(
-                            build
-                            in (
-                                BuildNames.PACKAGE_RELEASE,
-                                BuildNames.PACKAGE_AARCH64,
-                            )
-                            for build in required_builds
-                        ):
-                            stage_type = WorkflowStages.TESTS_0
                 else:
                     stage_type = WorkflowStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
@@ -616,14 +631,10 @@ class CI:
 
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
-        # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
     @classmethod
     def get_required_build_name(cls, check_name: str) -> str:
-        # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
         assert check_name in cls.JOB_CONFIGS
         required_builds = cls.JOB_CONFIGS[check_name].required_builds
         assert required_builds and len(required_builds) == 1

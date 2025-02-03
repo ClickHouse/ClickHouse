@@ -131,8 +131,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t src_index = 0;
-            size_t res_index = 0;
+            size_t src_index = 0, res_index = 0;
             if (columns_mask[src_index++])
             {
                 WriteBufferFromOwnString out;
