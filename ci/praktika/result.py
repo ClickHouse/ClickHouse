@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .cache import Cache
+from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
@@ -65,14 +66,22 @@ class Result(MetaClasses.Serializable):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
-            Utils.raise_with_error(
-                f"Either .results ({results}) or .status ({status}) must be provided"
-            )
+            status = Result.Status.ERROR
         if not name:
             name = _Environment.get().JOB_NAME
             if not name:
                 print("ERROR: Failed to guess the .name")
                 raise
+        if not stopwatch:
+            start_time = Result.from_fs(name=name).start_time
+            duration = (
+                datetime.datetime.now().timestamp()
+                - Result.from_fs(name=name).start_time
+            )
+        else:
+            start_time = stopwatch.start_time
+            duration = stopwatch.duration
+
         result_status = status or Result.Status.SUCCESS
         infos = []
         if info:
@@ -88,7 +97,7 @@ class Result(MetaClasses.Serializable):
                     Result.Status.ERROR,
                 ):
                     Utils.raise_with_error(
-                        f"Unexpected result status [{result.status}] for Result.create_from call"
+                        f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
                 if result.status != Result.Status.SUCCESS:
                     result_status = Result.Status.FAILED
@@ -102,8 +111,8 @@ class Result(MetaClasses.Serializable):
         return Result(
             name=name,
             status=result_status,
-            start_time=stopwatch.start_time if stopwatch else None,
-            duration=stopwatch.duration if stopwatch else None,
+            start_time=start_time,
+            duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],
@@ -267,8 +276,15 @@ class Result(MetaClasses.Serializable):
             duration=None,
             results=results or [],
             files=[],
-            links=[],
-            info=f"from cache: sha [{cache_record.sha}], pr/branch [{cache_record.pr_number or cache_record.branch}]",
+            links=[
+                Info().get_specific_report_url(
+                    pr_number=cache_record.pr_number,
+                    branch=cache_record.branch,
+                    sha=cache_record.sha,
+                    job_name=name,
+                )
+            ],
+            info=f"from cache",
         )
 
     @classmethod
@@ -420,16 +436,13 @@ class ResultInfo:
 class _ResultS3:
 
     @classmethod
-    def copy_result_to_s3(cls, result, unlock=False):
+    def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        s3_path_full = f"{s3_path}/{Path(result.file_name()).name}"
+        if clean:
+            S3.delete(s3_path)
         url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
-        # if unlock:
-        #     if not cls.unlock(s3_path_full):
-        #         print(f"ERROR: File [{s3_path_full}] unlock failure")
-        #         assert False  # TODO: investigate
         return url
 
     @classmethod
@@ -472,10 +485,8 @@ class _ResultS3:
         filename = Path(result.file_name()).name
         file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
-        s3_path_versioned = (
-            f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name_versioned}"
-        )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        s3_path_versioned = f"{s3_path}{file_name_versioned}"
         if version == 0:
             S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
