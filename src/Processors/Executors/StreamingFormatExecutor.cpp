@@ -46,26 +46,32 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
         values_format->setQueryParameters(parameters);
 }
 
-void StreamingFormatExecutor::reserveResultColumns(size_t num_bytes, const Chunk & chunk)
+void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
 {
-    if (!try_reserve)
+    if (!try_preallocate)
         return;
 
-    try_reserve = false; /// do it once
+    try_preallocate = false; /// do it once
 
     if (total_bytes && num_bytes)
     {
         size_t factor = total_bytes / num_bytes;
-        if (factor > 4) /// we expect significant number of chunks - preallocation makes sense
+
+        const size_t min_factor_to_preallocate = 5; /// we expect many chunks - preallocation makes sense
+        if (factor >= min_factor_to_preallocate)
         {
             const auto & reference_columns = chunk.getColumns();
 
-
             ++factor; /// a bit more space just in case
 
-            /// assume that all chunks are identical, use first one to predict
+            /// assuming that all chunks have same nature, specifically
+            /// similar raw data size/number of rows ratio
+            ///  use first one to predict
             for (size_t i = 0; i < result_columns.size(); ++i)
+            {
+                /// prepareForSquashing is used to reserve space, we don actually do squashing
                 result_columns[i]->prepareForSquashing({reference_columns[i]}, factor);
+            }
         }
     }
 }
@@ -140,7 +146,7 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
 
-    reserveResultColumns(num_bytes, chunk);
+    preallocateResultColumns(num_bytes, chunk);
 
     auto columns = chunk.detachColumns();
     for (size_t i = 0, s = columns.size(); i < s; ++i)

@@ -44,7 +44,7 @@ public:
     void setQueryParameters(const NameToNameMap & parameters);
 
 private:
-    void reserveResultColumns(size_t num_bytes, const Chunk & chunk);
+    void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
 
     const Block header;
     const InputFormatPtr format;
@@ -56,7 +56,7 @@ private:
     ColumnCheckpoints checkpoints;
 
     size_t total_bytes;
-    bool try_reserve = true;
+    bool try_preallocate = true;
 };
 
 }
