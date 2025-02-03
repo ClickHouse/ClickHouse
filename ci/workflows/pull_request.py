@@ -1,7 +1,7 @@
 from praktika import Workflow
 
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
-from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, DOCKERS, SECRETS
+from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, SECRETS
 from ci.workflows.job_configs import JobConfigs
 
 workflow = Workflow.Config(
@@ -17,6 +17,7 @@ workflow = Workflow.Config(
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
+        *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs,

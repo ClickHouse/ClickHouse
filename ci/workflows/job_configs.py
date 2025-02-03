@@ -552,7 +552,7 @@ class JobConfigs:
             ],
         ),
     ).parametrize(
-        parameter=["amd_release", "arm_release"],
+        parameter=["release", "aarch64"],
         runs_on=[
             RunnerLabels.STYLE_CHECK_AMD,
             RunnerLabels.STYLE_CHECK_ARM,
