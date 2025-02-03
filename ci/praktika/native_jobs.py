@@ -1,4 +1,8 @@
+import json
+import os
 import sys
+import traceback
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -128,15 +132,18 @@ def _build_dockers(workflow, job_name):
                     files=files,
                 )
             )
-    Result.from_fs(job_name).set_status(job_status).set_results(results).set_info(
-        job_info
+    return (
+        Result.from_fs(job_name)
+        .set_status(job_status)
+        .set_results(results)
+        .set_info(job_info)
     )
 
-    if job_status != Result.Status.SUCCESS:
-        sys.exit(1)
 
+def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
+    # debug info
+    GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
 
-def _config_workflow(workflow: Workflow.Config, job_name):
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         stop_watch = Utils.Stopwatch()
@@ -150,15 +157,21 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             status = Result.Status.ERROR
             print("ERROR: ", info)
         else:
-            assert Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika yaml")
-            exit_code, output, err = Shell.get_res_stdout_stderr(
+            exit_code_1, out, err = Shell.get_res_stdout_stderr(
+                f"{Settings.PYTHON_INTERPRETER} -m praktika yaml", verbose=True
+            )
+            exit_code_2, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if output:
+            if exit_code_1 != 0:
+                info = f"praktika failed to generate workflows.\n{out}\nerr: {err}"
+                status = Result.Status.FAILED
+                print("ERROR: ", info)
+            elif output:
                 info = f"outdated workflows: [{output}], run [praktika yaml] to update"
                 status = Result.Status.FAILED
                 print("ERROR: ", info)
-            elif exit_code == 0 and not err:
+            elif exit_code_2 == 0 and not err:
                 status = Result.Status.SUCCESS
             else:
                 print(f"ERROR: exit code [{exit_code}], err [{err}]")
@@ -206,28 +219,19 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             info=info,
         )
 
+    if workflow.enable_report:
+        print("Push pending CI report")
+        HtmlRunnerHooks.push_pending_ci_report(workflow)
+
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     results = []
     files = []
     info_lines = []
-    job_status = Result.Status.SUCCESS
 
-    env = _Environment.get()
-    workflow_config = RunConfig(
-        name=workflow.name,
-        digest_jobs={},
-        digest_dockers={},
-        sha=env.SHA,
-        cache_success=[],
-        cache_success_base64=[],
-        cache_artifacts={},
-        cache_jobs={},
-    ).dump()
-
-    if Settings.PIPELINE_PRECHECKS:
+    if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
-        for pre_check in Settings.PIPELINE_PRECHECKS:
+        for pre_check in workflow.pre_hooks:
             if callable(pre_check):
                 name = pre_check.__name__
             else:
@@ -239,63 +243,95 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         results.append(
             Result.create_from(name="Pre Checks", results=res_, stopwatch=sw_)
         )
-        if not results[-1].is_ok():
-            job_status = Result.Status.ERROR
 
     # checks:
     result_ = _check_yaml_up_to_date()
     if result_.status != Result.Status.SUCCESS:
         print("ERROR: yaml files are outdated - regenerate, commit and push")
-        job_status = Result.Status.ERROR
         info_lines.append(result_.name + ": " + result_.info)
     results.append(result_)
 
-    if workflow.secrets:
+    if results[-1].is_ok() and workflow.secrets:
         result_ = _check_secrets(workflow.secrets)
         if result_.status != Result.Status.SUCCESS:
             print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-            job_status = Result.Status.ERROR
             info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
-    if workflow.enable_cidb:
+    if results[-1].is_ok() and workflow.enable_cidb:
         result_ = _check_db(workflow)
         if result_.status != Result.Status.SUCCESS:
-            job_status = Result.Status.ERROR
             info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
+
+    if Path(Settings.CUSTOM_DATA_FILE).is_file():
+        with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+            custom_data = json.load(f)
+        print(f"Custom data: [{custom_data}]")
+    else:
+        custom_data = {}
+        print(f"Custom data has not been provided")
+
+    env = _Environment.get()
+    workflow_config = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={},
+        sha=env.SHA,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        custom_data=custom_data,
+    ).dump()
 
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"
 
     # config:
-    if workflow.dockers:
+    if results[-1].is_ok() and workflow.dockers:
+        sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
-        dockers = workflow.dockers
-        dockers = Docker.sort_in_build_order(dockers)
-        for docker in dockers:
-            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, dockers
+        try:
+            dockers = workflow.dockers
+            dockers = Docker.sort_in_build_order(dockers)
+            for docker in dockers:
+                workflow_config.digest_dockers[docker.name] = (
+                    Digest().calc_docker_digest(docker, dockers)
+                )
+            workflow_config.dump()
+            res = True
+        except Exception as e:
+            res = False
+        results.append(
+            Result.create_from(
+                name="Calculate docker digests", status=res, stopwatch=sw_
             )
-        workflow_config.dump()
+        )
 
-    if workflow.enable_cache:
+    if results[-1].is_ok() and workflow.enable_cache:
         print("Cache Lookup")
         stop_watch = Utils.Stopwatch()
-        workflow_config = CacheRunnerHooks.configure(workflow)
+        info = ""
+        try:
+            workflow_config = CacheRunnerHooks.configure(workflow)
+            files.append(RunConfig.file_name_static(workflow.name))
+            res = True
+        except Exception as e:
+            res = False
+            info = f"Exception while cache lookup [{e}]"
         results.append(
             Result(
                 name="Cache Lookup",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.SUCCESS if res else Result.Status.FAILED,
                 start_time=stop_watch.start_time,
                 duration=stop_watch.duration,
+                info=info,
             )
         )
-        files.append(RunConfig.file_name_static(workflow.name))
-
     workflow_config.dump()
 
-    if workflow.enable_report:
+    if results[-1].is_ok() and workflow.enable_report:
         print("Init report")
         stop_watch = Utils.Stopwatch()
         HtmlRunnerHooks.configure(workflow)
@@ -309,17 +345,15 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         )
         files.append(Result.file_name_static(workflow.name))
 
-    Result.from_fs(job_name).set_status(job_status).set_results(results).set_files(
-        files
-    ).set_info("\n".join(info_lines))
-
-    if job_status != Result.Status.SUCCESS:
-        sys.exit(1)
+    return Result.create_from(
+        name=job_name, results=results, files=files, info=("\n".join(info_lines))
+    )
 
 
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
+    stop_watch = Utils.Stopwatch()
 
     print("Check Actions statuses")
     print(env.get_needs_statuses())
@@ -332,21 +366,21 @@ def _finish_workflow(workflow, job_name):
 
     update_final_report = False
     results = []
-    if Settings.PIPELINE_POSTCHECKS:
+    if workflow.post_hooks:
         sw_ = Utils.Stopwatch()
-        res_ = workflow_result.results
         update_final_report = True
-        for check in Settings.PIPELINE_POSTCHECKS:
+        results_ = []
+        for check in workflow.post_hooks:
             if callable(check):
                 name = check.__name__
             else:
                 name = str(check)
-            res_.append(
+            results_.append(
                 Result.from_commands_run(name=name, command=check, with_info=True)
             )
 
         results.append(
-            Result.create_from(name="Post Checks", results=res_, stopwatch=sw_)
+            Result.create_from(name="Post Checks", results=results_, stopwatch=sw_)
         )
 
     ready_for_merge_status = Result.Status.SUCCESS
@@ -377,9 +411,11 @@ def _finish_workflow(workflow, job_name):
             failed_results.append(result.name)
 
     if failed_results:
-        ready_for_merge_description = (
-            f'Failed {len(failed_results)} "Required for Merge" jobs'
-        )
+        failed_jobs_csv = ",".join(failed_results)
+        if len(failed_jobs_csv) < 50:
+            ready_for_merge_description = f"Failed: {failed_jobs_csv}"
+        else:
+            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
 
     if not GH.post_commit_status(
         name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",
@@ -393,18 +429,32 @@ def _finish_workflow(workflow, job_name):
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
-    Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_results(results)
+    return Result.create_from(results=results, stopwatch=stop_watch)
 
 
 if __name__ == "__main__":
     job_name = sys.argv[1]
     assert job_name, "Job name must be provided as input argument"
-    workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
-    if job_name == Settings.DOCKER_BUILD_JOB_NAME:
-        _build_dockers(workflow, job_name)
-    elif job_name == Settings.CI_CONFIG_JOB_NAME:
-        _config_workflow(workflow, job_name)
-    elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:
-        _finish_workflow(workflow, job_name)
-    else:
-        assert False, f"BUG, job name [{job_name}]"
+    sw = Utils.Stopwatch()
+    try:
+        workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
+        if job_name == Settings.DOCKER_BUILD_JOB_NAME:
+            result = _build_dockers(workflow, job_name)
+        elif job_name == Settings.CI_CONFIG_JOB_NAME:
+            result = _config_workflow(workflow, job_name)
+        elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:
+            result = _finish_workflow(workflow, job_name)
+        else:
+            assert False, f"BUG, job name [{job_name}]"
+    except Exception as e:
+        error_traceback = traceback.format_exc()
+        print("Failed with Exception:")
+        print(error_traceback)
+        result = Result.create_from(
+            name=job_name,
+            status=Result.Status.ERROR,
+            stopwatch=sw,
+            info=f"Failed with Exception [{e}]\n{error_traceback}",
+        )
+
+    result.dump().complete_job()

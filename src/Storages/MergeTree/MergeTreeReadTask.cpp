@@ -77,7 +77,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     return new_readers;
 }
 
-MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions)
+MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
         throw Exception(
@@ -87,12 +87,15 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
 
     std::vector<MergeTreeRangeReader> range_readers;
 
-    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
+    size_t step_index = 0;
+
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i, ++step_index)
     {
         range_readers.emplace_back(
             task_readers.prewhere[i].get(),
             (i == 0) ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
+            read_steps_performance_counters.getCountersForStep(i),
             /*main_reader_=*/ false);
     }
 
@@ -102,18 +105,19 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
             task_readers.main.get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
+            read_steps_performance_counters.getCountersForStep(range_readers.size()),
             /*main_reader_=*/ true);
     }
 
     return MergeTreeReadersChain{std::move(range_readers)};
 }
 
-void MergeTreeReadTask::initializeRangeReaders(const PrewhereExprInfo & prewhere_actions)
+void MergeTreeReadTask::initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
 
-    readers_chain = createReadersChain(readers, prewhere_actions);
+    readers_chain = createReadersChain(readers, prewhere_actions, read_steps_performance_counters);
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

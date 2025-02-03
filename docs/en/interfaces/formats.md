@@ -435,6 +435,10 @@ Limitations:
 
 See [RawBLOB](formats/RawBLOB.md)
 
+## Markdown
+
+See [Markdown](formats/Markdown.md)
+
 ## MsgPack {#msgpack}
 
 See [MsgPack](formats/MsgPack.md)

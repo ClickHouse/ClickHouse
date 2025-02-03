@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager

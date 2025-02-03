@@ -513,7 +513,7 @@ INSERT INTO test SELECT number, formatRow('JSONEachRow', number as d) FROM numbe
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as e)  FROM numbers(1);
 ```
 
-Each insert will create a separate data pert with `JSON` column containing single path:
+Each insert will create a separate data part with `JSON` column containing single path:
 ```sql
 SELECT count(), JSONDynamicPaths(json) AS dynamic_paths, JSONSharedDataPaths(json) AS shared_data_paths, _part FROM test GROUP BY _part, dynamic_paths, shared_data_paths ORDER BY _part ASC
 ```

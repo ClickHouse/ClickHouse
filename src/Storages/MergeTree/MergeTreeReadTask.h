@@ -66,6 +66,8 @@ struct MergeTreeReadTaskInfo
     size_t part_index_in_query;
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
+    /// Prewhere steps that should be applied to execute on-fly mutations for part.
+    PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
@@ -124,7 +126,7 @@ public:
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
-    void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
+    void initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
@@ -136,7 +138,7 @@ public:
     Readers releaseReaders() { return std::move(readers); }
 
     static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
-    static MergeTreeReadersChain createReadersChain(const Readers & readers, const PrewhereExprInfo & prewhere_actions);
+    static MergeTreeReadersChain createReadersChain(const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     UInt64 estimateNumRows() const;

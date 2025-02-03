@@ -802,10 +802,12 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     Block prev_reader_header_,
     const PrewhereExprStep * prewhere_info_,
+    ReadStepPerformanceCountersPtr performance_counters_,
     bool main_reader_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
     , prewhere_info(prewhere_info_)
+    , performance_counters(performance_counters_)
     , main_reader(main_reader_)
 {
     result_sample_block = std::move(prev_reader_header_);
@@ -987,8 +989,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     fillVirtualColumns(result.columns, result, leading_begin_part_offset, leading_end_part_offset);
     result.num_rows = result.numReadRows();
 
-    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * result.numReadRows());
-    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * result.numReadRows());
+    updatePerformanceCounters(result.numReadRows());
 
     return result;
 }
@@ -1108,39 +1109,16 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
 
     fillVirtualColumns(columns, result, leading_begin_part_offset, leading_end_part_offset);
 
-    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows);
-    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows);
+    updatePerformanceCounters(num_rows);
 
     return columns;
 }
 
-void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & additional_columns, size_t num_read_rows) const
+void MergeTreeRangeReader::updatePerformanceCounters(size_t num_rows_read)
 {
-    merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
-
-    /// fillMissingColumns() must be called after reading but before any filterings because
-    /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
-    /// fillMissingColumns() fixes this.
-    bool should_evaluate_missing_defaults;
-    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows);
-
-    if (result.total_rows_per_granule == num_read_rows && result.num_rows != num_read_rows)
-    {
-        /// We have filter applied from the previous step
-        /// So we need to apply it to the newly read rows
-        if (!result.final_filter.present() || result.final_filter.countBytesInFilter() != result.num_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
-
-        filterColumns(read_columns, result.final_filter);
-    }
-
-    /// If columns not empty, then apply on-fly alter conversions if any required
-    if (!prewhere_info || prewhere_info->perform_alter_conversions)
-        merge_tree_reader->performRequiredConversions(read_columns);
-
-    /// If some columns absent in part, then evaluate default values
-    if (should_evaluate_missing_defaults)
-        merge_tree_reader->evaluateMissingDefaults(additional_columns, read_columns);
+    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows_read);
+    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows_read);
+    performance_counters->rows_read += num_rows_read;
 }
 
 static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
