@@ -8,7 +8,7 @@ namespace DB
 class NestedElementsValidationTransform : public ISimpleTransform
 {
 public:
-    NestedElementsValidationTransform(const Block & header);
+    explicit NestedElementsValidationTransform(const Block & header);
 
     String getName() const override { return "NestedElementsValidationTransform"; }
 
