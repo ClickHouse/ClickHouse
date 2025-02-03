@@ -148,6 +148,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 return {};
             }
 
+            LOG_TEST(log, "Received batch of size: {}", result->size());
+
             new_batch = std::move(result.value());
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
@@ -187,13 +189,24 @@ ObjectStorageQueueSource::FileIterator::next()
                 result_indexes.resize(new_batch.size());
 
                 Coordination::Requests requests;
+                size_t num_successful_objects = 0;
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
-                    const auto & object = new_batch[i];
                     file_metadatas[i] = metadata->getFileMetadata(
-                        object->relative_path,
+                        new_batch[i]->relative_path,
                         /* bucket_info */{}); /// No buckets for Unordered mode.
-                    result_indexes[i] = file_metadatas[i]->prepareSetProcessingRequests(requests);
+
+                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
+                    if (set_processing_result.has_value())
+                    {
+                        result_indexes[i] = set_processing_result.value();
+                        ++num_successful_objects;
+                    }
+                    else
+                    {
+                        new_batch[i] = nullptr;
+                        file_metadatas[i] = nullptr;
+                    }
                 }
 
                 Coordination::Responses responses;
@@ -202,8 +215,12 @@ ObjectStorageQueueSource::FileIterator::next()
                 if (code == Coordination::Error::ZOK)
                 {
                     LOG_TEST(log, "Successfully set {} files as processing", new_batch.size());
+
                     for (size_t i = 0; i < new_batch.size(); ++i)
                     {
+                        if (!new_batch[i])
+                            continue;
+
                         const auto & response_indexes = result_indexes[i];
                         const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
                             *responses[response_indexes.set_processing_id_node_idx].get());
@@ -220,6 +237,31 @@ ObjectStorageQueueSource::FileIterator::next()
 
                     file_metadatas.clear();
                 }
+
+                if (num_successful_objects != new_batch.size())
+                {
+                    size_t batch_i = 0;
+                    for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
+                    {
+                        while (batch_i < new_batch.size() && !new_batch[batch_i])
+                            ++batch_i;
+
+                        if (batch_i == new_batch.size())
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Mismatch num_successful_objects ({}) is less than the number of valid objects",
+                                num_successful_objects);
+                        }
+
+                        new_batch[i] = new_batch[batch_i];
+                        file_metadatas[i] = file_metadatas[batch_i];
+                    }
+                    new_batch.resize(num_successful_objects);
+                    file_metadatas.resize(num_successful_objects);
+                }
+
+                chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
             }
         }
 
@@ -239,10 +281,12 @@ ObjectStorageQueueSource::FileIterator::next()
         object_infos[index],
         file_metadatas.empty() ? nullptr : file_metadatas[index]);
 
-    if (result.second)
-        chassert(
-            result.first->getPath() == result.second->getPath(),
-            fmt::format("Mismatch {} vs {}", result.first->getPath(), result.second->getPath()));
+    if (result.second && result.first->getPath() != result.second->getPath())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Mismatch {} and {}", result.first->getPath(), result.second->getPath());
+    }
 
     ++index;
     return result;
