@@ -12,8 +12,6 @@ RUN apt-get update && \
     apt install -y --no-install-recommends git openssh-server bash ca-certificates curl && \
     rm -rf /var/lib/apt/lists/*:
 
-RUN curl https://clickhouse.com/ | sh
-
 # At this point we want to really update /opt/clickhouse-docs directory
 # So we reset the cache
 ARG CACHE_INVALIDATOR=0
