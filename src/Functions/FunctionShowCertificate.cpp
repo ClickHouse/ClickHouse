@@ -41,16 +41,18 @@ public:
 
     static FunctionPtr create(ContextPtr ctx [[maybe_unused]])
     {
-#if !defined(USE_SSL) || USE_SSL == 0
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
-#else
+#if USE_SSL
         return std::make_shared<FunctionShowCertificate>(ctx->getQueryContext()->getClientInfo().certificate);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
 #endif
     }
 
     std::string certificate;
 
+#if USE_SSL
     explicit FunctionShowCertificate(const std::string & certificate_ = "") : certificate(certificate_) {}
+#endif
 
     String getName() const override { return name; }
 
