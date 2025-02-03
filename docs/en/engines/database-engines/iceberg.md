@@ -3,16 +3,20 @@ slug: /en/engines/database-engines/iceberg
 sidebar_position: 30
 sidebar_label: Iceberg
 ---
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Iceberg
+<ExperimentalBadge/>
 
 This database engine provides integration with external catalogs. The initial implementation supports Iceberg REST catalogs, with plans to extend support to other open table formats such as Delta Lake.
 
+:::note
 This is an experimental feature currently under development and may change in a backward-incompatible manner. You can enable it by setting:
 
 ``` sql
 SET allow_experimental_database_iceberg=1;
 ```
+:::
 
 ## Creating a connection {#creating-a-connection}
 ``` sql
