@@ -172,7 +172,8 @@ def check_labels(category, info):
 
     if info.pr_number:
         changed_files_str = Shell.get_output(
-            "git diff --name-only $(git merge-base HEAD origin/master) --cached"
+            "git diff --name-only $(git merge-base HEAD origin/master) --cached",
+            strict=True,
         )
         if "contrib/" in changed_files_str:
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
