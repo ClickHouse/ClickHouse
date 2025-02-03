@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <memory>
+#include <thread>
 
 #include <Access/Common/AccessFlags.h>
 

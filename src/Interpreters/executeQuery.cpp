@@ -607,8 +607,6 @@ void logQueryFinish(
         }
 
         logProcessorProfile(context, query_pipeline.getProcessors());
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
