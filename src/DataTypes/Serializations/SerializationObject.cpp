@@ -403,12 +403,24 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         for (const auto & path : structure_state_concrete->sorted_dynamic_paths)
             object_state->dynamic_path_states[path] = nullptr;
 
-        /// All threads will use the same stream getter that is not thread safe.
-        std::mutex getter_mutex;
+        /// All threads will use the same callbacks that are not thread safe.
+        std::mutex callbacks_mutex;
         auto safe_getter = [&](const SubstreamPath & path)
         {
-            std::unique_lock lock(getter_mutex);
+            std::unique_lock lock(callbacks_mutex);
             return settings.getter(path);
+        };
+
+        auto safe_dynamic_subcolumns_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            return settings.dynamic_subcolumns_callback(path);
+        };
+
+        auto safe_prefixes_prefetch_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            return settings.prefixes_prefetch_callback(path);
         };
 
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths.size() / num_tasks, 1ul);
@@ -421,6 +433,8 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             {
                 auto settings_copy = settings;
                 settings_copy.getter = safe_getter;
+                settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
+                settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);

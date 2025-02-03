@@ -245,7 +245,6 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
         EnumerateStreamsSettings enumerate_settings;
         enumerate_settings.path = settings.path;
         dynamic_state->variant_serialization->enumerateStreams(enumerate_settings, settings.dynamic_subcolumns_callback, SubstreamData(dynamic_state->variant_serialization));
-
     }
 
     dynamic_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_state->variant_state, cache);
