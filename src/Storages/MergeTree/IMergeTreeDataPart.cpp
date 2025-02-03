@@ -232,6 +232,19 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     }
 }
 
+void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files)
+{
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+    size_t minmax_idx_size = minmax_column_names.size();
+    for (size_t i = 0; i < minmax_idx_size; ++i)
+    {
+        String file_name = "minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx";
+        files.push_back(file_name);
+    }
+}
+
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
     switch (state_)
@@ -547,7 +560,7 @@ String IMergeTreeDataPart::getProjectionName() const
     String suffix = "_" + std::to_string(*temp_projection_block_number);
 
     if (!name.ends_with(suffix))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary block number {} is set but projection part {} doesn't have it name's suffix", *temp_projection_block_number, name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary block number {} is set but projection part {} doesn't have it in name's suffix", *temp_projection_block_number, name);
 
     auto pos = name.rfind(suffix);
     chassert(pos != std::string::npos);
