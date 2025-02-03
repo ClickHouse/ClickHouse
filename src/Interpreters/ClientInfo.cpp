@@ -28,28 +28,22 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
     boost::trim(last);
 
+    /// IPv6 address with port
     if (last[0] == '[')
-    {
-        /// IPv6 address with port
         return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
-    }
 
-    if (last[0] == ':')
-    {
-        /// IPv6 address without port
+    int colons = std::count(last.begin(), last.end(), ':');
+
+    /// IPv6 address without port
+    if (colons > 1)
         return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
-    }
 
-    try
-    {
-        /// Probably IPv4 with port
+    /// IPv4 address with port
+    if (colons == 1)
         return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
-    }
-    catch (const Poco::InvalidArgumentException &)
-    {
-        /// IPv4 or IPv6 without port
-       return Poco::Net::SocketAddress{last, 0};
-    }
+
+    /// IPv4 addrtess without port
+    return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
 }
 
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
