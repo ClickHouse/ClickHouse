@@ -23,19 +23,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename R, typename F, typename... P> R HDFSObjectStorage::wrapper(F fn, const P... p) const
-{
-    R r = fn(p...);
-    #if USE_KRB5
-    if (errno == EACCES) // NOLINT
-    {
-        hdfs_builder.runKinit(); // krb5 keytab reinitialization
-        r = fn(p...);
-    }
-    #endif // USE_KRB5
-    return r;
-}
-
 void HDFSObjectStorage::initializeHDFSFS() const
 {
     if (initialized)
@@ -45,8 +32,7 @@ void HDFSObjectStorage::initializeHDFSFS() const
     if (initialized)
         return;
 
-    hdfs_builder = createHDFSBuilder(url, config);
-    hdfs_fs = createHDFSFS(hdfs_builder.get());
+    hdfs_fs = createHDFSFS(builder.get());
     initialized = true;
 }
 
@@ -83,7 +69,7 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
 
-    return (0 == wrapper<int>(hdfsExists, hdfs_fs.get(), path.c_str()));
+    return (0 == wrapErr<int>(hdfsExists, hdfs_fs.get(), path.c_str()));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
@@ -138,7 +124,7 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
         path = path.substr(url_without_path.size());
 
     /// Add path from root to file name
-    int res = wrapper<int>(hdfsDelete, hdfs_fs.get(), path.c_str(), 0);
+    int res = wrapErr<int>(hdfsDelete, hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
@@ -168,7 +154,7 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
     initializeHDFSFS();
-    auto * file_info = wrapper<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
+    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
     if (!file_info)
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
@@ -187,7 +173,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
     LOG_TEST(log, "Trying to list files for {}", path);
 
     HDFSFileInfo ls;
-    ls.file_info = wrapper<hdfsFileInfo *>(hdfsListDirectory, hdfs_fs.get(), path.data(), &ls.length);
+    ls.file_info = wrapErr<hdfsFileInfo *>(hdfsListDirectory, hdfs_fs.get(), path.data(), &ls.length);
 
     if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
     {
