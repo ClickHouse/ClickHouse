@@ -4,6 +4,12 @@
 namespace DB
 {
 
+enum class FileCachePolicy
+{
+    LRU,
+    SLRU,
+};
+
 static constexpr int FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE = 32 * 1024 * 1024; /// 32Mi
 static constexpr int FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT = 4 * 1024 * 1024; /// 4Mi
 static constexpr int FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD = 4 * 1024 * 1024; /// 4Mi
@@ -18,7 +24,7 @@ static constexpr double FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO = 0; /// Dis
 static constexpr int FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH = 10;
 static constexpr auto FILECACHE_DEFAULT_CONFIG_PATH = "filesystem_caches";
 
-static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = "SLRU";
+static constexpr auto FILECACHE_DEFAULT_CACHE_POLICY = FileCachePolicy::SLRU;
 
 /// SLRU ratio of 0.6 means:
 /// 60% of cache for protected elements.

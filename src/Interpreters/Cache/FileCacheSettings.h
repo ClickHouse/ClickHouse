@@ -36,7 +36,7 @@ struct FileCacheSettings
 
     bool write_cache_per_user_id_directory = false;
 
-    std::string cache_policy = FILECACHE_DEFAULT_CACHE_POLICY;
+    FileCachePolicy cache_policy = FILECACHE_DEFAULT_CACHE_POLICY;
     double slru_size_ratio = FILECACHE_DEFAULT_SLRU_RATIO;
 
     double keep_free_space_size_ratio = FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO;

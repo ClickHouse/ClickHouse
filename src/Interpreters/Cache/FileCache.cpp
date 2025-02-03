@@ -100,18 +100,21 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
                settings.background_download_threads,
                write_cache_per_user_directory)
 {
-    if (settings.cache_policy == "LRU")
+    switch (settings.cache_policy)
     {
-        main_priority = std::make_unique<LRUFileCachePriority>(
-            settings.max_size, settings.max_elements, nullptr, cache_name);
+        case FileCachePolicy::LRU:
+        {
+            main_priority = std::make_unique<LRUFileCachePriority>(
+                settings.max_size, settings.max_elements, nullptr, cache_name);
+            break;
+        }
+        case FileCachePolicy::SLRU:
+        {
+            main_priority = std::make_unique<SLRUFileCachePriority>(
+                settings.max_size, settings.max_elements, settings.slru_size_ratio, nullptr, nullptr, cache_name);
+            break;
+        }
     }
-    else if (settings.cache_policy == "SLRU")
-    {
-        main_priority = std::make_unique<SLRUFileCachePriority>(
-            settings.max_size, settings.max_elements, settings.slru_size_ratio, nullptr, nullptr, cache_name);
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", settings.cache_policy);
 
     LOG_DEBUG(log, "Using {} cache policy", settings.cache_policy);
 
