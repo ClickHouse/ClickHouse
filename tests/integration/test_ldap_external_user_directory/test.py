@@ -183,3 +183,24 @@ def test_push_role_to_other_nodes(ldap_cluster):
     instance2.query("DROP ROLE IF EXISTS role_read")
 
     delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_read")
+
+
+def test_remote_query_user_does_not_exist_locally(ldap_cluster):
+    """
+    Check that even if user does not exist locally, using it to execute remote queries is still possible
+    """
+    instance2.query("DROP USER IF EXISTS non_local")
+    instance2.query("DROP TABLE IF EXISTS test_table sync")
+
+    instance2.query("CREATE USER non_local")
+    instance2.query("CREATE TABLE test_table (id Int16) ENGINE=Memory")
+    instance2.query("INSERT INTO test_table VALUES (123)")
+    instance2.query("GRANT SELECT ON default.test_table TO non_local")
+
+    result = instance1.query(
+        "SELECT * FROM remote('instance2', 'default.test_table', 'non_local')"
+    )
+    assert result.strip() == "123"
+
+    instance2.query("DROP USER IF EXISTS non_local")
+    instance2.query("DROP TABLE IF EXISTS test_table SYNC")

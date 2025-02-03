@@ -6,15 +6,12 @@
 #include <string>
 #include <memory>
 
-#include <hdfs/hdfs.h>
-#include <Poco/Util/AbstractConfiguration.h>
-
-#include <base/types.h>
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/SeekableReadBuffer.h>
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
-#include <Interpreters/Context.h>
+#    include <IO/AsynchronousReader.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <IO/SeekableReadBuffer.h>
+#    include <Interpreters/Context.h>
+#    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#    include <base/types.h>
 
 namespace DB
 {

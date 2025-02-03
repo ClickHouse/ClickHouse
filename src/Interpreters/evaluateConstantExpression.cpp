@@ -597,15 +597,15 @@ namespace
         if (column->size() > max_elements)
             return {};
 
-        ColumnPtr casted_col;
+        ColumnPtr cast_col;
         const NullMap * null_map = nullptr;
 
         if (!type->equals(*node->result_type))
         {
-            casted_col = tryCastColumn(column, value->result_type, node->result_type);
-            if (!casted_col)
+            cast_col = tryCastColumn(column, value->result_type, node->result_type);
+            if (!cast_col)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*casted_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
             null_map = &col_nullable.getNullMapData();
             column = col_nullable.getNestedColumnPtr();
         }
@@ -686,8 +686,11 @@ namespace
                 if (lists.empty())
                     return {};
 
+                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
+                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
+                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;

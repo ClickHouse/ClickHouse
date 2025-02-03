@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/FieldToDataType.h>
+#include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -13,6 +15,8 @@
 
 #include "config.h"
 
+class SipHash;
+
 namespace DB
 {
 
@@ -20,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
 
 /** A template for columns that use a simple array to store.
  */
@@ -204,6 +207,13 @@ public:
         res = (*this)[n];
     }
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
+        const auto & val = castToNearestFieldType(data[n]);
+        return {FieldVisitorToString()(val), FieldToDataType()(val)};
+    }
+
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;
@@ -286,7 +296,7 @@ public:
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);

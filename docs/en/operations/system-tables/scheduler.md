@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/scheduler
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # scheduler
+
+<SystemTableCloud/>
 
 Contains information and status for [scheduling nodes](/docs/en/operations/workload-scheduling.md/#hierarchy) residing on the local server.
 This table can be used for monitoring. The table contains a row for every scheduling node.

@@ -1,4 +1,6 @@
+#include <Columns/ColumnVector.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

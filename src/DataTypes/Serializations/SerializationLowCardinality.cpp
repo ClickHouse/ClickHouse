@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 #include <Core/Field.h>
 
 namespace DB

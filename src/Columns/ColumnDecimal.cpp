@@ -478,7 +478,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 }
 
 template <is_decimal T>
-ColumnPtr ColumnDecimal<T>::compress() const
+ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 {
     const size_t data_size = data.size();
     const size_t source_size = data_size * sizeof(T);
@@ -487,7 +487,7 @@ ColumnPtr ColumnDecimal<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());

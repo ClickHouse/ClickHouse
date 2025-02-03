@@ -19,9 +19,6 @@ private:
     const std::string metadata_key_prefix;
     const std::string object_key_prefix;
 
-    bool write_created = false;
-    bool write_finalized = false;
-
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         /// path_ must end with a trailing '/'.
@@ -43,7 +40,6 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    bool write_created = false;
     bool write_finalized = false;
 
     std::unique_ptr<WriteBufferFromFileBase>
@@ -73,7 +69,7 @@ private:
     const std::string metadata_key_prefix;
 
     std::string key_prefix;
-    bool removed = false;
+    bool remove_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(

@@ -65,6 +65,11 @@
     M(DefaultImplementationForNullsRowsWithNulls, "Number of rows which contain null values processed by default implementation for nulls in function execution", ValueType::Number) \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
+    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(SkippingIndexCacheHits, "Number of times an index granule has been found in the skipping index cache.", ValueType::Number) \
+    M(SkippingIndexCacheMisses, "Number of times an index granule has not been found in the skipping index cache and had to be read from disk.", ValueType::Number) \
+    M(SkippingIndexCacheWeightLost, "Approximate number of bytes evicted from the secondary index cache.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     /* Each page cache chunk access increments exactly one of the following 5 PageCacheChunk* counters. */ \
@@ -119,8 +124,8 @@
     M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
     M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
-    M(PartsWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly", ValueType::Number) \
-    M(MutationsAppliedOnFlyInAllParts, "The sum of number of applied mutations on-fly for part among all read parts", ValueType::Number) \
+    M(ReadTasksWithAppliedMutationsOnFly, "Total number of parts for which there was any mutation applied on fly", ValueType::Number) \
+    M(MutationsAppliedOnFlyInAllReadTasks, "The sum of number of applied mutations on-fly for part among all read parts", ValueType::Number) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
@@ -210,6 +215,11 @@
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
     \
+    M(IcebergPartitionPrunnedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
+    M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
+    M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
+    M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
+    \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \
     \
@@ -229,8 +239,13 @@
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
+    M(LoadingMarksTasksCanceled, "Number of times background tasks for loading marks were canceled", ValueType::Number) \
+    M(LoadedMarksFiles, "Number of mark files loaded.", ValueType::Number) \
     M(LoadedMarksCount, "Number of marks loaded (total across columns).", ValueType::Number) \
     M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.", ValueType::Bytes) \
+    M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
+    M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
+    M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
     \
     M(Merge, "Number of launched background merges.", ValueType::Number) \
     M(MergeSourceParts, "Number of source parts scheduled for merges.", ValueType::Number) \
@@ -738,6 +753,14 @@ The server successfully detected this situation and will download merged part fr
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \
     M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data", ValueType::Microseconds) \
     M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries", ValueType::Microseconds) \
+    M(BackupPreparingFileInfosMicroseconds, "Time spent preparing file infos for backup entries", ValueType::Microseconds) \
+    M(BackupReadLocalFilesToCalculateChecksums, "Number of files read locally to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupReadLocalBytesToCalculateChecksums, "Total size of files read locally to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupReadRemoteFilesToCalculateChecksums, "Number of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupReadRemoteBytesToCalculateChecksums, "Total size of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
+    M(BackupLockFileReads, "How many times the '.lock' file was read while making backup", ValueType::Number) \
+    M(RestorePartsSkippedFiles, "Number of files skipped while restoring parts", ValueType::Number) \
+    M(RestorePartsSkippedBytes, "Total size of files skipped while restoring parts", ValueType::Number) \
     \
     M(ReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the initiator server side.", ValueType::Number) \
     M(MergeTreeReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the initiator server side.", ValueType::Number) \
@@ -811,6 +834,7 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning", ValueType::Number) \
     M(LogError, "Number of log messages with level Error", ValueType::Number) \
     M(LogFatal, "Number of log messages with level Fatal", ValueType::Number) \
+    M(LoggerElapsedNanoseconds, "Cumulative time spend in logging", ValueType::Nanoseconds) \
     \
     M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces", ValueType::Bytes) \
     M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces", ValueType::Bytes) \
@@ -959,6 +983,15 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     counters = counters_holder.get();
 }
 
+Counters::Counters(Counters && src) noexcept
+    : counters(std::exchange(src.counters, nullptr))
+    , counters_holder(std::move(src.counters_holder))
+    , parent(src.parent.exchange(nullptr))
+    , trace_profile_events(src.trace_profile_events)
+    , level(src.level)
+{
+}
+
 void Counters::resetCounters()
 {
     if (counters)
@@ -970,7 +1003,7 @@ void Counters::resetCounters()
 
 void Counters::reset()
 {
-    parent = nullptr;
+    setParent(nullptr);
     resetCounters();
 }
 
@@ -1073,6 +1106,11 @@ void incrementForLogMessage(Poco::Message::Priority priority)
         case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
         default: break;
     }
+}
+
+void incrementLoggerElapsedNanoseconds(UInt64 ns)
+{
+    increment(LoggerElapsedNanoseconds, ns);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)

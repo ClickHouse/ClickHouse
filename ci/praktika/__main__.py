@@ -1,19 +1,19 @@
 import argparse
 import sys
 
-from praktika.html_prepare import Html
-from praktika.utils import Utils
-from praktika.validator import Validator
-from praktika.yaml_generator import YamlGenerator
+from .html_prepare import Html
+from .utils import Utils
+from .validator import Validator
+from .yaml_generator import YamlGenerator
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog="python3 -m praktika")
+    parser = argparse.ArgumentParser(prog="praktika")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     run_parser = subparsers.add_parser("run", help="Job Runner")
-    run_parser.add_argument("--job", help="Job Name", type=str, required=True)
+    run_parser.add_argument("job", help="Job Name", type=str)
     run_parser.add_argument(
         "--workflow",
         help="Workflow Name (required if job name is not uniq per config)",
@@ -75,7 +75,8 @@ def create_parser():
     return parser
 
 
-if __name__ == "__main__":
+def main():
+    sys.path.append(".")
     parser = create_parser()
     args = parser.parse_args()
 
@@ -85,22 +86,27 @@ if __name__ == "__main__":
     elif args.command == "html":
         Html.prepare()
     elif args.command == "run":
-        from praktika.mangle import _get_workflows
-        from praktika.runner import Runner
+        from .mangle import _get_workflows
+        from .runner import Runner
 
-        workflows = _get_workflows(name=args.workflow or None)
+        workflows = _get_workflows(
+            name=args.workflow or None, default=not bool(args.workflow)
+        )
         job_workflow_pairs = []
         for workflow in workflows:
-            job = workflow.find_job(args.job, lazy=True)
-            if job:
-                job_workflow_pairs.append((job, workflow))
+            jobs = workflow.find_jobs(args.job, lazy=True)
+            if jobs:
+                for job in jobs:
+                    job_workflow_pairs.append((job, workflow))
         if not job_workflow_pairs:
             Utils.raise_with_error(
                 f"Failed to find job [{args.job}] workflow [{args.workflow}]"
             )
         elif len(job_workflow_pairs) > 1:
+            for job, wf in job_workflow_pairs:
+                print(f"Job: [{job.name}], Workflow [{wf.name}]")
             Utils.raise_with_error(
-                f"More than one job [{args.job}] found - try specifying workflow name with --workflow"
+                f"More than one job [{args.job}]: {[(wf.name, job.name) for job, wf in job_workflow_pairs]}"
             )
         else:
             job, workflow = job_workflow_pairs[0][0], job_workflow_pairs[0][1]
@@ -120,3 +126,7 @@ if __name__ == "__main__":
     else:
         parser.print_help()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

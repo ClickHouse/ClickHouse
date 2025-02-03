@@ -1,10 +1,9 @@
 ---
 slug: /en/sql-reference/data-types/float
 sidebar_position: 4
-sidebar_label: Float32, Float64, BFloat16
+sidebar_label: Float32 | Float64 | BFloat16
+title: Float32 | Float64 | BFloat16 Types
 ---
-
-# Float32, Float64, BFloat16
 
 :::note
 If you need accurate calculations, in particular if you work with financial or business data requiring a high precision, you should consider using [Decimal](../data-types/decimal.md) instead. 
@@ -58,9 +57,7 @@ When creating tables, numeric parameters for floating point numbers can be set (
 
 ``` sql
 SELECT 1 - 0.9
-```
 
-``` text
 ┌───────minus(1, 0.9)─┐
 │ 0.09999999999999998 │
 └─────────────────────┘
@@ -80,9 +77,7 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 ``` sql
 SELECT 0.5 / 0
-```
 
-``` text
 ┌─divide(0.5, 0)─┐
 │            inf │
 └────────────────┘
@@ -94,9 +89,7 @@ SELECT 0.5 / 0
 
 ``` sql
 SELECT -0.5 / 0
-```
 
-``` text
 ┌─divide(-0.5, 0)─┐
 │            -inf │
 └─────────────────┘
@@ -108,9 +101,7 @@ SELECT -0.5 / 0
 
 ``` sql
 SELECT 0 / 0
-```
 
-``` text
 ┌─divide(0, 0)─┐
 │          nan │
 └──────────────┘
@@ -120,8 +111,12 @@ See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-refer
 
 ## BFloat16
 
-`BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa.
-
+`BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa. 
 It is useful for machine learning and AI applications.
 
-ClickHouse supports conversions between `Float32` and `BFloat16`. Most of other operations are not supported.
+ClickHouse supports conversions between `Float32` and `BFloat16` which 
+can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#tofloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#tobfloat16) functions.
+
+:::note
+Most other operations are not supported.
+:::

@@ -8,10 +8,11 @@
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
-#include <IO/SharedThreadPools.h>
 
 namespace ProfileEvents
 {
@@ -42,7 +43,7 @@ namespace
     public:
         UploadHelper(
             const CreateReadBuffer & create_read_buffer_,
-            std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client_,
+            std::shared_ptr<const AzureBlobStorage::ContainerClient> client_,
             size_t offset_,
             size_t total_size_,
             const String & dest_container_for_logging_,
@@ -67,7 +68,7 @@ namespace
 
     protected:
         std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer;
-        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
+        std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
         size_t offset;
         size_t total_size;
         const String & dest_container_for_logging;
@@ -159,7 +160,7 @@ namespace
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-            if (client->GetClickhouseOptions().IsClientForDisk)
+            if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
             block_blob_client.CommitBlockList(block_ids);
@@ -271,7 +272,7 @@ namespace
         void processUploadPartRequest(UploadPartTask & task)
         {
             ProfileEvents::increment(ProfileEvents::AzureStageBlock);
-            if (client->GetClickhouseOptions().IsClientForDisk)
+            if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
@@ -322,7 +323,7 @@ void copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
@@ -335,8 +336,8 @@ void copyDataToAzureBlobStorageFile(
 
 
 void copyAzureBlobStorageFile(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> src_client,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
     size_t offset,
@@ -353,7 +354,7 @@ void copyAzureBlobStorageFile(
     {
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_container_for_logging, src_blob);
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-        if (dest_client->GetClickhouseOptions().IsClientForDisk)
+        if (dest_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
         auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);

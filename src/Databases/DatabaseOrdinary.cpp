@@ -91,65 +91,79 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr context)
+static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
 {
-    auto * storage = create_query->storage;
-
-    /// Get replicated engine
-    const auto & server_settings = context->getServerSettings();
-    String replica_path = server_settings[ServerSetting::default_replica_path];
-    String replica_name = server_settings[ServerSetting::default_replica_name];
-
-    /// Check that replica path doesn't exist
     Macros::MacroExpansionInfo info;
-    StorageID table_id = StorageID(create_query->getDatabase(), create_query->getTable(), create_query->uuid);
+    StorageID table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
     info.table_id = table_id;
     info.expand_special_macros_only = false;
 
-    String zookeeper_path = context->getMacros()->expand(replica_path, info);
-    if (context->getZooKeeper()->exists(zookeeper_path))
+    const auto & server_settings = local_context->getServerSettings();
+    String replica_path = server_settings[ServerSetting::default_replica_path];
+    String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
+    if (local_context->getZooKeeper()->exists(zookeeper_path))
         throw Exception(
             ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );
-
-    auto args = std::make_shared<ASTExpressionList>();
-    args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
-    args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
-
-    /// Add old engine's arguments
-    if (storage->engine->arguments)
-    {
-        for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
-            args->children.push_back(storage->engine->arguments->children[i]->clone());
-    }
-
-    auto engine = std::make_shared<ASTFunction>();
-    engine->name = "Replicated" + storage->engine->name;
-    engine->arguments = args;
-
-    /// Set new engine for the old query
-    create_query->storage->set(create_query->storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
+void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
+{
+    auto * storage = create_query.storage;
+    auto args = std::make_shared<ASTExpressionList>();
+    auto engine = std::make_shared<ASTFunction>();
+    String engine_name;
+
+    if (replicated)
+    {
+        const auto & server_settings = local_context->getServerSettings();
+        String replica_path = server_settings[ServerSetting::default_replica_path];
+        String replica_name = server_settings[ServerSetting::default_replica_name];
+
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
+        args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+
+        /// Add old engine's arguments
+        if (storage->engine->arguments)
+        {
+            for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
+                args->children.push_back(storage->engine->arguments->children[i]->clone());
+        }
+
+        engine_name = "Replicated" + storage->engine->name;
+    }
+    else
+    {
+        /// Add old engine's arguments without first two
+        if (storage->engine->arguments)
+        {
+            for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
+                args->children.push_back(storage->engine->arguments->children[i]->clone());
+        }
+
+        engine_name = storage->engine->name.substr(strlen("Replicated"));
+    }
+
+    /// Set new engine for the old query
+    engine->name = engine_name;
+    engine->arguments = args;
+    create_query.storage->set(create_query.storage->engine, engine->clone());
+}
+
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
     fs::path data_path;
-    if (storage_policy->getDisks().empty())
-        data_path = getContext()->getPath();
-    else
-        data_path = storage_policy->getDisks()[0]->getPath();
-
     if (!tableStarted)
     {
         auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = data_path / getTableDataPath(create_query->as<ASTCreateQuery &>());
+        data_path = getTableDataPath(create_query->as<ASTCreateQuery &>());
     }
     else
-        data_path = data_path / getTableDataPath(name);
+        data_path = getTableDataPath(name);
 
-    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME);
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -158,21 +172,23 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     fs::path file_path(file_name);
     fs::path full_path = path / file_path;
 
-    auto * create_query = ast->as<ASTCreateQuery>();
+    auto & create_query = ast->as<ASTCreateQuery &>();
 
-    if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated") || create_query->storage->engine->name.starts_with("Shared"))
+    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
         return;
 
     /// Get table's storage policy
     MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
     auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
-    if (auto * query_settings = create_query->storage->settings)
+    if (auto * query_settings = create_query.storage->settings)
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
-    if (!fs::exists(convert_to_replicated_flag_path))
+    auto storage_disks = policy->getDisks();
+    auto checking_disk = storage_disks.empty() ? db_disk : storage_disks[0];
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
     if (getUUID() == UUIDHelpers::Nil)
@@ -181,21 +197,24 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
-    setReplicatedEngine(create_query, getContext());
+    checkReplicaPathExists(create_query, getContext());
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
     {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+            out->sync();
+        out->finalize();
+        out.reset();
     }
-    fs::rename(table_metadata_tmp_path, table_metadata_path);
+    db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 
     LOG_INFO(
         log,
@@ -244,7 +263,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     }
                 }
 
-                if (fs::exists(full_path.string() + detached_suffix))
+                if (db_disk->existsFile(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
@@ -355,11 +374,14 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
-    if (!fs::exists(convert_to_replicated_flag_path))
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
+
+    auto storage_disks = table->getStoragePolicy()->getDisks();
+    auto checking_disk = storage_disks.empty() ? db_disk : storage_disks[0];
+    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
-    (void)fs::remove(convert_to_replicated_flag_path);
+    checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -388,7 +410,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     }
     else
     {
-        rmt->restoreMetadataInZooKeeper();
+        rmt->restoreMetadataInZooKeeper(/* zookeeper_retries_info = */ {});
         LOG_INFO
         (
             log,
@@ -559,8 +581,11 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     String statement;
 
     {
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE);
-        readStringUntilEOF(statement, in);
+        ReadSettings read_settings = getReadSettings();
+        read_settings.local_fs_method = LocalFSReadMethod::read;
+        read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+        auto in = db_disk->readFile(table_metadata_path, read_settings);
+        readStringUntilEOF(statement, *in);
     }
 
     ParserCreateQuery parser;
@@ -577,12 +602,14 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (local_context->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     /// The create query of the table has been just changed, we need to update dependencies too.
@@ -598,11 +625,11 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     try
     {
         /// rename atomically replaces the old file with the new one.
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+        db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        (void)fs::remove(table_metadata_tmp_path);
+        db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }

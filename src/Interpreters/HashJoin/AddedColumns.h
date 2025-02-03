@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -56,9 +57,34 @@ public:
         }
     };
 
-    struct LazyOutput
+    class LazyOutput
     {
         PaddedPODArray<UInt64> row_refs;
+        size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
+
+    public:
+        const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
+        size_t getRowCount() const { return row_count; }
+
+        void reserve(size_t size) { row_refs.reserve(size); }
+
+        void addRowRef(const RowRef * row_ref)
+        {
+            row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
+            ++row_count;
+        }
+
+        void addRowRefList(const RowRefList * row_ref_list)
+        {
+            row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
+            row_count += row_ref_list->rows;
+        }
+
+        void addDefault()
+        {
+            row_refs.emplace_back(0);
+            ++row_count;
+        }
     };
 
     AddedColumns(
@@ -87,7 +113,7 @@ public:
         if constexpr (lazy)
         {
             has_columns_to_add = num_columns_to_add > 0;
-            lazy_output.row_refs.reserve(rows_to_add);
+            lazy_output.reserve(rows_to_add);
         }
 
         columns.reserve(num_columns_to_add);
@@ -138,6 +164,7 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
+    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();
@@ -237,6 +264,9 @@ private:
      */
     template<bool from_row_list>
     void buildOutputFromBlocks();
+
+    template<bool join_data_sorted>
+    void buildOutputFromRowRefLists();
 };
 
 /// Adapter class to pass into addFoundRowAll

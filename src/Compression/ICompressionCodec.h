@@ -5,8 +5,8 @@
 #include <Compression/CompressionInfo.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
-#include <Common/SipHash.h>
 
+class SipHash;
 
 namespace DB
 {

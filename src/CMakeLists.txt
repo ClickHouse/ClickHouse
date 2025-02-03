@@ -107,13 +107,7 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_dele
 
 
 add_headers_and_sources(clickhouse_compression Compression)
-add_headers_and_sources(clickhouse_compression Parsers)
-add_headers_and_sources(clickhouse_compression Core)
-#Included these specific files to avoid linking grpc
-add_glob(clickhouse_compression_headers Server/ServerType.h)
-add_glob(clickhouse_compression_sources Server/ServerType.cpp)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
-
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -135,6 +129,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -166,6 +161,8 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
+add_headers_and_sources(dbms Databases/Iceberg)
+
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/ObjectStorages/Web)
@@ -173,6 +170,14 @@ add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
     add_headers_and_sources(dbms Storages/Hive)
+endif()
+
+if (ENABLE_BUZZHOUSE)
+    add_subdirectory(Client/BuzzHouse/Proto)
+
+    add_headers_and_sources(dbms Client/BuzzHouse/AST)
+    add_headers_and_sources(dbms Client/BuzzHouse/Generator)
+    add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
 if (OS_LINUX)
@@ -219,10 +224,12 @@ macro(add_object_library name common_path)
 endmacro()
 
 add_object_library(clickhouse_access Access)
+if (TARGET ch_contrib::ssh)
+    add_object_library(clickhouse_access_ssh Access/SSH)
+endif()
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -245,7 +252,11 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
-add_object_library(clickhouse_storages_mergetree_merge_selectors Storages/MergeTree/MergeSelectors)
+add_object_library(clickhouse_storages_mergetree_compaction Storages/MergeTree/Compaction)
+add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Storages/MergeTree/Compaction/MergePredicates)
+add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
+add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Storages/MergeTree/Compaction/PartsCollectors)
+add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
@@ -259,6 +270,10 @@ set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPI
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+if (TARGET ch_contrib::ssh)
+    add_object_library(clickhouse_server_ssh Server/SSH)
+endif()
+add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -422,6 +437,7 @@ dbms_target_link_libraries (
         boost::filesystem
         boost::program_options
         clickhouse_common_config
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
@@ -429,6 +445,7 @@ dbms_target_link_libraries (
         Poco::JSON
     PUBLIC
         boost::system
+        clickhouse_compression
         clickhouse_common_io
         Poco::Redis
 )
@@ -643,6 +660,10 @@ if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
+if (ENABLE_BUZZHOUSE)
+    dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -666,6 +687,7 @@ if (ENABLE_TESTS)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper
         hilite_comparator)

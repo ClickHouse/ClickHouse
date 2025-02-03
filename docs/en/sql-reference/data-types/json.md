@@ -5,9 +5,13 @@ sidebar_label: Object Data Type
 keywords: [object, data type]
 ---
 
-# Object Data Type (deprecated)
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864).
+# Object Data Type 
+
+<DeprecatedBadge/>
+
+**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/docs/en/sql-reference/data-types/newjson).
 
 <hr />
 

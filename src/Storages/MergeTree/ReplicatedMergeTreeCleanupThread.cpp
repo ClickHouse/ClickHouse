@@ -193,7 +193,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearEmptyParts();
     }
 
-    cleaned_part_like += storage.unloadPrimaryKeysOfOutdatedParts();
+    cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.

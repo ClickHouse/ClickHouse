@@ -15,6 +15,7 @@ from helpers.wait_for_helpers import (
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 
 @pytest.fixture(scope="module")
@@ -34,13 +35,23 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=[
-                "configs/storage_policy.xml",
-            ],
+            main_configs=[],
             with_minio=True,
+            stay_alive=True,
         )
 
         cluster.start()
+
+        start_s3_mock(cluster, "broken_s3", "8083")
+
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "storage_policy.xml"),
+                "/etc/clickhouse-server/config.d/storage_policy.xml",
+            )
+            node.start_clickhouse()
+
         logging.info("Cluster started")
 
         yield cluster
@@ -50,6 +61,8 @@ def cluster():
 
 def test_async_alter_move(cluster, broken_s3):
     node = cluster.instances["node"]
+
+    node.query("DROP TABLE IF EXISTS moving_table_async SYNC")
 
     node.query(
         """
@@ -92,9 +105,13 @@ def test_async_alter_move(cluster, broken_s3):
     else:
         assert False, "Cannot find any moving background operation"
 
+    node.query("DROP TABLE IF EXISTS moving_table_async SYNC")
+
 
 def test_sync_alter_move(cluster, broken_s3):
     node = cluster.instances["node"]
+
+    node.query("DROP TABLE IF EXISTS moving_table_sync SYNC")
 
     node.query(
         """
@@ -133,3 +150,5 @@ def test_sync_alter_move(cluster, broken_s3):
         )
         == "broken_s3\n"
     )
+
+    node.query("DROP TABLE IF EXISTS moving_table_sync SYNC")

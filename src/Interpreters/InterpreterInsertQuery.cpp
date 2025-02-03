@@ -35,6 +35,8 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -72,6 +74,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
 }
 
 namespace ServerSetting
@@ -303,6 +310,7 @@ static bool isTrivialSelect(const ASTPtr & select)
 
 Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
+    size_t view_level,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
     ThreadStatusesHolderPtr thread_status_holder,
@@ -324,7 +332,7 @@ Chain InterpreterInsertQuery::buildChain(
     if (check_access)
         getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
 
-    Chain sink = buildSink(table, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
+    Chain sink = buildSink(table, view_level, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
     Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample);
 
     chain.appendChain(std::move(sink));
@@ -333,6 +341,7 @@ Chain InterpreterInsertQuery::buildChain(
 
 Chain InterpreterInsertQuery::buildSink(
     const StoragePtr & table,
+    size_t view_level,
     const StorageMetadataPtr & metadata_snapshot,
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
@@ -361,14 +370,14 @@ Chain InterpreterInsertQuery::buildSink(
     else
     {
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
-            query_ptr, no_destination,
+            query_ptr, view_level, no_destination,
             thread_status_holder, running_group, elapsed_counter_ms, async_insert);
     }
 
     return out;
 }
 
-bool InterpreterInsertQuery::shouldAddSquashingFroStorage(const StoragePtr & table) const
+bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table) const
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
@@ -403,9 +412,35 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
     /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
-    if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
+
+    /// Add implicit sign constraint for Collapsing and VersionedCollapsing tables.
+    auto constraints = metadata_snapshot->getConstraints();
+    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
+    if (storage_merge_tree
+        && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
+            || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
+    {
+        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+        sign_column_check_constraint->name = "_implicit_sign_column_constraint";
+        sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
+
+        Array valid_values_array;
+        valid_values_array.emplace_back(-1);
+        valid_values_array.emplace_back(1);
+
+        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
+        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+
+        auto constraints_ast = constraints.getConstraints();
+        constraints_ast.push_back(std::move(sign_column_check_constraint));
+        constraints = ConstraintsDescription(constraints_ast);
+    }
+
+    if (!constraints.empty())
         out.addSource(std::make_shared<CheckConstraintsTransform>(
-            table->getStorageID(), input_header(), metadata_snapshot->getConstraints(), context_ptr));
+            table->getStorageID(), input_header(), constraints, context_ptr));
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         query_sample_block,
@@ -423,7 +458,13 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
     return out;
 }
 
-std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block)
+std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSinkChains(
+    size_t presink_streams,
+    size_t sink_streams,
+    StoragePtr table,
+    size_t view_level,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Block & query_sample_block)
 {
     chassert(presink_streams > 0);
     chassert(sink_streams > 0);
@@ -439,7 +480,7 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 
     for (size_t i = 0; i < sink_streams; ++i)
     {
-        auto out = buildSink(table, metadata_snapshot, /* thread_status_holder= */ nullptr,
+        auto out = buildSink(table, view_level, metadata_snapshot, /* thread_status_holder= */ nullptr,
             running_group, /* elapsed_counter_ms= */ nullptr);
 
         sink_chains.emplace_back(std::move(out));
@@ -560,7 +601,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
     {
@@ -587,7 +628,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     pipeline.resize(1);
 
-    if (shouldAddSquashingFroStorage(table))
+    if (shouldAddSquashingForStorage(table))
     {
         pipeline.addSimpleTransform(
             [&](const Block & in_header) -> ProcessorPtr
@@ -639,11 +680,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     auto [presink_chains, sink_chains] = buildPreAndSinkChains(
         presink_streams_size, sink_streams_size,
-        table, metadata_snapshot, query_sample_block);
+        table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
     pipeline.resize(presink_chains.size());
 
-    if (shouldAddSquashingFroStorage(table))
+    if (shouldAddSquashingForStorage(table))
     {
         pipeline.addSimpleTransform(
             [&](const Block & in_header) -> ProcessorPtr
@@ -693,7 +734,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     {
         auto [presink_chains, sink_chains] = buildPreAndSinkChains(
             /* presink_streams */1, /* sink_streams */1,
-            table, metadata_snapshot, query_sample_block);
+            table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
         chain = std::move(presink_chains.front());
         chain.appendChain(std::move(sink_chains.front()));
@@ -708,7 +749,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
 
-    if (shouldAddSquashingFroStorage(table))
+    if (shouldAddSquashingForStorage(table))
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 

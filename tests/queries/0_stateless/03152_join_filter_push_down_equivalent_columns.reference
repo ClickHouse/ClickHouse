@@ -65,8 +65,7 @@ SELECT name FROM users RIGHT JOIN users2 USING name WHERE users2.name ='Alice';
 Expression ((Project names + (Projection + )))
 Header: name String
   Join (JOIN FillRightFirst)
-  Header: __table1.name String
-          __table2.name String
+  Header: __table2.name String
     Filter (( + Change column names to column identifiers))
     Header: __table1.name String
       ReadFromMergeTree (default.users)

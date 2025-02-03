@@ -12,13 +12,14 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -366,7 +367,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
+        auto auth_result =
+            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedForHost());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;

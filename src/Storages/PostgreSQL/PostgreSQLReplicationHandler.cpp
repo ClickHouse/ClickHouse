@@ -17,6 +17,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
+
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/String.h>
 
@@ -301,7 +303,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// 2. if replication slot already exist, start_lsn is read from pg_replication_slots as
     ///    `confirmed_flush_lsn` - the address (LSN) up to which the logical slot's consumer has confirmed receiving data.
     ///    Data older than this is not available anymore.
-    String snapshot_name, start_lsn;
+    String snapshot_name;
+    String start_lsn;
 
     /// Also lets have a separate non-replication connection, because we need two parallel transactions and
     /// one connection can have one transaction at a time.
@@ -659,7 +662,8 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 {
     assert(temporary || !user_managed_slot);
 
-    String query_str, slot_name;
+    String query_str;
+    String slot_name;
     if (temporary)
         slot_name = tmp_replication_slot;
     else
@@ -1062,7 +1066,8 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     {
         LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
         postgres::Connection replication_connection(connection_info, /* replication */true);
-        String snapshot_name, start_lsn;
+        String snapshot_name;
+        String start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
         {
