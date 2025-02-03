@@ -175,7 +175,8 @@ void DiskOverlay::ensureHaveDirectories(const String & path)
 
 void DiskOverlay::ensureHaveFile(const String & path)
 {
-    if (existsDirectory(path)) {
+    if (existsDirectory(path))
+    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot ensure there is a file on diff disk as there is a directory");
     }
     if (!disk_diff->existsFile(path))
