@@ -9,7 +9,7 @@ from pure_http_client import ClickHouseClient
 
 client = ClickHouseClient()
 
-print(client.query("SELECT 1", headers={"X-Forwarded-For": "123.124.125.126"}))
-print(client.query("SELECT 1", headers={"X-Forwarded-For": "123.124.125.126:80"}))
-print(client.query("SELECT 1", headers={"X-Forwarded-For": "[::1.1.1.1]:80"}))
-print(client.query("SELECT 1", headers={"X-Forwarded-For": "::1.1.1.1"}))
+print(client.query("SELECT 1", headers={"X-Forwarded-For": "123.124.125.126"}, with_retries=False))
+print(client.query("SELECT 1", headers={"X-Forwarded-For": "123.124.125.126:80"}, with_retries=False))
+print(client.query("SELECT 1", headers={"X-Forwarded-For": "[::1.1.1.1]:80"}, with_retries=False))
+print(client.query("SELECT 1", headers={"X-Forwarded-For": "::1.1.1.1"}, with_retries=False))
