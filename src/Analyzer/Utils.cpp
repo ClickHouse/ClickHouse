@@ -991,7 +991,7 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                if (source != table_expression)
+                if (!source->isEqual(*table_expression))
                     return true;
                 break;
             }
@@ -1024,20 +1024,19 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
         return;
     }
 
-    QueryTreeNodes conjunctions;
-    QueryTreeNodes processing{ expression };
+    QueryTreeNodesDeque conjunctions;
+    QueryTreeNodesDeque processing{ expression };
 
     while (!processing.empty())
     {
-        auto node = std::move(processing.back());
-        processing.pop_back();
+        auto node = std::move(processing.front());
+        processing.pop_front();
 
         if (auto * function_node = node->as<FunctionNode>())
         {
             if (function_node->getFunctionName() == "and")
-                std::copy(
-                    function_node->getArguments().begin(),
-                    function_node->getArguments().end(),
+                std::ranges::copy(
+                    function_node->getArguments(),
                     std::back_inserter(processing)
                 );
             else
@@ -1068,7 +1067,8 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
         return;
     }
 
-    function->getArguments().getNodes() = std::move(conjunctions);
+    function->getArguments().getNodes().clear();
+    std::ranges::move(conjunctions, std::back_inserter(function->getArguments().getNodes()));
 
     const auto function_impl = FunctionFactory::instance().get("and", context);
     function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));

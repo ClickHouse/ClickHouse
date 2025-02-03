@@ -64,6 +64,7 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
+using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
