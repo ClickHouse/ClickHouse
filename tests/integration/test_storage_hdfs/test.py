@@ -553,17 +553,58 @@ def test_hdfsCluster(started_cluster):
     hdfs_api.write_data("/test_hdfsCluster/file2", "2\n")
     hdfs_api.write_data("/test_hdfsCluster/file3", "3\n")
 
-    actual = node1.query(
-        "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
-    )
     expected = "1\tfile1\ttest_hdfsCluster/file1\n2\tfile2\ttest_hdfsCluster/file2\n3\tfile3\ttest_hdfsCluster/file3\n"
+    query_id_pure = str(uuid.uuid4())
+    actual = node1.query(
+        "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id",
+        query_id=query_id_pure,
+    )
     assert actual == expected
 
+    query_id_cluster = str(uuid.uuid4())
     actual = node1.query(
-        "select id, _file as file_name, _path as file_path from hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
+        "select id, _file as file_name, _path as file_path from hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id",
+        query_id=query_id_cluster,
     )
-    expected = "1\tfile1\ttest_hdfsCluster/file1\n2\tfile2\ttest_hdfsCluster/file2\n3\tfile3\ttest_hdfsCluster/file3\n"
     assert actual == expected
+
+    query_id_cluster_alt_syntax = str(uuid.uuid4())
+    actual = node1.query(
+        "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id",
+        settings={"object_storage_cluster":"test_cluster_two_shards"},
+        query_id=query_id_cluster_alt_syntax,
+    )
+    assert actual == expected
+
+    node1.query("SYSTEM FLUSH LOGS")
+    queries_pure = node1.query(
+        f"""
+        SELECT count()
+            FROM system.query_log
+            WHERE type='QueryFinish'
+            AND initial_query_id='{query_id_pure}'
+        """
+        )
+    assert int(queries_pure) == 1
+    queries_cluster = node1.query(
+        f"""
+        SELECT count()
+            FROM system.query_log
+            WHERE type='QueryFinish'
+            AND initial_query_id='{query_id_cluster}'
+        """
+        )
+    assert int(queries_cluster) == 3
+    queries_cluster_alt_syntax = node1.query(
+        f"""
+        SELECT count()
+            FROM system.query_log
+            WHERE type='QueryFinish'
+            AND initial_query_id='{query_id_cluster_alt_syntax}'
+        """
+        )
+    assert int(queries_cluster_alt_syntax) == 3
+
     fs.delete(dir, recursive=True)
 
 
