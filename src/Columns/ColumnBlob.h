@@ -1,9 +1,14 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/Field.h>
+#include <Formats/NativeWriter.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Common/WeakHash.h>
+#include "base/types.h"
 
 
 namespace DB
@@ -20,15 +25,25 @@ class ColumnBlob : public COWHelper<IColumnHelper<ColumnBlob>, ColumnBlob>
 public:
     using Lazy = std::function<ColumnPtr()>;
 
-    explicit ColumnBlob(ColumnPtr src_col_) : src_col(std::move(src_col_)) { }
+    // TODO(nickitat): fix me
+    explicit ColumnBlob(ColumnPtr src_col_) { src_col.column = std::move(src_col_); }
+
+    ColumnBlob(
+        ColumnWithTypeAndName src_col_, CompressionCodecPtr codec_, UInt64 client_revision_, std::optional<FormatSettings> format_settings_)
+        : src_col(std::move(src_col_))
+        , codec(std::move(codec_))
+        , client_revision(client_revision_)
+        , format_settings(std::move(format_settings_))
+    {
+    }
 
     const char * getFamilyName() const override { return "Blob"; }
 
-    size_t size() const override { return src_col->size(); }
-    size_t byteSize() const override { return src_col->byteSize(); }
-    size_t allocatedBytes() const override { return src_col->allocatedBytes(); }
+    size_t size() const override { return src_col.column->size(); }
+    size_t byteSize() const override { return src_col.column->byteSize(); }
+    size_t allocatedBytes() const override { return src_col.column->allocatedBytes(); }
 
-    const ColumnPtr & getNestedColumn() const { return src_col; }
+    const ColumnPtr & getNestedColumn() const { return src_col.column; }
 
     /// Helper methods for compression / decompression.
 
@@ -101,8 +116,25 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
 
 private:
+    using Blob = std::vector<std::byte>;
+
+    Blob blob;
+
     // Maybe we shouldn't keep this reference
-    ColumnPtr src_col;
+    ColumnWithTypeAndName src_col;
+
+    CompressionCodecPtr codec;
+    UInt64 client_revision;
+    std::optional<FormatSettings> format_settings;
+
+    void preprocess()
+    {
+        WriteBufferFromVector<Blob> wbuf(blob);
+        CompressedWriteBuffer compressed_buffer(wbuf, codec);
+        auto serialization = NativeWriter::getSerialization(client_revision, src_col);
+        NativeWriter::writeData(
+            *serialization, src_col.column, compressed_buffer, format_settings, 0, src_col.column->size(), client_revision);
+    }
 
     [[noreturn]] static void throwInapplicable()
     {

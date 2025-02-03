@@ -19,6 +19,8 @@
 #include <Columns/ColumnBlob.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "DataTypes/Serializations/ISerialization.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -60,7 +62,14 @@ void NativeWriter::flush()
 }
 
 
-static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision)
+void NativeWriter::writeData(
+    const ISerialization & serialization,
+    const ColumnPtr & column,
+    WriteBuffer & ostr,
+    const std::optional<FormatSettings> & format_settings,
+    UInt64 offset,
+    UInt64 limit,
+    UInt64 client_revision)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -82,23 +91,38 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-static Block prepare(const Block & block)
+static Block
+prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const std::optional<FormatSettings> & format_settings)
 {
+    if (!codec)
+        return block;
+
     /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
     Block res;
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;
         column.column = recursiveRemoveSparse(column.column);
-        column.column = ColumnBlob::create(column.column);
+        column.column = ColumnBlob::create(column, codec, client_revision, format_settings);
         res.insert(std::move(column));
     }
     return res;
 }
 
-size_t NativeWriter::write(const Block & block_)
+SerializationPtr NativeWriter::getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
-    Block block = prepare(block_);
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+    {
+        auto info = column.type->getSerializationInfo(*column.column);
+        if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+            return column.type->getSerialization(*info);
+    }
+    return column.type->getDefaultSerialization();
+}
+
+size_t NativeWriter::write(const Block & block_, CompressionCodecPtr codec)
+{
+    Block block = prepare(block_, codec, client_revision, format_settings);
 
     size_t written_before = ostr.count();
 
@@ -219,5 +243,4 @@ size_t NativeWriter::write(const Block & block_)
     size_t written_size = written_after - written_before;
     return written_size;
 }
-
 }

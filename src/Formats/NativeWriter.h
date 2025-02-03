@@ -1,9 +1,10 @@
 #pragma once
 
-#include <base/types.h>
-#include <DataTypes/IDataType.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -30,10 +31,21 @@ public:
     Block getHeader() const { return header; }
 
     /// Returns the number of bytes written.
-    size_t write(const Block & block_);
+    size_t write(const Block & block_, CompressionCodecPtr codec = nullptr);
     void flush();
 
     static String getContentType() { return "application/octet-stream"; }
+
+    static void writeData(
+        const ISerialization & serialization,
+        const ColumnPtr & column,
+        WriteBuffer & ostr,
+        const std::optional<FormatSettings> & format_settings,
+        UInt64 offset,
+        UInt64 limit,
+        UInt64 client_revision);
+
+    static SerializationPtr getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column);
 
 private:
     WriteBuffer & ostr;

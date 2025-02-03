@@ -320,6 +320,7 @@ private:
     void initBlockOutput(QueryState & state, const Block & block);
     void initLogsBlockOutput(QueryState & state, const Block & block);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
+    static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);
 
     /// This function is called from different threads.
     void updateProgress(QueryState & state, const Progress & value);
