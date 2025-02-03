@@ -37,25 +37,13 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-
-# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
 add_contrib (openssl-cmake openssl)
-
-# Use the original launchers for the projects that are needed for source code generation:
-# protoc and llvm-tlbgen.
-disable_dummy_launchers_if_needed()
-add_contrib (abseil-cpp-cmake abseil-cpp)
-add_contrib (zlib-ng-cmake zlib-ng)
-add_contrib (google-protobuf-cmake google-protobuf)
-add_contrib (grpc-cmake grpc)
-add_contrib (llvm-project-cmake llvm-project)
-enable_dummy_launchers_if_needed()
-
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
+add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (magic-enum-cmake magic_enum)
 add_contrib (boost-cmake boost)
 add_contrib (cctz-cmake cctz)
@@ -79,6 +67,7 @@ add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
+add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
@@ -86,7 +75,9 @@ add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
+add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (openldap-cmake openldap)
+add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 add_contrib (libarchive-cmake libarchive)
 
@@ -108,6 +99,7 @@ if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
 endif()
 
+add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libfuzzer-cmake llvm-project)
 add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
@@ -213,6 +205,8 @@ else ()
 endif ()
 
 add_contrib (xxHash-cmake xxHash)
+
+add_contrib (expected-cmake expected)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 

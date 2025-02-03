@@ -19,7 +19,6 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -515,8 +514,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
-            fs::path metadata_path_in_backup;
-            fs::path data_path_in_backup;
+            fs::path metadata_path_in_backup, data_path_in_backup;
             auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
             if (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {

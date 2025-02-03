@@ -59,11 +59,8 @@ namespace DB
 /// Allows delaying the start of query execution until the entirety of query is inserted.
 bool LineReader::hasInputData() const
 {
-    timeval timeout = {0, 0};
-    fd_set fds{};
-    FD_ZERO(&fds);
-    FD_SET(in_fd, &fds);
-    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
+    pollfd fd{in_fd, POLLIN, 0};
+    return poll(&fd, 1, 0) == 1;
 }
 
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
@@ -134,8 +131,7 @@ void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelin
     }
 }
 
-LineReader::LineReader
-(
+LineReader::LineReader(
     const String & history_file_path_,
     bool multiline_,
     Patterns extenders_,

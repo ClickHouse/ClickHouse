@@ -1,0 +1,8 @@
+position: 5
+label: 'ClickHouse Keeper'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: ClickHouse Keeper
+  slug: /ja/guides/sre/clickhouse-keeper

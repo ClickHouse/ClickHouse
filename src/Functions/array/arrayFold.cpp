@@ -292,6 +292,6 @@ REGISTER_FUNCTION(ArrayFold)
     factory.registerFunction<FunctionArrayFold>(FunctionDocumentation{.description=R"(
         Function arrayFold(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
         in each (equally-sized) array and collects the result in an accumulator.
-        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .category{"Array"}});
+        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .categories{"Array"}});
 }
 }

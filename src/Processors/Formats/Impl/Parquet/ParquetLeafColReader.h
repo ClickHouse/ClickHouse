@@ -17,10 +17,7 @@ class ColumnDescriptor;
 namespace DB
 {
 
-struct ParquetByteArrayTypeStub {};
-struct ParquetInt96TypeStub {};
-
-template <typename TColumn, typename ParquetType>
+template <typename TColumn>
 class ParquetLeafColReader : public ParquetColumnReader
 {
 public:
