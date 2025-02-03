@@ -83,6 +83,14 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
+    /** Perform column hypothesis deduction.
+      */
+    std::vector<std::pair<std::string,std::string>> deduce(
+        const ASTPtr & query,
+        const std::string& col_to_deduce,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr context) override;
+
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool hasLightweightDeletedMask() const override;

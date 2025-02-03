@@ -22,6 +22,7 @@ void registerInterpreterUseQuery(InterpreterFactory & factory);
 void registerInterpreterSetQuery(InterpreterFactory & factory);
 void registerInterpreterSetRoleQuery(InterpreterFactory & factory);
 void registerInterpreterOptimizeQuery(InterpreterFactory & factory);
+void registerInterpreterDeduceQuery(InterpreterFactory & factory);
 void registerInterpreterExistsQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeQuery(InterpreterFactory & factory);
@@ -87,6 +88,7 @@ void registerInterpreters()
     registerInterpreterSetQuery(factory);
     registerInterpreterSetRoleQuery(factory);
     registerInterpreterOptimizeQuery(factory);
+    registerInterpreterDeduceQuery(factory);
     registerInterpreterExistsQuery(factory);
     registerInterpreterShowCreateQuery(factory);
     registerInterpreterDescribeQuery(factory);

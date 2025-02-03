@@ -557,6 +557,18 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
     }
 
+    /** Perform any background work. For example, deduction hypothesis of parts in a MergeTree type table.
+      * Returns whether any work has been done.
+      */
+    virtual std::vector<std::pair<std::string,std::string>> deduce(
+        const ASTPtr & /*query*/,
+        const std::string& /*col_to_deduce*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
+    }
+
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr)
     {

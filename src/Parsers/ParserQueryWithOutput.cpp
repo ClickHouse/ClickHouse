@@ -11,6 +11,7 @@
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserDeduceQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -57,6 +58,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserUndropQuery undrop_p;
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
+    ParserDeduceQuery deduce_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
     ParserShowAccessQuery show_access_p;
@@ -91,6 +93,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
+        || deduce_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
         || show_access_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)

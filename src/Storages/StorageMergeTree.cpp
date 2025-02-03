@@ -46,6 +46,8 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
 #include "Core/Names.h"
+#include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeDeducer.h>
 #include <IO/SharedThreadPools.h>
 
 namespace CurrentMetrics
@@ -1732,6 +1734,51 @@ bool StorageMergeTree::optimize(
     }
 
     return true;
+}
+
+std::vector<std::pair<std::string,std::string>> StorageMergeTree::deduce(
+    const ASTPtr & /*query*/,
+    const std::string& col_to_deduce,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context)
+{
+    assertNotReadonly();
+    LOG_INFO(log, "Okay deduce for {}", col_to_deduce);
+    std::vector<std::pair<std::string, std::string>> result;
+    DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
+    for (const auto& data_part: data_parts) {
+        const auto& columns = data_part->getColumns();
+        NamesAndTypesList str_type_columns;
+        int deduce_index = -1;
+        for (const auto& column: columns) {
+            if (column.getTypeInStorage()->getTypeId() == TypeIndex::String) {
+                str_type_columns.emplace_back(column);
+                const auto& name = str_type_columns.back().getNameInStorage();
+                if (name == col_to_deduce) deduce_index = static_cast<int>(str_type_columns.size()) - 1;
+                LOG_DEBUG(log, "String type column name: {}", name);
+            }
+        }
+        if (deduce_index == -1) {
+            continue;
+        }
+        const auto& shlak = data_part->getNameWithState();
+        LOG_INFO(log, "Checking partition: {}", data_part->getNameWithState());
+
+        auto alter_conversions = AlterConversionsPtr(new AlterConversions());
+        auto data_part_reader = data_part->getReader(str_type_columns, getStorageSnapshot(metadata_snapshot, local_context), {MarkRange(0, 1)}, IMergeTreeDataPart::VirtualFields(),
+                            /*uncompressed_cache=*/ nullptr, /*mark_cache=*/ nullptr, /*alter_conversions*/ alter_conversions,
+                            MergeTreeReaderSettings(), IMergeTreeDataPart::ValueSizeMap(), ReadBufferFromFileBase::ProfileCallback());
+        MergeTreeDeducer deducer(std::move(data_part_reader), static_cast<int>(str_type_columns.size()));
+        auto hypothesis_vector = deducer.deduce(deduce_index);
+        for (const auto& hypothesis: hypothesis_vector) {
+            if (deducer.check(hypothesis, deduce_index, static_cast<int>(data_part->rows_count))) {
+                result.emplace_back(data_part->getNameWithState(), hypothesis.toStringWithNames(str_type_columns));
+                LOG_INFO(log, "Hypothesis found: {}", hypothesis.toString());
+                break;
+            }
+        }
+    }
+    return result;
 }
 
 namespace

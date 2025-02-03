@@ -120,6 +120,7 @@ enum class AccessType : uint8_t
     \
     M(TRUNCATE, "TRUNCATE TABLE", TABLE, ALL) \
     M(OPTIMIZE, "OPTIMIZE TABLE", TABLE, ALL) \
+    M(DEDUCE, "DEDUCE TABLE", TABLE, ALL) \
     M(BACKUP, "", TABLE, ALL) /* allows to backup tables */\
     \
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user

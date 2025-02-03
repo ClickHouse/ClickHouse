@@ -237,7 +237,9 @@ String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_co
 {
     auto name_in_storage = required_column.getNameInStorage();
     auto subcolumn_name = required_column.getSubcolumnName();
-
+    if (!alter_conversions) {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Alter conversion is nullptr");
+    }
     if (alter_conversions->isColumnRenamed(name_in_storage))
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
 
