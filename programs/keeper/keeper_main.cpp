@@ -143,7 +143,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
             return;
 
 #    if defined(SYS_write)
-        syscall(SYS_write, fd, message_view.data(), message_view.size());
+        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
 #    else
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
