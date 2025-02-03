@@ -143,27 +143,26 @@ class CIDB:
             "database": Settings.CI_DB_DB_NAME,
             "query": f"SELECT 1",
         }
-        try:
-            response = requests.post(
-                url=self.url,
-                params=params,
-                data="",
-                headers=self.auth,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            )
-            if not response.ok:
-                print("ERROR: No connection to CI DB")
-                return (
-                    False,
-                    f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]",
+        error = ""
+        for retry in range(2):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data="",
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
-            if not response.json() == 1:
-                print("ERROR: CI DB smoke test failed select 1 == 1")
-                return (
-                    False,
-                    f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]",
-                )
-        except Exception as ex:
-            print(f"ERROR: Exception [{ex}]")
-            return False, f"CIDB: ERROR: Exception [{ex}]"
-        return True, ""
+                if not response.ok:
+                    error = f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]"
+                elif not response.json() == 1:
+                    print("ERROR: CI DB smoke test failed select 1 == 1")
+                    error = f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]"
+                else:
+                    return True, ""
+
+            except Exception as ex:
+                print(f"ERROR: Exception [{ex}]")
+                error = f"CIDB: ERROR: Exception [{ex}]"
+
+        return False, error

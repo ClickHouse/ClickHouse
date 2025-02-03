@@ -10,7 +10,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 
 /// Represents a file prepared to be included in a backup,
 /// assuming that the file is small and can be easily loaded into memory.
-class BackupEntryFromSmallFile : public BackupEntryWithChecksumCalculation<IBackupEntry>
+class BackupEntryFromSmallFile : public BackupEntryWithChecksumCalculation
 {
 public:
     explicit BackupEntryFromSmallFile(const String & file_path_, const ReadSettings & read_settings_);
@@ -25,6 +25,8 @@ public:
     bool isFromFile() const override { return true; }
     DiskPtr getDisk() const override { return disk; }
     String getFilePath() const override { return file_path; }
+
+    bool isPartialChecksumAllowed() const override { return true; }
 
 private:
     const DiskPtr disk;
