@@ -231,15 +231,6 @@ void StorageNATS::decrementReader()
 }
 
 
-void StorageNATS::startStreaming()
-{
-    if (!mv_attached)
-    {
-        streaming_task->activateAndSchedule();
-    }
-}
-
-
 void StorageNATS::subscribeConsumersFunc()
 {
     if (consumers_ready)

@@ -71,8 +71,6 @@ public:
     void incrementReader();
     void decrementReader();
 
-    void startStreaming();
-
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
