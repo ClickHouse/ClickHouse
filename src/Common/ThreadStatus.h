@@ -139,17 +139,27 @@ private:
 };
 
 /**
- * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker as part of the thread group to account all the memory used.
+ * RAII wrapper around CurrentThread::attachToGroup()/detachFromGroupIfNotDetached().
+ *
+ * Typically used for inheriting thread group when scheduling tasks on a thread pool:
+ *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
+ *       {
+ *           ThreadGroupSwitcher switcher(thread_group);
+ *           ...
+ *       });
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group);
-    ~ThreadGroupSwitcher();
+    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
+    /// If allow_existing_group is true, remembers the current group and restores it in destructor.
+    /// If allow_existing_group is false, logs a logical error if there's an existing group.
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allow_existing_group = false) noexcept;
+    ~ThreadGroupSwitcher() noexcept;
 
 private:
     ThreadGroupPtr prev_thread_group;
+    ThreadGroupPtr thread_group;
 };
 
 

@@ -875,12 +875,9 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
     pool->scheduleOrThrowOnError(
         [this, row_group_batch_idx, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
+                ThreadGroupSwitcher switcher(thread_group);
                 setThreadName("ParquetDecoder");
 
                 threadFunction(row_group_batch_idx);

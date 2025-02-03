@@ -2324,12 +2324,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     auto converter = [&](size_t thread_id, ThreadGroupPtr thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group);
 
         BlocksList blocks;
         while (true)
@@ -3089,12 +3084,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupPtr thread_group)
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
+            ThreadGroupSwitcher switcher(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {

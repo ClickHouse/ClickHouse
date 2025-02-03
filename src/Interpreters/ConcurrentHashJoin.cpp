@@ -134,13 +134,7 @@ void reserveSpaceInHashMaps(
             pool->scheduleOrThrow(
                 [&, i, thread_group = CurrentThread::getGroup()]()
                 {
-                    SCOPE_EXIT_SAFE({
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    });
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group);
                     setThreadName("ConcurrentJoin");
 
                     const auto & right_data = getData(hash_joins[i]);
@@ -195,13 +189,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
             pool->scheduleOrThrow(
                 [&, i, thread_group = CurrentThread::getGroup()]()
                 {
-                    SCOPE_EXIT_SAFE({
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    });
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group);
                     setThreadName("ConcurrentJoin");
 
                     /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
@@ -251,13 +239,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             pool->scheduleOrThrow(
                 [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
                 {
-                    SCOPE_EXIT_SAFE({
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    });
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group);
                     setThreadName("ConcurrentJoin");
 
                     auto clear_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)

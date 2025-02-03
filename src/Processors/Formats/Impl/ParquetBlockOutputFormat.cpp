@@ -488,12 +488,9 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     {
         auto job = [this, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
+                ThreadGroupSwitcher switcher(thread_group);
                 setThreadName("ParquetEncoder");
 
                 threadFunction();

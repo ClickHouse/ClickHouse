@@ -403,14 +403,8 @@ void PipelineExecutor::spawnThreadsImpl()
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
+            ThreadGroupSwitcher switcher(thread_group);
             setThreadName("QueryPipelineEx");
-
-            if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
 
             try
             {

@@ -243,11 +243,9 @@ void DWARFBlockInputFormat::initializeIfNeeded()
         pool->scheduleOrThrowOnError(
             [this, thread_group = CurrentThread::getGroup()]()
             {
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
                 try
                 {
+                    ThreadGroupSwitcher switcher(thread_group);
                     setThreadName("DWARFDecoder");
 
                     std::unique_lock lock(mutex);

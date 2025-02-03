@@ -138,10 +138,7 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-
+                ThreadGroupSwitcher switcher(thread_group);
                 setThreadName("SystemReplicas");
 
                 try

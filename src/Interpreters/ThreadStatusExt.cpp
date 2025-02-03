@@ -168,22 +168,64 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group)
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allow_existing_group) noexcept : thread_group(std::move(thread_group_))
 {
-    chassert(thread_group);
+    try
+    {
+        prev_thread_group = CurrentThread::getGroup();
+        if (prev_thread_group)
+        {
+            if (prev_thread_group == thread_group)
+            {
+                thread_group = nullptr;
+                prev_thread_group = nullptr;
+            }
+            else if (!allow_existing_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread is already attached to a group");
+            else
+                CurrentThread::detachFromGroupIfNotDetached();
+        }
 
-    /// might be nullptr
-    prev_thread_group = CurrentThread::getGroup();
+        if (!thread_group)
+            return;
 
-    CurrentThread::detachFromGroupIfNotDetached();
-    CurrentThread::attachToGroup(thread_group);
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+        CurrentThread::attachToGroup(thread_group);
+    }
+    catch (...)
+    {
+        /// Unexpected. For caller's convenience avoid throwing exceptions.
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        thread_group = nullptr;
+        prev_thread_group = nullptr;
+    }
 }
 
-ThreadGroupSwitcher::~ThreadGroupSwitcher()
+ThreadGroupSwitcher::~ThreadGroupSwitcher() noexcept
 {
-    CurrentThread::detachFromGroupIfNotDetached();
-    if (prev_thread_group)
-        CurrentThread::attachToGroup(prev_thread_group);
+    if (!thread_group)
+        return;
+
+    try
+    {
+        ThreadGroupPtr cur_thread_group = CurrentThread::getGroup();
+        if (cur_thread_group != thread_group)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested, current thread group changed between scope start and end");
+        thread_group.reset();
+
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        if (prev_thread_group)
+        {
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            CurrentThread::attachToGroup(prev_thread_group);
+        }
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
