@@ -1089,6 +1089,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
+        "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
