@@ -92,7 +92,7 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     return constructLocation(endpoint_);
 }
 
-std::string TableMetadata::constructLocation(const std::string endpoint_) const
+std::string TableMetadata::constructLocation(const std::string & endpoint_) const
 {
     std::filesystem::path location = endpoint_;
     if (endpoint_.ends_with('/'))

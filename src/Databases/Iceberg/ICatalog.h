@@ -57,7 +57,7 @@ private:
     bool with_schema = false;
     bool with_storage_credentials = false;
 
-    std::string constructLocation(const std::string endpoint_) const;
+    std::string constructLocation(const std::string & endpoint_) const;
 };
 
 
