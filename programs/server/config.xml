@@ -317,7 +317,7 @@
     </grpc>
 
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
-         Note: ClickHouse Cloud https://clickhouse.cloud/ always has secure connections configured.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud always has secure connections configured.
     -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -564,7 +564,7 @@
     <bcrypt_workfactor>12</bcrypt_workfactor>
 
     <!-- Complexity requirements for user passwords.
-         Note: ClickHouse Cloud https://clickhouse.cloud/ is always configured for strong passwords.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud is always configured for strong passwords.
       -->
     <!-- <password_complexity>
         <rule>
@@ -880,7 +880,7 @@
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
-         Note: ClickHouse Cloud https://clickhouse.cloud/ has the cluster preconfigured and dynamically scalable.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has the cluster preconfigured and dynamically scalable.
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
@@ -963,7 +963,7 @@
 
          See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
 
-         Note: ClickHouse Cloud https://clickhouse.cloud/ has ClickHouse Keeper automatically configured for every service.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has ClickHouse Keeper automatically configured for every service.
       -->
 
     <!--
@@ -1430,7 +1430,7 @@
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
-         Note: ClickHouse Cloud https://clickhouse.cloud/ has a stronger compression by default.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
       -->
     <!--
     <compression>
@@ -1453,7 +1453,7 @@
          command is executed through /bin/sh and is expected to write
          a Base64-encoded key to the stdout.
 
-         Note: ClickHouse Cloud https://clickhouse.cloud/ supports encryption with customer-managed keys.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud supports encryption with customer-managed keys.
     -->
     <encryption_codecs>
         <!-- aes_128_gcm_siv -->
@@ -1480,7 +1480,7 @@
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.
-         Note: ClickHouse Cloud https://clickhouse.cloud/ always runs DDL queries on cluster.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud always runs DDL queries on cluster.
     -->
     <distributed_ddl>
         <!-- Path in ZooKeeper to queue with DDL queries -->
@@ -1527,7 +1527,7 @@
     -->
 
     <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h
-         Note: ClickHouse Cloud https://clickhouse.cloud/ has a SharedMergeTree engine that does not require fine-tuning.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has a SharedMergeTree engine that does not require fine-tuning.
     -->
     <!--
     <replicated_merge_tree>
@@ -1747,7 +1747,7 @@
         -->
     <!-- </kafka> -->
 
-    <!-- Note: ClickHouse Cloud https://clickhouse.cloud/ provides automatic backups to object storage. -->
+    <!-- Note: ClickHouse Cloud https://clickhouse.com/cloud provides automatic backups to object storage. -->
     <backups>
         <allowed_path>backups</allowed_path>
 
