@@ -123,7 +123,7 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
+void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)
     {
@@ -151,7 +151,22 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
                 {
                     bool inserted = names.insert(change.name).second;
                     if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
+                    {
+                        if (is_attach)
+                        {
+                            LOG_WARNING(
+                                getLogger("StorageObjectStorageQueue"),
+                                "Storage {} has a duplicated setting {}. "
+                                "Will use the first declared setting's value",
+                                storage_id.getNameForLogs(), change.name);
+                        }
+                        else
+                        {
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Setting {} is defined multiple times", change.name);
+                        }
+                    }
                 }
             }
 
