@@ -612,7 +612,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     {
         const auto & storage = std::get<1>(table);
 
-        LOG_TEST(logger, "Building plan for child table {}", storage->getStorageID().getNameForLogs());
+        LOG_TRACE(logger, "Building plan for child table {}", storage->getStorageID().getNameForLogs());
 
         try
         {
