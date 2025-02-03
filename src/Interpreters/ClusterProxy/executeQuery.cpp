@@ -654,7 +654,8 @@ void executeQueryWithParallelReplicas(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             std::move(storage_limits),
             std::move(pools_to_use),
-            local_replica_index);
+            local_replica_index,
+            shard.pool);
 
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
@@ -689,7 +690,9 @@ void executeQueryWithParallelReplicas(
             std::move(external_tables),
             getLogger("ReadFromParallelRemoteReplicasStep"),
             std::move(storage_limits),
-            std::move(pools_to_use));
+            std::move(pools_to_use),
+            std::nullopt,
+            shard.pool);
 
         query_plan.addStep(std::move(read_from_remote));
     }

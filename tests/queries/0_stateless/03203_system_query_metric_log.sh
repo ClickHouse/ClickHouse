@@ -97,7 +97,7 @@ $CLICKHOUSE_CLIENT -m -q """
 
 # a quick query that takes less than query_metric_log_interval is never collected
 $CLICKHOUSE_CLIENT -m -q """
-    SELECT '-Check that a query which execution time is less than query_metric_log_interval is never collected';
+    SELECT '--Check that a query which execution time is less than query_metric_log_interval is never collected';
     SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_fast'
 """
 

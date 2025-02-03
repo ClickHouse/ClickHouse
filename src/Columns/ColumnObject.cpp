@@ -333,7 +333,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
         const auto column = decoded_type->createColumn();
         decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-        const auto & [value, type] = column->getValueNameAndType(n);
+        const auto & [value, type] = column->getValueNameAndType(0);
 
         wb << ": " << value;
     }
@@ -761,7 +761,7 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }
 
-void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const
+void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column)
 {
     auto value_data = shared_data_values->getDataAt(n);
     ReadBufferFromMemory buf(value_data.data, value_data.size);

@@ -38,6 +38,10 @@ On Linux, macOS and FreeBSD:
    curl https://clickhouse.com/ | sh
    ```
 
+   :::note
+   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+   :::
+
 2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
 
    ```bash
@@ -287,13 +291,17 @@ To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/dev
 
 You can compile packages and install them or use programs without installing packages.
 
-      Client: <build_directory>/programs/clickhouse-client
-      Server: <build_directory>/programs/clickhouse-server
+```
+Client: <build_directory>/programs/clickhouse-client
+Server: <build_directory>/programs/clickhouse-server
+```
 
 You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-      /var/lib/clickhouse/data/default/
-      /var/lib/clickhouse/metadata/default/
+```
+/var/lib/clickhouse/data/default/
+/var/lib/clickhouse/metadata/default/
+```
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
@@ -318,16 +326,13 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 - Find the rows with compiler = "clang-*-aarch64" - there are multiple rows.
 - Download the artifacts for these builds.
 
-To download binaries for very old x86-64 systems without [SSE3](https://en.wikipedia.org/wiki/SSE3) support or old ARM systems without
-[ARMv8.1-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.1-A) support, open a [pull
-request](https://github.com/ClickHouse/ClickHouse/commits/master) and find CI check "BuilderBinAmd64Compat", respectively
-"BuilderBinAarch64V80Compat". Then click "Details", open the "Build" fold, scroll to the end, find message "Notice: Build URLs
-https://s3.amazonaws.com/clickhouse/builds/PRs/.../.../binary_aarch64_v80compat/clickhouse". You can then click the link to download the
-build.
-
 ### macOS-only: Install with Homebrew
 
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
+
+:::note
+For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
+:::
 
 ## Launch {#launch}
 

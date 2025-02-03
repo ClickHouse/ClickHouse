@@ -248,7 +248,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     };
 
     description.setAliases({
-        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
+        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
     });
 
     StorageInMemoryMetadata storage_metadata;
