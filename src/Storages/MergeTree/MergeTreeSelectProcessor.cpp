@@ -96,12 +96,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
-    if (reader_settings.apply_deleted_mask)
-    {
-        bool remove_filter_column = !result_header.has(RowExistsColumn::name);
-        lightweight_delete_filter_step = createLightweightDeleteStep(remove_filter_column);
-    }
-
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -215,9 +209,6 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 void MergeTreeSelectProcessor::initializeReadersChain()
 {
     PrewhereExprInfo all_prewhere_actions;
-
-    if (lightweight_delete_filter_step && task->getInfo().hasLightweightDelete())
-        all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
     for (const auto & step : task->getInfo().mutation_steps)
         all_prewhere_actions.steps.push_back(step);

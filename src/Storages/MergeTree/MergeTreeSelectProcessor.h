@@ -96,8 +96,6 @@ private:
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
-    /// This step is added when the part has lightweight delete mask
-    PrewhereExprStepPtr lightweight_delete_filter_step;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
 

@@ -12,7 +12,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
-    extern const SettingsBool apply_deleted_mask;
 }
 
 namespace ErrorCodes
@@ -157,6 +156,12 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 
+        if (reader_settings.apply_deleted_mask && read_task_info.hasLightweightDelete())
+        {
+            bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
+            read_task_info.mutation_steps.push_back(createLightweightDeleteStep(remove_filter_column));
+        }
+
         if (read_task_info.alter_conversions->hasMutations())
         {
             auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
@@ -165,16 +170,8 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 .withSubcolumns();
 
             auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            read_task_info.mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
-        }
-
-        OnFlyMutationsInfo on_fly_mutations_info;
-        on_fly_mutations_info.mutation_steps = read_task_info.mutation_steps;
-
-        if (reader_settings.apply_deleted_mask && read_task_info.hasLightweightDelete())
-        {
-            bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
-            on_fly_mutations_info.lightweight_delete_filter_step = createLightweightDeleteStep(remove_filter_column);
+            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
+            std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
         }
 
         read_task_info.task_columns = getReadTaskColumns(
@@ -182,7 +179,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             storage_snapshot,
             column_names,
             prewhere_info,
-            on_fly_mutations_info,
+            read_task_info.mutation_steps,
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/ true);

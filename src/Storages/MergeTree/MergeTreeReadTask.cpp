@@ -87,9 +87,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(const Readers & task
 
     std::vector<MergeTreeRangeReader> range_readers;
 
-    size_t step_index = 0;
-
-    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i, ++step_index)
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
     {
         range_readers.emplace_back(
             task_readers.prewhere[i].get(),

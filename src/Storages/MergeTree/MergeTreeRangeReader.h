@@ -333,17 +333,10 @@ public:
     const Block & getReadSampleBlock() const { return read_sample_block; }
 
     /// Executes actions required before PREWHERE, such as alter conversions and filling defaults.
-    void executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & additional_columns, size_t num_read_rows) const;
+    void executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & previous_header, size_t num_read_rows) const;
     void executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const;
 
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
-
-    /// When executing ExpressionActions on an empty block, it is not possible to determine the number of rows
-    /// in the block for the new columns so the result block will have 0 rows and it will not match the rest of
-    /// the columns in the ReadResult.
-    /// The dummy column is added to maintain the information about the number of rows
-    /// in the block and to produce the result block with the correct number of rows.
-    static String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 private:
     void fillVirtualColumns(Columns & columns, ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
@@ -361,9 +354,8 @@ private:
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
-    bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
-
     ReadStepPerformanceCountersPtr performance_counters;
+    bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

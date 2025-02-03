@@ -271,15 +271,12 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
     return std::make_shared<PrewhereExprStep>(std::move(step));
 }
 
-static void addColumnsToRead(const Names & columns_to_add, NameSet & columns_set, Names & columns_vec)
+static void addColumnsToRead(const Names & columns_to_add, NameSet & added_columns_set, Names & added_columns_vec)
 {
     for (const auto & name : columns_to_add)
     {
-        if (columns_set.contains(name))
-            continue;
-
-        columns_vec.push_back(name);
-        columns_set.insert(name);
+        if (added_columns_set.emplace(name).second)
+            added_columns_vec.push_back(name);
     }
 }
 
@@ -288,7 +285,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
-    const OnFlyMutationsInfo & on_fly_mutations_info,
+    const PrewhereExprSteps & mutation_steps,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
@@ -367,10 +364,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
     };
 
-    if (on_fly_mutations_info.lightweight_delete_filter_step)
-        add_step(*on_fly_mutations_info.lightweight_delete_filter_step);
-
-    for (const auto & step : on_fly_mutations_info.mutation_steps)
+    for (const auto & step : mutation_steps)
         add_step(*step);
 
     if (prewhere_info)
@@ -392,18 +386,18 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     return result;
 }
 
-MergeTreeReadTaskColumns getReadTaskColumnsForSequentialSource(
+MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const OnFlyMutationsInfo & on_fly_mutations_info)
+    const PrewhereExprSteps & mutation_steps)
 {
     return getReadTaskColumns(
         data_part_info_for_reader,
         storage_snapshot,
         required_columns,
         /*prewhere_info=*/ nullptr,
-        on_fly_mutations_info,
+        mutation_steps,
         /*actions_settings=*/ {},
         /*reader_settings=*/ {},
         storage_snapshot->storage.supportsSubcolumns());

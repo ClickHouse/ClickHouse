@@ -97,8 +97,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
             for (const auto & col : read_result.additional_columns)
                 additional_columns.insert(col);
 
-            MergeTreeRangeReader::addDummyColumnWithRowCount(additional_columns, read_result.num_rows);
-            range_readers[i].executeActionsBeforePrewhere(read_result, columns, additional_columns, num_read_rows);
+            range_readers[i].executeActionsBeforePrewhere(read_result, columns, previous_header, num_read_rows);
 
             read_result.columns.reserve(read_result.columns.size() + columns.size());
             std::move(columns.begin(), columns.end(), std::back_inserter(read_result.columns));

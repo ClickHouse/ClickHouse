@@ -313,7 +313,9 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
-                       SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+                       SelectQueryOptions{
+                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
+                                                                       : QueryProcessingStage::WithMergeableState}
                            .ignoreASTOptimizations()
                            .ignoreSettingConstraints())
                        .buildQueryPipeline();

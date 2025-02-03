@@ -904,7 +904,12 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return stream.isFinished();
 }
 
-String MergeTreeRangeReader::addDummyColumnWithRowCount(Block & block, size_t num_rows)
+/// When executing ExpressionActions on an empty block, it is not possible to determine the number of rows
+/// in the block for the new columns so the result block will have 0 rows and it will not match the rest of
+/// the columns in the ReadResult.
+/// The dummy column is added to maintain the information about the number of rows in the block and to produce
+/// the result block with the correct number of rows.
+static String addDummyColumnWithRowCount(Block & block, size_t num_rows)
 {
     bool has_columns = false;
     for (const auto & column : block)
@@ -1295,6 +1300,45 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     }
 
     return mut_first;
+}
+
+void MergeTreeRangeReader::executeActionsBeforePrewhere(ReadResult & result, Columns & read_columns, const Block & previous_header, size_t num_read_rows) const
+{
+    merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
+
+    /// fillMissingColumns() must be called after reading but before any filterings because
+    /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
+    /// fillMissingColumns() fixes this.
+    bool should_evaluate_missing_defaults;
+    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows);
+
+    if (result.total_rows_per_granule == num_read_rows && result.num_rows != num_read_rows)
+    {
+        /// We have filter applied from the previous step
+        /// So we need to apply it to the newly read rows
+        if (!result.final_filter.present() || result.final_filter.countBytesInFilter() != result.num_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
+
+        filterColumns(read_columns, result.final_filter);
+    }
+
+    /// If columns not empty, then apply on-fly alter conversions if any required
+    if (!prewhere_info || prewhere_info->perform_alter_conversions)
+        merge_tree_reader->performRequiredConversions(read_columns);
+
+    /// If some columns absent in part, then evaluate default values
+    if (should_evaluate_missing_defaults)
+    {
+        Block additional_columns;
+        if (previous_header)
+            additional_columns = previous_header.cloneWithColumns(result.columns);
+
+        for (const auto & col : result.additional_columns)
+            additional_columns.insert(col);
+
+        addDummyColumnWithRowCount(additional_columns, result.num_rows);
+        merge_tree_reader->evaluateMissingDefaults(additional_columns, read_columns);
+    }
 }
 
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const

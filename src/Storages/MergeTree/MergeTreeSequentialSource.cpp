@@ -41,6 +41,7 @@ class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
+        Block result_header,
         MergeTreeSequentialSourceType type,
         const MergeTreeData & storage_,
         StorageSnapshotPtr storage_snapshot_,
@@ -87,6 +88,7 @@ private:
 };
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
+    Block result_header,
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage_,
     StorageSnapshotPtr storage_snapshot_,
@@ -94,7 +96,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
     bool prefetch)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(read_task_info_->task_columns.columns.getNames()))
+    : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_task_info(std::move(read_task_info_))
@@ -158,7 +160,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (prefetch && !data_part->isEmpty())
         readers.main->prefetchBeginOfRange(Priority{});
 
-    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, true);
+    auto counters = std::make_shared<ReadStepPerformanceCounters>();
+    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}};
 
     updateRowsToRead(0);
@@ -204,13 +207,11 @@ try
     Columns result_columns;
     result_columns.reserve(reader_header.columns());
 
-    for (size_t i = 0; i < reader_header.columns(); ++i)
+    for (size_t i = 0; i < header.columns(); ++i)
     {
-        if (header.has(reader_header.getByPosition(i).name))
-        {
-            result_columns.emplace_back(std::move(read_result.columns[i]));
-            result_columns.back()->assumeMutableRef().shrinkToFit();
-        }
+        auto pos = reader_header.getPositionByName(header.safeGetByPosition(i).name);
+        result_columns.emplace_back(std::move(read_result.columns[pos]));
+        result_columns.back()->assumeMutableRef().shrinkToFit();
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
@@ -260,20 +261,27 @@ Pipe createMergeTreeSequentialSource(
     info->data_part = data_part;
     info->alter_conversions = alter_conversions;
 
-    OnFlyMutationsInfo on_fly_mutations_info;
-
     /// The part might have some rows masked by lightweight deletes
     const bool need_to_filter_deleted_rows = apply_deleted_mask && info->hasLightweightDelete();
     const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
+    PrewhereExprSteps mutation_steps;
     if (need_to_filter_deleted_rows)
-        on_fly_mutations_info.lightweight_delete_filter_step = createLightweightDeleteStep(!has_filter_column);
+    {
+        if (!has_filter_column)
+            columns_to_read.push_back(RowExistsColumn::name);
 
+        mutation_steps.push_back(createLightweightDeleteStep(!has_filter_column));
+    }
+
+    auto result_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
     LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
-    info->task_columns = getReadTaskColumnsForSequentialSource(info_for_reader, storage_snapshot, columns_to_read, on_fly_mutations_info);
+
+    info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, mutation_steps);
     info->task_columns.moveAllColumnsFromPrewhere();
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
+        std::move(result_header),
         type,
         storage,
         storage_snapshot,
