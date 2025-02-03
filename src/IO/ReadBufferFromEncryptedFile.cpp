@@ -1,12 +1,14 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 
 #if USE_SSL
+#include <base/demangle.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
@@ -79,6 +81,18 @@ bool ReadBufferFromEncryptedFile::nextImpl()
 
     if (in->eof())
         return false;
+
+    /// We check the current file position in the inner buffer because it is used in the decryption algorithm.
+    /// Using a wrong file position could give a completely wrong byte sequence and produce very weird errors,
+    /// so it's better to check it.
+    auto in_position = in->getPosition();
+    if (in_position != static_cast<off_t>(offset + FileEncryption::Header::kSize))
+    {
+        const auto & in_ref = *in;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "ReadBufferFromEncryptedFile: Wrong file position {} (expected: {}) in the inner buffer {} while reading {}",
+                        in_position, offset + FileEncryption::Header::kSize, demangle(typeid(in_ref).name()), getFileName());
+    }
 
     /// Read up to the size of `encrypted_buffer`.
     size_t bytes_read = 0;
