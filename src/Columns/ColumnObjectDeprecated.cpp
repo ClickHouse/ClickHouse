@@ -726,6 +726,25 @@ void ColumnObjectDeprecated::forEachMutableSubcolumnRecursively(RecursiveMutable
     }
 }
 
+void ColumnObjectDeprecated::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & entry : subcolumns)
+        for (auto & part : entry->data.data)
+            callback(part);
+}
+
+void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & entry : subcolumns)
+    {
+        for (auto & part : entry->data.data)
+        {
+            callback(*part);
+            part->forEachSubcolumnRecursively(callback);
+        }
+    }
+}
+
 void ColumnObjectDeprecated::insert(const Field & field)
 {
     const auto & object = field.safeGet<const Object &>();
