@@ -141,6 +141,46 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
+## Handling Daylight Saving Time (DST) 
+
+ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
+
+- [`date_time_output_format`](../../operations/settings/settings-formats.md#date_time_output_format) is set to `simple`.
+- Clocks move backward ("Fall Back"), causing a one-hour overlap.
+- Clocks move forward ("Spring Forward"), causing a one-hour gap.
+
+By default, ClickHouse always picks the earlier occurrence of an overlapping time and may interpret nonexistent times during forward shifts.
+
+For example, consider the following transition from Daylight Saving Time (DST) to Standard Time.
+
+- On October 29, 2023, at 02:00:00, clocks move backward to 01:00:00 (BST → GMT).
+- The hour 01:00:00 – 01:59:59 appears twice (once in BST and once in GMT)
+- ClickHouse always picks the first occurrence (BST), causing unexpected results when adding time intervals.
+
+```sql
+SELECT '2023-10-29 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-10-29 01:30:00 │ 2023-10-29 01:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+Similarly, during the transition from Standard Time to Daylight Saving Time, an hour can appear to be skipped.
+
+For example:
+
+- On March 26, 2023, at `00:59:59`, clocks jump forward to 02:00:00 (GMT → BST).
+- The hour `01:00:00` – `01:59:59` does not exist.
+
+```sql
+SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-03-26 00:30:00 │ 2023-03-26 02:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back to `2023-03-26 00:30:00`.
 
 ## See Also
 

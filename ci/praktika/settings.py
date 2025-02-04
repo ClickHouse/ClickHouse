@@ -1,7 +1,7 @@
 import dataclasses
 import importlib.util
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional
 
 
 @dataclasses.dataclass
@@ -22,6 +22,9 @@ class _Settings:
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
     DISABLED_WORKFLOWS: Optional[List[str]] = None
+    DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
+
+    ENABLE_ARTIFACTS_REPORT: bool = False
 
     ######################################
     #    Runtime Settings                #
@@ -44,18 +47,21 @@ class _Settings:
     PYTHON_INTERPRETER: str = "python3"
     PYTHON_PACKET_MANAGER: str = "pip3"
     PYTHON_VERSION: str = "3.9"
+    PYTHONPATHS: str = ""
     INSTALL_PYTHON_FOR_NATIVE_JOBS: bool = False
     INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS: str = "./ci/requirements.txt"
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    SECRET_GH_APP_ID: str = "GH_APP_ID"
-    SECRET_GH_APP_PEM_KEY: str = "GH_APP_PEM_KEY"
+    USE_CUSTOM_GH_AUTH: bool = False
+    SECRET_GH_APP_ID: str = ""
+    SECRET_GH_APP_PEM_KEY: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
+    CUSTOM_DATA_FILE: str = "/tmp/custom_data.json"
 
     ######################################
     #        CI Cache settings           #
@@ -121,11 +127,16 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "SUB_RESULT_NAMES_WITH_TESTS" "SECRET_GH_APP_PEM_KEY",
+    "SUB_RESULT_NAMES_WITH_TESTS",
+    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
+    "SECRET_GH_APP_PEM_KEY",
     "MAIN_BRANCH",
     "DISABLE_MERGE_COMMIT",
     "DISABLED_WORKFLOWS",
+    "PYTHONPATHS",
+    "ENABLE_ARTIFACTS_REPORT",
+    "DEFAULT_LOCAL_TEST_WORKFLOW",
 ]
 
 

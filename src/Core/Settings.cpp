@@ -1214,7 +1214,7 @@ Possible values:
 - 1 — Enabled.
 - 0 — Disabled.
 )", 0) \
-    DECLARE(UInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
+    DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
 - Type: unsigned int
 - Default value: 1 MiB
 
@@ -4804,7 +4804,7 @@ Possible values:
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
-    DECLARE(Bool, query_plan_use_new_logical_join_step, false, "Use new logical join step in query plan", 0) \
+    DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan", 0) \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md/#extractallgroups-horizontal) function.
 
@@ -5861,6 +5861,9 @@ In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
 - cross to inner join optimization
+)", 0) \
+    DECLARE(Bool, optimize_and_compare_chain, true, R"(
+Populate constant comparison in AND chains to enhance filtering ability. Support operators <, <=, >, >=, = and mix of them. For example, (a < b) AND (b < c) AND (c < 5) would be (a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5).
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
