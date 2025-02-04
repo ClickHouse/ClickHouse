@@ -633,6 +633,10 @@ protected:
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }
+        else if (engine_name == "AzureBlobStorage")
+        {
+            findAzureBlobStorageTableEngineSecretArguments();
+        }
     }
 
     /// Whether a specified argument can be the name of a named collection?

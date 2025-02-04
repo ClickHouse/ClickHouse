@@ -193,6 +193,8 @@ def test_backup_table_AzureBlobStorage():
         (
             f"AzureBlobStorage('{azure_conn_string}', 'cont', 'backup_test_base')",
             f"AzureBlobStorage('{azure_conn_string}', 'cont', 'backup_test_incremental')",
+        ),
+        (
             f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'second_backup_test_base', '{azure_account_name}', '{azure_account_key}')",
             f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'second_backup_test_incremental', '{azure_account_name}', '{azure_account_key}')",
         )
@@ -207,8 +209,6 @@ def test_backup_table_AzureBlobStorage():
         return (
             f"BACKUP TABLE backup_test TO {endpoint_specs[0]} ASYNC",
             f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}",
-            f"BACKUP TABLE backup_test TO {endpoint_specs[2]} ASYNC",
-            f"BACKUP TABLE backup_test TO {endpoint_specs[3]} SETTINGS async=1, base_backup={endpoint_specs[2]}",
         )
 
     test_cases = [
