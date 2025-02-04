@@ -303,6 +303,7 @@ class JobNames:
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
+    BUGFIX_VALIDATION = "Bugfix validation"
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
     STRESS = "Stress test"

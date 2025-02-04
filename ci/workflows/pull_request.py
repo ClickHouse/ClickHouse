@@ -19,6 +19,7 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
+        JobConfigs.bugfix_validation_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,

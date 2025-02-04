@@ -329,6 +329,12 @@ class JobConfigs:
             ["Build (arm_release)"],
         ],
     )
+    bugfix_validation_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        requires=["Build (amd_debug)"],
+    )
     unittest_jobs = Job.Config(
         name=JobNames.UNITTEST,
         runs_on=["..params.."],
