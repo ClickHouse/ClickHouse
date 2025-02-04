@@ -1684,7 +1684,7 @@ public:
                 }
                 else
                 {
-                    to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                    to_remove = std::move(elements[0]);
                     elements.clear();
                 }
 
