@@ -350,7 +350,7 @@ struct BackupsWorker::BackupStarter
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
         , backup_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
-        , query_context(context_)
+        , query_context(Context::createCopy(context_))
         , backup_context(Context::createCopy(query_context))
     {
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
@@ -727,7 +727,7 @@ struct BackupsWorker::RestoreStarter
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
         , restore_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
-        , query_context(context_)
+        , query_context(Context::createCopy(context_))
         , restore_context(Context::createCopy(query_context))
     {
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
