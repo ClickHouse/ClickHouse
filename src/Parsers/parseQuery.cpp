@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int QUERY_IS_TOO_LARGE;
 }
 
 namespace
