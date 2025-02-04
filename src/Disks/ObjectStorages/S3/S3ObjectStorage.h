@@ -151,6 +151,8 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
+    bool areObjectKeysRandom() const override;
+
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
