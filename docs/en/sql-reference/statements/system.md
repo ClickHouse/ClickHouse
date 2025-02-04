@@ -206,7 +206,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 :::note
-In case of [`prefer_localhost_replica`](../../operations/settings/settings.md#prefer_localhost_replica) is set (default), the data to local shard will be INSERTed anyway.
+In case of [`prefer_localhost_replica`](../../operations/settings/settings.md#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
 :::
 
 ### FLUSH DISTRIBUTED
