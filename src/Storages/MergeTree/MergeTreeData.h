@@ -425,6 +425,8 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
+
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isMergeTree() const override { return true; }
@@ -484,7 +486,6 @@ public:
         virtual NameSet getAllUpdatedColumns() const = 0;
 
         bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
-        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
         virtual ~IMutationsSnapshot() = default;
     };

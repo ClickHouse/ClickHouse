@@ -25,6 +25,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/IPartMetadataManager.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
@@ -84,6 +85,8 @@ public:
 
     using Type = MergeTreeDataPartType;
 
+    using uint128 = IPartMetadataManager::uint128;
+
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
@@ -104,6 +107,7 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
+    virtual bool isStoredOnDisk() const = 0;
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
@@ -165,6 +169,9 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
+    /// Throws an exception if part is not stored in on-disk format.
+    void assertOnDisk() const;
+
     void remove();
 
     ColumnsStatistics loadStatistics() const;
@@ -172,6 +179,7 @@ public:
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+    void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
     void loadRowsCountFileForUnexpectedPart();
 
@@ -220,7 +228,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID(std::string_view token) const;
+    String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
 
@@ -347,7 +355,7 @@ public:
         {
         }
 
-        void load(const MergeTreeData & data, const IMergeTreeDataPart & part);
+        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
@@ -572,10 +580,6 @@ public:
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
 
-    /// Read a file associated to a part
-    std::unique_ptr<ReadBuffer> readFile(const String & file_name) const;
-    std::unique_ptr<ReadBuffer> readFileIfExists(const String & file_name) const;
-
     static std::optional<String> getStreamNameOrHash(
         const String & name,
         const IMergeTreeDataPart::Checksums & checksums);
@@ -644,6 +648,8 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
+    mutable PartMetadataManagerPtr metadata_manager;
+
     void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
@@ -663,6 +669,8 @@ protected:
     /// storage storage, excluding files in the second returned argument.
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
+
+    void initializePartMetadataManager();
 
     void initializeIndexGranularityInfo();
 
@@ -692,12 +700,19 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
+    static void appendFilesOfUUID(Strings & files);
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
+    static void appendFilesOfColumns(Strings & files);
+
+    static void appendFilesOfChecksums(Strings & files);
+
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
+
+    virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
     /// Loads the index file.
     std::shared_ptr<Index> loadIndex() const;
@@ -705,6 +720,8 @@ private:
     /// Optimize index. Drop useless columns from suffix of primary key.
     template <typename Columns>
     void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
+
+    void appendFilesOfIndex(Strings & files) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
@@ -714,14 +731,20 @@ private:
     /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
     void loadExistingRowsCount();
 
+    static void appendFilesOfRowsCount(Strings & files);
+
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
+
+    static void appendFilesOfTTLInfos(Strings & files);
 
     void loadPartitionAndMinMaxIndex();
 
     void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     void calculateSecondaryIndicesSizesOnDisk();
+
+    void appendFilesOfPartitionAndMinMaxIndex(Strings & files) const;
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
@@ -733,6 +756,10 @@ private:
 
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
+
+    static void appendFilesOfDefaultCompressionCodec(Strings & files);
+
+    static void appendFilesOfMetadataVersion(Strings & files);
 
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
