@@ -152,8 +152,10 @@ class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
     /// If thread_group_ is nullptr or equal to current thread group, does nothing.
-    /// If allow_existing_group is true, remembers the current group and restores it in destructor.
-    /// If allow_existing_group is false, logs a logical error if there's an existing group.
+    /// allow_existing_group:
+    ///  * If false, asserts that the thread is not already attached to a different group.
+    ///    Use this when running a task in a thread pool.
+    ///  * If true, remembers the current group and restores it in destructor.
     explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher() noexcept;
 
