@@ -10,8 +10,6 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <Analyzer/Identifier.h>
-
 class SipHash;
 
 namespace DB

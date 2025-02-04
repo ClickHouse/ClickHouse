@@ -46,13 +46,21 @@ SECRETS = [
     ),
     azure_secret,
     # Secret.Config(
-    #     name="woolenwolf_gh_app.clickhouse-app-id",
+    #     name="clickhouse_github_secret_key.clickhouse-app-id",
     #     type=Secret.Type.AWS_SSM_SECRET,
     # ),
     # Secret.Config(
-    #     name="woolenwolf_gh_app.clickhouse-app-key",
+    #     name="clickhouse_github_secret_key.clickhouse-app-key",
     #     type=Secret.Type.AWS_SSM_SECRET,
     # ),
+    Secret.Config(
+        name="woolenwolf_gh_app.clickhouse-app-id",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ),
+    Secret.Config(
+        name="woolenwolf_gh_app.clickhouse-app-key",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ),
 ]
 
 DOCKERS = [
