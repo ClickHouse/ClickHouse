@@ -36,7 +36,8 @@ namespace CurrentHistogramMetrics
     {
         static size_t offset = 0;
         constexpr size_t num_counters = impl::va_count(buckets...) + 1;
-        MetricInfo result{
+        MetricInfo result
+        {
             .name = name,
             .documentation = documentation,
             .buckets = std::vector<Value>{ buckets... },

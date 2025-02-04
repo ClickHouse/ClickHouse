@@ -50,7 +50,7 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
 
         // _bucket metrics
         UInt64 partial_sum = 0;
-        for (size_t counter_idx = 0; i < counters.size(); ++i)
+        for (size_t counter_idx = 0; counter_idx < counters.size(); ++counter_idx)
         {
             partial_sum += counters[counter_idx].load(std::memory_order_relaxed);
 
