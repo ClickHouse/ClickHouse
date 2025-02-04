@@ -139,7 +139,7 @@ private:
 };
 
 /**
- * RAII wrapper around CurrentThread::attachToGroup()/detachFromGroupIfNotDetached().
+ * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
  *
  * Typically used for inheriting thread group when scheduling tasks on a thread pool:
  *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
@@ -160,6 +160,7 @@ public:
     ~ThreadGroupSwitcher() noexcept;
 
 private:
+    ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
 };

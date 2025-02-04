@@ -172,6 +172,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allo
 {
     try
     {
+        prev_thread = current_thread;
         prev_thread_group = CurrentThread::getGroup();
         if (prev_thread_group)
         {
@@ -188,6 +189,9 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, bool allo
 
         if (!thread_group)
             return;
+
+        if (!prev_thread)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No current thread");
 
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -209,9 +213,12 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher() noexcept
 
     try
     {
+        ThreadStatus * cur_thread = current_thread;
         ThreadGroupPtr cur_thread_group = CurrentThread::getGroup();
+        if (cur_thread != prev_thread)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread changed between scope start ({}) and end ({})", prev_thread ? std::to_string(prev_thread->thread_id) : "nullptr", cur_thread ? std::to_string(cur_thread->thread_id) : "nullptr");
         if (cur_thread_group != thread_group)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested, current thread group changed between scope start and end");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread group changed between scope start (master_thread_id {}) and end ({})", thread_group->master_thread_id, cur_thread_group ? "master_thread_id " + std::to_string(cur_thread_group->master_thread_id) : "nullptr");
         thread_group.reset();
 
         CurrentThread::detachFromGroupIfNotDetached();
