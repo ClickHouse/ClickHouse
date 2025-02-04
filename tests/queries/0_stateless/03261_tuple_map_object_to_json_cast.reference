@@ -17,7 +17,7 @@ Tuple to JSON
 {"a":4,"b":"1970-01-05","c":[0,1,2,3],"d":[{"e":4}]}	{'a':'Int64','b':'Date','c':'Array(Nullable(Int64))','d':'Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))'}
 Object to JSON
 {"a":0,"b":"1970-01-01","c":[],"d":{"e":[0]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(String))','d.e':'Array(Nullable(Int64))'}
-{"a":1,"b":"1970-01-02","c":["0"],"d":{"e":[1]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(String))','d.e':'Array(Nullable(Int64))'}
-{"a":2,"b":"1970-01-03","c":["0","1"],"d":{"e":[2]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(String))','d.e':'Array(Nullable(Int64))'}
-{"a":3,"b":"1970-01-04","c":["0","1","2"],"d":{"e":[3]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(String))','d.e':'Array(Nullable(Int64))'}
-{"a":4,"b":"1970-01-05","c":["0","1","2","3"],"d":{"e":[4]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(String))','d.e':'Array(Nullable(Int64))'}
+{"a":1,"b":"1970-01-02","c":[0],"d":{"e":[1]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(Int64))','d.e':'Array(Nullable(Int64))'}
+{"a":2,"b":"1970-01-03","c":[0,1],"d":{"e":[2]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(Int64))','d.e':'Array(Nullable(Int64))'}
+{"a":3,"b":"1970-01-04","c":[0,1,2],"d":{"e":[3]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(Int64))','d.e':'Array(Nullable(Int64))'}
+{"a":4,"b":"1970-01-05","c":[0,1,2,3],"d":{"e":[4]}}	{'a':'Int64','b':'Date','c':'Array(Nullable(Int64))','d.e':'Array(Nullable(Int64))'}
