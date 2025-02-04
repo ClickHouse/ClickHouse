@@ -20,7 +20,9 @@ public:
     const bool changes_behavior;
 
     CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
-        : random_func(rf), oracle_values(ov), changes_behavior(cb)
+        : random_func(rf)
+        , oracle_values(ov)
+        , changes_behavior(cb)
     {
     }
 

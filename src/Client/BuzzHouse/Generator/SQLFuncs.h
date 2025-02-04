@@ -20,7 +20,13 @@ public:
         const uint32_t m_args,
         const bool sd,
         const bool snc)
-        : support_distinct(sd), support_nulls_clause(snc), fnum(f), min_args(min_a), max_args(m_args), min_params(min_p), max_params(max_p)
+        : support_distinct(sd)
+        , support_nulls_clause(snc)
+        , fnum(f)
+        , min_args(min_a)
+        , max_args(m_args)
+        , min_params(min_p)
+        , max_params(max_p)
     {
     }
 };
@@ -31,7 +37,11 @@ public:
     const uint32_t fnum, min_lambda_param, max_lambda_param, min_args, max_args;
 
     CHFunction(const uint32_t f, const uint32_t min_lambda, const uint32_t max_lambda, const uint32_t min_a, const uint32_t m_args)
-        : fnum(f), min_lambda_param(min_lambda), max_lambda_param(max_lambda), min_args(min_a), max_args(m_args)
+        : fnum(f)
+        , min_lambda_param(min_lambda)
+        , max_lambda_param(max_lambda)
+        , min_args(min_a)
+        , max_args(m_args)
     {
     }
 };

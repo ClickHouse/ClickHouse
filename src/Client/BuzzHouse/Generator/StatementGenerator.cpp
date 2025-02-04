@@ -2823,7 +2823,10 @@ struct ExplainOptValues
     const std::function<uint32_t(RandomGenerator &)> random_func;
 
     ExplainOptValues(const ExplainOption_ExplainOpt & e, const std::function<uint32_t(RandomGenerator &)> & rf)
-        : opt(e), random_func(rf) { }
+        : opt(e)
+        , random_func(rf)
+    {
+    }
 };
 
 static const std::function<uint32_t(RandomGenerator &)> trueOrFalseInt = [](RandomGenerator & rg) { return rg.nextBool() ? 1 : 0; };

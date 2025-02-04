@@ -52,7 +52,13 @@ public:
     String unix_socket, user, password, database;
     std::filesystem::path user_files_dir, query_log_file;
 
-    ServerCredentials() : hostname("localhost"), port(0), mysql_port(0), user("test") { }
+    ServerCredentials()
+        : hostname("localhost")
+        , port(0)
+        , mysql_port(0)
+        , user("test")
+    {
+    }
 
     ServerCredentials(
         const String & h,
@@ -102,7 +108,11 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
-    FuzzConfig() : cb(nullptr), log(getLogger("BuzzHouse")) { }
+    FuzzConfig()
+        : cb(nullptr)
+        , log(getLogger("BuzzHouse"))
+    {
+    }
 
     FuzzConfig(DB::ClientBase * c, const String & path);
 

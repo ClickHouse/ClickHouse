@@ -248,7 +248,11 @@ public:
     const String cname;
     SQLType * tp = nullptr;
 
-    ColumnPathChainEntry(const String cn, SQLType * t) : cname(cn), tp(t) { }
+    ColumnPathChainEntry(const String cn, SQLType * t)
+        : cname(cn)
+        , tp(t)
+    {
+    }
 };
 
 struct ColumnPathChain
@@ -261,7 +265,10 @@ public:
 
     ColumnPathChain(
         const std::optional<bool> nu, const ColumnSpecial cs, const std::optional<DModifier> dm, const std::vector<ColumnPathChainEntry> p)
-        : nullable(nu), special(cs), dmod(dm), path(p)
+        : nullable(nu)
+        , special(cs)
+        , dmod(dm)
+        , path(p)
     {
     }
 
