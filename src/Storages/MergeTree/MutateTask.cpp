@@ -1703,7 +1703,7 @@ private:
                 removed_projections.insert(command.column_name);
         }
 
-        bool lightweight_delete_mode = ctx->interpreter->getUpdateWhereCondition() != nullptr;
+        bool lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
         bool lightweight_delete_drop = lightweight_delete_mode
             && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
 
@@ -2475,15 +2475,15 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
 
-        lightweight_delete_mode = ctx->interpreter->getUpdateWhereCondition() != nullptr;
+        lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
         if (lightweight_delete_mode)
         {
-            ASTPtr update_where_condition = ctx->interpreter->getUpdateWhereCondition();
-            IdentifierNameSet update_where_columns;
-            if (!update_where_condition)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected update_where_condition is nullptr");
+            ASTPtr lightweight_delete_condition = ctx->commands_for_part.front().predicate->clone();
+            if (!lightweight_delete_condition)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected lightweight_delete_condition is nullptr");
 
-            update_where_condition->collectIdentifierNames(update_where_columns);
+            IdentifierNameSet lightweight_delete_columns;
+            lightweight_delete_condition->collectIdentifierNames(lightweight_delete_columns);
 
             // std::cout<<serializeAST(*condition)<<std::endl;
             // std::cout<<condition->dumpTree()<<std::endl;
@@ -2510,8 +2510,8 @@ bool MutateTask::prepare()
                     const auto & sort_columns = proj_desc.metadata->sorting_key.column_names;
                     NameSet groupby_columns(sort_columns.begin(), sort_columns.end());
                     bool is_subset_of_groupby = std::all_of(
-                        update_where_columns.begin(),
-                        update_where_columns.end(),
+                        lightweight_delete_columns.begin(),
+                        lightweight_delete_columns.end(),
                         [&](const auto & col) { return groupby_columns.contains(col); });
 
                     if (!is_subset_of_groupby)

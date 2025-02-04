@@ -567,8 +567,6 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 
 void MutationsInterpreter::prepare(bool dry_run)
 {
-    update_where_condition = nullptr;
-
     if (is_prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MutationsInterpreter is already prepared. It is a bug.");
 
@@ -758,9 +756,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 if (condition && settings.return_mutated_rows)
                     stages.back().filters.push_back(condition);
-
-                if (type == RowExistsColumn::type)
-                    update_where_condition = condition;
             }
 
             if (!affected_materialized.empty())

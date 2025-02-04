@@ -88,8 +88,6 @@ public:
 
     const ColumnDependencies & getColumnDependencies() const;
 
-    ASTPtr getUpdateWhereCondition() { return update_where_condition; }
-
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
 
@@ -235,9 +233,6 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
-
-    /// For lightweight delete, record the where condition.
-    ASTPtr update_where_condition;
 };
 
 }
