@@ -76,7 +76,7 @@ SHOW DATABASES ILIKE '%DE%'
 └─────────┘
 ```
 
-Or to obtain database names which do not contain the symbols sequence 'de' in their names:
+Or get database names which do not contain 'de' in their names:
 
 ```sql title="Query"
 SHOW DATABASES NOT LIKE '%de%'
@@ -91,7 +91,7 @@ SHOW DATABASES NOT LIKE '%de%'
 └────────────────────────────────┘
 ```
 
-Finally, we'll get the names of only the first two databases:
+Finally, we can get the names of only the first two databases:
 
 ```sql title="Query"
 SHOW DATABASES LIMIT 2
@@ -168,7 +168,7 @@ SHOW TABLES FROM system NOT LIKE '%s%'
 └──────────────┘
 ```
 
-Finally, we'll get the names of only the first two tables:
+Finally, we can get the names of only the first two tables:
 
 ```sql title="Query"
 SHOW TABLES FROM system LIMIT 2
@@ -392,7 +392,7 @@ SHOW CREATE ROLE name1 [, name2 ...]
 
 ## SHOW CREATE ROW POLICY
 
-The `SHOW CREATE ROW POLICY` statement shows parameters which used at [row policy creation](../../sql-reference/statements/create/row-policy.md).
+The `SHOW CREATE ROW POLICY` statement shows parameters which were used at [row policy creation](../../sql-reference/statements/create/row-policy.md).
 
 ### Syntax
 
@@ -402,7 +402,7 @@ SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 
 ## SHOW CREATE QUOTA
 
-The `SHOW CREATE QUOTA` statement shows parameters which used at [quota creation](../../sql-reference/statements/create/quota.md).
+The `SHOW CREATE QUOTA` statement shows parameters which were used at [quota creation](../../sql-reference/statements/create/quota.md).
 
 ### Syntax
 
@@ -412,7 +412,7 @@ SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 
 ## SHOW CREATE SETTINGS PROFILE
 
-The `SHOW CREATE SETTINGS PROFILE` statement shows parameters which used at [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
+The `SHOW CREATE SETTINGS PROFILE` statement shows parameters which were used at [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
 ### Syntax
 
@@ -501,7 +501,7 @@ The `SHOW CLUSTER(S)` statement returns a list of clusters.
 All available clusters are listed in the [`system.clusters`](../../operations/system-tables/clusters.md) table.
 
 :::note
-The `SHOW CLUSTER name` query displays the contents of `system.clusters` table for the current cluster.
+The `SHOW CLUSTER name` query displays the contents of `system.clusters` table for the specified cluster name.
 :::
 
 ### Syntax
