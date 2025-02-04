@@ -5,6 +5,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
+
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -13,7 +14,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <cstring>
-#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <limits>
