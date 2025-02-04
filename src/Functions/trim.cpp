@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -117,7 +118,8 @@ public:
             size_t end = str.size;
 
             // Trim hardcoded whitespace char (same as 1-argument trim())
-            if (!chars_column) {
+            if (!chars_column)
+            {
                 // Compile-time check for whitespace
                 if constexpr (Mode::trim_left) {
                     start = find_first_not_symbols<' '>(str.data, str.data + str.size) - str.data;
