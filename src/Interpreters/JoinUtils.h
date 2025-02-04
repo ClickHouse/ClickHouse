@@ -3,6 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
+#include <Interpreters/JoinInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 

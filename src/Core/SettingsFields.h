@@ -147,6 +147,8 @@ struct SettingFieldMaxThreads
     UInt64 value;
     bool changed = false;
 
+    using ValueType = UInt64;
+
     explicit SettingFieldMaxThreads(UInt64 x = 0) : is_auto(!x), value(is_auto ? getAuto() : x)  {}
     explicit SettingFieldMaxThreads(const Field & f);
 
@@ -227,6 +229,7 @@ struct SettingFieldString
 {
     String value;
     bool changed = false;
+    using ValueType = String;
 
     explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
