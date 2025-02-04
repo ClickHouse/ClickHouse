@@ -67,7 +67,7 @@ class _Settings:
     #        CI Cache settings           #
     ######################################
     CACHE_VERSION: int = 1
-    CACHE_DIGEST_LEN: int = 16
+    CACHE_DIGEST_LEN: int = 20
     CACHE_S3_PATH: str = ""
     CACHE_LOCAL_PATH: str = f"{TEMP_DIR}/ci_cache"
 

@@ -20,6 +20,11 @@ on:
   {EVENT}:
     branches: [{BRANCHES}]
 
+# Cancel the previous wf run in PRs.
+concurrency:
+  group: ${{{{{{{{ github.workflow }}}}}}}}-${{{{{{{{ github.ref }}}}}}}}
+  cancel-in-progress: true
+
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1

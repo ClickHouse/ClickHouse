@@ -564,7 +564,6 @@ class JobConfigs:
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             "debug",
@@ -587,7 +586,6 @@ class JobConfigs:
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             "debug",

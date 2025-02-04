@@ -1080,7 +1080,6 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.ASTFUZZER}",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -1103,7 +1102,6 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.BUZZHOUSE}",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
