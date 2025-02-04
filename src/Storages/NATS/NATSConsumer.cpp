@@ -12,18 +12,20 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_CONNECT_NATS;
-    extern const int INVALID_STATE;
 }
 
 NATSConsumer::NATSConsumer(
-    NATSConnectionPtr connection_,
+    std::shared_ptr<NATSConnectionManager> connection_,
+    StorageNATS & storage_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
     LoggerPtr log_,
     uint32_t queue_size_,
     const std::atomic<bool> & stopped_)
-    : connection(std::move(connection_))
+    : connection(connection_)
+    , storage(storage_)
     , subjects(subjects_)
     , log(log_)
     , stopped(stopped_)
@@ -34,10 +36,9 @@ NATSConsumer::NATSConsumer(
 
 void NATSConsumer::subscribe()
 {
-    if (!subscriptions.empty())
+    if (subscribed)
         return;
 
-    std::vector<NATSSubscriptionPtr> created_subscriptions;
     for (const auto & subject : subjects)
     {
         natsSubscription * ns;
@@ -45,23 +46,22 @@ void NATSConsumer::subscribe()
             &ns, connection->getConnection(), subject.c_str(), queue_name.c_str(), onMsg, static_cast<void *>(this));
         if (status == NATS_OK)
         {
-            created_subscriptions.emplace_back(ns, &natsSubscription_Destroy);
             LOG_DEBUG(log, "Subscribed to subject {}", subject);
-
             natsSubscription_SetPendingLimits(ns, -1, -1);
+            subscriptions.emplace_back(ns, &natsSubscription_Destroy);
         }
         else
         {
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe to subject {}", subject);
         }
     }
-
-    subscriptions = std::move(created_subscriptions);
+    subscribed = true;
 }
 
 void NATSConsumer::unsubscribe()
 {
-    subscriptions.clear();
+    for (const auto & subscription : subscriptions)
+        natsSubscription_Unsubscribe(subscription.get());
 }
 
 ReadBufferPtr NATSConsumer::consume()
@@ -87,7 +87,9 @@ void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, vo
             .subject = subject,
         };
         if (!nats_consumer->received.push(std::move(data)))
-            throw Exception(ErrorCodes::INVALID_STATE, "Could not push to received queue");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+
+        nats_consumer->storage.startStreaming();
     }
 
     natsMsg_Destroy(msg);
