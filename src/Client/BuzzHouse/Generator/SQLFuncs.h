@@ -96,7 +96,6 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCgroupArrayInsertAt, 2, 2, 2, 2, false, false),
     CHAggregate(SQLFunc::FUNCgroupArrayMovingAvg, 0, 1, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupArrayMovingSum, 0, 1, 1, 1, false, false),
-    CHAggregate(SQLFunc::FUNCgroupArraySample, 1, 2, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupArraySorted, 1, 1, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupArrayIntersect, 0, 0, 1, 1, false, false),
     CHAggregate(SQLFunc::FUNCgroupBitAnd, 0, 0, 1, 1, false, false),
@@ -162,7 +161,9 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCwindowFunnel, 2, ulimited_params, 1, ulimited_params, false, false),
     CHAggregate(SQLFunc::FUNCretention, 0, 0, 1, ulimited_params, false, false),
     CHAggregate(SQLFunc::FUNCuniqUpTo, 1, 1, 1, 1, false, false),
-    CHAggregate(SQLFunc::FUNCsequenceNextNode, 2, 2, 4, ulimited_params, false, false)};
+    CHAggregate(SQLFunc::FUNCsequenceNextNode, 2, 2, 4, ulimited_params, false, false),
+    /// Not deterministic
+    CHAggregate(SQLFunc::FUNCgroupArraySample, 1, 2, 1, 1, false, false)};
 
 const CHFunction materialize = CHFunction(SQLFunc::FUNCmaterialize, 0, 0, 1, 1);
 
@@ -236,8 +237,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayReverseSort, 0, 1, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayPartialReverseSort, 0, 1, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayReverseSort, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCarrayShuffle, 0, 0, 1, 2),
-    CHFunction(SQLFunc::FUNCarrayPartialShuffle, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCarrayUniq, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCarrayJoin, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCarrayDifference, 0, 0, 1, 1),
@@ -1186,6 +1185,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCgetTypeSerializationStreams, 0, 0, 1, 1),
     /// Not Deterministic
     /// Array
+    CHFunction(SQLFunc::FUNCarrayShuffle, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCarrayPartialShuffle, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCarrayRandomSample, 0, 0, 2, 2),
     /// UUID
     CHFunction(SQLFunc::FUNCgenerateUUIDv4, 0, 0, 1, 2),

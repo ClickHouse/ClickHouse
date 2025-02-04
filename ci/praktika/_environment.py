@@ -199,11 +199,15 @@ class _Environment(MetaClasses.Serializable):
         )
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.SHA, latest)
+        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, sha, latest=False):
-        prefix = f"{pr_number}"
+    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
+        assert pr_number or branch
+        if pr_number:
+            prefix = f"PRs/{pr_number}"
+        else:
+            prefix = f"REFs/{branch}"
         assert sha or latest
         assert pr_number >= 0
         if latest:
