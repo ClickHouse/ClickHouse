@@ -398,7 +398,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             /// into it as well, to avoid leaving it after DROP.
             if (!disk->isReadOnly() && !disk->isWriteOnce())
             {
-                auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
+                auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
                 buf->finalize();
                 if (getContext()->getSettingsRef()[Setting::fsync_metadata])
@@ -2826,10 +2826,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.partition_id;
-            {
-                WriteBufferFromString out(part_log_elem.partition);
-                part->partition.serializeText(part->storage, out, {});
-            }
+            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -4493,10 +4490,10 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
-        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block || part->info.getMutationVersion() != drop_range.getMutationVersion()))
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
         {
             /// Why we check only min and max blocks here without checking merge
-            /// level? It's a tricky situation which can happen on a stale
+            /// level or mutation? It's a tricky situation which can happen on a stale
             /// replica. For example, we have parts all_1_1_0, all_2_2_0 and
             /// all_3_3_0. Fast replica assign some merges (OPTIMIZE FINAL or
             /// TTL) all_2_2_0 -> all_2_2_1 -> all_2_2_2. So it has set of parts
@@ -4508,9 +4505,11 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
             /// all_1_3_1. If this replica will fetch all_1_3_1 first and then tries
             /// to drop all_2_2_2 after that it will receive the LOGICAL ERROR.
             /// So here we just check that all_1_3_1 covers blocks from drop
-            /// all_2_2_2.
+            /// all_2_2_2. The same situation can occur if the all_2_2_0
+            /// part mutates several times, after which it will be deleted, for
+            /// example if it becomes empty.
             ///
-            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
             if (is_covered_by_min_max_block)
             {
                 LOG_TRACE(LogFrequencyLimiter(log.load(), 1), "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartNameForLogs(), part->name);
@@ -5738,7 +5737,6 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const DataPartsVector & data_parts,
     const String & data_path_in_backup,
     const BackupSettings & backup_settings,
-    const ReadSettings & read_settings,
     const ContextPtr & local_context)
 {
     MergeTreeData::PartsBackupEntries res;
@@ -5780,7 +5778,6 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
             backup_settings,
-            read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
             &temp_dirs,
@@ -5793,7 +5790,6 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 projection_part.getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
-                read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
                 &temp_dirs,
@@ -6303,11 +6299,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            WriteBufferFromOwnString buf;
-            partition.serializeText(*this, buf, FormatSettings{});
+            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
                             "doesn't match partition value for an existing part with the same partition ID: {}",
-                            buf.str(), existing_part_in_partition->name);
+                            partition_str, existing_part_in_partition->name);
         }
     }
 
@@ -8152,18 +8147,10 @@ try
     part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
 
-    {
-        const DataPart * result_or_source_data_part = nullptr;
-        if (result_part)
-            result_or_source_data_part = result_part.get();
-        else if (!source_parts.empty())
-            result_or_source_data_part = source_parts.at(0).get();
-        if (result_or_source_data_part)
-        {
-            WriteBufferFromString out(part_log_elem.partition);
-            result_or_source_data_part->partition.serializeText(*this, out, {});
-        }
-    }
+    if (result_part)
+        part_log_elem.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
+    else if (!source_parts.empty())
+        part_log_elem.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
 
     part_log_elem.part_name = new_part_name;
 
@@ -9123,7 +9110,7 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-            auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
+            auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
             writeIntText(format_version.toUnderType(), *buf);
             buf->finalize();
             if (getContext()->getSettingsRef()[Setting::fsync_metadata])
