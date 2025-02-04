@@ -1,10 +1,8 @@
 #pragma once
 
 #include <atomic>
-#include <list>
-#include <mutex>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/IMessageProducer.h>
@@ -19,7 +17,10 @@ public:
     NATSProducer(
         const NATSConfiguration & configuration_,
         const String & subject_,
-        std::atomic<bool> & shutdown_called_,
+        std::
+        
+        
+        c<bool> & shutdown_called_,
         LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;

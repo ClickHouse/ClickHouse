@@ -2,6 +2,7 @@
 #include <base/sort.h>
 
 #include <Common/setThreadName.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>

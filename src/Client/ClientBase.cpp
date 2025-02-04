@@ -328,10 +328,19 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     if (is_interactive || ignore_error)
     {
         String message;
-        if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-        else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        try
+        {
+            if (dialect == Dialect::kusto)
+                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            else
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        }
+        catch (const Exception & e)
+        {
+            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+            client_exception.reset(e.clone());
+            return nullptr;
+        }
 
         if (!res)
         {

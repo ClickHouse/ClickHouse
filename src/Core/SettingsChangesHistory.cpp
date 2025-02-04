@@ -107,6 +107,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             /// Release closed. Please use 25.2
