@@ -55,6 +55,8 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -113,7 +115,6 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
 

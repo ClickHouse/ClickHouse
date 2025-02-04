@@ -1,5 +1,4 @@
 #include <Access/AccessControl.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>

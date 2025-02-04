@@ -136,7 +136,7 @@ Possible values:
 
 **See Also**
 
-- [min_insert_block_size_rows](#min-insert-block-size-rows)
+- [min_insert_block_size_rows](#min_insert_block_size_rows)
 )", 0) \
     DECLARE(UInt64, min_insert_block_size_bytes_for_materialized_views, 0, R"(
 Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
@@ -148,7 +148,7 @@ Possible values:
 
 **See also**
 
-- [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+- [min_insert_block_size_bytes](#min_insert_block_size_bytes)
 )", 0) \
     DECLARE(UInt64, min_external_table_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
 Squash blocks passed to external table to specified size in rows, if blocks are not big enough.
@@ -290,7 +290,7 @@ Possible values:
 - 0 — Infinite timeout.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
-The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
 
 Possible values:
 
@@ -1099,11 +1099,11 @@ This will allow to avoid:
 - Processing rows behind the limit on the initiator.
 
 Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+- [distributed_group_by_no_merge](#distributed_group_by_no_merge) > 0.
 - Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
 - Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
-    - [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
-    - [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
+    - [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled.
+    - [optimize_distributed_group_by_sharding_key](#optimize_distributed_group_by_sharding_key) is enabled.
 
 Possible values:
 
@@ -1112,9 +1112,9 @@ Possible values:
 
 See also:
 
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge)
-- [optimize_skip_unused_shards](#optimize-skip-unused-shards)
-- [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key)
+- [distributed_group_by_no_merge](#distributed_group_by_no_merge)
+- [optimize_skip_unused_shards](#optimize_skip_unused_shards)
+- [optimize_distributed_group_by_sharding_key](#optimize_distributed_group_by_sharding_key)
 )", 0) \
     DECLARE(Bool, optimize_distributed_group_by_sharding_key, true, R"(
 Optimize `GROUP BY sharding_key` queries, by avoiding costly aggregation on the initiator server (which will reduce memory usage for the query on the initiator server).
@@ -1141,9 +1141,9 @@ Possible values:
 
 See also:
 
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge)
-- [distributed_push_down_limit](#distributed-push-down-limit)
-- [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+- [distributed_group_by_no_merge](#distributed_group_by_no_merge)
+- [distributed_push_down_limit](#distributed_push_down_limit)
+- [optimize_skip_unused_shards](#optimize_skip_unused_shards)
 
 :::note
 Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
@@ -1179,7 +1179,7 @@ Possible values:
 - 1 — Allowed.
 )", 0) \
     DECLARE(UInt64, force_optimize_skip_unused_shards, 0, R"(
-Enables or disables query execution if [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
+Enables or disables query execution if [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
 
 Possible values:
 
@@ -1188,7 +1188,7 @@ Possible values:
 - 2 — Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
 )", 0) \
     DECLARE(UInt64, optimize_skip_unused_shards_nesting, 0, R"(
-Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
+Controls [`optimize_skip_unused_shards`](#optimize_skip_unused_shards) (hence still requires [`optimize_skip_unused_shards`](#optimize_skip_unused_shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
@@ -1197,7 +1197,7 @@ Possible values:
 - 2 — Enables `optimize_skip_unused_shards` up to the second level.
 )", 0) \
     DECLARE(UInt64, force_optimize_skip_unused_shards_nesting, 0, R"(
-Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
+Controls [`force_optimize_skip_unused_shards`](#force_optimize_skip_unused_shards) (hence still requires [`force_optimize_skip_unused_shards`](#force_optimize_skip_unused_shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
@@ -2825,7 +2825,7 @@ Log query settings into the query_log and OpenTelemetry span log.
     DECLARE(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -3096,7 +3096,7 @@ Exception: Regexp length too large.
 
 **See Also**
 
-- [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+- [max_hyperscan_regexp_total_length](#max_hyperscan_regexp_total_length)
 )", 0) \
     DECLARE(UInt64, max_hyperscan_regexp_total_length, 0, R"(
 Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md/#multimatchanyhaystack-pattern1-pattern2-patternn).
@@ -3136,7 +3136,7 @@ Exception: Total regexp lengths too large.
 
 **See Also**
 
-- [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+- [max_hyperscan_regexp_length](#max_hyperscan_regexp_length)
 )", 0) \
     DECLARE(Bool, reject_expensive_hyperscan_regexps, true, R"(
 Reject patterns which will likely be expensive to evaluate with hyperscan (due to NFA state explosion)
@@ -3414,7 +3414,7 @@ Possible values:
 
 See also:
 
-- [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
+- [optimize_functions_to_subcolumns](#optimize_functions_to_subcolumns)
 )", 0) \
     DECLARE(Bool, optimize_trivial_approximate_count_query, false, R"(
 Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
@@ -4238,8 +4238,8 @@ The probability of a fault injection during table creation after creating metada
 )", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
-If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
-and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
+and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
 
 Possible values:
 
@@ -4317,7 +4317,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query-cache-compress-entries)).
+Squash partial result blocks to blocks of size [max_block_size](#setting_max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -4865,8 +4865,8 @@ Possible values:
 
 **See Also**
 
-- [max_block_size](#setting-max_block_size)
-- [min_insert_block_size_rows](#min-insert-block-size-rows)
+- [max_block_size](#setting_max_block_size)
+- [min_insert_block_size_rows](#min_insert_block_size_rows)
 )", 0) \
     DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
 Maximum number of microseconds the function `sleep` is allowed to sleep for each block. If a user called it with a larger value, it throws an exception. It is a safety threshold.
@@ -5861,6 +5861,9 @@ In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
 - cross to inner join optimization
+)", 0) \
+    DECLARE(Bool, optimize_and_compare_chain, true, R"(
+Populate constant comparison in AND chains to enhance filtering ability. Support operators <, <=, >, >=, = and mix of them. For example, (a < b) AND (b < c) AND (c < 5) would be (a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5).
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
