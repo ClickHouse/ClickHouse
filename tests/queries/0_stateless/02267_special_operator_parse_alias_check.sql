@@ -59,6 +59,9 @@ SELECT trim(TRAILING 'a' arg_1 FROM 'abca' arg_2), arg_1, arg_2;
 SELECT trim(BOTH 'a' AS arg_1 FROM 'abca' AS arg_2), arg_1, arg_2;
 SELECT trim(BOTH 'a' arg_1 FROM 'abca' arg_2), arg_1, arg_2;
 
+SELECT trim(LEADING concat('') FROM 'abc');
+SELECT trim(LEADING concat('a', 'b') FROM 'abc');
+
 -- EXTRACT expression
 
 -- EXTRACT(part FROM date)

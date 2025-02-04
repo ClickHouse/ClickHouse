@@ -124,14 +124,14 @@ public:
                 }
                 if constexpr (Mode::trim_right) {
                     const char * right_pos = find_last_not_symbols_or_null<' '>(str.data, str.data + str.size);
-                    end = right_pos ? (right_pos - str.data + 1) : (Mode::trim_left ? start : str.size);
+                    end = right_pos ? (right_pos - str.data + 1) : 0;
                 }
             }
             // Custom trim characters (dynamic trim with the second argument)
             else
             {
                 StringRef chars = chars_column->getDataAt(i);
-                SearchSymbols trim_chars(chars.data);
+                SearchSymbols trim_chars(std::string(chars.data, chars.size));
 
                 // Trim left at runtime
                 if constexpr (Mode::trim_left) {
@@ -141,9 +141,10 @@ public:
                 // Trim right at runtime
                 if constexpr (Mode::trim_right) {
                     const char * right_pos = find_last_not_symbols_or_null(str.data, str.data + str.size, trim_chars);
-                    end = right_pos ? (right_pos - str.data + 1) : (Mode::trim_left ? start : str.size);
+                    end = right_pos ? (right_pos - str.data + 1) : 0;
                 }
             }
+            start = std::min(start, end);
             result_column->insertData(str.data + start, end - start);
         }
         return result_column;
