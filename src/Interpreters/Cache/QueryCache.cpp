@@ -20,6 +20,7 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include "IO/WriteHelpers.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -34,6 +35,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
     extern const SettingsString query_cache_tag;
 }
 
@@ -263,7 +267,7 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
 
     auto h2 = getSipHash128AsPair(hash);
     LOG_TRACE(getLogger("QueryCache"), "ast db hash: {} {}", h2.high64, h2.low64);
-    
+    LOG_TRACE(getLogger("QueryCache"), "extremes {} max_result_bytes {} {}", settings[Setting::extremes], settings[Setting::max_result_bytes], settings[Setting::max_result_rows]);
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
     ///       Therefore, collect and sort the settings first, then hash them.
@@ -272,11 +276,28 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+        if (!isQueryCacheRelatedSetting(name) || !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
         else
             LOG_TRACE(getLogger("QueryCache"), "unused setting: {} {}", change.name, change.value);
     }
+
+    /// Some specific settings are added to subqueries (extremes 0, max_result_bytes 0, max_result_rows 0),
+    /// however non subqueries don't have this settings in settings.changes() and therefore don't match in cache.
+    /// Try to also add values for extremes, max_result_bytes, max_result_rows from settings. 
+
+    if (!changed_settings.tryGet("extremes")) {
+        changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
+    }
+
+    if (!changed_settings.tryGet("max_result_bytes")) {
+        changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
+    }
+
+    if (!changed_settings.tryGet("max_result_bytes")) {
+        changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
+    }
+
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
     {
