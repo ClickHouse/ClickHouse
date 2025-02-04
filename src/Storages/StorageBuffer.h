@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 
 
 namespace Poco { class Logger; }

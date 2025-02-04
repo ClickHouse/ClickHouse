@@ -2,6 +2,7 @@
 
 #include "MaterializedPostgreSQLConsumer.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
