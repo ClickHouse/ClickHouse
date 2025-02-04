@@ -112,7 +112,8 @@ public:
 
         auto result_column = ColumnString::create();
 
-        for (size_t i = 0; i < str_column->size(); ++i) {
+        for (size_t i = 0; i < str_column->size(); ++i)
+        {
             StringRef str = str_column->getDataAt(i);
             size_t start = 0;
             size_t end = str.size;
@@ -121,10 +122,12 @@ public:
             if (!chars_column)
             {
                 // Compile-time check for whitespace
-                if constexpr (Mode::trim_left) {
+                if constexpr (Mode::trim_left)
+                {
                     start = find_first_not_symbols<' '>(str.data, str.data + str.size) - str.data;
                 }
-                if constexpr (Mode::trim_right) {
+                if constexpr (Mode::trim_right)
+                {
                     const char * right_pos = find_last_not_symbols_or_null<' '>(str.data, str.data + str.size);
                     end = right_pos ? (right_pos - str.data + 1) : 0;
                 }
@@ -136,12 +139,14 @@ public:
                 SearchSymbols trim_chars(std::string(chars.data, chars.size));
 
                 // Trim left at runtime
-                if constexpr (Mode::trim_left) {
+                if constexpr (Mode::trim_left)
+                {
                     start = find_first_not_symbols(str.data, str.data + str.size, trim_chars) - str.data;
                 }
 
                 // Trim right at runtime
-                if constexpr (Mode::trim_right) {
+                if constexpr (Mode::trim_right)
+                {
                     const char * right_pos = find_last_not_symbols_or_null(str.data, str.data + str.size, trim_chars);
                     end = right_pos ? (right_pos - str.data + 1) : 0;
                 }
