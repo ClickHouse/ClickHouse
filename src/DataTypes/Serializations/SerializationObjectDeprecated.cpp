@@ -11,12 +11,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
-#include <magic_enum.hpp>
 #include <memory>
 #include <string>
+#include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
