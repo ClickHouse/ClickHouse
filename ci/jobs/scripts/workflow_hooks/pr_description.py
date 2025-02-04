@@ -171,29 +171,39 @@ def check_labels(category, info):
             pr_labels_to_remove.append(label)
 
     if info.pr_number:
-        changed_files = Shell.get_output(
-            "git diff --name-only $(git merge-base HEAD master) --cached"
+        changed_files_str = Shell.get_output(
+            "git diff --name-only $(git merge-base HEAD origin/master) --cached",
+            strict=True,
         )
-        if "contrib/" in changed_files:
+        if "contrib/" in changed_files_str:
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
+        changed_files = changed_files_str.split("\n")
+        info.store_custom_data("changed_files", changed_files)
 
     if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
         backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
         pr_labels_to_add += [label for label in backport_labels if label not in labels]
         print(f"Add backport labels [{backport_labels}] for PR category [{category}]")
 
-    cmd = f"pr edit {info.pr_number}"
+    cmd = f"gh pr edit {info.pr_number}"
     if pr_labels_to_add:
         print(f"Add labels [{pr_labels_to_add}]")
         for label in pr_labels_to_add:
             cmd += f" --add-label {label}"
+            if label in info.pr_labels:
+                info.pr_labels.append(label)
+            info.dump()
 
     if pr_labels_to_remove:
         print(f"Remove labels [{pr_labels_to_remove}]")
         for label in pr_labels_to_add:
             cmd += f" --remove-label {label}"
+            if label in info.pr_labels:
+                info.pr_labels.remove(label)
+            info.dump()
 
-    Shell.check(cmd, verbose=True, strict=True)
+    if pr_labels_to_remove or pr_labels_to_add:
+        Shell.check(cmd, verbose=True, strict=True)
 
 
 if __name__ == "__main__":
