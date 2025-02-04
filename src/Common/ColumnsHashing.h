@@ -242,7 +242,6 @@ private:
     Cache cache;
 };
 
-
 /// Single low cardinality column.
 template <typename SingleColumnMethod, typename Mapped, bool use_cache>
 struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
@@ -316,7 +315,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
-        bool is_shared_dict = column->isSharedDictionary();
+        const bool is_shared_dict = column->isSharedDictionary();
 
         typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
@@ -797,4 +796,10 @@ struct HashMethodHashed
 };
 
 }
+
+/// Explicit instantiation of LowCardinalityDictionaryCache::cache which is a really heavy template
+extern template class CacheBase<
+    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey,
+    ColumnsHashing::LowCardinalityDictionaryCache::CachedValues,
+    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash>;
 }

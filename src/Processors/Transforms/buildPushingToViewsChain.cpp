@@ -374,7 +374,7 @@ std::optional<Chain> generateViewChain(
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
         out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
-        if (interpreter.shouldAddSquashingFroStorage(inner_table))
+        if (interpreter.shouldAddSquashingForStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
@@ -479,7 +479,7 @@ Chain buildPushingToViewsChain(
     std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
     const Block & live_view_header
- )
+)
 {
     checkStackSize();
     Chain result_chain;
@@ -1005,8 +1005,7 @@ void FinalizingViewsTransform::work()
 
             LOG_TRACE(
                 getLogger("PushingToViews"),
-                "Pushing ({}) from {} to {} took {} ms.",
-                views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
+                "Pushing from {} to {} took {} ms.",
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
                 view.runtime_stats->elapsed_ms);

@@ -67,6 +67,15 @@ void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, 
 }
 
 
+size_t MergeTreeIndexGranuleBloomFilterText::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & bloom_filter : bloom_filters)
+        sum += bloom_filter.memoryUsageBytes();
+    return sum;
+}
+
+
 MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText(
     const Names & index_columns_,
     const String & index_name_,

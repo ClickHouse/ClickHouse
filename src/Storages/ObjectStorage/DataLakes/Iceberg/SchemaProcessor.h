@@ -71,22 +71,36 @@ namespace DB
  */
 class IcebergSchemaProcessor
 {
+    static std::string default_link;
+
     using Node = ActionsDAG::Node;
 
 public:
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+    NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
+    std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
+    NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+    mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids;
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
-    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
-    DataTypePtr getSimpleType(const String & type_name);
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
+    DataTypePtr getFieldType(
+        const Poco::JSON::Object::Ptr & field,
+        const String & type_key,
+        bool required,
+        String & current_full_name = default_link,
+        bool is_subfield_of_root = false);
+
+    static DataTypePtr getSimpleType(const String & type_name);
+
+    std::optional<Int32> current_schema_id = 0;
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);

@@ -1,5 +1,5 @@
-{"progress":{}}
 {"progress":{"read_rows":"100000","read_bytes":"800000"}}
+{"meta":[{"name":"number","type":"UInt64"}]}
 {"row":{"number":"1"}}
 {"progress":{"read_rows":"200000","read_bytes":"1600000"}}
 {"progress":{"read_rows":"300000","read_bytes":"2400000"}}
