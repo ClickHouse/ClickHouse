@@ -25,6 +25,9 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'releases/24.12**'
+      - 'project-antalya-24.12.2'
+    tags:
+      - '*'
   workflow_dispatch:
 
 jobs:
@@ -476,7 +479,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cx52, altinity-image-x86-app-docker-ce, altinity-setup-regression
-      commit: 634042960dd157489199ca0f9d028c7fd1e6adb0
+      commit: 6a4a02ba19dcf0212ab7c4e26856e9445b63fe11
       arch: release
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
@@ -487,7 +490,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
-      commit: 634042960dd157489199ca0f9d028c7fd1e6adb0
+      commit: 6a4a02ba19dcf0212ab7c4e26856e9445b63fe11
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300

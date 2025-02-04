@@ -116,6 +116,8 @@ jobs:
           job_type: test
       - name: Docker setup
         uses: ./.github/actions/docker_setup
+        with:
+          test_name: ${{ inputs.test_name }}
       - name: Setup batch
         if: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 }}
         run: |

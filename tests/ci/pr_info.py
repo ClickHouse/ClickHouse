@@ -76,15 +76,16 @@ def get_pr_for_commit(sha, ref):
                 return pr
             our_prs.append(pr)
         logging.warning(
-            "Cannot find PR with required ref %s, sha %s - returning first one",
+            "Cannot find PR with required ref %s, sha %s",
             ref,
             sha,
         )
-        if len(our_prs) != 0:
-            first_pr = our_prs[0]
-            return first_pr
-        else:
-            return None
+        # NOTE(vnemkov): IMO returning possibly unrelated PR it breaks CI/CD down the road
+        # if len(our_prs) != 0:
+        #     first_pr = our_prs[0]
+        #     return first_pr
+        # else:
+        return None
     except Exception as ex:
         logging.error(
             "Cannot fetch PR info from commit ref %s, sha %s, exception: %s",
@@ -246,7 +247,7 @@ class PRInfo:
             self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
-                # it's merged PR to master
+                # it's merged PR to master, or there is no PR (build against specific commit or tag)
                 self.number = 0
                 if pull_request:
                     self.merged_pr = pull_request["number"]
@@ -256,9 +257,13 @@ class PRInfo:
                 self.base_name = self.repo_full_name
                 self.head_ref = ref
                 self.head_name = self.repo_full_name
-                self.diff_urls.append(
-                    self.compare_url(github_event["before"], self.sha)
-                )
+                before_sha = github_event["before"]
+                # in case of just a tag on exsiting commit, "before_sha" is 0000000000000000000000000000000000000000
+                # Hence it is a special case and basically nothing changed, there is no need to compose a diff url
+                if not all(x == '0' for x in before_sha):
+                    self.diff_urls.append(
+                        self.compare_url(before_sha, self.sha)
+                    )
             else:
                 self.number = pull_request["number"]
                 self.labels = {label["name"] for label in pull_request["labels"]}
