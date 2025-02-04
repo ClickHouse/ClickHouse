@@ -67,6 +67,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.2",
         {
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
+            /// 24.12 and 25.1 don't have this setting but behave as if it's set to true.
+            /// Older versions behave as if it's set to false.
+            {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {

@@ -109,6 +109,7 @@ namespace Setting
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool apply_settings_from_server;
 }
 
 namespace ErrorCodes
@@ -850,18 +851,8 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
-    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size", global_context->getSettingsRef()[Setting::max_block_size]);
-
-    /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef()[Setting::max_insert_block_size].changed)
-    {
-        insert_format_max_block_size = global_context->getSettingsRef()[Setting::max_insert_block_size];
-    }
-    else
-    {
-        insert_format_max_block_size
-            = getClientConfiguration().getUInt64("insert_format_max_block_size", global_context->getSettingsRef()[Setting::max_insert_block_size]);
-    }
+    if (getClientConfiguration().has("insert_format_max_block_size"))
+        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -1877,6 +1868,12 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
+    /// Setting value from cmd arg overrides one from config.
+    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
+    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
+        insert_format_max_block_size_from_config.has_value())
+        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
+
     auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
@@ -2130,6 +2127,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
+
+        applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -2764,6 +2763,29 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     }
 
     return added_new_setting;
+}
+
+void ClientBase::applySettingsFromServerIfNeeded()
+{
+    const Settings & settings = client_context->getSettingsRef();
+    SettingsChanges changes_to_apply;
+    for (const SettingChange & change : settings_from_server)
+    {
+        /// Apply settings received from server with lower priority than settings changed from
+        /// command line or query.
+        if (settings.isChanged(change.name))
+            continue;
+
+        /// The setting apply_settings_from_server may itself be received from server.
+        /// Apply it first.
+        if (change.name == "apply_settings_from_server")
+            client_context->setSetting("apply_settings_from_server", change.value);
+        else
+            changes_to_apply.push_back(change);
+    }
+
+    if (settings[Setting::apply_settings_from_server])
+        global_context->applySettingsChanges(changes_to_apply);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()
