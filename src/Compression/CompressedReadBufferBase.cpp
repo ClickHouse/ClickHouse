@@ -73,7 +73,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     /// If size is too huge, then this may be caused by corruption.
     /// And anyway this is pretty heavy, so avoid burning too much CPU here.
-    if (size < (1ULL << 20))
+    if (size < (512ULL << 10))
     {
         /// We need to copy data from ReadBuffer to flip bits as ReadBuffer should be immutable
         PODArray<char> tmp_buffer(data, data + size);
