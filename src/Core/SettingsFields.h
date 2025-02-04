@@ -20,10 +20,10 @@ class WriteBuffer;
 
 struct SettingFieldBase
 {
-    bool changed = false;
-    SettingFieldBase() = default;
-    explicit SettingFieldBase(bool changed_) : changed(changed_) { }
-    virtual ~SettingFieldBase() = default;
+    virtual ~SettingFieldBase() {}
+
+    virtual bool isChanged() const = 0;
+    virtual void setChanged(bool c) = 0;
 
     virtual String toString() const = 0;
     virtual void parseFromString(const String & str) = 0;
@@ -46,15 +46,19 @@ struct SettingFieldBase
   */
 
 template <typename T>
-struct SettingFieldNumber : public SettingFieldBase
+struct SettingFieldNumber final : public SettingFieldBase
 {
     using Type = T;
     using ValueType = T;
     Type value;
+    bool changed;
 
-    SettingFieldNumber(const SettingFieldNumber & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldNumber(const SettingFieldNumber & o) : value(o.value), changed(o.changed) { }
     explicit SettingFieldNumber(Type x = 0) : value(x) {}
     explicit SettingFieldNumber(const Field & f);
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
     SettingFieldNumber & operator=(const Field & f) override;
@@ -105,17 +109,21 @@ struct SettingAutoWrapper final : public SettingFieldBase
 
     Base base;
     bool is_auto = false;
+    bool changed = false;
 
     explicit SettingAutoWrapper() : is_auto(true) {}
-    explicit SettingAutoWrapper(Type val) : is_auto(false) { base = Base(val); }
-    SettingAutoWrapper(const SettingAutoWrapper & o) : SettingFieldBase(o.changed), base(o.base), is_auto(o.is_auto) { }
+    explicit SettingAutoWrapper(Type val) : base(Base(val)) { }
+    SettingAutoWrapper(const SettingAutoWrapper & o) : base(o.base), is_auto(o.is_auto), changed(o.changed) { }
 
     explicit SettingAutoWrapper(const Field & f)
         : is_auto(isAuto(f))
     {
         if (!is_auto)
-            base = Base(f);
+            base = f;
     }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingAutoWrapper & operator=(const Field & f) override
     {
@@ -187,11 +195,15 @@ using SettingFieldDoubleAuto = SettingAutoWrapper<SettingFieldDouble>;
 struct SettingFieldMaxThreads final : public SettingFieldBase
 {
     bool is_auto;
+    bool changed = false;
     UInt64 value;
 
     explicit SettingFieldMaxThreads(UInt64 x = 0) : is_auto(!x), value(is_auto ? getAuto() : x)  {}
     explicit SettingFieldMaxThreads(const Field & f);
-    SettingFieldMaxThreads(const SettingFieldMaxThreads & o) : SettingFieldBase(o.changed), is_auto(o.is_auto), value(o.value) { }
+    SettingFieldMaxThreads(const SettingFieldMaxThreads & o) : is_auto(o.is_auto), changed(o.changed), value(o.value) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
     SettingFieldMaxThreads & operator=(const Field & f) override;
@@ -235,9 +247,9 @@ struct SettingFieldTimespan final : public SettingFieldBase
     static constexpr Unit unit = unit_;
     static constexpr UInt64 microseconds_per_unit = (unit == SettingFieldTimespanUnit::Millisecond) ? 1000 : 1000000;
     Poco::Timespan value;
+    bool changed = false;
 
-    SettingFieldTimespan(const SettingFieldTimespan & o) : SettingFieldBase(o.changed), value(o.value) { }
-
+    SettingFieldTimespan(const SettingFieldTimespan & o) : value(o.value), changed(o.changed) { }
     explicit SettingFieldTimespan(Poco::Timespan x = {}) : value(x) {}
 
     template <class Rep, class Period = std::ratio<1>>
@@ -246,6 +258,9 @@ struct SettingFieldTimespan final : public SettingFieldBase
 
     explicit SettingFieldTimespan(UInt64 x) : SettingFieldTimespan(Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}) {}
     explicit SettingFieldTimespan(const Field & f);
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldTimespan & operator =(Poco::Timespan x) { value = x; changed = true; return *this; }
 
@@ -291,13 +306,17 @@ using SettingFieldMilliseconds = SettingFieldTimespan<SettingFieldTimespanUnit::
 struct SettingFieldString final : public SettingFieldBase
 {
     String value;
+    bool changed = false;
 
     explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(String && str) : value(std::move(str)) {}
     explicit SettingFieldString(const char * str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<const String &>()) {}
-    SettingFieldString(const SettingFieldString & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldString(const SettingFieldString & o) : value(o.value), changed(o.changed){ }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldString & operator =(std::string_view str) { value = str; changed = true; return *this; }
     SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
@@ -332,11 +351,15 @@ struct SettingFieldString final : public SettingFieldBase
 struct SettingFieldMap final : public SettingFieldBase
 {
     Map value;
+    bool changed = false;
 
     explicit SettingFieldMap(const Map & map = {}) : value(map) {}
     explicit SettingFieldMap(Map && map) : value(std::move(map)) {}
     explicit SettingFieldMap(const Field & f);
-    SettingFieldMap(const SettingFieldMap & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldMap(const SettingFieldMap & o) : value(o.value), changed(o.changed) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldMap & operator =(const Map & map) { value = map; changed = true; return *this; }
     SettingFieldMap & operator=(const Field & f) override;
@@ -361,13 +384,17 @@ struct SettingFieldMap final : public SettingFieldBase
     void readBinary(ReadBuffer & in) override;
 };
 
-struct SettingFieldChar : public SettingFieldBase
+struct SettingFieldChar final : public SettingFieldBase
 {
     char value;
+    bool changed = false;
 
     explicit SettingFieldChar(char c = '\0') : value(c) {}
     explicit SettingFieldChar(const Field & f);
-    SettingFieldChar(const SettingFieldChar & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldChar(const SettingFieldChar & o) : value(o.value), changed(o.changed) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldChar & operator =(char c) { value = c; changed = true; return *this; }
     SettingFieldChar & operator=(const Field & f) override;
@@ -396,12 +423,16 @@ struct SettingFieldChar : public SettingFieldBase
 struct SettingFieldURI final : public SettingFieldBase
 {
     Poco::URI value;
+    bool changed = false;
 
     explicit SettingFieldURI(const Poco::URI & uri = {}) : value(uri) {}
     explicit SettingFieldURI(const String & str) : SettingFieldURI(Poco::URI{str}) {}
     explicit SettingFieldURI(const char * str) : SettingFieldURI(Poco::URI{str}) {}
     explicit SettingFieldURI(const Field & f) : SettingFieldURI(f.safeGet<String>()) {}
-    SettingFieldURI(const SettingFieldURI & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldURI(const SettingFieldURI & o) : value(o.value), changed(o.changed) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
     SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
@@ -452,12 +483,16 @@ struct SettingFieldEnum final : public SettingFieldBase
     using ValueType = EnumT;
 
     EnumType value;
+    bool changed = false;
 
     explicit SettingFieldEnum(EnumType x = EnumType{0}) : value(x) {}
     explicit SettingFieldEnum(const Field & f) : SettingFieldEnum(Traits::fromString(f.safeGet<const String &>())) {}
-    SettingFieldEnum(const SettingFieldEnum & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldEnum(const SettingFieldEnum & o) : value(o.value), changed(o.changed) { }
 
-    SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
+
+    SettingFieldEnum & operator=(EnumType x) { value = x; changed = true; return *this; }
     SettingFieldEnum & operator=(const Field & f) override
     {
         *this = Traits::fromString(f.safeGet<const String &>());
@@ -510,11 +545,15 @@ struct SettingFieldMultiEnum final : public SettingFieldBase
     using ValueType = std::vector<Enum>;
 
     ValueType value;
+    bool changed = false;
 
     explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
     explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
     explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
-    SettingFieldMultiEnum(const SettingFieldMultiEnum & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldMultiEnum(const SettingFieldMultiEnum & o) : value(o.value), changed(o.changed) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     operator ValueType() const { return value; } /// NOLINT
     explicit operator Field() const override { return toString(); }
@@ -610,13 +649,17 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
 struct SettingFieldTimezone final : public SettingFieldBase
 {
     String value;
+    bool changed = false;
 
     explicit SettingFieldTimezone(std::string_view str = {}) { validateTimezone(std::string(str)); value = str; }
     explicit SettingFieldTimezone(const String & str) { validateTimezone(str); value = str; }
     explicit SettingFieldTimezone(String && str) { validateTimezone(str); value = std::move(str); }
     explicit SettingFieldTimezone(const char * str) { validateTimezone(str); value = str; }
     explicit SettingFieldTimezone(const Field & f) { const String & str = f.safeGet<const String &>(); validateTimezone(str); value = str; }
-    SettingFieldTimezone(const SettingFieldTimezone & o) : SettingFieldBase(o.changed), value(o.value) { }
+    SettingFieldTimezone(const SettingFieldTimezone & o) : value(o.value), changed(o.changed) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
 
     SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(std::string(str)); value = str; changed = true; return *this; }
     SettingFieldTimezone & operator =(const String & str) { *this = std::string_view{str}; return *this; }
@@ -655,10 +698,15 @@ private:
 struct SettingFieldCustom final : public SettingFieldBase
 {
     Field value;
+    bool changed = false;
 
     explicit SettingFieldCustom(const Field & f = {}) : value(f) {}
-    SettingFieldCustom(const SettingFieldCustom & o) : SettingFieldBase(o.changed), value(o.value) { }
-    SettingFieldCustom(SettingFieldCustom && o) noexcept : SettingFieldBase(o.changed), value(std::move(o.value)) { }
+    SettingFieldCustom(const SettingFieldCustom & o) : value(o.value), changed(o.changed) { }
+    SettingFieldCustom(SettingFieldCustom && o) noexcept : value(std::move(o.value)), changed(o.changed) { }
+
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
+
     SettingFieldCustom & operator=(const Field & f) override
     {
         value = f;
@@ -685,18 +733,39 @@ struct SettingFieldCustom final : public SettingFieldBase
     void readBinary(ReadBuffer & in) override;
 };
 
-struct SettingFieldNonZeroUInt64 final : public SettingFieldUInt64
+struct SettingFieldNonZeroUInt64 final : public SettingFieldBase
 {
-public:
+    UInt64 value;
+    bool changed = false;
+
+    SettingFieldNonZeroUInt64(const SettingFieldNonZeroUInt64 & o) : value(o.value), changed(o.changed) { }
     explicit SettingFieldNonZeroUInt64(UInt64 x = 1);
     explicit SettingFieldNonZeroUInt64(const Field & f);
 
+    bool isChanged() const override { return changed; }
+    void setChanged(bool c) override { changed = c; }
+
     SettingFieldNonZeroUInt64 & operator=(UInt64 x);
     SettingFieldNonZeroUInt64 & operator=(const Field & f) override;
+    SettingFieldNonZeroUInt64 & operator=(const SettingFieldNonZeroUInt64 & o)
+    {
+        if (&o == this)
+            return *this;
+        value = o.value;
+        changed = o.changed;
+        return *this;
+    }
 
     std::unique_ptr<SettingFieldBase> clone() const override { return std::make_unique<SettingFieldNonZeroUInt64>(*this); }
 
+    operator UInt64() const { return value; } /// NOLINT
+    explicit operator Field() const override { return value; }
+
+    String toString() const override;
     void parseFromString(const String & str) override;
+
+    void writeBinary(WriteBuffer & out) const override;
+    void readBinary(ReadBuffer & in) override;
 
 private:
     void checkValueNonZero() const;

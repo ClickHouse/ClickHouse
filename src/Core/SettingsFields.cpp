@@ -534,34 +534,41 @@ void SettingFieldCustom::readBinary(ReadBuffer & in)
     parseFromString(str);
 }
 
-SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x)
 {
+    value = x;
     checkValueNonZero();
 }
 
-SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(const DB::Field & f) : SettingFieldUInt64(f)
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(const DB::Field & f)
 {
+    *this = fieldToNumber<UInt64>(f);
     checkValueNonZero();
 }
 
 SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(UInt64 x)
 {
-    SettingFieldUInt64::operator=(x);
+    value = x;
     checkValueNonZero();
     return *this;
 }
 
 SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field & f)
 {
-    SettingFieldUInt64::operator=(f);
+    *this = fieldToNumber<UInt64>(f);
     checkValueNonZero();
     return *this;
 }
 
 void SettingFieldNonZeroUInt64::parseFromString(const String & str)
 {
-    SettingFieldUInt64::parseFromString(str);
+    *this = stringToNumber<UInt64>(str);
     checkValueNonZero();
+}
+
+String SettingFieldNonZeroUInt64::toString() const
+{
+    return ::DB::toString(value);
 }
 
 void SettingFieldNonZeroUInt64::checkValueNonZero() const
@@ -569,5 +576,18 @@ void SettingFieldNonZeroUInt64::checkValueNonZero() const
     if (value == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
 }
+
+
+void SettingFieldNonZeroUInt64::writeBinary(WriteBuffer & out) const
+{
+    writeVarUInt(value, out);
+}
+
+void SettingFieldNonZeroUInt64::readBinary(ReadBuffer & in)
+{
+    readVarUInt(value, in);
+}
+
+
 
 }

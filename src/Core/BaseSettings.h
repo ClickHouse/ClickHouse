@@ -5,6 +5,7 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
+#include <base/defines.h>
 #include <base/range.h>
 #include <boost/blank.hpp>
 #include <Common/FieldVisitorToString.h>
@@ -172,7 +173,6 @@ public:
     private:
         friend class BaseSettings;
         BaseSettings * settings;
-        const typename Traits::Accessor * accessor;
         size_t index;
         std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
@@ -200,7 +200,7 @@ public:
 
     private:
         friend class BaseSettings;
-        Iterator(BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_);
+        Iterator(BaseSettings & settings_, SkipFlags skip_flags_);
         void doSkip();
         void setPointerToCustomSetting();
 
@@ -212,26 +212,24 @@ public:
     class Range
     {
     public:
-        Range(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
-        Iterator begin() const { return Iterator(settings, accessor, skip_flags); }
-        Iterator end() const { return Iterator(settings, accessor, SKIP_ALL); }
+        Range(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), skip_flags(skip_flags_) {}
+        Iterator begin() const { return Iterator(settings, skip_flags); }
+        Iterator end() const { return Iterator(settings, SKIP_ALL); }
 
     private:
         BaseSettings & settings;
-        const typename Traits::Accessor & accessor;
         SkipFlags skip_flags;
     };
 
     class MutableRange
     {
     public:
-        MutableRange(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
-        Iterator begin() { return Iterator(settings, accessor, skip_flags); }
-        Iterator end() { return Iterator(settings, accessor, SKIP_ALL); }
+        MutableRange(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), skip_flags(skip_flags_) {}
+        Iterator begin() { return Iterator(settings, skip_flags); }
+        Iterator end() { return Iterator(settings, SKIP_ALL); }
 
     private:
         BaseSettings & settings;
-        const typename Traits::Accessor & accessor;
         SkipFlags skip_flags;
     };
 
@@ -296,7 +294,7 @@ bool BaseSettings<TTraits>::isChanged(std::string_view name) const
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (auto * setting_field = accessor.findSettingFieldPtr(name, *this))
-        return setting_field->changed;
+        return setting_field->isChanged();
     return tryGetCustomSetting(name) != nullptr;
 }
 
@@ -328,10 +326,10 @@ void BaseSettings<TTraits>::resetToDefault()
     const auto & accessor = Traits::Accessor::instance();
     for (size_t i : collections::range(accessor.size()))
     {
-        if (auto * setting_field = accessor.getSettingFieldPtr(i, *this); setting_field->changed)
+        if (auto * setting_field = accessor.getSettingFieldPtr(i, *this); setting_field->isChanged())
         {
             *setting_field = accessor.getDefault(i)->operator Field();
-            setting_field->changed = false;
+            setting_field->setChanged(false);
         }
     }
 
@@ -348,7 +346,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     {
         auto * setting_field = accessor.getSettingFieldPtr(index, *this);
         *setting_field = accessor.getDefault(index)->operator Field();
-        setting_field->changed = false;
+        setting_field->setChanged(false);
         return;
     }
 
@@ -671,16 +669,16 @@ const SettingFieldCustom * BaseSettings<TTraits>::tryGetCustomSetting(std::strin
 }
 
 template <typename TTraits>
-BaseSettings<TTraits>::Iterator::Iterator(BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
+BaseSettings<TTraits>::Iterator::Iterator(BaseSettings & settings_, SkipFlags skip_flags_)
     : skip_flags(skip_flags_)
 {
+    auto const & accessor = Traits::Accessor::instance();
     field_ref.settings = &settings_;
-    field_ref.accessor = &accessor_;
     auto & index = field_ref.index;
 
     if (skip_flags == SKIP_ALL)
     {
-        index = accessor_.size();
+        index = accessor.size();
         if constexpr (Traits::allow_custom_settings)
         {
             custom_settings_iterator = settings_.custom_settings_map.end();
@@ -697,7 +695,7 @@ BaseSettings<TTraits>::Iterator::Iterator(BaseSettings & settings_, const typena
     }
 
     if (skip_flags & SKIP_BUILTIN)
-        index = accessor_.size();
+        index = accessor.size();
     else
         index = 0;
 
@@ -716,7 +714,7 @@ BaseSettings<TTraits>::Iterator::Iterator(BaseSettings & settings_, const typena
 template <typename TTraits>
 typename BaseSettings<TTraits>::Iterator & BaseSettings<TTraits>::Iterator::operator++()
 {
-    const auto & accessor = *field_ref.accessor;
+    auto const & accessor = Traits::Accessor::instance();
     auto & index = field_ref.index;
     if (index != accessor.size())
         ++index;
@@ -741,17 +739,17 @@ typename BaseSettings<TTraits>::Iterator BaseSettings<TTraits>::Iterator::operat
 template <typename TTraits>
 void BaseSettings<TTraits>::Iterator::doSkip()
 {
-    const auto & accessor = *field_ref.accessor;
+    auto const & accessor = Traits::Accessor::instance();
     const auto & settings = *field_ref.settings;
     auto & index = field_ref.index;
     if (skip_flags & SKIP_CHANGED)
     {
-        while ((index != accessor.size()) && accessor.getSettingFieldPtr(index, settings)->changed)
+        while ((index != accessor.size()) && accessor.getSettingFieldPtr(index, settings)->isChanged())
             ++index;
     }
     else if (skip_flags & SKIP_UNCHANGED)
     {
-        while ((index != accessor.size()) && !accessor.getSettingFieldPtr(index, settings)->changed)
+        while ((index != accessor.size()) && !accessor.getSettingFieldPtr(index, settings)->isChanged())
             ++index;
     }
 }
@@ -761,7 +759,7 @@ void BaseSettings<TTraits>::Iterator::setPointerToCustomSetting()
 {
     if constexpr (Traits::allow_custom_settings)
     {
-        const auto & accessor = *field_ref.accessor;
+        auto const & accessor = Traits::Accessor::instance();
         const auto & settings = *field_ref.settings;
         const auto & index = field_ref.index;
         if ((index == accessor.size()) && (custom_settings_iterator != settings.custom_settings_map.end()))
@@ -790,7 +788,7 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
         if (custom_setting)
             return *custom_setting->first;
     }
-    return accessor->getName(index);
+    return Traits::Accessor::instance().getName(index);
 }
 
 template <typename TTraits>
@@ -801,7 +799,7 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
         if (custom_setting)
             return custom_setting->second.operator Field();
     }
-    return accessor->getSettingFieldPtr(index, *settings)->operator Field();
+    return Traits::Accessor::instance().getSettingFieldPtr(index, *settings)->operator Field();
 }
 
 template <typename TTraits>
@@ -813,7 +811,7 @@ void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
             custom_setting->second = value;
     }
     else
-        *accessor->getSettingFieldPtr(index, *settings) = value;
+        *Traits::Accessor::instance().getSettingFieldPtr(index, *settings) = value;
 }
 
 template <typename TTraits>
@@ -824,7 +822,7 @@ String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
         if (custom_setting)
             return custom_setting->second.toString();
     }
-    return accessor->getSettingFieldPtr(index, *settings)->toString();
+    return Traits::Accessor::instance().getSettingFieldPtr(index, *settings)->toString();
 }
 
 template <typename TTraits>
@@ -835,7 +833,7 @@ String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString() const
         if (custom_setting)
             return custom_setting->second.toString();
     }
-    return accessor->getDefault(index)->toString();
+    return Traits::Accessor::instance().getDefault(index)->toString();
 }
 
 template <typename TTraits>
@@ -846,7 +844,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isValueChanged() const
         if (custom_setting)
             return true;
     }
-    return accessor->getSettingFieldPtr(index, *settings)->changed;
+    return Traits::Accessor::instance().getSettingFieldPtr(index, *settings)->isChanged();
 }
 
 template <typename TTraits>
@@ -857,7 +855,7 @@ const char * BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
         if (custom_setting)
             return "Custom";
     }
-    return accessor->getTypeName(index);
+    return Traits::Accessor::instance().getTypeName(index);
 }
 
 template <typename TTraits>
@@ -868,7 +866,7 @@ const char * BaseSettings<TTraits>::SettingFieldRef::getDescription() const
         if (custom_setting)
             return "Custom";
     }
-    return accessor->getDescription(index);
+    return Traits::Accessor::instance().getDescription(index);
 }
 
 template <typename TTraits>
@@ -888,7 +886,7 @@ SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
         if (custom_setting)
             return SettingsTierType::PRODUCTION;
     }
-    return accessor->getTier(index);
+    return Traits::Accessor::instance().getTier(index);
 }
 
 using AliasMap = std::unordered_map<std::string_view, std::string_view>;
@@ -1056,7 +1054,7 @@ struct DefineAliases
             return it->second; \
         return static_cast<size_t>(-1); \
     } \
-    SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, Data & data) const \
+    inline ALWAYS_INLINE SettingFieldBase * SETTINGS_TRAITS_NAME::Accessor::findSettingFieldPtr(std::string_view name, Data & data) const \
     { \
         /* Using offset_in_Data is technically undefined behaviour (the class is not a PODType) but it works correctly in all tested
             platforms and allows us to massively reduce the complexity of the Setting objects (before we were using anonymous lambda
