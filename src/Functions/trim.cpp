@@ -81,7 +81,7 @@ public:
         if (arguments.size() == 2 && !isString(arguments[1].type))
         {
             throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected String",
+                "Illegal type {} of second argument of function {}, expected String",
                 arguments[1].type->getName(),
                 getName()};
         }
@@ -160,15 +160,15 @@ using FunctionTrimBoth = FunctionTrim<TrimModeBoth>;
 REGISTER_FUNCTION(Trim)
 {
     factory.registerFunction<FunctionTrimLeft>(
-        FunctionDocumentation{.description="..."},
+        FunctionDocumentation{.description="Removes specified characters from the beginning of a string. Uses whitespace if no character provided as a second argument."},
         FunctionFactory::Case::Insensitive
     );
     factory.registerFunction<FunctionTrimRight>(
-        FunctionDocumentation{.description="..."},
+        FunctionDocumentation{.description="Removes specified characters from the end of a string. Uses whitespace if no character provided as a second argument."},
         FunctionFactory::Case::Insensitive
     );
     factory.registerFunction<FunctionTrimBoth>(
-        FunctionDocumentation{.description="..."},
+        FunctionDocumentation{.description="Removes specified characters from both the beginning and end of a string. Uses whitespace if no character provided as a second argument."},
         FunctionFactory::Case::Insensitive
     );
     factory.registerAlias("ltrim", FunctionTrimLeft::name);
