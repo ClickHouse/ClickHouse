@@ -268,12 +268,6 @@ ASTPtr tryParseQuery(
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
 
-    if (static_cast<size_t>(all_queries_end - query_begin) > max_query_size)
-    {
-        out_error_message = "Max query size exceeded";
-        return nullptr;
-    }
-
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
     {
@@ -322,6 +316,14 @@ ASTPtr tryParseQuery(
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
     _out_query_end = last_token.end;
+
+    // Check if the query length exceeds the max_query_size
+    size_t query_length = _out_query_end - query_begin;
+    if (query_length > max_query_size)
+    {
+        out_error_message = "Max query size exceeded";
+        return nullptr;
+    }
 
     /// Also check on the AST level, because the generated AST depth can be greater than the recursion depth of the parser.
     if (res && max_parser_depth)
