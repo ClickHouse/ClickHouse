@@ -318,10 +318,10 @@ ASTPtr tryParseQuery(
     _out_query_end = last_token.end;
 
     // Check if the query length exceeds the max_query_size
-    size_t query_length = _out_query_end - query_begin;
+    size_t query_length = static_cast<size_t>(std::distance(query_begin, _out_query_end));
     if (query_length > max_query_size)
     {
-        out_error_message = "Max query size exceeded";
+        out_error_message = fmt::format("Max query size exceeded: {} > {}", query_length, max_query_size);
         return nullptr;
     }
 
