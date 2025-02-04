@@ -31,12 +31,14 @@ namespace MySQLReplication
     /// https://dev.mysql.com/doc/internals/en/binlog-event-header.html
     void EventHeader::parse(ReadBuffer & payload)
     {
-        payload.readStrict(reinterpret_cast<char *>(&timestamp), 4);
-        payload.readStrict(reinterpret_cast<char *>(&type), 1);
-        payload.readStrict(reinterpret_cast<char *>(&server_id), 4);
-        payload.readStrict(reinterpret_cast<char *>(&event_size), 4);
-        payload.readStrict(reinterpret_cast<char *>(&log_pos), 4);
-        payload.readStrict(reinterpret_cast<char *>(&flags), 2);
+        uint8_t raw_type;
+        readBinaryLittleEndian<uint32_t>(timestamp, payload);
+        readBinaryLittleEndian<uint8_t>(raw_type, payload);
+        type = static_cast<EventType>(raw_type);
+        readBinaryLittleEndian<uint32_t>(server_id, payload);
+        readBinaryLittleEndian<uint32_t>(event_size, payload);
+        readBinaryLittleEndian<uint32_t>(log_pos, payload);
+        readBinaryLittleEndian<uint16_t>(flags, payload);
     }
 
     void EventHeader::dump(WriteBuffer & out) const
@@ -53,12 +55,12 @@ namespace MySQLReplication
     /// https://dev.mysql.com/doc/internals/en/format-description-event.html
     void FormatDescriptionEvent::parseImpl(ReadBuffer & payload)
     {
-        payload.readStrict(reinterpret_cast<char *>(&binlog_version), 2);
+        readBinaryLittleEndian(binlog_version, payload);
         assert(binlog_version == EVENT_VERSION_V4);
         server_version.resize(50);
         payload.readStrict(reinterpret_cast<char *>(server_version.data()), 50);
         payload.readStrict(reinterpret_cast<char *>(&create_timestamp), 4);
-        payload.readStrict(reinterpret_cast<char *>(&event_header_length), 1);
+        readBinaryLittleEndian(event_header_length, payload);
         assert(event_header_length == EVENT_HEADER_LENGTH);
         readStringUntilEOF(event_type_header_length, payload);
     }
@@ -157,9 +159,26 @@ namespace MySQLReplication
 
     void TableMapEventHeader::parse(ReadBuffer & payload)
     {
+        uint8_t table_id_bytes[6];
         payload.readStrict(reinterpret_cast<char *>(&table_id), 6);
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
-
+        payload.readStrict(reinterpret_cast<char *>(table_id_bytes), sizeof(table_id_bytes));
+        #if defined(s390x) && BYTE_ORDER == ORDER_BIG_ENDIAN
+        table_id = static_cast<uint64_t>(table_id_bytes[5]) |
+            (static_cast<uint64_t>(table_id_bytes[4]) << 8) |
+            (static_cast<uint64_t>(table_id_bytes[3]) << 16) |
+            (static_cast<uint64_t>(table_id_bytes[2]) << 24) |
+            (static_cast<uint64_t>(table_id_bytes[1]) << 32) |
+            (static_cast<uint64_t>(table_id_bytes[0]) << 40);
+        #else
+        table_id = static_cast<uint64_t>(table_id_bytes[0]) |
+            (static_cast<uint64_t>(table_id_bytes[1]) << 8) |
+            (static_cast<uint64_t>(table_id_bytes[2]) << 16) |
+            (static_cast<uint64_t>(table_id_bytes[3]) << 24) |
+            (static_cast<uint64_t>(table_id_bytes[4]) << 32) |
+            (static_cast<uint64_t>(table_id_bytes[5]) << 40);
+        #endif
+        readBinaryLittleEndian(flags, payload);
         payload.readStrict(reinterpret_cast<char *>(&schema_len), 1);
         schema.resize(schema_len);
         payload.readStrict(reinterpret_cast<char *>(schema.data()), schema_len);
@@ -397,12 +416,28 @@ namespace MySQLReplication
 
     void RowsEventHeader::parse(ReadBuffer & payload)
     {
+        uint8_t table_id_bytes[6];
         payload.readStrict(reinterpret_cast<char *>(&table_id), 6);
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
-
+        payload.readStrict(reinterpret_cast<char *>(table_id_bytes), sizeof(table_id_bytes));
+        #if defined(s390x) && BYTE_ORDER == ORDER_BIG_ENDIAN
+        table_id = static_cast<uint64_t>(table_id_bytes[5]) |
+            (static_cast<uint64_t>(table_id_bytes[4]) << 8) |
+            (static_cast<uint64_t>(table_id_bytes[3]) << 16) |
+            (static_cast<uint64_t>(table_id_bytes[2]) << 24) |
+            (static_cast<uint64_t>(table_id_bytes[1]) << 32) |
+            (static_cast<uint64_t>(table_id_bytes[0]) << 40);
+        #else
+        table_id = static_cast<uint64_t>(table_id_bytes[0]) |
+            (static_cast<uint64_t>(table_id_bytes[1]) << 8) |
+            (static_cast<uint64_t>(table_id_bytes[2]) << 16) |
+            (static_cast<uint64_t>(table_id_bytes[3]) << 24) |
+            (static_cast<uint64_t>(table_id_bytes[4]) << 32) |
+            (static_cast<uint64_t>(table_id_bytes[5]) << 40);
+        #endif
+        readBinaryLittleEndian(flags, payload);
         UInt16 extra_data_len;
-        /// This extra_data_len contains the 2 bytes length.
-        payload.readStrict(reinterpret_cast<char *>(&extra_data_len), 2);
+        readBinaryLittleEndian(extra_data_len, payload);
         payload.ignore(extra_data_len - 2);
     }
 
