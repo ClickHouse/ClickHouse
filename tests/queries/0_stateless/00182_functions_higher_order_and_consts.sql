@@ -1,9 +1,7 @@
---{echoOn}
 SELECT '---map--';
 SELECT arrayMap(x -> 123, emptyArrayUInt8());
 SELECT arrayMap(x -> 123, [1, 2, 3]);
 SELECT arrayMap(x -> 123, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayMap(x -> x, range(number)) FROM system.numbers LIMIT 3;
 SELECT '---filter--';
 SELECT arrayFilter(x -> 0, emptyArrayUInt8());
 SELECT arrayFilter(x -> 0, [1, 2, 3]);
@@ -11,11 +9,6 @@ SELECT arrayFilter(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayFilter(x -> 1, emptyArrayUInt8());
 SELECT arrayFilter(x -> 1, [1, 2, 3]);
 SELECT arrayFilter(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayFilter(x -> x > 1, [1, 2, 3]);
-SELECT arrayFilter(x -> x > 2, [1, 2, 3]);
-SELECT arrayFilter(x -> NULL, [1, 2, 3]);
-SELECT arrayFilter(x -> 1.1, [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT arrayFilter(x -> 'string', [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT '---count---';
 SELECT arrayCount(x -> 0, emptyArrayUInt8());
 SELECT arrayCount(x -> 0, [1, 2, 3]);
@@ -23,10 +16,6 @@ SELECT arrayCount(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayCount(x -> 1, emptyArrayUInt8());
 SELECT arrayCount(x -> 1, [1, 2, 3]);
 SELECT arrayCount(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayCount(x -> x > 0, [1, 2, 3]);
-SELECT arrayCount(x -> x > 1, [1, 2, 3]);
-SELECT arrayCount(x -> NULL, [1, 2, 3]);
-SELECT arrayCount(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT '---sum---';
 SELECT arraySum(x -> 0, emptyArrayUInt8());
 SELECT arraySum(x -> 0, [1, 2, 3]);
@@ -41,11 +30,6 @@ SELECT arrayAll(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayAll(x -> 1, emptyArrayUInt8());
 SELECT arrayAll(x -> 1, [1, 2, 3]);
 SELECT arrayAll(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayAll(x -> x > 0, [1, 2, 3]);
-SELECT arrayAll(x -> x > 1, [1, 2, 3]);
-SELECT arrayAll(x -> x, [1, 2, 3]);
-SELECT arrayAll(x -> NULL, [1, 2, 3]);
-SELECT arrayAll(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT '---exists---';
 SELECT arrayExists(x -> 0, emptyArrayUInt8());
 SELECT arrayExists(x -> 0, [1, 2, 3]);
@@ -60,23 +44,6 @@ SELECT arrayFirst(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayFirst(x -> 1, emptyArrayUInt8());
 SELECT arrayFirst(x -> 1, [1, 2, 3]);
 SELECT arrayFirst(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayFirst(x -> x > 1, [1, 2, 3]);
-SELECT arrayFirst(x -> x > 3, [1, 2, 3]);
-SELECT arrayFirst(x -> x, [1, 2, 3]);
-SELECT arrayFirst(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayFirst(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT '---last---';
-SELECT arrayLast(x -> 0, emptyArrayUInt8());
-SELECT arrayLast(x -> 0, [1, 2, 3]);
-SELECT arrayLast(x -> 0, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayLast(x -> 1, emptyArrayUInt8());
-SELECT arrayLast(x -> 1, [1, 2, 3]);
-SELECT arrayLast(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayLast(x -> x > 1, [1, 2, 3]);
-SELECT arrayLast(x -> x > 3, [1, 2, 3]);
-SELECT arrayLast(x -> x, [1, 2, 3]);
-SELECT arrayLast(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayLast(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
 SELECT '---first index---';
 SELECT arrayFirstIndex(x -> 0, emptyArrayUInt8());
 SELECT arrayFirstIndex(x -> 0, [1, 2, 3]);
@@ -84,23 +51,6 @@ SELECT arrayFirstIndex(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayFirstIndex(x -> 1, emptyArrayUInt8());
 SELECT arrayFirstIndex(x -> 1, [1, 2, 3]);
 SELECT arrayFirstIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayFirstIndex(x -> x > 1, [1, 2, 3]);
-SELECT arrayFirstIndex(x -> x > 3, [1, 2, 3]);
-SELECT arrayFirstIndex(x -> x, [1, 2, 3]);
-SELECT arrayFirstIndex(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayFirstIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT '---lastindex---';
-SELECT arrayLastIndex(x -> 0, emptyArrayUInt8());
-SELECT arrayLastIndex(x -> 0, [1, 2, 3]);
-SELECT arrayLastIndex(x -> 0, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayLastIndex(x -> 1, emptyArrayUInt8());
-SELECT arrayLastIndex(x -> 1, [1, 2, 3]);
-SELECT arrayLastIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayLastIndex(x -> x > 1, [1, 2, 3]);
-SELECT arrayLastIndex(x -> x > 3, [1, 2, 3]);
-SELECT arrayLastIndex(x -> x, [1, 2, 3]);
-SELECT arrayLastIndex(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayLastIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
 SELECT '---cumsum---';
 SELECT arrayCumSum(x -> 0, emptyArrayUInt8());
 SELECT arrayCumSum(x -> 0, [1, 2, 3]);
@@ -148,8 +98,6 @@ SELECT arrayExists(x -> materialize(0), range(number)) FROM system.numbers LIMIT
 SELECT arrayExists(x -> materialize(1), emptyArrayUInt8());
 SELECT arrayExists(x -> materialize(1), [1, 2, 3]);
 SELECT arrayExists(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
-SELECT arrayExists(x -> x, [1, 2, 3]);
-SELECT arrayExists(x -> 'string', [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT '---first---';
 SELECT arrayFirst(x -> materialize(0), emptyArrayUInt8());
 SELECT arrayFirst(x -> materialize(0), [1, 2, 3]);

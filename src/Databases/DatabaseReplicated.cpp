@@ -15,7 +15,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -49,7 +48,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -1846,14 +1844,9 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
-    ReadSettings read_settings = getReadSettings();
-    read_settings.local_fs_method = LocalFSReadMethod::read;
-    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
-    auto in = db_disk->readFile(getObjectMetadataPath(table_name), read_settings);
-
     String statement;
-    readStringUntilEOF(statement, *in);
-
+    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
+    readStringUntilEOF(statement, in);
     return statement;
 }
 

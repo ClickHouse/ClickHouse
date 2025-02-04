@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <algorithm>
 
 
 namespace DB

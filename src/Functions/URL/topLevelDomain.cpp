@@ -61,14 +61,14 @@ Extracts the the top-level domain from a URL.
 Returns an empty string if the argument cannot be parsed as a URL or does not contain a top-level domain.
         )",
         .examples{{"topLevelDomain", "SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')", ""}},
-        .category{"URLs"}
+        .categories{"URL"}
     });
 
     factory.registerFunction<FunctionTopLevelDomainRFC>(FunctionDocumentation
     {
         .description=R"(Similar to topLevelDomain, but conforms to RFC 3986.)",
         .examples{},
-        .category{"URLs"}
+        .categories{"URL"}
     });
 }
 

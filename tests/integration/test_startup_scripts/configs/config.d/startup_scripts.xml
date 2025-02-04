@@ -21,19 +21,5 @@
             <query>SELECT 1 SETTINGS skip_unavailable_shards = 1</query>
             <condition>SELECT 1;</condition>
         </scripts>
-        <scripts>
-            <query>
-                CREATE DICTIONARY test_dict
-                (
-                `key` String,
-                `value` String
-                )
-                PRIMARY KEY key
-                SOURCE(CLICKHOUSE(QUERY `SELECT 'key' as key, 'value' as value`))
-                LIFETIME(30)
-                LAYOUT(HASHED);
-            </query>
-            <user>default</user>
-        </scripts>
     </startup_scripts>
 </clickhouse>

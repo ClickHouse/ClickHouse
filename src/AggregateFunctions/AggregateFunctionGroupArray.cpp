@@ -26,7 +26,7 @@
 
 #include <type_traits>
 
-constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
+#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
 
 
 namespace DB
