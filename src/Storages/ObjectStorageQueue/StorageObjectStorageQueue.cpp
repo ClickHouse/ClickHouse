@@ -227,7 +227,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+    temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
         zk_path,
         std::move(table_metadata),
@@ -235,13 +235,15 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
-
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
 
 void StorageObjectStorageQueue::startup()
 {
+    /// Register the metadata in startup(), unregister in shutdown.
+    /// (If startup is never called, shutdown also won't be called.)
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
+
     if (task)
         task->activateAndSchedule();
 }
