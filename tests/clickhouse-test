@@ -913,6 +913,8 @@ class FailureReason(enum.Enum):
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
     DISTRIBUTED_CACHE = "distributed-cache"
+    NO_STATELESS = "no-stateless"
+    NO_STATEFUL = "no-stateful"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1087,6 +1089,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
+        "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1513,6 +1516,10 @@ class TestCase:
 
         if "no-flaky-check" in tags and (1 == int(os.environ.get("IS_FLAKY_CHECK", 0))):
             return FailureReason.SKIP
+        if "stateful" in tags and args.no_stateful:
+            return FailureReason.NO_STATEFUL
+        if "stateful" not in tags and args.no_stateless:
+            return FailureReason.NO_STATELESS
 
         if tags:
             for build_flag in args.build_flags:
@@ -1628,7 +1635,7 @@ class TestCase:
                 description,
             )
 
-        if "Exception" in stdout:
+        if "Exception" in stdout and "X-ClickHouse-Exception-Code" not in stdout:
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
             if debug_log:
                 description += "\n"
@@ -2351,8 +2358,10 @@ class TestSuite:
         if test_name not in self.all_tags:
             return False
 
-        return ("no-parallel" in self.all_tags[test_name]) or (
-            "sequential" in self.all_tags[test_name]
+        return (
+            ("no-parallel" in self.all_tags[test_name])
+            or ("sequential" in self.all_tags[test_name])
+            or ("stateful" in self.all_tags[test_name])
         )
 
     def get_tests_list(self, sort_key, filter_func):
@@ -2817,6 +2826,7 @@ def do_run_tests(
         len(test_suite.sequential_tests),
         "sequential tests",
     )
+    total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -2903,7 +2913,7 @@ def do_run_tests(
             )
         )
 
-    return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
+    return total_tests
 
 
 def is_test_from_dir(suite_dir, case):

@@ -3,6 +3,7 @@
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
@@ -30,6 +31,7 @@ namespace ProfileEvents
     extern const Event BackupsOpenedForWrite;
     extern const Event BackupReadMetadataMicroseconds;
     extern const Event BackupWriteMetadataMicroseconds;
+    extern const Event BackupLockFileReads;
 }
 
 namespace DB
@@ -543,8 +545,12 @@ void BackupImpl::createLockFile()
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    if (!lock_file_name.empty() && uuid && writer->fileContentsEqual(lock_file_name, toString(*uuid)))
-        return true;
+    if (!lock_file_name.empty() && uuid)
+    {
+        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
+            return true;
+    }
 
     if (throw_if_failed)
     {
@@ -571,8 +577,8 @@ void BackupImpl::removeLockFile()
 
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     String prefix = removeLeadingSlash(directory);
     if (!prefix.empty() && !prefix.ends_with('/'))
@@ -601,8 +607,8 @@ Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 
 bool BackupImpl::hasFiles(const String & directory) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     String prefix = removeLeadingSlash(directory);
     if (!prefix.empty() && !prefix.ends_with('/'))
@@ -619,8 +625,8 @@ bool BackupImpl::hasFiles(const String & directory) const
 
 bool BackupImpl::fileExists(const String & file_name) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     auto adjusted_path = removeLeadingSlash(file_name);
     std::lock_guard lock{mutex};
@@ -629,8 +635,8 @@ bool BackupImpl::fileExists(const String & file_name) const
 
 bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
     return file_infos.contains(size_and_checksum);
@@ -648,8 +654,8 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 
 SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     auto adjusted_path = removeLeadingSlash(file_name);
 
@@ -679,8 +685,8 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum &
 
 std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     if (size_and_checksum.first == 0)
     {
@@ -781,8 +787,8 @@ size_t BackupImpl::copyFileToDisk(const String & file_name,
 size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
                                   DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     if (size_and_checksum.first == 0)
     {
@@ -866,8 +872,8 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
@@ -954,8 +960,8 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 void BackupImpl::finalizeWriting()
 {
     std::lock_guard lock{mutex};
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
     if (corrupted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup can't be finalized after an error happened");

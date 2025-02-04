@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -122,6 +123,7 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            executable="/bin/bash",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -407,7 +409,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return Path.cwd()
+        return str(Path.cwd())
 
     @staticmethod
     def cpu_count():

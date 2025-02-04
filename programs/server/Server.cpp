@@ -71,6 +71,8 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -771,6 +773,17 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         {
             std::string full_prefix = "startup_scripts." + key;
 
+            auto user = config.getString(full_prefix + ".user", "");
+            auto startup_context = Context::createCopy(context);
+
+            if (!user.empty())
+            {
+                auto & access_control = startup_context->getAccessControl();
+                startup_context->setUser(access_control.getID<User>(user));
+            }
+
+            startup_context->makeQueryContext();
+
             if (config.has(full_prefix + ".condition"))
             {
                 auto condition = config.getString(full_prefix + ".condition");
@@ -778,8 +791,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                auto startup_context = Context::createCopy(context);
-                startup_context->makeQueryContext();
+
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
@@ -800,8 +812,6 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
-            auto startup_context = Context::createCopy(context);
-            startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
@@ -1747,16 +1757,15 @@ try
             new_server_settings.loadSettingsFromConfig(*config);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
-            double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
-
-            size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
-            size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
+            const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+            const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
+            const size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
-                    " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                LOG_INFO(log, "Changed setting 'max_server_memory_usage' to {}"
+                    " ({} available memory * {:.2f} max_server_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
@@ -1764,10 +1773,9 @@ try
             else if (max_server_memory_usage > default_max_server_memory_usage)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
-                    " because the system has low amount of memory. The amount was"
-                    " calculated as {} available"
-                    " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                LOG_INFO(log, "Lowered setting 'max_server_memory_usage' to {}"
+                    " because the system has too little memory. The new value was"
+                    " calculated as {} available memory * {:.2f} max_server_memory_usage_to_ram_ratio",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);

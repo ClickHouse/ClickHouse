@@ -327,7 +327,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         }
     }
 
-    if (check_limits)
+    if (check_limits && table_join->sizeLimits().hasLimits())
         return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
@@ -369,12 +369,22 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     res.clear();
     res.reserve(dispatched_blocks.size());
 
+    /// Might be zero, which means unlimited
+    size_t remaining_rows_before_limit = table_join->maxJoinedBlockRows();
+
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
+        if (table_join->maxJoinedBlockRows() && remaining_rows_before_limit == 0)
+        {
+            /// Joining previous blocks produced enough rows already, skipping the rest of the blocks until the next call
+            remaining_blocks[i] = std::move(dispatched_blocks[i]);
+            continue;
+        }
         auto & hash_join = hash_joins[i];
-        auto & dispatched_block = dispatched_blocks[i];
-        if (dispatched_block && (i == 0 || dispatched_block.rows()))
-            hash_join->data->joinBlock(dispatched_block, remaining_blocks[i]);
+        auto & current_block = dispatched_blocks[i];
+        if (current_block && (i == 0 || current_block.rows()))
+            hash_join->data->joinBlock(current_block, remaining_blocks[i]);
+        remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
     }
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
@@ -587,14 +597,13 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
-UInt64 calculateCacheKey(
-    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
+IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
 {
+    IQueryTreeNode::HashState hash;
+
     const auto * select = select_query_info.query->as<DB::ASTSelectQuery>();
     if (!select)
-        return 0;
-
-    IQueryTreeNode::HashState hash;
+        return hash;
 
     if (const auto prewhere = select->prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
@@ -603,7 +612,17 @@ UInt64 calculateCacheKey(
 
     chassert(right_table_expression);
     hash.update(right_table_expression->getTreeHash());
+    return hash;
+}
 
+UInt64 calculateCacheKey(
+    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
+{
+    return calculateCacheKey(table_join, preCalculateCacheKey(right_table_expression, select_query_info));
+}
+
+UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
+{
     chassert(table_join && table_join->oneDisjunct());
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
