@@ -267,6 +267,12 @@ ASTPtr tryParseQuery(
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
 
+    if (static_cast<size_t>(all_queries_end - query_begin) > max_query_size)
+    {
+        out_error_message = "Max query size exceeded";
+        return nullptr;
+    }
+
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
     {
@@ -401,6 +407,9 @@ ASTPtr parseQueryAndMovePosition(
 
     if (res)
         return res;
+
+    if (error_message == "Max query size exceeded")
+        throw Exception::createDeprecated(error_message, ErrorCodes::QUERY_IS_TOO_LARGE);
 
     throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
 }
