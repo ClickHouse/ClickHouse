@@ -53,6 +53,8 @@ class CacheRunnerHooks:
         print("Check remote cache")
 
         def fetch_record(job_name, job_digest, cache_):
+            if job_digest == "f" * Settings.CACHE_DIGEST_LEN:
+                return None
             """Fetch a single record from the cache."""
             record = cache_.fetch_success(job_name=job_name, job_digest=job_digest)
             if record:
