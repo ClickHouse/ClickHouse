@@ -155,6 +155,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
@@ -259,6 +260,11 @@ bool KeeperContext::ignoreSystemPathOnStartup() const
 bool KeeperContext::digestEnabled() const
 {
     return digest_enabled;
+}
+
+bool KeeperContext::digestEnabledOnCommit() const
+{
+    return digest_enabled_on_commit;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
