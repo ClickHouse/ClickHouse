@@ -609,7 +609,6 @@ class CommonJobConfigs:
 
 REQUIRED_CHECKS = [
     StatusNames.PR_CHECK,
-    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,
