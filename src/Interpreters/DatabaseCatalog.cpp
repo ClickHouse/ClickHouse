@@ -891,7 +891,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPt
 void DatabaseCatalog::removeViewDependency(const StorageID & source_table_id, const StorageID & view_id)
 {
     std::lock_guard lock{databases_mutex};
-    view_dependencies.removeDependency(source_table_id, view_id, /* remove_isolated_tables= */ true);
+    view_dependencies.removeDependency(StorageID{source_table_id.getQualifiedName()}, StorageID{view_id.getQualifiedName()}, /* remove_isolated_tables= */ true);
 }
 
 std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & source_table_id) const
@@ -1437,7 +1437,7 @@ void DatabaseCatalog::addDependencies(
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
     if (!new_view_dependencies.empty())
         for (const auto & new_view_dependency : new_view_dependencies)
-            view_dependencies.addDependency(StorageID{new_view_dependency}, table_id);
+            view_dependencies.addDependency(new_view_dependency, table_id);
 }
 
 void DatabaseCatalog::addDependencies(

@@ -75,6 +75,6 @@
 []	.inner_id.
 ['mv2']	a
 []	b
-['mv1']	c
+[]	c
 ['mv3']	mv2
 []	mv3
