@@ -534,54 +534,6 @@
         statusContainer.appendChild(keyValuePair);
     }
 
-    function navigatePath(jsonObj, nameArray) {
-        let baseParams = new URLSearchParams(window.location.search);
-        let keysToDelete = [];
-        baseParams.forEach((value, key) => {
-            if (key.startsWith('name_')) {
-                keysToDelete.push(key); // Collect the keys to delete
-            }
-        });
-        keysToDelete.forEach((key) => baseParams.delete(key));
-        let pathNames = [];
-        let pathLinks = [];
-        let currentObj = jsonObj;
-
-        // Add the first entry (workflow level)
-        baseParams.set(`name_0`, nameArray[0]);
-        pathNames.push(nameArray[0]);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[0]}</a>`);
-        // Add the second entry (job level)
-        if (nameArray.length > 1) {
-            baseParams.set(`name_1`, nameArray[1]);
-            pathNames.push(nameArray[1]);
-            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nameArray[1]}</a>`);
-        }
-        // Iterate through the nameArray starting at index 0
-        for (const [index, name] of nameArray.entries()) {
-            if (index === 0 || index === 1) continue;
-            if (currentObj && Array.isArray(currentObj.results)) {
-                const nextResult = currentObj.results.find(result => result.name === name);
-                if (nextResult) {
-                    baseParams.set(`name_${index}`, nextResult.name);
-                    pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
-                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
-                    currentObj = nextResult; // Move to the next object in the hierarchy
-                } else {
-                    console.error(`Name "${name}" not found in results array.`);
-                    return null; // Name not found in results array
-                }
-            } else {
-                console.error(`Current object is not structured as expected.`);
-                return null; // Current object is not structured as expected
-            }
-        }
-        const footerLeft = document.querySelector('#footer .left');
-        footerLeft.innerHTML = pathLinks.join('');
-
-        return currentObj;
-    }
-
     // Define the fixed columns globally, so both functions can use it
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
@@ -696,7 +648,7 @@
         populateTableRows(tbody, results, columns, nest_level);
     }
 
-    async function fetchJson(PR, sha, name) {
+    async function fetchJson(suffix, sha, name) {
         const infoElement = document.getElementById('info-container');
         const task = name
             .toLowerCase()
@@ -706,7 +658,7 @@
 
         // Construct the URL dynamically based on PR, sha, and task
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-        const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
+        const path = `${baseUrl}/${suffix}/${encodeURIComponent(sha)}/result_${task}.json`;
 
         try {
             const response = await fetch(path, { cache: "no-cache" });
@@ -716,8 +668,7 @@
             }
 
             //const lastModifiedTime = response.headers.get('Last-Modified');
-            const jsonData = await response.json();
-            return jsonData;
+            return await response.json();
         } catch (error) {
             console.error('Error loading Results:', error);
             if (infoElement) {
@@ -741,9 +692,9 @@
         else if (link.includes('/actions/runs/')) runtimeCache.runLink = link;
     }
 
-    async function fetch0Json(PR, sha, name) {
+    async function fetch0Json(suffix, sha, name) {
         try {
-            const resultData = await fetchJson(PR, sha, name);
+            const resultData = await fetchJson(suffix, sha, name);
             runtimeCache.json0 = resultData;
             if (Array.isArray(resultData.links)) {
                 resultData.links.forEach(storeLink);
@@ -753,10 +704,9 @@
         }
     }
 
-    async function fetch1Json(PR, sha, name) {
+    async function fetch1Json(suffix, sha, name) {
         try {
-            const resultData = await fetchJson(PR, sha, name);
-            runtimeCache.json1 = resultData;
+            runtimeCache.json1 = await fetchJson(suffix, sha, name);
         } catch (error) {
             console.error('Error fetching JSON1:', error);
         }
@@ -859,17 +809,25 @@
         footerLeft.innerHTML = pathLinks.join('');
     }
 
-    async function renderResults(PR, sha, nameParams) {
+    async function renderResults(PR, REF, sha, nameParams) {
         const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-        if (PR>0){
-            await loadCommitsArray(`${baseUrl}/${encodeURIComponent(PR)}/commits.json`)
+        let suffix = '';
+        if (PR) {
+            suffix = `PRs/${encodeURIComponent(PR)}`;
+        } else if (REF) {
+            suffix = `REFs/${encodeURIComponent(REF)}`;
+        }
+        if (suffix) {
+            await loadCommitsArray(`${baseUrl}/${suffix}/commits.json`);
+        } else {
+            console.error("PR or REF must be defined to load commits.");
         }
         const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1] : sha;
         if (runtimeCache.json0 === null) {
-            await fetch0Json(PR, shaToLoad, nameParams[0]);
+            await fetch0Json(suffix, shaToLoad, nameParams[0]);
         }
         if (nameParams.length > 1 && runtimeCache.json1 === null) {
-            await fetch1Json(PR, shaToLoad, nameParams[1]);
+            await fetch1Json(suffix, shaToLoad, nameParams[1]);
         }
         const footerRight = document.querySelector('#footer .right');
         function createLinkElement(href, textContent, footer) {
@@ -939,8 +897,8 @@
     async function init() {
         const urlParams = new URLSearchParams(window.location.search);
         const PR = urlParams.get('PR');
+        const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
-        const root_name = urlParams.get('name_0');
         const nameParams = [];
 
         // Collect all `name_*` parameters into `nameParams` array
@@ -952,10 +910,16 @@
         });
 
         // Render results using the extracted parameters
-        await renderResults(PR, sha, nameParams);
+        await renderResults(PR, REF, sha, nameParams);
     }
 
     document.addEventListener('DOMContentLoaded', init);
+    // document.querySelectorAll("a").forEach(link => {
+    //     link.addEventListener("click", function (event) {
+    //         event.preventDefault(); // Prevent full-page reload
+    //         history.pushState(null, "", this.href); // Update URL without reload
+    //     });
+    // });
 </script>
 </body>
 </html>

@@ -1418,7 +1418,7 @@ def main() -> int:
         check_name = BUILD_NAMES_MAPPING.get(check_name, check_name)
         assert check_name
         os.environ["CHECK_NAME"] = check_name
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         try:
             jr = JobReport.create_dummy(status="error", job_skipped=False)
             jr.dump()

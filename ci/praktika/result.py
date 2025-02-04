@@ -279,6 +279,7 @@ class Result(MetaClasses.Serializable):
             links=[
                 Info().get_specific_report_url(
                     pr_number=cache_record.pr_number,
+                    branch=cache_record.branch,
                     sha=cache_record.sha,
                     job_name=name,
                 )
