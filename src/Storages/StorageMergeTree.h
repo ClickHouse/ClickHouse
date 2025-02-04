@@ -233,6 +233,10 @@ private:
 
     size_t clearOldMutations(bool truncate = false);
 
+    /// Delete irrelevant parts from memory and disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
+    size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
+
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;

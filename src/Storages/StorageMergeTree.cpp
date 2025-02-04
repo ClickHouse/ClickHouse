@@ -35,6 +35,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <fmt/core.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
@@ -43,6 +44,44 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char storage_merge_tree_background_clear_old_parts_pause[];
+};
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_suspicious_primary_key;
+    extern const SettingsUInt64 alter_sync;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool materialize_ttl_after_modify;
+    extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsUInt64 max_partitions_per_insert_block;
+    extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsUInt64 mutations_sync;
+    extern const SettingsBool optimize_skip_merged_partitions;
+    extern const SettingsBool optimize_throw_if_noop;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsUInt64 max_parts_to_move;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
+    extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
+    extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
+    extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
+    extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
+    extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+    extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
+}
 
 namespace ErrorCodes
 {
@@ -1472,7 +1511,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
                 size_t cleared_count = 0;
-                cleared_count += clearOldPartsFromFilesystem();
+                cleared_count += clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */true);
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
                 cleared_count += unloadPrimaryKeysOfOutdatedParts();
@@ -1554,6 +1593,34 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     }
 
     return mutations_to_delete.size();
+}
+
+size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
+{
+    DataPartsVector parts_to_remove = grabOldParts(force);
+    if (parts_to_remove.empty())
+        return 0;
+
+    if (with_pause_fail_point)
+    {
+        // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
+        // It allows the use case
+        // - firstly SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause
+        // - after do operation like merge / optimize final (operations like drop part / drop partition / truncate do not fit here, they remove old parts synchronously without timeout)
+        // All parts which are dropped in that operations are not removed until failpoint is released
+        // If we would set this failpoint before grabOldParts, it leads us to a case when
+        // background thread already passed the failpoint but did not reach grabOldParts yet
+        // if failpoint is enabled at that time, background thead could grab parts from those operations and remove them regardless enabled failpoint
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
+    }
+
+    clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old");
+
+    /// This is needed to close files to avoid they reside on disk after being deleted.
+    /// NOTE: we can drop files from cache more selectively but this is good enough.
+    getContext()->clearMMappedFileCache();
+
+    return parts_to_remove.size();
 }
 
 bool StorageMergeTree::optimize(

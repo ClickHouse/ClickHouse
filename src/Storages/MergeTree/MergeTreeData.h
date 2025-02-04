@@ -678,11 +678,19 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
 
-    /// Delete irrelevant parts from memory and disk.
-    /// If 'force' - don't wait for old_parts_lifetime.
-    size_t clearOldPartsFromFilesystem(bool force = false);
-    /// Try to clear parts from filesystem. Throw exception in case of errors.
-    void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
+    /// Try to clear parts from filesystem.
+    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
+
+    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
+    /// Throw exception in case of errors.
+    /// Otherwise, in non-parallel case will break and return.
+    void clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed);
+
+    /// Try to clear parts from filesystem.
+    /// In case of error at some point for the rest of the parts its part's state is rollback Deleting - > Outdated.
+    /// That allows to schedule them for deletion a bit later
+    size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
@@ -1691,11 +1699,6 @@ private:
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
     virtual bool waitZeroCopyLockToDisappear(const ZeroCopyLock &, size_t) { return false; }
-
-    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
-    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
