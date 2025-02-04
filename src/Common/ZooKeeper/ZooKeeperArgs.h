@@ -53,7 +53,6 @@ struct ZooKeeperArgs
     bool use_xid_64 = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
-    String password;
 
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;

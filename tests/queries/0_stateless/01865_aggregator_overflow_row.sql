@@ -7,7 +7,6 @@ LIMIT 10
 SETTINGS
     /* force aggregates serialization to trigger the issue with */
     max_bytes_before_external_group_by=1,
-    max_bytes_ratio_before_external_group_by=0,
     /* overflow row: */
     max_rows_to_group_by=10000000000,
     group_by_overflow_mode='any',

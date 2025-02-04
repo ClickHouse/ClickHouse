@@ -264,6 +264,14 @@ multiIf 関数をカラム形式で実行することを許可します。
 
 これが真に設定されている場合、エクスペリメンタルな圧縮コーデックを指定することを許可します（ただし、現時点ではそれは存在せず、このオプションは何も実行されません）。
 
+## allow_experimental_database_materialized_mysql {#allow_experimental_database_materialized_mysql}
+
+タイプ: Bool
+
+デフォルト値: 0
+
+Engine=MaterializedMySQL(...) を使用してデータベースを作成することを許可します。
+
 ## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
 タイプ: Bool
@@ -2885,7 +2893,7 @@ EXCEPTクエリのデフォルトモードを設定します。可能な値: 空
 
 デフォルト値: 0
 
-外部エンジンを使用したテーブルが履歴データをフラッシュする最大バイト数を制限します。
+外部エンジンを持つテーブルが履歴データをフラッシュする際の最大バイト数を制限します。これは現在、MySQLテーブルエンジン、データベースエンジン、Dictionary、およびMaterializedMySQLにのみサポートされています。0に等しい場合、この設定は無効になります。
 
 ## external_storage_max_read_rows {#external_storage_max_read_rows}
 
@@ -3794,6 +3802,18 @@ HTTP_NOT_FOUND エラーを伴うグローブ用の URL をスキップします
 [enable_http_compression = 1](#enable_http_compression) の場合、HTTP リクエストへの応答でデータ圧縮のレベルを設定します。
 
 可能な値: 1 から 9 の数値。
+
+## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
+
+タイプ: Bool
+
+デフォルト値: 0
+
+Iceberg テーブルエンジンでスキーマの進化を無視し、テーブル作成時に指定されたスキーマまたはメタデータから解析された最新スキーマを使用してすべてのデータを読み取ることを許可します。
+
+:::note
+この設定を有効にすると、進化したスキーマのすべてのデータファイルが同じスキーマを使用して読み込まれるため、誤った結果につながる場合があります。
+:::
 
 ## idle_connection_timeout {#idle_connection_timeout}
 
@@ -6893,7 +6913,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-この設定は[Materialized view](../../sql-reference/statements/create/view.md/#materialized)の動作に影響を与えることに注意してください。
+この設定は[Materialized view](../../sql-reference/statements/create/view.md/#materialized)や[MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)の動作に影響を与えることに注意してください。
 
 ## optimize_or_like_chain {#optimize_or_like_chain}
 
@@ -7380,6 +7400,14 @@ trueの場合、ClickHouseは非レプリケートのMergeTreeテーブルにも
 
 trueの場合、JOINが並列レプリカアルゴリズムで実行でき、右JOIN部分のすべてのストレージが*MergeTreeの場合、ローカルJOINが使用され、GLOBAL JOINの代わりに使用されます。
 
+## parallel_replicas_single_task_marks_count_multiplier {#parallel_replicas_single_task_marks_count_multiplier}
+
+タイプ: Float
+
+デフォルト値: 2
+
+コーディネーターから取得する最小マーク数を計算する際に追加される乗数。これは、リモートレプリカにのみ適用されます。
+
 ## parallel_view_processing {#parallel_view_processing}
 
 タイプ: Bool
@@ -7583,6 +7611,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 `SET distributed_product_mode=global`が分散テーブルに対するクエリの動作を変更することがありますが、ローカルテーブルや外部リソースのテーブルには適していません。この時に`prefer_global_in_and_join`設定が登場します。
 
 たとえば、ローカルテーブルが含まれるクエリ処理ノードがあり、これらは分散処理に適していません。`GLOBAL`キーワードを使用して分散処理中にデータをその場で散らばらせる必要があります—`GLOBAL IN`/`GLOBAL JOIN`を使用します。
+```html
 `prefer_global_in_and_join`のもう一つの使用例は、外部エンジンによって作成されたテーブルにアクセスすることです。この設定は、そのようなテーブルを結合する際に外部ソースへの呼び出し回数を減らすのに役立ちます：クエリごとに1回の呼び出しのみです。
 
 **参照：**
@@ -8596,7 +8625,8 @@ ListObjectリクエストによってバッチで返される可能性のある�
 タイプ: UInt64
 
 デフォルト値: 10000
-
+```
+```html
 最大部分番号数のs3アップロード部分。
 
 ## s3_max_put_burst {#s3_max_put_burst}
@@ -9553,7 +9583,7 @@ ORDER BY句でFILL列より前のカラムがソーティングプレフィッ�
 
 - 0 — 例外をスローすることを無効にします。`pointInPolygon`は無効な多角形を受け入れ、それらに対して不正確な結果を返す可能性があります。
 - 1 — 例外をスローすることを有効にします。
-
+```
 ## wait_changes_become_visible_after_commit_mode {#wait_changes_become_visible_after_commit_mode}
 
 タイプ: TransactionsWaitCSNMode

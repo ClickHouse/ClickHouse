@@ -56,8 +56,6 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-#include <absl/container/inlined_vector.h>
-
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
 #endif
@@ -416,7 +414,7 @@ private:
 
         const size_t b_repeated_size = N + 15;
 
-        absl::InlinedVector<UInt8, 64> b_repeated(b_repeated_size);
+        UInt8 b_repeated[b_repeated_size];
 
         for (size_t i = 0; i < b_repeated_size; ++i)
             b_repeated[i] = b[i % N];

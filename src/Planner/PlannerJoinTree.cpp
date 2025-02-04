@@ -963,9 +963,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
                     {
-                        if (join_tree_node->as<CrossJoinNode>())
-                            return false;
-
                         const JoinNode * join_node = join_tree_node->as<JoinNode>();
                         if (!join_node)
                             return true;
@@ -1329,298 +1326,6 @@ std::optional<ActionsDAG> createStepToDropColumns(
     return drop_unused_columns_after_join_actions_dag;
 }
 
-std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
-    QueryPlan left_plan,
-    QueryPlan right_plan,
-    std::shared_ptr<TableJoin> & table_join,
-    JoinClausesAndActions & join_clauses_and_actions,
-    UsefulSets & left_useful_sets,
-    const QueryTreeNodePtr & right_table_expression,
-    const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
-{
-    const Block & left_header = left_plan.getCurrentHeader();
-    const Block & right_header = right_plan.getCurrentHeader();
-
-    auto columns_from_left_table = left_header.getNamesAndTypesList();
-    auto columns_from_right_table = right_header.getNamesAndTypesList();
-
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
-
-    JoinKind join_kind = table_join->kind();
-    JoinStrictness join_strictness = table_join->strictness();
-
-    table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
-
-    for (auto & column_from_joined_table : columns_from_left_table)
-    {
-        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
-            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
-    }
-
-    for (auto & column_from_joined_table : columns_from_right_table)
-    {
-        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
-            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
-    }
-
-    if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
-    {
-        /// We should add all duplicated columns, because join algorithm add either all column with specified name or none
-        auto set_used_column_with_duplicates = [&](const NamesAndTypesList & columns, JoinTableSide join_table_side)
-        {
-            const auto & column_name = columns.front().name;
-            for (const auto & column : columns)
-                if (column.name == column_name)
-                    table_join->setUsedColumn(column, join_table_side);
-        };
-
-        if (!columns_from_left_table.empty())
-            set_used_column_with_duplicates(columns_from_left_table, JoinTableSide::Left);
-        else if (!columns_from_right_table.empty())
-            set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
-    }
-
-    auto join_algorithm = chooseJoinAlgorithm(table_join, right_table_expression, left_header, right_header, planner_context, select_query_info);
-    auto result_plan = QueryPlan();
-
-    bool is_filled_join = join_algorithm->isFilled();
-    if (is_filled_join)
-    {
-        auto filled_join_step
-            = std::make_unique<FilledJoinStep>(left_plan.getCurrentHeader(), join_algorithm, settings[Setting::max_block_size]);
-
-        filled_join_step->setStepDescription("Filled JOIN");
-        left_plan.addStep(std::move(filled_join_step));
-
-        result_plan = std::move(left_plan);
-    }
-    else
-    {
-        auto add_sorting = [&] (QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
-        {
-            SortDescription sort_description;
-            sort_description.reserve(key_names.size());
-            for (const auto & key_name : key_names)
-                sort_description.emplace_back(key_name);
-
-            SortingStep::Settings sort_settings(*query_context);
-
-            auto sorting_step = std::make_unique<SortingStep>(
-                plan.getCurrentHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
-            sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
-            plan.addStep(std::move(sorting_step));
-        };
-
-        auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
-        auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
-        {
-            auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-                plan.getCurrentHeader(), key_names, settings[Setting::max_rows_in_set_to_optimize_join], crosswise_connection, join_table_side);
-            creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
-
-            auto * step_raw_ptr = creating_set_step.get();
-            plan.addStep(std::move(creating_set_step));
-            return step_raw_ptr;
-        };
-
-        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste)
-        {
-            const auto & join_clause = table_join->getOnlyClause();
-
-            bool join_type_allows_filtering = (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
-                                            && (isInner(join_kind) || isLeft(join_kind) || isRight(join_kind));
-
-
-            auto has_non_const = [](const Block & block, const auto & keys)
-            {
-                for (const auto & key : keys)
-                {
-                    const auto & column = block.getByName(key).column;
-                    if (column && !isColumnConst(*column))
-                        return true;
-                }
-                return false;
-            };
-
-            /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
-            /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
-            /// Note: it's also doesn't work with the read-in-order optimization.
-            /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-            bool has_non_const_keys = has_non_const(left_plan.getCurrentHeader(), join_clause.key_names_left)
-                && has_non_const(right_plan.getCurrentHeader(), join_clause.key_names_right);
-
-            if (settings[Setting::max_rows_in_set_to_optimize_join] > 0 && join_type_allows_filtering && has_non_const_keys)
-            {
-                auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
-                auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
-
-                if (isInnerOrLeft(join_kind))
-                    right_set->setFiltering(left_set->getSet());
-
-                if (isInnerOrRight(join_kind))
-                    left_set->setFiltering(right_set->getSet());
-            }
-
-            add_sorting(left_plan, join_clause.key_names_left, JoinTableSide::Left);
-            add_sorting(right_plan, join_clause.key_names_right, JoinTableSide::Right);
-        }
-
-        auto join_pipeline_type = join_algorithm->pipelineType();
-
-        ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
-
-        if (join_clauses_and_actions.residual_join_expressions_actions)
-        {
-            for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
-                required_columns_after_join.insert(input->result_name);
-        }
-
-        if (required_columns_after_join.empty())
-        {
-            if (left_header.columns() > 1)
-                required_columns_after_join.insert(left_header.getByPosition(0).name);
-            else if (right_header.columns() > 1)
-                required_columns_after_join.insert(right_header.getByPosition(0).name);
-        }
-
-        auto join_step = std::make_unique<JoinStep>(
-            left_plan.getCurrentHeader(),
-            right_plan.getCurrentHeader(),
-            join_algorithm,
-            settings[Setting::max_block_size],
-            settings[Setting::min_joined_block_size_bytes],
-            settings[Setting::max_threads],
-            required_columns_after_join,
-            false /*optimize_read_in_order*/,
-            true /*optimize_skip_unused_shards*/);
-
-        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
-
-        join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
-
-        std::vector<QueryPlanPtr> plans;
-        plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
-        plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
-
-        result_plan.unitePlans(std::move(join_step), {std::move(plans)});
-    }
-
-    /// If residuals were not moved to JOIN algorithm,
-    /// we need to process add then as WHERE condition after JOIN
-    if (join_clauses_and_actions.residual_join_expressions_actions)
-    {
-        auto outputs = join_clauses_and_actions.residual_join_expressions_actions->getOutputs();
-        if (outputs.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 output column in JOIN actions, got {}",
-                join_clauses_and_actions.residual_join_expressions_actions->dumpDAG());
-
-        join_clauses_and_actions.residual_join_expressions_actions->appendInputsForUnusedColumns(result_plan.getCurrentHeader());
-        for (const auto * input_node : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
-            join_clauses_and_actions.residual_join_expressions_actions->addOrReplaceInOutputs(*input_node);
-
-        appendSetsFromActionsDAG(*join_clauses_and_actions.residual_join_expressions_actions, left_useful_sets);
-        auto filter_step = std::make_unique<FilterStep>(result_plan.getCurrentHeader(),
-            std::move(*join_clauses_and_actions.residual_join_expressions_actions),
-            outputs[0]->result_name,
-            /* remove_column = */ false); /// Unused columns will be removed by next step
-        filter_step->setStepDescription("Residual JOIN filter");
-        result_plan.addStep(std::move(filter_step));
-
-        join_clauses_and_actions.residual_join_expressions_actions.reset();
-    }
-
-    const auto & header_after_join = result_plan.getCurrentHeader();
-    if (header_after_join.columns() > outer_scope_columns.size())
-    {
-        auto drop_unused_columns_after_join_actions_dag = createStepToDropColumns(header_after_join, outer_scope_columns, planner_context);
-        if (drop_unused_columns_after_join_actions_dag)
-        {
-            auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(*drop_unused_columns_after_join_actions_dag));
-            drop_unused_columns_after_join_transform_step->setStepDescription("Drop unused columns after JOIN");
-            result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
-        }
-    }
-
-    return {std::move(result_plan), std::move(join_algorithm)};
-}
-
-JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
-    const QueryTreeNodePtr & join_table_expression,
-    std::vector<JoinTreeQueryPlan> plans,
-    const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
-{
-    auto & cross_join_node = join_table_expression->as<CrossJoinNode &>();
-    for (const auto & plan : plans)
-    {
-        if (plan.from_stage != QueryProcessingStage::FetchColumns)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "JOIN {} table expression expected to process query to fetch columns stage. Actual {}",
-                cross_join_node.formatASTForErrorMessage(),
-                QueryProcessingStage::toString(plan.from_stage));
-    }
-
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
-
-    auto left_join_tree_query_plan = std::move(plans[0]);
-    for (size_t i = 1; i < plans.size(); ++i)
-    {
-        auto right_join_tree_query_plan = std::move(plans[i]);
-
-        auto left_plan = std::move(left_join_tree_query_plan.query_plan);
-        auto right_plan = std::move(right_join_tree_query_plan.query_plan);
-
-        JoinClausesAndActions join_clauses_and_actions;
-        auto join_type = cross_join_node.getJoinTypes()[i - 1];
-
-        auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume(), query_context->getTempDataOnDisk());
-        table_join->getTableJoin().kind = JoinKind::Cross;
-        table_join->getTableJoin().locality = join_type.locality;
-
-        auto [result_plan, join_algorithm] = buildJoinQueryPlan(
-            std::move(left_plan),
-            std::move(right_plan),
-            table_join,
-            join_clauses_and_actions,
-            left_join_tree_query_plan.useful_sets,
-            cross_join_node.getTableExpressions()[i],
-            outer_scope_columns,
-            planner_context,
-            select_query_info);
-
-        for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
-            left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
-
-        /// Collect all required actions sets in `left_join_tree_query_plan.useful_sets`
-        if (!join_algorithm->isFilled())
-            for (const auto & useful_set : right_join_tree_query_plan.useful_sets)
-                left_join_tree_query_plan.useful_sets.insert(useful_set);
-
-        auto mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
-        auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
-        mapping.insert(r_mapping.begin(), r_mapping.end());
-
-        left_join_tree_query_plan =  JoinTreeQueryPlan{
-            .query_plan = std::move(result_plan),
-            .from_stage = QueryProcessingStage::FetchColumns,
-            .used_row_policies = std::move(left_join_tree_query_plan.used_row_policies),
-            .useful_sets = std::move(left_join_tree_query_plan.useful_sets),
-            .query_node_to_plan_step_mapping = std::move(mapping),
-        };
-    }
-
-    return left_join_tree_query_plan;
-}
-
 JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
@@ -1795,11 +1500,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         if (*join_constant)
             join_kind = JoinKind::Cross;
     }
+    table_join->getTableJoin().kind = join_kind;
 
     if (join_kind == JoinKind::Comma)
+    {
         join_kind = JoinKind::Cross;
-
-    table_join->getTableJoin().kind = join_kind;
+        table_join->getTableJoin().kind = JoinKind::Cross;
+    }
 
     table_join->setIsJoinWithConstant(join_constant != std::nullopt);
 
@@ -1835,7 +1542,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             /// Same as: SELECT * FROM t1 CROSS JOIN t2 WHERE t1.x > t2.y
             if (join_clause_key_nodes_size == 0 && can_move_out_residuals)
             {
-                table_join->getTableJoin().kind = JoinKind::Cross;
+                join_kind = JoinKind::Cross;
+                table_join->getTableJoin().kind = join_kind;
                 table_join->setIsJoinWithConstant(true);
                 table_join_clauses.pop_back();
                 continue;
@@ -1892,13 +1600,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             if (join_clause.hasASOF())
             {
                 const auto & asof_conditions = join_clause.getASOFConditions();
-                if (asof_conditions.size() > 1)
-                {
-                    throw Exception(
-                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                        "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
-                        join_node.formatASTForErrorMessage());
-                }
+                assert(asof_conditions.size() == 1);
 
                 const auto & asof_condition = asof_conditions[0];
                 table_join->setAsofInequality(asof_condition.asof_inequality);
@@ -1915,7 +1617,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
             mixed_join_expression = std::make_shared<ExpressionActions>(
                 std::move(*join_clauses_and_actions.residual_join_expressions_actions),
-                ExpressionActionsSettings(planner_context->getQueryContext()));
+                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
 
             appendSetsFromActionsDAG(mixed_join_expression->getActionsDAG(), left_join_tree_query_plan.useful_sets);
             join_clauses_and_actions.residual_join_expressions_actions.reset();
@@ -1944,22 +1646,213 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         }
     }
 
-    auto [result_plan, join_algorithm] = buildJoinQueryPlan(
-        std::move(left_plan),
-        std::move(right_plan),
-        table_join,
-        join_clauses_and_actions,
-        left_join_tree_query_plan.useful_sets,
-        join_node.getRightTableExpression(),
-        outer_scope_columns,
-        planner_context,
-        select_query_info);
+    const Block & left_header = left_plan.getCurrentHeader();
+    const Block & right_header = right_plan.getCurrentHeader();
+
+    auto columns_from_left_table = left_header.getNamesAndTypesList();
+    auto columns_from_right_table = right_header.getNamesAndTypesList();
+
+    table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
+
+    for (auto & column_from_joined_table : columns_from_left_table)
+    {
+        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
+            outer_scope_columns.contains(column_from_joined_table.name))
+            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
+    }
+
+    for (auto & column_from_joined_table : columns_from_right_table)
+    {
+        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
+            outer_scope_columns.contains(column_from_joined_table.name))
+            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
+    }
+
+    if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
+    {
+        /// We should add all duplicated columns, because join algorithm add either all column with specified name or none
+        auto set_used_column_with_duplicates = [&](const NamesAndTypesList & columns, JoinTableSide join_table_side)
+        {
+            const auto & column_name = columns.front().name;
+            for (const auto & column : columns)
+                if (column.name == column_name)
+                    table_join->setUsedColumn(column, join_table_side);
+        };
+
+        if (!columns_from_left_table.empty())
+            set_used_column_with_duplicates(columns_from_left_table, JoinTableSide::Left);
+        else if (!columns_from_right_table.empty())
+            set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
+    }
+
+    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context, select_query_info);
+    auto result_plan = QueryPlan();
+
+    bool is_filled_join = join_algorithm->isFilled();
+    if (is_filled_join)
+    {
+        auto filled_join_step
+            = std::make_unique<FilledJoinStep>(left_plan.getCurrentHeader(), join_algorithm, settings[Setting::max_block_size]);
+
+        filled_join_step->setStepDescription("Filled JOIN");
+        left_plan.addStep(std::move(filled_join_step));
+
+        result_plan = std::move(left_plan);
+    }
+    else
+    {
+        auto add_sorting = [&] (QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
+        {
+            SortDescription sort_description;
+            sort_description.reserve(key_names.size());
+            for (const auto & key_name : key_names)
+                sort_description.emplace_back(key_name);
+
+            SortingStep::Settings sort_settings(*query_context);
+
+            auto sorting_step = std::make_unique<SortingStep>(
+                plan.getCurrentHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
+            sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
+            plan.addStep(std::move(sorting_step));
+        };
+
+        auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
+        auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
+        {
+            auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
+                plan.getCurrentHeader(), key_names, settings[Setting::max_rows_in_set_to_optimize_join], crosswise_connection, join_table_side);
+            creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
+
+            auto * step_raw_ptr = creating_set_step.get();
+            plan.addStep(std::move(creating_set_step));
+            return step_raw_ptr;
+        };
+
+        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste)
+        {
+            const auto & join_clause = table_join->getOnlyClause();
+
+            bool join_type_allows_filtering = (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
+                                            && (isInner(join_kind) || isLeft(join_kind) || isRight(join_kind));
+
+
+            auto has_non_const = [](const Block & block, const auto & keys)
+            {
+                for (const auto & key : keys)
+                {
+                    const auto & column = block.getByName(key).column;
+                    if (column && !isColumnConst(*column))
+                        return true;
+                }
+                return false;
+            };
+
+            /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
+            /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
+            /// Note: it's also doesn't work with the read-in-order optimization.
+            /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+            bool has_non_const_keys = has_non_const(left_plan.getCurrentHeader(), join_clause.key_names_left)
+                && has_non_const(right_plan.getCurrentHeader(), join_clause.key_names_right);
+
+            if (settings[Setting::max_rows_in_set_to_optimize_join] > 0 && join_type_allows_filtering && has_non_const_keys)
+            {
+                auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
+                auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
+
+                if (isInnerOrLeft(join_kind))
+                    right_set->setFiltering(left_set->getSet());
+
+                if (isInnerOrRight(join_kind))
+                    left_set->setFiltering(right_set->getSet());
+            }
+
+            add_sorting(left_plan, join_clause.key_names_left, JoinTableSide::Left);
+            add_sorting(right_plan, join_clause.key_names_right, JoinTableSide::Right);
+        }
+
+        auto join_pipeline_type = join_algorithm->pipelineType();
+
+        ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
+
+        if (join_clauses_and_actions.residual_join_expressions_actions)
+        {
+            for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
+                required_columns_after_join.insert(input->result_name);
+        }
+
+        if (required_columns_after_join.empty())
+        {
+            if (left_header.columns() > 1)
+                required_columns_after_join.insert(left_header.getByPosition(0).name);
+            else if (right_header.columns() > 1)
+                required_columns_after_join.insert(right_header.getByPosition(0).name);
+        }
+
+        auto join_step = std::make_unique<JoinStep>(
+            left_plan.getCurrentHeader(),
+            right_plan.getCurrentHeader(),
+            std::move(join_algorithm),
+            settings[Setting::max_block_size],
+            settings[Setting::min_joined_block_size_bytes],
+            settings[Setting::max_threads],
+            required_columns_after_join,
+            false /*optimize_read_in_order*/,
+            true /*optimize_skip_unused_shards*/);
+
+        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
+
+        join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
+
+        std::vector<QueryPlanPtr> plans;
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
+
+        result_plan.unitePlans(std::move(join_step), {std::move(plans)});
+    }
+
+    /// If residuals were not moved to JOIN algorithm,
+    /// we need to process add then as WHERE condition after JOIN
+    if (join_clauses_and_actions.residual_join_expressions_actions)
+    {
+        auto outputs = join_clauses_and_actions.residual_join_expressions_actions->getOutputs();
+        if (outputs.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 output column in JOIN actions, got {}",
+                join_clauses_and_actions.residual_join_expressions_actions->dumpDAG());
+
+        join_clauses_and_actions.residual_join_expressions_actions->appendInputsForUnusedColumns(result_plan.getCurrentHeader());
+        for (const auto * input_node : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
+            join_clauses_and_actions.residual_join_expressions_actions->addOrReplaceInOutputs(*input_node);
+
+        appendSetsFromActionsDAG(*join_clauses_and_actions.residual_join_expressions_actions, left_join_tree_query_plan.useful_sets);
+        auto filter_step = std::make_unique<FilterStep>(result_plan.getCurrentHeader(),
+            std::move(*join_clauses_and_actions.residual_join_expressions_actions),
+            outputs[0]->result_name,
+            /* remove_column = */ false); /// Unused columns will be removed by next step
+        filter_step->setStepDescription("Residual JOIN filter");
+        result_plan.addStep(std::move(filter_step));
+
+        join_clauses_and_actions.residual_join_expressions_actions.reset();
+    }
+
+    const auto & header_after_join = result_plan.getCurrentHeader();
+    if (header_after_join.columns() > outer_scope_columns.size())
+    {
+        auto drop_unused_columns_after_join_actions_dag = createStepToDropColumns(header_after_join, outer_scope_columns, planner_context);
+        if (drop_unused_columns_after_join_actions_dag)
+        {
+            auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(*drop_unused_columns_after_join_actions_dag));
+            drop_unused_columns_after_join_transform_step->setStepDescription("Drop unused columns after JOIN");
+            result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
+        }
+    }
 
     for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
         left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
 
     /// Collect all required actions sets in `left_join_tree_query_plan.useful_sets`
-    if (!join_algorithm->isFilled())
+    if (!is_filled_join)
         for (const auto & useful_set : right_join_tree_query_plan.useful_sets)
             left_join_tree_query_plan.useful_sets.insert(useful_set);
 
@@ -2104,12 +1997,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
 
-        if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
-        {
-            joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
-            continue;
-        }
-
         if (table_expression_type == QueryTreeNodeType::JOIN)
         {
             ++joins_count;
@@ -2132,9 +2019,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     QueryTreeNodePtr parent_join_tree = join_tree_node;
     for (const auto & node : table_expressions_stack)
     {
-        if (node->getNodeType() == QueryTreeNodeType::JOIN ||
-            node->getNodeType() == QueryTreeNodeType::CROSS_JOIN ||
-            node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         {
             parent_join_tree = node;
             break;
@@ -2165,8 +2050,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         auto table_expression_type = table_expression->getNodeType();
 
         if (table_expression_type == QueryTreeNodeType::JOIN)
-            collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
-        else if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
             collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
         else if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
@@ -2209,29 +2092,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 table_expression,
                 std::move(left_query_plan),
                 std::move(right_query_plan),
-                table_expressions_outer_scope_columns[i],
-                planner_context,
-                select_query_info));
-        }
-        else if (table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
-        {
-            auto & cross_join_node = table_expression->as<CrossJoinNode &>();
-            size_t num_tables = cross_join_node.getTableExpressions().size();
-            if (query_plans_stack.size() < num_tables)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least {} query plans on stack before CROSS JOIN processing. Actual {}",
-                    num_tables,
-                    query_plans_stack.size());
-
-            std::vector<JoinTreeQueryPlan> plans;
-            for (size_t pos = query_plans_stack.size() - num_tables; pos <  query_plans_stack.size(); ++pos)
-                plans.emplace_back(std::move(query_plans_stack[pos]));
-
-            query_plans_stack.resize(query_plans_stack.size() - num_tables);
-
-            query_plans_stack.push_back(buildQueryPlanForCrossJoinNode(
-                table_expression,
-                std::move(plans),
                 table_expressions_outer_scope_columns[i],
                 planner_context,
                 select_query_info));

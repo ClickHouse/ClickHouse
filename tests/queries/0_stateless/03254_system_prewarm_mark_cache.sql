@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-shared-merge-tree
 
 DROP TABLE IF EXISTS t_prewarm_cache;
 

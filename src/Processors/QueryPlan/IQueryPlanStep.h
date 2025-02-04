@@ -29,8 +29,6 @@ struct QueryPlanSerializationSettings;
 using Header = Block;
 using Headers = std::vector<Header>;
 
-struct ExplainPlanOptions;
-
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -82,9 +80,6 @@ public:
     /// Get detailed description of read-from-storage step indexes (if any). Shown in with options `indexes = 1`.
     virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeIndexes(FormatSettings & /*settings*/) const {}
-
-    /// Get description of the distributed plan. Shown in with options `distributed = 1
-    virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}

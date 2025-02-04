@@ -837,7 +837,7 @@ void DWARFBlockInputFormat::parseRanges(
     uint64_t offset, bool form_rnglistx, const UnitState & unit, const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
     const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const
 {
-    std::optional<llvm::object::SectionedAddress> base_addr;
+    llvm::Optional<llvm::object::SectionedAddress> base_addr;
     if (unit.base_address != UINT64_MAX)
         base_addr = llvm::object::SectionedAddress{.Address = unit.base_address};
 
@@ -882,7 +882,7 @@ void DWARFBlockInputFormat::parseRanges(
         if (err)
             throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Error parsing .debug_rnglists list: {}", llvm::toString(std::move(err)));
 
-        auto lookup_addr = [&](uint32_t idx) -> std::optional<llvm::object::SectionedAddress>
+        auto lookup_addr = [&](uint32_t idx) -> llvm::Optional<llvm::object::SectionedAddress>
             {
                 uint64_t addr = fetchFromDebugAddr(unit.debug_addr_base, idx);
                 return llvm::object::SectionedAddress{.Address = addr};

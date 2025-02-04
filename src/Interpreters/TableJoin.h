@@ -47,8 +47,6 @@ struct Settings;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 class TableJoin
 {
 public:
@@ -125,7 +123,13 @@ public:
 
     using Clauses = std::vector<JoinOnClause>;
 
-    static std::string formatClauses(const Clauses & clauses, bool short_format = false);
+    static std::string formatClauses(const Clauses & clauses, bool short_format = false)
+    {
+        std::vector<std::string> res;
+        for (const auto & clause : clauses)
+            res.push_back("[" + clause.formatDebug(short_format) + "]");
+        return fmt::format("{}", fmt::join(res, "; "));
+    }
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -145,7 +149,7 @@ private:
     const UInt64 cross_join_min_rows_to_compress = 1000;
     const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
-    std::vector<JoinAlgorithm> join_algorithms;
+    std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -254,7 +258,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , join_algorithms({JoinAlgorithm::DEFAULT})
+        , join_algorithm({JoinAlgorithm::DEFAULT})
     {
         clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
@@ -276,25 +280,20 @@ public:
     void assertEnableEnalyzer() const;
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
 
-    ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
+    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 
-    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithms; }
+    const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
-    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val)
+    bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
-        /// When join_algorithms = {'default'} (not specified by user) we use [parallel_]hash or direct algorithm.
+        /// When join_algorithm = 'default' (not specified by user) we use [parallel_]hash or direct algorithm.
         /// It's behaviour that was initially supported by clickhouse.
-        bool is_default_enabled = std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::DEFAULT) != join_algorithms.end();
+        bool is_default_enabled = std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::DEFAULT) != join_algorithm.end();
         constexpr auto default_algorithms = std::array<JoinAlgorithm, 4>{
             JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::DIRECT};
         if (is_default_enabled && std::ranges::find(default_algorithms, val) != default_algorithms.end())
             return true;
-        return std::find(join_algorithms.begin(), join_algorithms.end(), val) != join_algorithms.end();
-    }
-
-    bool isEnabledAlgorithm(JoinAlgorithm val) const
-    {
-        return isEnabledAlgorithm(join_algorithms, val);
+        return std::find(join_algorithm.begin(), join_algorithm.end(), val) != join_algorithm.end();
     }
 
     bool allowParallelHashJoin() const;

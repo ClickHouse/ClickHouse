@@ -24,13 +24,7 @@ extern const int TIMEOUT_EXCEEDED;
 DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
     const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
     : DistributedQueryStatusSource(
-          zk_node_path,
-          zk_replicas_path,
-          getSampleBlock(context_->getSettingsRef()[Setting::distributed_ddl_output_mode]),
-          context_,
-          hosts_to_wait,
-          "DDLOnClusterQueryStatusSource")
-    , output_mode(context_->getSettingsRef()[Setting::distributed_ddl_output_mode])
+          zk_node_path, zk_replicas_path, getSampleBlock(context_), context_, hosts_to_wait, "DDLOnClusterQueryStatusSource")
 {
 }
 
@@ -47,16 +41,17 @@ Chunk DDLOnClusterQueryStatusSource::generateChunkWithUnfinishedHosts() const
         unfinished_hosts.erase(host_id);
 
     NameSet active_hosts_set = NameSet{current_active_hosts.begin(), current_active_hosts.end()};
+
+    /// Query is not finished on the rest hosts, so fill the corresponding rows with NULLs.
     MutableColumns columns = output.getHeader().cloneEmptyColumns();
-    auto nullable_err_status = nullableErrorAndStatusFields(output_mode);
     for (const String & host_id : unfinished_hosts)
     {
         size_t num = 0;
         auto [host, port] = parseHostAndPort(host_id);
         columns[num++]->insert(host);
         columns[num++]->insert(port);
-        columns[num++]->insert(nullable_err_status ? Field{} : QueryStatus::UNFINISHED);
-        columns[num++]->insert(nullable_err_status ? Field{} : "Unfinished");
+        columns[num++]->insert(Field{});
+        columns[num++]->insert(Field{});
         columns[num++]->insert(unfinished_hosts.size());
         columns[num++]->insert(current_active_hosts.size());
     }
@@ -136,20 +131,17 @@ void DDLOnClusterQueryStatusSource::fillHostStatus(const String & host_id, const
     columns[num++]->insert(current_active_hosts.size());
 }
 
-bool DDLOnClusterQueryStatusSource::nullableErrorAndStatusFields(DistributedDDLOutputMode output_mode)
+Block DDLOnClusterQueryStatusSource::getSampleBlock(ContextPtr context_)
 {
-    return !(
-        output_mode == DistributedDDLOutputMode::THROW || ///
-        output_mode == DistributedDDLOutputMode::NONE || ///
-        output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE ///
-    );
-}
+    auto output_mode = context_->getSettingsRef()[Setting::distributed_ddl_output_mode];
 
-Block DDLOnClusterQueryStatusSource::getSampleBlock(DistributedDDLOutputMode output_mode)
-{
-    auto nullable_error_status = nullableErrorAndStatusFields(output_mode);
-    auto maybe_make_nullable = [nullable_error_status](const DataTypePtr & type) -> DataTypePtr
-    { return nullable_error_status ? std::make_shared<DataTypeNullable>(type) : type; };
+    auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
+    {
+        if (output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE
+            || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
+            return type;
+        return std::make_shared<DataTypeNullable>(type);
+    };
 
 
     return Block{
@@ -161,4 +153,5 @@ Block DDLOnClusterQueryStatusSource::getSampleBlock(DistributedDDLOutputMode out
         {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
     };
 }
+
 }

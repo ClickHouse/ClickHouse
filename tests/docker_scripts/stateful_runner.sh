@@ -224,9 +224,6 @@ function run_tests()
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
-    if [[ -n "$USE_PARALLEL_REPLICAS" ]] && [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
-        ADDITIONAL_OPTIONS+=('--no-parallel-replicas' )
-    fi
 
     set +e
 
@@ -244,6 +241,12 @@ function run_tests()
         "${ADDITIONAL_OPTIONS[@]}"
         "$SKIP_TESTS_OPTION"
     )
+    if [[ -n "$USE_PARALLEL_REPLICAS" ]] && [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
+        TEST_ARGS+=(
+            --client="clickhouse-client --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --max_parallel_replicas=100 --cluster_for_parallel_replicas='parallel_replicas'"
+            --no-parallel-replicas
+        )
+    fi
     clickhouse-test "${TEST_ARGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
     set -e
 }

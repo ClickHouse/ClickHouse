@@ -1,7 +1,7 @@
 import dataclasses
 import importlib.util
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional
 
 
 @dataclasses.dataclass
@@ -21,7 +21,6 @@ class _Settings:
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
-    PIPELINE_PRECHECKS: Optional[List[Union[str, callable]]] = None
 
     ######################################
     #    Runtime Settings                #
@@ -37,10 +36,9 @@ class _Settings:
     ######################################
     #        CI workspace settings       #
     ######################################
-    TEMP_DIR: str = "./ci/tmp"
-    # TODO: remove if using temp dir for in and out is ok
-    OUTPUT_DIR: str = f"{TEMP_DIR}"
-    INPUT_DIR: str = f"{TEMP_DIR}"
+    TEMP_DIR: str = "/tmp/praktika"
+    OUTPUT_DIR: str = f"{TEMP_DIR}/output"
+    INPUT_DIR: str = f"{TEMP_DIR}/input"
     PYTHON_INTERPRETER: str = "python3"
     PYTHON_PACKET_MANAGER: str = "pip3"
     PYTHON_VERSION: str = "3.9"
@@ -52,9 +50,8 @@ class _Settings:
     SECRET_GH_APP_ID: str = "GH_APP_ID"
     SECRET_GH_APP_PEM_KEY: str = "GH_APP_PEM_KEY"
 
-    ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
+    ENV_SETUP_SCRIPT: str = "/tmp/praktika_setup_env.sh"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
-    WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
 
     ######################################
     #        CI Cache settings           #
@@ -74,6 +71,7 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
+    DOCKER_WD: str = "/wd"
 
     ######################################
     #        CI DB Settings              #
@@ -119,7 +117,6 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_GH_APP_ID",
     "MAIN_BRANCH",
     "DISABLE_MERGE_COMMIT",
-    "PIPELINE_PRECHECKS",
 ]
 
 

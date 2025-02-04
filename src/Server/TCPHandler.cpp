@@ -500,7 +500,6 @@ void TCPHandler::runImpl()
                 query_state->query_context->getSettingsRef(),
                 query_state->query_context->getOpenTelemetrySpanLog());
             thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-            thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
             query_scope.emplace(query_state->query_context, /* fatal_error_callback */ [this, &query_state]
             {
@@ -1559,27 +1558,11 @@ bool TCPHandler::receiveProxyHeader()
             return false;
         }
 
-        bool is_tcp6 = ('6' == *limit_in.position());
-
         ++limit_in.position();
         assertChar(' ', limit_in);
 
         /// Read the first field and ignore other.
         readStringUntilWhitespace(forwarded_address, limit_in);
-
-        if (is_tcp6)
-            forwarded_address = "[" + forwarded_address + "]";
-
-        /// Skip second field (destination address)
-        assertChar(' ', limit_in);
-        skipStringUntilWhitespace(limit_in);
-        assertChar(' ', limit_in);
-
-        /// Read source port
-        String port;
-        readStringUntilWhitespace(port, limit_in);
-
-        forwarded_address += ":" + port;
 
         /// Skip until \r\n
         while (!limit_in.eof() && *limit_in.position() != '\r')
@@ -2637,9 +2620,9 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
 {
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    auto forwarded_address = client_info.getLastForwardedFor();
-    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
-        return *forwarded_address;
+    String forwarded_address = client_info.getLastForwardedFor();
+    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
     return socket().peerAddress();
 }
 
