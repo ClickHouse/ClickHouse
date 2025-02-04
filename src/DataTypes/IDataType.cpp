@@ -275,19 +275,16 @@ SerializationPtr IDataType::getSparseSerialization() const
     return std::make_shared<SerializationSparse>(getDefaultSerialization());
 }
 
-SerializationPtr IDataType::getDetachedSerialization() const
-{
-    // TODO(nickitat): support sparse as nested serialization
-    return std::make_shared<SerializationDetached>(getDefaultSerialization());
-}
-
 SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
 {
     if (supportsSparseSerialization() && kind == ISerialization::Kind::SPARSE)
         return getSparseSerialization();
 
     if (kind == ISerialization::Kind::DETACHED)
-        return getDetachedSerialization();
+        return std::make_shared<SerializationDetached>(getDefaultSerialization());
+
+    if (supportsSparseSerialization() && kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
+        return std::make_shared<SerializationDetached>(getSparseSerialization());
 
     return getDefaultSerialization();
 }

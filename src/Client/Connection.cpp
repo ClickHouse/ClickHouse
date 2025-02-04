@@ -1348,9 +1348,8 @@ Block Connection::receiveLogData()
 }
 
 
-static Block prepare(const Block & block)
+static Block convertBlobColumns(const Block & block)
 {
-    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
     Block res;
     for (const auto & elem : block)
     {
@@ -1372,7 +1371,7 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 
     /// Read one block from network.
     Block res = reader.read();
-    res = prepare(res);
+    res = convertBlobColumns(res);
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);

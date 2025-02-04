@@ -29,8 +29,8 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
         return Kind::SPARSE;
 
     // TODO(nickitat): create dedicated method
-    if (typeid_cast<const ColumnBlob *>(&column))
-        return Kind::DETACHED;
+    if (const auto * column_blob = typeid_cast<const ColumnBlob *>(&column))
+        return column_blob->concreteIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
 
     return Kind::DEFAULT;
 }
@@ -45,6 +45,8 @@ String ISerialization::kindToString(Kind kind)
             return "Sparse";
         case Kind::DETACHED:
             return "Detached";
+        case Kind::DETACHED_OVER_SPARSE:
+            return "DetachedOverSparse";
     }
 }
 
@@ -52,10 +54,12 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    if (str == "Sparse")
+    else if (str == "Sparse")
         return Kind::SPARSE;
-    if (str == "Detached")
+    else if (str == "Detached")
         return Kind::DETACHED;
+    else if (str == "DetachedOverSparse")
+        return Kind::DETACHED_OVER_SPARSE;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 

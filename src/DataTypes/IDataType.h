@@ -142,7 +142,6 @@ public:
 
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
-    SerializationPtr getDetachedSerialization() const;
 
     /// Chooses serialization according to serialization kind.
     SerializationPtr getSerialization(ISerialization::Kind kind) const;

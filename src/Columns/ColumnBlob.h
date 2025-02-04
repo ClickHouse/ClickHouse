@@ -12,6 +12,7 @@
 #include "Compression/CompressedReadBuffer.h"
 #include "DataTypes/Serializations/ISerialization.h"
 #include "Formats/NativeReader.h"
+#include "base/defines.h"
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -49,7 +50,17 @@ public:
 
     size_t size() const override { return rows; }
 
-    MutableColumnPtr cloneEmpty() const override { return concrete_column->cloneEmpty(); }
+    bool concreteIsSparse() const
+    {
+        chassert(concrete_column);
+        return concrete_column->isSparse();
+    }
+
+    MutableColumnPtr cloneEmpty() const override
+    {
+        chassert(concrete_column);
+        return concrete_column->cloneEmpty();
+    }
 
     Blob & getBlob() { return blob; }
     const Blob & getBlob() const { return blob; }
@@ -75,6 +86,7 @@ public:
         const std::optional<FormatSettings> & format_settings)
     {
         WriteBufferFromVector<Blob> wbuf(blob);
+        // TODO(nickitat): avoid double compression
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
         auto serialization = NativeWriter::getSerialization(client_revision, concrete_column);
         NativeWriter::writeData(

@@ -58,6 +58,7 @@ public:
         DEFAULT = 0,
         SPARSE = 1,
         DETACHED = 2,
+        DETACHED_OVER_SPARSE = 3,
     };
 
     virtual Kind getKind() const { return Kind::DEFAULT; }

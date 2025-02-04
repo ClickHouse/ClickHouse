@@ -52,8 +52,6 @@ public:
         size_t rows,
         double avg_value_size_hint);
 
-    static SerializationPtr getSerialization(UInt64 server_revision, const ColumnWithTypeAndName & column);
-
 private:
     ReadBuffer & istr;
     Block header;
