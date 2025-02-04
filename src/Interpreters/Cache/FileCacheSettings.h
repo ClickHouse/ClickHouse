@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Core/Defines.h>
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } } // NOLINT(cppcoreguidelines-virtual-class-destructor)
 
@@ -33,7 +32,7 @@ struct FileCacheSettings
     bool operator==(const FileCacheSettings & settings) const noexcept;
     ~FileCacheSettings();
 
-    static NamesAndTypesList getSampleBlock();
+    static ColumnsDescription getColumnsDescription();
 
     FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

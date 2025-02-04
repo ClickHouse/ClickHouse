@@ -19,9 +19,9 @@ namespace DB
 static Block getSampleBlock()
 {
     ColumnsWithTypeAndName columns;
-    for (const auto & [name, type] : FileCacheSettings::getSampleBlock())
+    for (const auto & desc : FileCacheSettings::getColumnsDescription())
     {
-        columns.push_back(ColumnWithTypeAndName(type, name));
+        columns.push_back(ColumnWithTypeAndName(desc.type, desc.name));
     }
     return Block(columns);
 }

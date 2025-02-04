@@ -17,7 +17,7 @@ namespace DB
 
 ColumnsDescription StorageSystemFilesystemCacheSettings::getColumnsDescription()
 {
-    return ColumnsDescription(FileCacheSettings::getSampleBlock());
+    return FileCacheSettings::getColumnsDescription();
 }
 
 StorageSystemFilesystemCacheSettings::StorageSystemFilesystemCacheSettings(const StorageID & table_id_)

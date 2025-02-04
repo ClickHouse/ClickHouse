@@ -93,29 +93,35 @@ bool FileCacheSettings::operator==(const FileCacheSettings & settings) const noe
     return *impl == *settings.impl;
 }
 
-NamesAndTypesList FileCacheSettings::getSampleBlock()
+ColumnsDescription FileCacheSettings::getColumnsDescription()
 {
     FileCacheSettingsImpl impl;
-    NamesAndTypesList result;
+    ColumnsDescription result;
     for (const auto & setting : impl.all())
     {
-        const auto & setting_name = setting.getName();
-        const std::string type_name = setting.getTypeName();
-        DataTypePtr data_type;
-        if (type_name == "UInt64")
-            data_type = std::make_shared<DataTypeUInt64>();
-        else if (type_name == "String")
-            data_type = std::make_shared<DataTypeString>();
-        else if (type_name == "Bool")
-            data_type = std::make_shared<DataTypeUInt8>();
-        else if (type_name == "Double")
-            data_type = std::make_shared<DataTypeFloat64>();
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", type_name);
-
-        result.emplace_back(setting_name, data_type);
+        ColumnDescription desc;
+        desc.name = setting.getName();
+        desc.type = [&]() -> DataTypePtr
+        {
+            const std::string type_name = setting.getTypeName();
+            if (type_name == "UInt64")
+                return std::make_shared<DataTypeUInt64>();
+            else if (type_name == "String")
+                return std::make_shared<DataTypeString>();
+            else if (type_name == "Bool")
+                return std::make_shared<DataTypeUInt8>();
+            else if (type_name == "Double")
+                return std::make_shared<DataTypeFloat64>();
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", type_name);
+        }();
+        desc.comment = setting.getDescription();
+        result.add(desc);
     }
-    result.emplace_back("is_initialized", std::make_shared<DataTypeUInt8>());
+    result.add(
+        ColumnDescription(
+            "is_initialized", std::make_shared<DataTypeUInt8>(), "Indicates whether cache was successfully initialized"));
+
     return result;
 }
 
