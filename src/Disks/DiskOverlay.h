@@ -15,8 +15,18 @@ namespace DB
 class DiskOverlay : public IDisk
 {
 public:
-    DiskOverlay(const String & name_, DiskPtr disk_base_, DiskPtr disk_diff_, MetadataStoragePtr metadata_, MetadataStoragePtr tracked_metadata_);
-    DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
+    DiskOverlay(
+        const String & name_,
+        DiskPtr disk_base_,
+        DiskPtr disk_diff_,
+        MetadataStoragePtr metadata_,
+        MetadataStoragePtr tracked_metadata_);
+
+    DiskOverlay(
+        const String & name_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const String & config_prefix_,
+        const DisksMap & map_);
 
     const String & getPath() const override;
 
@@ -74,8 +84,12 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    bool areBlobPathsRandom() const override { return false; }
     Strings getBlobPath(const String &  /*path*/) const override;
-    void writeFileUsingBlobWritingFunction(const String &  /*path*/, WriteMode  /*mode*/, WriteBlobFunction &&  /*write_blob_function*/) override;
+    void writeFileUsingBlobWritingFunction(
+        const String &  /*path*/,
+        WriteMode  /*mode*/,
+        WriteBlobFunction &&  /*write_blob_function*/) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -111,6 +125,7 @@ private:
     // If a file is tracked, we don't need to list it from the base disk in calls to file listing functions
 public:
     bool isTracked(const String& path) const;
+
 private:
     void setTracked(const String& path);
 

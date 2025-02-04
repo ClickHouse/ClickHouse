@@ -61,7 +61,12 @@ DiskOverlay::DiskOverlay(
 {
 }
 
-DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_) : IDisk(name_)
+DiskOverlay::DiskOverlay(
+    const String & name_,
+    const Poco::Util::AbstractConfiguration & config_,
+    const String & config_prefix_,
+    const DisksMap & map_)
+    : IDisk(name_)
 {
     String disk_base_name = config_.getString(config_prefix_ + ".disk_base");
     String disk_diff_name = config_.getString(config_prefix_ + ".disk_diff");
@@ -76,8 +81,11 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Diff disk has to be writable");
     }
 
-    forward_metadata = MetadataStorageFactory::instance().create(forward_metadata_name, config_, config_prefix_ + ".forward_metadata", nullptr, "", false);
-    tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_ + ".tracked_metadata", nullptr, "", false);
+    forward_metadata = MetadataStorageFactory::instance().create(
+        forward_metadata_name, config_, config_prefix_ + ".forward_metadata", nullptr, "", false);
+
+    tracked_metadata = MetadataStorageFactory::instance().create(
+        tracked_metadata_name, config_, config_prefix_ + ".tracked_metadata", nullptr, "", false);
 }
 
 const String & DiskOverlay::getPath() const
@@ -284,8 +292,14 @@ class DiskOverlayDirectoryIterator final : public IDirectoryIterator
 {
 public:
     DiskOverlayDirectoryIterator() = default;
-    DiskOverlayDirectoryIterator(DirectoryIteratorPtr diff_iter_, DirectoryIteratorPtr base_iter_, MetadataStoragePtr tracked_metadata_)
-    : done_diff(false), diff_iter(std::move(diff_iter_)), base_iter(std::move(base_iter_)), tracked_metadata(tracked_metadata_)
+    DiskOverlayDirectoryIterator(
+        DirectoryIteratorPtr diff_iter_,
+        DirectoryIteratorPtr base_iter_,
+        MetadataStoragePtr tracked_metadata_)
+        : done_diff(false)
+        , diff_iter(std::move(diff_iter_))
+        , base_iter(std::move(base_iter_))
+        , tracked_metadata(tracked_metadata_)
     {
         upd();
     }
@@ -483,8 +497,12 @@ public:
     ReadBufferFromOverlayDisk(
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> base_,
-        std::unique_ptr<ReadBufferFromFileBase> diff_) : ReadBufferFromFileBase(buffer_size_, nullptr, 0),
-                    base(std::move(base_)), diff(std::move(diff_)), base_size(base->getFileSize()), diff_size(diff->getFileSize())
+        std::unique_ptr<ReadBufferFromFileBase> diff_)
+        : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
+        , base(std::move(base_))
+        , diff(std::move(diff_))
+        , base_size(base->getFileSize())
+        , diff_size(diff->getFileSize())
     {
         working_buffer = base->buffer();
         pos = base->position();
@@ -638,8 +656,18 @@ std::unique_ptr<WriteBufferFromFileBase> DiskOverlay::writeFile(
     return disk_diff->writeFile(path, buf_size, mode, settings);
 }
 
-Strings DiskOverlay::getBlobPath(const String &  /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage"); }
-void DiskOverlay::writeFileUsingBlobWritingFunction(const String &  /*path*/, WriteMode  /*mode*/, WriteBlobFunction &&  /*write_blob_function*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage"); }
+Strings DiskOverlay::getBlobPath(const String &  /*path*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage");
+}
+
+void DiskOverlay::writeFileUsingBlobWritingFunction(
+    const String &  /*path*/,
+    WriteMode  /*mode*/,
+    WriteBlobFunction &&  /*write_blob_function*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay is not an object storage");
+}
 
 void DiskOverlay::removeFile(const String & path)
 {
@@ -797,7 +825,10 @@ void DiskOverlay::createHardLink(const String & src_path, const String & dst_pat
     }
 }
 
-DataSourceDescription DiskOverlay::getDataSourceDescription() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There are two disks in overlay, which one do you want?"); }
+DataSourceDescription DiskOverlay::getDataSourceDescription() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There are two disks in overlay, which one do you want?");
+}
 
 bool DiskOverlay::supportParallelWrite() const
 {
