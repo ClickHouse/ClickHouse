@@ -59,7 +59,9 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
-    REMOVED,
+    REMOVE,
+    REMOVE_ROLLBACKED,
+    REMOVE_RETRY,
 };
 
 /// Description of the data part.
@@ -302,7 +304,7 @@ public:
     void setState(MergeTreeDataPartState new_state) const;
     ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
-    static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
+    static std::string_view stateString(MergeTreeDataPartState state);
     constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
