@@ -32,8 +32,7 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
     {
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
-            ThreadGroupSwitcher switcher(thread_group);
-            setThreadName(thread_name.data());
+            ThreadGroupSwitcher switcher(thread_group, thread_name);
 
             SCOPE_EXIT_SAFE(
             {
@@ -157,8 +156,7 @@ public:
 
         auto task_func = [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback), promise]() mutable -> void
         {
-            ThreadGroupSwitcher switcher(thread_group);
-            setThreadName(my_thread_name.data());
+            ThreadGroupSwitcher switcher(thread_group, my_thread_name);
 
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))

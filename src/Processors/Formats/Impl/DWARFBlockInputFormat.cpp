@@ -245,8 +245,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
             {
                 try
                 {
-                    ThreadGroupSwitcher switcher(thread_group);
-                    setThreadName("DWARFDecoder");
+                    ThreadGroupSwitcher switcher(thread_group, "DWARFDecoder");
 
                     std::unique_lock lock(mutex);
                     while (!units_queue.empty() && !is_stopped)

@@ -71,8 +71,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group);
-        setThreadName("QueryPullPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }

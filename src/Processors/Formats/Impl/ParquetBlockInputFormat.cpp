@@ -877,8 +877,7 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group);
-                setThreadName("ParquetDecoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetDecoder");
 
                 threadFunction(row_group_batch_idx);
             }

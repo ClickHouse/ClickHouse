@@ -331,8 +331,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        ThreadGroupSwitcher switcher(thread_group);
-        setThreadName("DistrOutStrProc");
+        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
 
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
@@ -594,7 +593,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group);
+                            ThreadGroupSwitcher switcher(thread_group, "");
 
                             job.executor->finish();
                         });

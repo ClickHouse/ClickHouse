@@ -2356,7 +2356,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError([thread_id, &tasks, thread_group = CurrentThread::getGroup()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group);
+                        ThreadGroupSwitcher switcher(thread_group, "");
                         tasks[thread_id]();
                     });
             else
@@ -3123,7 +3123,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError([bucket, &merge_bucket, aggregates_pool, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group, "");
                     merge_bucket(bucket, aggregates_pool);
                 });
             else

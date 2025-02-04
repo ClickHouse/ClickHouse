@@ -10,8 +10,7 @@ namespace DB
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
-    ThreadGroupSwitcher switcher(thread_group);
-    setThreadName("Segmentator");
+    ThreadGroupSwitcher switcher(thread_group, "Segmentator");
 
     try
     {
@@ -61,8 +60,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
 {
-    ThreadGroupSwitcher switcher(thread_group);
-    setThreadName("ChunkParser");
+    ThreadGroupSwitcher switcher(thread_group, "ChunkParser");
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];

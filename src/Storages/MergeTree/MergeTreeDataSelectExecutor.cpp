@@ -803,8 +803,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group);
-                        setThreadName("MergeTreeIndex");
+                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
 
                         process_part(part_index);
                     },

@@ -138,8 +138,7 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                ThreadGroupSwitcher switcher(thread_group);
-                setThreadName("SystemReplicas");
+                ThreadGroupSwitcher switcher(thread_group, "SystemReplicas");
 
                 try
                 {

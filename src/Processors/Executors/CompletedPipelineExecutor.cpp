@@ -37,8 +37,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group);
-        setThreadName("QueryCompPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, "QueryCompPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }

@@ -490,8 +490,7 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group);
-                setThreadName("ParquetEncoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetEncoder");
 
                 threadFunction();
             }
