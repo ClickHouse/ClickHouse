@@ -2,6 +2,7 @@
 
 #include "CompressedReadBufferFromFile.h"
 
+#include <Common/logger_useful.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/WriteHelpers.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -17,13 +18,17 @@ namespace ErrorCodes
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
+    bool compressed_data_read_ok = false;
     try
     {
         size_t size_decompressed = 0;
-        size_t size_compressed_without_checksum;
+        size_t size_compressed_without_checksum = 0;
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
         if (!size_compressed)
             return false;
+
+        compressed_data_read_ok = true;
+        LOG_TEST(log, "Decompressing {} bytes from {}", size_compressed, file_in.getFileName());
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -46,15 +51,21 @@ bool CompressedReadBufferFromFile::nextImpl()
     catch (Exception & e)
     {
         auto current_pos = file_in.tryGetPosition();
-        e.addMessage("While reading or decompressing next portion of data from {} (position: {})",
-                     file_in.getFileName(), current_pos ? std::to_string(*current_pos) : "?");
+        e.addMessage("While {} next portion of data{} from {} (position: {})",
+                     (compressed_data_read_ok ? "decompressing" : "reading"),
+                     (compressed_data_read_ok ? fmt::format(" ({} bytes)", size_compressed) : ""),
+                     file_in.getFileName(),
+                     (current_pos ? std::to_string(*current_pos) : "?"));
         throw;
     }
 }
 
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_)
-    : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
+    : BufferWithOwnMemory<ReadBuffer>(0)
+    , p_file_in(std::move(buf))
+    , file_in(*p_file_in)
+    , log(getLogger("CompressedReadBufferFromFile"))
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;
@@ -85,6 +96,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
     else /// Our seek outside working buffer, so perform "lazy seek"
     {
         /// Actually seek compressed file
+        LOG_TEST(log, "Seek to position {} in compressed file {}", offset_in_compressed_file, file_in.getFileName());
         file_in.seek(offset_in_compressed_file, SEEK_SET);
         /// We will discard our working_buffer, but have to account rest bytes
         bytes += offset();
@@ -118,6 +130,8 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             if (!new_size_compressed)
                 break;
             size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
+
+            LOG_TEST(log, "Decompressing {} bytes from {}", new_size_compressed, file_in.getFileName());
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -177,7 +191,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
     {
         auto current_pos = file_in.tryGetPosition();
         e.addMessage("While reading or decompressing {} bytes from {} (position: {})",
-                     n, file_in.getFileName(), current_pos ? std::to_string(*current_pos) : "?");
+                     n, file_in.getFileName(), (current_pos ? std::to_string(*current_pos) : "?"));
         throw;
     }
 }

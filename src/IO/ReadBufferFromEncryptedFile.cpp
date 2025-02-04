@@ -1,7 +1,9 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 
 #if USE_SSL
+#include <Common/logger_useful.h>
 #include <base/demangle.h>
+
 
 namespace DB
 {
@@ -21,6 +23,7 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
     , encryptor(header_.algorithm, key_, header_.init_vector)
+    , log(getLogger("ReadBufferFromEncryptedFile"))
 {
     offset = offset_;
     need_seek = true;
@@ -100,6 +103,9 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     {
         bytes_read += in->read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
     }
+
+    chassert(bytes_read > 0);
+    LOG_TEST(log, "Decrypting bytes {}..{} from {}", offset, offset + bytes_read - 1, getFileName());
 
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `bytes_read`.
