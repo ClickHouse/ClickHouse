@@ -303,7 +303,11 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
 
-        if (!step_column_names.empty())
+        const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
+
+        /// If part has non-adaptive granularity we always have to read at least one column
+        /// because we cannot determine the correct size of the last granule without reading data.
+        if (!step_column_names.empty() || !has_adaptive_granularity)
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
                 with_subcolumns, step_column_names);
