@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 template<typename V>
 struct ListNode
 {
@@ -297,8 +292,7 @@ public:
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        if (it == map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
+        chassert(it != map.end());
 
         auto list_itr = it->getMapped();
         uint64_t old_value_size = list_itr->value.sizeInBytes();
@@ -354,8 +348,7 @@ public:
     const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
-        if (it == map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
+        chassert(it);
         return it->getMapped()->value;
     }
 
@@ -363,8 +356,7 @@ public:
     {
         for (auto & itr : snapshot_invalid_iters)
         {
-            if (itr->isActiveInMap())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not active in map", itr->key.toView());
+            chassert(!itr->isActiveInMap());
             updateDataSize(ERASE, itr->key.size, 0, itr->value.sizeInBytes(), /*remove_old=*/true);
             if (itr->getFreeKey())
                 arena.free(const_cast<char *>(itr->key.data), itr->key.size);

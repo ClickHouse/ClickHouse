@@ -62,8 +62,8 @@ void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & ke
 
         auto & key_column_to_cast = key_columns[key_type_index];
         ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-        auto cast_column = castColumnAccurate(column_to_cast, float_64_type);
-        key_column_to_cast = std::move(cast_column);
+        auto casted_column = castColumnAccurate(column_to_cast, float_64_type);
+        key_column_to_cast = std::move(casted_column);
         key_type = float_64_type;
     }
 }

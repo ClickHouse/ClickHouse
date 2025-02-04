@@ -154,8 +154,6 @@ public:
     void yieldLeadership();
 
     void recalculateStorageStats();
-
-    std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 };
 
 }

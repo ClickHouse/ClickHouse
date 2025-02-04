@@ -19,10 +19,9 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
-#include <libunwind.h>
 #include <fmt/format.h>
+#include <libunwind.h>
 
 #include <boost/algorithm/string/split.hpp>
 

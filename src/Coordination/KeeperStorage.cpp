@@ -30,7 +30,6 @@
 #include <Coordination/KeeperStorage.h>
 
 #include <functional>
-#include <shared_mutex>
 #include <base/defines.h>
 
 namespace ProfileEvents
@@ -3620,14 +3619,6 @@ bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)
         return true;
 
     return first.value == second.value;
-}
-
-UInt64 KeeperStorageBase::WatchInfoHash::operator()(WatchInfo info) const
-{
-    SipHash hash;
-    hash.update(info.path);
-    hash.update(info.is_list_watch);
-    return hash.get64();
 }
 
 template<typename Container>

@@ -12,46 +12,46 @@ ASTPtr ASTAlterNamedCollectionQuery::clone() const
     return std::make_shared<ASTAlterNamedCollectionQuery>(*this);
 }
 
-void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "ALTER NAMED COLLECTION ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "ALTER NAMED COLLECTION ";
     if (if_exists)
-        ostr << "IF EXISTS ";
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
-    formatOnCluster(ostr, settings);
+        settings.ostr << "IF EXISTS ";
+    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    formatOnCluster(settings);
     if (!changes.empty())
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " SET " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SET " << (settings.hilite ? hilite_none : "");
         bool first = true;
         for (const auto & change : changes)
         {
             if (!first)
-                ostr << ", ";
+                settings.ostr << ", ";
             else
                 first = false;
 
-            formatSettingName(change.name, ostr);
+            formatSettingName(change.name, settings.ostr);
             if (settings.show_secrets)
-                ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+                settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
             else
-                ostr << " = '[HIDDEN]'";
+                settings.ostr << " = '[HIDDEN]'";
             auto override_value = overridability.find(change.name);
             if (override_value != overridability.end())
-                ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
+                settings.ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
         }
     }
     if (!delete_keys.empty())
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " DELETE " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DELETE " << (settings.hilite ? hilite_none : "");
         bool first = true;
         for (const auto & key : delete_keys)
         {
             if (!first)
-                ostr << ", ";
+                settings.ostr << ", ";
             else
                 first = false;
 
-            formatSettingName(key, ostr);
+            formatSettingName(key, settings.ostr);
         }
     }
 }

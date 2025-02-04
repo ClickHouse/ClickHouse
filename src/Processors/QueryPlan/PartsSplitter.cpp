@@ -205,7 +205,7 @@ public:
     }
 private:
     const RangesInDataParts & parts;
-    std::vector<IMergeTreeDataPart::IndexPtr> indices;
+    std::vector<IMergeTreeDataPart::Index> indices;
     size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 

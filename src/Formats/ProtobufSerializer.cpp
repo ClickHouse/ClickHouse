@@ -12,7 +12,6 @@
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnVector.h>
-#    include <Core/AccurateComparison.h>
 #    include <Core/DecimalComparison.h>
 #    include <DataTypes/DataTypeAggregateFunction.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -228,33 +227,33 @@ namespace
         template <typename NumberType>
         void writeInt(NumberType value)
         {
-            auto cast = castNumber<Int64>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeInt(field_tag, cast);
+            auto casted = castNumber<Int64>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeInt(field_tag, casted);
         }
 
         template <typename NumberType>
         void writeSInt(NumberType value)
         {
-            auto cast = castNumber<Int64>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeSInt(field_tag, cast);
+            auto casted = castNumber<Int64>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeSInt(field_tag, casted);
         }
 
         template <typename NumberType>
         void writeUInt(NumberType value)
         {
-            auto cast = castNumber<UInt64>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeUInt(field_tag, cast);
+            auto casted = castNumber<UInt64>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeUInt(field_tag, casted);
         }
 
         template <typename FieldType, typename NumberType>
         void writeFixed(NumberType value)
         {
-            auto cast = castNumber<FieldType>(value);
-            if (cast != 0 || !skip_zero_or_empty)
-                writer->writeFixed(field_tag, cast);
+            auto casted = castNumber<FieldType>(value);
+            if (casted != 0 || !skip_zero_or_empty)
+                writer->writeFixed(field_tag, casted);
         }
 
         Int64 readInt() { return reader->readInt(); }

@@ -23,6 +23,7 @@ struct ObjectStorageQueueTableMetadata
     const String format_name;
     const String columns;
     const String mode;
+    const UInt32 buckets;
     const String last_processed_path;
     /// Changeable settings.
     std::atomic<ObjectStorageQueueAction> after_processing;
@@ -30,7 +31,6 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<UInt64> processing_threads_num;
     std::atomic<UInt64> tracked_files_limit;
     std::atomic<UInt64> tracked_files_ttl_sec;
-    std::atomic<UInt64> buckets;
 
     bool processing_threads_num_changed = false;
 
@@ -43,13 +43,13 @@ struct ObjectStorageQueueTableMetadata
         : format_name(other.format_name)
         , columns(other.columns)
         , mode(other.mode)
+        , buckets(other.buckets)
         , last_processed_path(other.last_processed_path)
         , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
-        , buckets(other.buckets.load())
     {
     }
 
@@ -96,12 +96,6 @@ struct ObjectStorageQueueTableMetadata
         return settings_names.contains(name);
     }
 
-    size_t getBucketsNum() const
-    {
-        if (buckets)
-            return buckets;
-        return processing_threads_num;
-    }
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 };

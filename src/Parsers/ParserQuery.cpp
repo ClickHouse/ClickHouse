@@ -11,7 +11,6 @@
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -39,6 +38,7 @@
 
 namespace DB
 {
+
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -74,6 +74,11 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
 
+    /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
+    /// but here we also try "implicit SELECT" after all other options.
+    /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
+    ParserSelectQuery implicit_select_p(true);
+
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
         || use_p.parse(pos, node, expected)
@@ -102,24 +107,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || check_grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
-        || delete_p.parse(pos, node, expected);
-
-    if (res && allow_in_parallel_with)
-    {
-        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
-        subquery_p.allow_in_parallel_with = false;
-        ParserParallelWithQuery in_parallel_with_query_p(subquery_p, node);
-        in_parallel_with_query_p.parse(pos, node, expected);
-    }
-
-    if (!res && implicit_select)
-    {
-        /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
-        /// but here we also try "implicit SELECT" after all other options.
-        /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
-        ParserSelectQuery implicit_select_p(true);
-        res = implicit_select_p.parse(pos, node, expected);
-    }
+        || delete_p.parse(pos, node, expected)
+        || (implicit_select && implicit_select_p.parse(pos, node, expected));
 
     return res;
 }

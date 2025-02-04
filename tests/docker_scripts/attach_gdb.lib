@@ -29,8 +29,6 @@ function attach_gdb_to_clickhouse()
         handle SIGUSR2 nostop noprint pass
         handle SIG$RTMIN nostop noprint pass
         info signals
-        # safeExit is called if graceful shutdown times out. Print stack traces in that case.
-        break safeExit
         continue
         backtrace full
         info registers
