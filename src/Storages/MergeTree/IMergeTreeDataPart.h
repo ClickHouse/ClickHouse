@@ -60,7 +60,9 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
-    REMOVED,
+    REMOVE,
+    REMOVE_ROLLBACKED,
+    REMOVE_RETRY,
 };
 
 /// Description of the data part.
