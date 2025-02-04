@@ -791,6 +791,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
+            // Can't materialize a column in the sort key
+            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
+            }
+
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
@@ -866,7 +873,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+                && metadata_snapshot->hasOnlyRowsTTL();
+
+            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -1347,12 +1357,10 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
-    QueryPlanOptimizationSettings do_not_optimize_plan;
-    do_not_optimize_plan.optimize_plan = false;
+    QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
+    do_not_optimize_plan_settings.optimize_plan = false;
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(
-        do_not_optimize_plan,
-        BuildQueryPipelineSettings::fromContext(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -1438,6 +1446,25 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         updated_header = std::make_unique<Block>(builder.getHeader());
 
     return builder;
+}
+
+std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
+{
+    std::vector<MutationActions> result;
+    for (const auto & stage : stages)
+    {
+        for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
+        {
+            const auto & step = stage.expressions_chain.steps[i];
+            bool project_input = step->actions()->project_input;
+            if (i < stage.filter_column_names.size())
+                result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input});
+            else
+                result.push_back({step->actions()->dag.clone(), "", project_input});
+        }
+    }
+
+    return result;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

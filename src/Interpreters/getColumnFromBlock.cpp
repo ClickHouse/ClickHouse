@@ -52,7 +52,7 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         return elem_column;
     }
 
-    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column);
+    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column->decompress());
     auto elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
 
     if (!elem_type || !elem_column)

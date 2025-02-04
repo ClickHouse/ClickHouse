@@ -224,7 +224,7 @@ void MergeTreeSink::finishDelayedChunk()
 
             if (settings[Setting::insert_deduplicate] && deduplication_log)
             {
-                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                const String block_id = part->getNewPartBlockID(partition.block_dedup_token);
                 auto res = deduplication_log->addPart(block_id, part->info);
                 if (!res.second)
                 {

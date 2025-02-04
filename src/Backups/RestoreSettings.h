@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -155,8 +156,8 @@ struct RestoreSettings
     /// This is used to generate coordination path and for concurrency check
     std::optional<UUID> restore_uuid;
 
-    /// The maximum read speed in bytes per second for a backup. Zero means unlimited.
-    std::optional<UInt64> max_backup_bandwidth;
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

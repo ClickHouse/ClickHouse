@@ -169,9 +169,15 @@ String SSHKey::getKeyType() const
     return ssh_key_type_to_char(ssh_key_type(key));
 }
 
+void SSHKey::setNeedsDeallocation(bool needs_deallocation_)
+{
+    needs_deallocation = needs_deallocation_;
+}
+
 SSHKey::~SSHKey()
 {
-    ssh_key_free(key); // it's safe free from libssh
+    if (needs_deallocation)
+        ssh_key_free(key);
 }
 
 }

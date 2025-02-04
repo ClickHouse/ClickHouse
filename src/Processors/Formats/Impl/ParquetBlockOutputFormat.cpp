@@ -95,8 +95,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
             case C::GZIP: options.compression = CompressionMethod::Gzip; break;
             case C::BROTLI: options.compression = CompressionMethod::Brotli; break;
         }
+        options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
         options.output_string_as_string = format_settings.parquet.output_string_as_string;
         options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
+        options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
         options.data_page_size = format_settings.parquet.data_page_size;
         options.write_batch_size = format_settings.parquet.write_batch_size;
 
@@ -326,7 +328,14 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
 
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
-        builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
+        auto compression_codec = getParquetCompression(format_settings.parquet.output_compression_method);
+        builder.compression(compression_codec);
+
+        if (arrow::util::Codec::SupportsCompressionLevel(compression_codec))
+        {
+            builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
+        }
+
         // write page index is disable at default.
         if (format_settings.parquet.write_page_index)
             builder.enable_write_page_index();
@@ -598,6 +607,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Parquet");
+    factory.markOutputFormatNotTTYFriendly("Parquet");
 }
 
 }
