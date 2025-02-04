@@ -5,13 +5,9 @@ sidebar_label: Object Data Type
 keywords: [object, data type]
 ---
 
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+# Object Data Type (deprecated)
 
-# Object Data Type 
-
-<DeprecatedBadge/>
-
-**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/docs/en/sql-reference/data-types/newjson).
+**This feature is not production-ready and is now deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864).
 
 <hr />
 
@@ -83,5 +79,6 @@ SELECT * FROM json FORMAT JSONEachRow
 
 ## Related Content
 
-- [Using JSON in ClickHouse](/en/integrations/data-formats/json/overview)
+- [Using JSON in ClickHouse](/docs/en/integrations/data-formats/json)
 - [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)
+- 

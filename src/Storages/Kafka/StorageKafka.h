@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Common/ThreadPool_fwd.h>
+#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
-#include <Common/Macros.h>
+#include <Storages/Kafka/KafkaSettings.h>
 #include <Common/SettingsChanges.h>
-#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Semaphore.h>
 
@@ -19,7 +19,6 @@
 namespace DB
 {
 
-struct KafkaSettings;
 class ReadFromStorageKafka;
 class StorageSystemKafkaConsumers;
 class ThreadStatus;
@@ -81,7 +80,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    StreamingHandleErrorMode getStreamingHandleErrorMode() const;
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
     {

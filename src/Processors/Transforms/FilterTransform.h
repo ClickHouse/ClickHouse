@@ -31,8 +31,6 @@ public:
 
     void transform(Chunk & chunk) override;
 
-    static bool canUseType(const DataTypePtr & type);
-
 private:
     ExpressionActionsPtr expression;
     String filter_column_name;
@@ -50,7 +48,7 @@ private:
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
-    void removeFilterIfNeed(Columns & columns) const;
+    void removeFilterIfNeed(Chunk & chunk) const;
 };
 
 }

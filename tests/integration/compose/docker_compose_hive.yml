@@ -1,3 +1,4 @@
+version: '2.3'
 services:
     hdfs1:
         image: lgboustc/hive_test:v2.0

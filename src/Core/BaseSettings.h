@@ -1,14 +1,12 @@
 #pragma once
 
-#include <unordered_map>
 #include <Core/SettingsFields.h>
-#include <Core/SettingsTierType.h>
-#include <Core/SettingsWriteFormat.h>
+#include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <boost/blank.hpp>
-#include <Common/FieldVisitorToString.h>
-#include <Common/SettingsChanges.h>
+#include <unordered_map>
 
 
 namespace boost::program_options
@@ -22,79 +20,30 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-struct BaseSettingsHelpers
+enum class SettingsWriteFormat : uint8_t
 {
-    [[noreturn]] static void throwSettingNotFound(std::string_view name);
-    static void warningSettingNotFound(std::string_view name);
-
-    static void writeString(std::string_view str, WriteBuffer & out);
-    static String readString(ReadBuffer & in);
-
-    enum Flags : UInt64
-    {
-        IMPORTANT = 0x01,
-        CUSTOM = 0x02,
-        TIER = 0x0c, /// 0b1100 == 2 bits
-        /// If adding new flags, consider first if Tier might need more bits
-    };
-
-    static SettingsTierType getTier(UInt64 flags);
-    static void writeFlags(Flags flags, WriteBuffer & out);
-    static UInt64 readFlags(ReadBuffer & in);
+    BINARY = 0,             /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
+    STRINGS_WITH_FLAGS = 1, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
+    DEFAULT = STRINGS_WITH_FLAGS,
 };
 
 /** Template class to define collections of settings.
-  * If you create a new setting, please also add it to ./utils/check-style/check-settings-style
-  * for validation
-  *
   * Example of usage:
   *
   * mysettings.h:
-  * #include <Core/BaseSettingsFwdMacros.h>
-  * #include <Core/SettingsFields.h>
+  * #define APPLY_FOR_MYSETTINGS(M) \
+  *     M(UInt64, a, 100, "Description of a", 0) \
+  *     M(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
+  *     M(String, s, "default", "Description of s", 0)
   *
-  * #define MY_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-  *      M(CLASS_NAME, Float) \
-  *      M(CLASS_NAME, String) \
-  *      M(CLASS_NAME, UInt64)
-  *
-  * MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_TRAIT)
-  *
-  * struct MySettings
+  * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
+
+  * struct MySettings : public BaseSettings<MySettingsTraits>
   * {
-  *     MySettings();
-  *     ~MySettings();
-  *
-  *     MY_SETTINGS_SUPPORTED_TYPES(MySettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
-  * private:
-  *     std::unique_ptr<MySettingsImpl> impl;
   * };
   *
   * mysettings.cpp:
-  * #include <Core/BaseSettings.h>
-  * #include <Core/BaseSettingsFwdMacrosImpl.h>
-  *
-  * #define APPLY_FOR_MYSETTINGS(DECLARE, ALIAS) \
-  *     DECLARE(UInt64, a, 100, "Description of a", 0) \
-  *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
-  *     DECLARE(String, s, "default", "Description of s", 0)
-  *
-  * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
-  *
-  * struct MySettingsImpl : public BaseSettings<MySettingsTraits>
-  * {
-  * };
-  *
-  * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySettings##TYPE NAME = &MySettings##Impl ::NAME;
-  *
-  * namespace MySetting
-  * {
-  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
-  * }
-  * #undef INITIALIZE_SETTING_EXTERN
-  *
-  * MY_SETTINGS_SUPPORTED_TYPES(MySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
   */
 template <class TTraits>
 class BaseSettings : public TTraits::Data
@@ -113,12 +62,17 @@ public:
     virtual void set(std::string_view name, const Field & value);
     Field get(std::string_view name) const;
 
+    void setString(std::string_view name, const String & value);
+    String getString(std::string_view name) const;
+
     bool tryGet(std::string_view name, Field & value) const;
+    bool tryGetString(std::string_view name, String & value) const;
 
     bool isChanged(std::string_view name) const;
     SettingsChanges changes() const;
     void applyChange(const SettingChange & change);
     void applyChanges(const SettingsChanges & changes);
+    void applyChanges(const BaseSettings & changes); /// NOLINT
 
     /// Resets all the settings to their default values.
     void resetToDefault();
@@ -131,11 +85,11 @@ public:
 
     const char * getTypeName(std::string_view name) const;
     const char * getDescription(std::string_view name) const;
-    SettingsTierType getTier(std::string_view name) const;
 
     /// Checks if it's possible to assign a field to a specified value and throws an exception if not.
     /// This function doesn't change the fields, it performs check only.
     static void checkCanSet(std::string_view name, const Field & value);
+    static void checkCanSetString(std::string_view name, const String & str);
 
     /// Conversions without changing the fields.
     static Field castValueUtil(std::string_view name, const Field & value);
@@ -144,9 +98,6 @@ public:
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
-
-    void writeChangedBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 
     // A debugging aid.
     std::string toString() const;
@@ -158,13 +109,14 @@ public:
         const String & getName() const;
         Field getValue() const;
         void setValue(const Field & value);
+        Field getDefaultValue() const;
         String getValueString() const;
         String getDefaultValueString() const;
         bool isValueChanged() const;
         const char * getTypeName() const;
         const char * getDescription() const;
         bool isCustom() const;
-        SettingsTierType getTier() const;
+        bool isObsolete() const;
 
         bool operator==(const SettingFieldRef & other) const { return (getName() == other.getName()) && (getValue() == other.getValue()); }
         bool operator!=(const SettingFieldRef & other) const { return !(*this == other); }
@@ -239,6 +191,8 @@ public:
     MutableRange allMutable(SkipFlags skip_flags = SKIP_NONE) { return MutableRange{*this, skip_flags}; }
     Range allChanged() const { return all(SKIP_UNCHANGED); }
     Range allUnchanged() const { return all(SKIP_CHANGED); }
+    Range allBuiltin() const { return all(SKIP_CUSTOM); }
+    Range allCustom() const { return all(SKIP_BUILTIN); }
 
     Iterator begin() const { return allChanged().begin(); }
     Iterator end() const { return allChanged().end(); }
@@ -249,6 +203,24 @@ private:
     const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
 
     std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
+};
+
+struct BaseSettingsHelpers
+{
+    [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    static void warningSettingNotFound(std::string_view name);
+
+    static void writeString(std::string_view str, WriteBuffer & out);
+    static String readString(ReadBuffer & in);
+
+    enum Flags : UInt64
+    {
+        IMPORTANT = 0x01,
+        CUSTOM = 0x02,
+        OBSOLETE = 0x04,
+    };
+    static void writeFlags(Flags flags, WriteBuffer & out);
+    static Flags readFlags(ReadBuffer & in);
 };
 
 template <typename TTraits>
@@ -269,7 +241,30 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
-    return static_cast<Field>(getCustomSetting(name));
+    else
+        return static_cast<Field>(getCustomSetting(name));
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::setString(std::string_view name, const String & value)
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        accessor.setValueString(*this, index, value);
+    else
+        getCustomSetting(name).parseFromString(value);
+}
+
+template <typename TTraits>
+String BaseSettings<TTraits>::getString(std::string_view name) const
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+        return accessor.getValueString(*this, index);
+    else
+        return getCustomSetting(name).toString();
 }
 
 template <typename TTraits>
@@ -285,6 +280,24 @@ bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
     if (const auto * custom_setting = tryGetCustomSetting(name))
     {
         value = static_cast<Field>(*custom_setting);
+        return true;
+    }
+    return false;
+}
+
+template <typename TTraits>
+bool BaseSettings<TTraits>::tryGetString(std::string_view name, String & value) const
+{
+    name = TTraits::resolveName(name);
+    const auto & accessor = Traits::Accessor::instance();
+    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    {
+        value = accessor.getValueString(*this, index);
+        return true;
+    }
+    if (const auto * custom_setting = tryGetCustomSetting(name))
+    {
+        value = custom_setting->toString();
         return true;
     }
     return false;
@@ -323,6 +336,13 @@ void BaseSettings<TTraits>::applyChanges(const SettingsChanges & changes)
 }
 
 template <typename TTraits>
+void BaseSettings<TTraits>::applyChanges(const BaseSettings & other_settings)
+{
+    for (const auto & field : other_settings)
+        set(field.getName(), field.getValue());
+}
+
+template <typename TTraits>
 void BaseSettings<TTraits>::resetToDefault()
 {
     const auto & accessor = Traits::Accessor::instance();
@@ -342,13 +362,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-    {
         accessor.resetValueToDefault(*this, index);
-        return;
-    }
-
-    if constexpr (Traits::allow_custom_settings)
-        custom_settings_map.erase(name);
 }
 
 template <typename TTraits>
@@ -373,9 +387,10 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
-    if (tryGetCustomSetting(name))
+    else if (tryGetCustomSetting(name))
         return "Custom";
-    BaseSettingsHelpers::throwSettingNotFound(name);
+    else
+        BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
@@ -385,21 +400,10 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
-    if (tryGetCustomSetting(name))
+    else if (tryGetCustomSetting(name))
         return "Custom";
-    BaseSettingsHelpers::throwSettingNotFound(name);
-}
-
-template <typename TTraits>
-SettingsTierType BaseSettings<TTraits>::getTier(std::string_view name) const
-{
-    name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        return accessor.getTier(index);
-    if (tryGetCustomSetting(name))
-        return SettingsTierType::PRODUCTION;
-    BaseSettingsHelpers::throwSettingNotFound(name);
+    else
+        BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
 template <typename TTraits>
@@ -407,6 +411,13 @@ void BaseSettings<TTraits>::checkCanSet(std::string_view name, const Field & val
 {
     name = TTraits::resolveName(name);
     castValueUtil(name, value);
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::checkCanSetString(std::string_view name, const String & str)
+{
+    name = TTraits::resolveName(name);
+    stringToValueUtil(name, str);
 }
 
 template <typename TTraits>
@@ -489,46 +500,6 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
-{
-    const auto & accessor = Traits::Accessor::instance();
-
-    size_t num_settings = 0;
-    for (auto it = this->begin(); it != this->end(); ++it)
-        ++num_settings;
-
-    writeVarUInt(num_settings, out);
-
-    for (const auto & field : *this)
-    {
-        BaseSettingsHelpers::writeString(field.getName(), out);
-        using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{0};
-        BaseSettingsHelpers::writeFlags(flags, out);
-        accessor.writeBinary(*this, field.index, out);
-    }
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
-{
-    const auto & accessor = Traits::Accessor::instance();
-
-    size_t num_settings = 0;
-    readVarUInt(num_settings, in);
-
-    for (size_t i = 0; i < num_settings; ++i)
-    {
-        String read_name = BaseSettingsHelpers::readString(in);
-        std::string_view name = TTraits::resolveName(read_name);
-        size_t index = accessor.find(name);
-
-        std::ignore = BaseSettingsHelpers::readFlags(in);
-        accessor.readBinary(*this, index, in);
-    }
-}
-
-template <typename TTraits>
 void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 {
     resetToDefault();
@@ -543,7 +514,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{0};
+        Flags flags{0};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
@@ -799,6 +770,17 @@ void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
 }
 
 template <typename TTraits>
+Field BaseSettings<TTraits>::SettingFieldRef::getDefaultValue() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return static_cast<Field>(custom_setting->second);
+    }
+    return accessor->getDefaultValue(index);
+}
+
+template <typename TTraits>
 String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
 {
     if constexpr (Traits::allow_custom_settings)
@@ -863,14 +845,14 @@ bool BaseSettings<TTraits>::SettingFieldRef::isCustom() const
 }
 
 template <typename TTraits>
-SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
+bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return SettingsTierType::PRODUCTION;
+            return false;
     }
-    return accessor->getTier(index);
+    return accessor->isObsolete(index);
 }
 
 using AliasMap = std::unordered_map<std::string_view, std::string_view>;
@@ -901,8 +883,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             const String & getName(size_t index) const { return field_infos[index].name; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
-            bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
-            SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
+            bool isImportant(size_t index) const { return field_infos[index].is_important; } \
+            bool isObsolete(size_t index) const { return field_infos[index].is_obsolete; } \
             Field castValueUtil(size_t index, const Field & value) const { return field_infos[index].cast_value_util_function(value); } \
             String valueToStringUtil(size_t index, const Field & value) const { return field_infos[index].value_to_string_util_function(value); } \
             Field stringToValueUtil(size_t index, const String & str) const { return field_infos[index].string_to_value_util_function(str); } \
@@ -914,6 +896,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             void resetValueToDefault(Data & data, size_t index) const { return field_infos[index].reset_value_to_default_function(data); } \
             void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { return field_infos[index].write_binary_function(data, out); } \
             void readBinary(Data & data, size_t index, ReadBuffer & in) const { return field_infos[index].read_binary_function(data, in); } \
+            Field getDefaultValue(size_t index) const { return field_infos[index].get_default_value_function(); } \
             String getDefaultValueString(size_t index) const { return field_infos[index].get_default_value_string_function(); } \
         private: \
             Accessor(); \
@@ -922,7 +905,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 String name; \
                 const char * type; \
                 const char * description; \
-                UInt64 flags; \
+                bool is_important; \
+                bool is_obsolete; \
                 Field (*cast_value_util_function)(const Field &); \
                 String (*value_to_string_util_function)(const Field &); \
                 Field (*string_to_value_util_function)(const String &); \
@@ -934,6 +918,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 void (*reset_value_to_default_function)(Data &) ; \
                 void (*write_binary_function)(const Data &, WriteBuffer &) ; \
                 void (*read_binary_function)(Data &, ReadBuffer &) ; \
+                Field (*get_default_value_function)() ; \
                 String (*get_default_value_string_function)() ; \
             }; \
             std::vector<FieldInfo> field_infos; \
@@ -1033,8 +1018,8 @@ struct DefineAliases
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, #TYPE, DESCRIPTION, \
-            static_cast<UInt64>(FLAGS), \
+        FieldInfo{#NAME, #TYPE, DESCRIPTION, (FLAGS) & IMPORTANT, \
+            static_cast<bool>((FLAGS) & BaseSettingsHelpers::Flags::OBSOLETE), \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
             [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
@@ -1046,6 +1031,7 @@ struct DefineAliases
             [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
             [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
             [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
+            []() -> Field { return static_cast<Field>(SettingField##TYPE{DEFAULT}); }, \
             []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
         });
 }

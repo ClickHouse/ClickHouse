@@ -4,7 +4,6 @@
 
 #include <memory>
 #include <unordered_set>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -23,11 +22,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
 
-    bool existsFile(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
 
-    bool existsDirectory(const std::string & path) const override;
+    bool isFile(const std::string & path) const override;
 
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool isDirectory(const std::string & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 

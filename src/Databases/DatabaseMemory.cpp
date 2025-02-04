@@ -1,16 +1,19 @@
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Disks/IDisk.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
-#include <Common/quoteString.h>
-#include "Storages/IStorage.h"
+#include <Storages/IStorage.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -74,7 +77,9 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            db_disk->removeRecursive(getTableDataPath(table_name));
+            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
+            if (fs::exists(table_data_dir))
+                (void)fs::remove_all(table_data_dir);
         }
     }
     catch (...)
@@ -115,7 +120,8 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
-        return {};
+        else
+            return {};
     }
     return it->second->clone();
 }
@@ -127,9 +133,9 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::removeDataPath(ContextPtr)
+void DatabaseMemory::removeDataPath(ContextPtr local_context)
 {
-    db_disk->removeRecursive(data_path);
+    (void)std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)
@@ -145,7 +151,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     if (it == create_queries.end() || !it->second)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-    applyMetadataChangesToCreateQuery(it->second, metadata, local_context);
+    applyMetadataChangesToCreateQuery(it->second, metadata);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second, local_context->getCurrentDatabase());

@@ -160,7 +160,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
         std::string data;
-        auto read_buf = object_storage->readObject(metadata_object, ReadSettings{});
+        auto read_buf = object_storage->readObject(metadata_object);
         readStringUntilEOF(data, *read_buf);
         if (data != path_from)
             throw Exception(
@@ -259,7 +259,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
-    object_storage->removeObjectIfExists(metadata_object);
+    object_storage->removeObject(metadata_object);
 
     if (path_map.removePathIfExists(base_path))
     {

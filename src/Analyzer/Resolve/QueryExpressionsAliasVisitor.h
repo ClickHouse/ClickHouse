@@ -45,12 +45,12 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        if (auto * /*lambda_node*/ _ = child->as<LambdaNode>())
+        if (auto * lambda_node = child->as<LambdaNode>())
         {
             updateAliasesIfNeeded(child, true /*is_lambda_node*/);
             return false;
         }
-        if (auto * query_tree_node = child->as<QueryNode>())
+        else if (auto * query_tree_node = child->as<QueryNode>())
         {
             if (query_tree_node->isCTE())
                 return false;
@@ -58,7 +58,7 @@ public:
             updateAliasesIfNeeded(child, false /*is_lambda_node*/);
             return false;
         }
-        if (auto * union_node = child->as<UnionNode>())
+        else if (auto * union_node = child->as<UnionNode>())
         {
             if (union_node->isCTE())
                 return false;
@@ -96,7 +96,7 @@ private:
 
             auto [_, inserted] = aliases.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-                addDuplicatingAlias(node);
+             addDuplicatingAlias(node);
 
             return;
         }

@@ -2,7 +2,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Formats/FormatSettings.h>
@@ -44,7 +43,6 @@ public:
         enum ResultType
         {
             Date,
-            Date32,
             DateTime,
             DateTime64,
         };
@@ -77,15 +75,15 @@ public:
 
         bool second_argument_is_date = false;
         auto check_second_argument = [&] {
-            if (!isDateOrDate32(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
+            if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}. "
                     "Should be a date or a date with time", arguments[1].type->getName(), getName());
 
-            second_argument_is_date = isDateOrDate32(arguments[1].type);
+            second_argument_is_date = isDate(arguments[1].type);
 
             if (second_argument_is_date && ((datepart_kind == IntervalKind::Kind::Hour)
                 || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for function {}", arguments[1].type->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
         };
 
         auto check_timezone_argument = [&] {
@@ -121,19 +119,19 @@ public:
 
         if (result_type == ResultType::Date)
             return std::make_shared<DataTypeDate>();
-        if (result_type == ResultType::Date32)
-            return std::make_shared<DataTypeDate32>();
-        if (result_type == ResultType::DateTime)
+        else if (result_type == ResultType::DateTime)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
-
-        size_t scale;
-        if (datepart_kind == IntervalKind::Kind::Millisecond)
-            scale = 3;
-        else if (datepart_kind == IntervalKind::Kind::Microsecond)
-            scale = 6;
-        else if (datepart_kind == IntervalKind::Kind::Nanosecond)
-            scale = 9;
-        return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
+        else
+        {
+            size_t scale;
+            if (datepart_kind == IntervalKind::Kind::Millisecond)
+                scale = 3;
+            else if (datepart_kind == IntervalKind::Kind::Microsecond)
+                scale = 6;
+            else if (datepart_kind == IntervalKind::Kind::Nanosecond)
+                scale = 9;
+            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
+        }
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -151,10 +149,10 @@ public:
         auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
 
         if (arguments.size() == 2)
-            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
+            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
 
         temp_columns[2] = arguments[2];
-        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
+        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
     }
 
     bool hasInformationAboutMonotonicity() const override

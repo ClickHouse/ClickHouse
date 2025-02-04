@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <string>
