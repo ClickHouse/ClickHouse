@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/intExp.h>
+#include <Common/intExp10.h>
 
 namespace DB
 {
