@@ -399,10 +399,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-        case Type::DROP_SKIPPING_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
-            system_context->clearSkippingIndexCache();
-            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -1338,7 +1334,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
-    ctx->checkAccess(AccessType::SYSTEM_VIEWS, table_id);
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
     auto tasks = ctx->getRefreshSet().findTasks(table_id);
     if (tasks.empty())
         throw Exception(
@@ -1422,7 +1418,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:

@@ -138,7 +138,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, HTTPHandlerConnectionConfig{}, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)

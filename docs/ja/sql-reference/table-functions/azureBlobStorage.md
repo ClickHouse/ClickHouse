@@ -69,8 +69,8 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 ## 仮想カラム {#virtual-columns}
 
-- `_path` — ファイルへのパス。タイプ: `LowCardinality(String)`。
-- `_file` — ファイル名。タイプ: `LowCardinality(String)`。
+- `_path` — ファイルへのパス。タイプ: `LowCardinalty(String)`。
+- `_file` — ファイル名。タイプ: `LowCardinalty(String)`。
 - `_size` — ファイルのサイズ（バイト単位）。タイプ: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` になります。
 - `_time` — ファイルの最終更新時刻。タイプ: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` になります。
 

@@ -68,16 +68,18 @@ public:
     {
         std::swap(hdfs_builder, other.hdfs_builder);
         config_stor = std::move(other.config_stor);
-    #if USE_KRB5
         hadoop_kerberos_keytab = std::move(other.hadoop_kerberos_keytab);
         hadoop_kerberos_principal = std::move(other.hadoop_kerberos_principal);
         hadoop_security_kerberos_ticket_cache_path = std::move(other.hadoop_security_kerberos_ticket_cache_path);
         need_kinit = std::move(other.need_kinit);
-    #endif
         return *this;
     }
 
     hdfsBuilder * get() { return hdfs_builder; }
+
+    #if USE_KRB5
+    void runKinit();
+    #endif // USE_KRB5
 
 private:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
@@ -92,7 +94,6 @@ private:
     std::vector<std::pair<String, String>> config_stor;
 
     #if USE_KRB5
-    void runKinit();
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_security_kerberos_ticket_cache_path;

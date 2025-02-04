@@ -100,7 +100,9 @@ class CacheRunnerHooks:
                 record = runtime_config.cache_artifacts[artifact.name]
                 print(f"Reuse artifact [{artifact.name}] from [{record}]")
                 path_prefixes.append(
-                    env.get_s3_prefix_static(record.pr_number, record.sha)
+                    env.get_s3_prefix_static(
+                        record.pr_number, record.branch, record.sha
+                    )
                 )
             else:
                 path_prefixes.append(env.get_s3_prefix())

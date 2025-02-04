@@ -1231,8 +1231,7 @@ def main() -> int:
                 # upload binaries only for normal builds in PRs
                 upload_binary = (
                     not pr_info.is_pr
-                    or CI.get_job_ci_stage(args.job_name)
-                    not in (CI.WorkflowStages.BUILDS_2,)
+                    or CI.get_job_ci_stage(args.job_name) == CI.WorkflowStages.BUILDS_1
                     or CiSettings.create_from_run_config(indata).upload_all
                 )
 

@@ -28,7 +28,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
-    const PrewhereExprSteps & mutation_steps,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);

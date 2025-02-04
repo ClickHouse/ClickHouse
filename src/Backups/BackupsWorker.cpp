@@ -10,7 +10,6 @@
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupCoordinationOnCluster.h>
 #include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupInMemory.h>
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
@@ -353,12 +352,8 @@ struct BackupsWorker::BackupStarter
         , query_context(context_)
         , backup_context(Context::createCopy(query_context))
     {
-        backup_settings = BackupSettings::fromBackupQuery(*backup_query);
-
         backup_context->makeQueryContext();
-        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
-        backup_context->applySettingsChanges(backup_settings.core_settings);
-
+        backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
@@ -407,7 +402,7 @@ struct BackupsWorker::BackupStarter
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
                                 on_cluster, cluster);
 
         backup_coordination->finish(/* throw_if_error = */ true);
@@ -532,6 +527,7 @@ void BackupsWorker::doBackup(
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -541,7 +537,7 @@ void BackupsWorker::doBackup(
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
     auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
-        context->checkAccess(required_access);
+        query_context->checkAccess(required_access);
 
     maybeSleepForTesting();
 
@@ -729,12 +725,8 @@ struct BackupsWorker::RestoreStarter
         , query_context(context_)
         , restore_context(Context::createCopy(query_context))
     {
-        restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
-
         restore_context->makeQueryContext();
-        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
-        restore_context->applySettingsChanges(restore_settings.core_settings);
-
+        restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
@@ -780,7 +772,7 @@ struct BackupsWorker::RestoreStarter
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
 
-        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context,
+        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
                                  on_cluster, cluster);
 
         /// The restore coordination is not needed anymore.
@@ -874,6 +866,7 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -901,7 +894,7 @@ void BackupsWorker::doRestore(
             String addr_database = address->default_database.empty() ? current_database : address->default_database;
             for (auto & element : restore_elements)
                 element.setCurrentDatabase(addr_database);
-            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
+            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
     }
@@ -933,7 +926,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
+                                    backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 }
@@ -975,7 +968,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
 
     String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
     auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-    auto keeper_settings = BackupKeeperSettings(context);
+    auto keeper_settings = BackupKeeperSettings::fromContext(context);
 
     auto all_hosts = BackupSettings::Util::filterHostIDs(
         backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
@@ -1013,7 +1006,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 
     String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
     auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-    auto keeper_settings = BackupKeeperSettings(context);
+    auto keeper_settings = BackupKeeperSettings::fromContext(context);
 
     auto all_hosts = BackupSettings::Util::filterHostIDs(
         restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);

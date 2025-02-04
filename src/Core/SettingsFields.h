@@ -31,7 +31,6 @@ template <typename T>
 struct SettingFieldNumber
 {
     using Type = T;
-    using ValueType = T;
 
     Type value;
     bool changed = false;
@@ -340,7 +339,6 @@ template <typename EnumT, typename Traits>
 struct SettingFieldEnum
 {
     using EnumType = EnumT;
-    using ValueType = EnumT;
 
     EnumType value;
     bool changed = false;

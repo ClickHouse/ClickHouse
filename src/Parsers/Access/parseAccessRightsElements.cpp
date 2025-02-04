@@ -117,9 +117,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
                 return false;
 
-            String database_name;
-            String table_name;
-            String parameter;
+            String database_name, table_name, parameter;
 
             size_t is_global_with_parameter = 0;
             for (const auto & elem : access_and_columns)
@@ -136,13 +134,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
             {
                 ASTPtr parameter_ast;
-                // *[.*]
-                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                {
-                    ParserToken{TokenType::Dot}.ignore(pos, expected);
-                    ParserToken{TokenType::Asterisk}.ignore(pos, expected);
-                }
-                else
+                if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 {
                     if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
                         parameter = getIdentifierName(parameter_ast);
@@ -158,7 +150,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
 
             for (auto & [access_flags, columns] : access_and_columns)
             {
-                if ((wildcard || table_name.empty()) && !columns.empty())
+                if (wildcard && !columns.empty())
                     return false;
 
                 AccessRightsElement element;
