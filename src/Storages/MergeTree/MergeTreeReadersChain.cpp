@@ -81,6 +81,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
         read_result.addNumBytesRead(getTotalBytesInColumns(columns));
 
+        /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
         if (read_result.num_rows == 0)
             continue;
 
@@ -93,12 +94,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
 
-            auto additional_columns = previous_header.cloneWithColumns(read_result.columns);
-            for (const auto & col : read_result.additional_columns)
-                additional_columns.insert(col);
-
             range_readers[i].executeActionsBeforePrewhere(read_result, columns, previous_header, num_read_rows);
-
             read_result.columns.reserve(read_result.columns.size() + columns.size());
             std::move(columns.begin(), columns.end(), std::back_inserter(read_result.columns));
         }
