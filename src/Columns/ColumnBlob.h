@@ -10,8 +10,11 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Common/WeakHash.h>
 #include "Compression/CompressedReadBuffer.h"
+#include "DataTypes/Serializations/ISerialization.h"
 #include "Formats/NativeReader.h"
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -25,40 +28,75 @@ extern const int LOGICAL_ERROR;
 class ColumnBlob : public COWHelper<IColumnHelper<ColumnBlob>, ColumnBlob>
 {
 public:
-    using Lazy = std::function<ColumnPtr()>;
+    using Blob = std::vector<char>;
 
-    // TODO(nickitat): fix me
-    explicit ColumnBlob(ColumnPtr src_col_) { src_col.column = std::move(src_col_); }
+    // The argument is supposed to be a some ColumnBlob's internal blob.
+    using ToBlob = std::function<void(Blob &)>;
 
-    ColumnBlob(
-        ColumnWithTypeAndName src_col_, CompressionCodecPtr codec_, UInt64 client_revision_, std::optional<FormatSettings> format_settings_)
-        : src_col(std::move(src_col_))
-        , codec(std::move(codec_))
-        , client_revision(client_revision_)
-        , format_settings(std::move(format_settings_))
-    {
-        preprocess();
-    }
+    // The argument is supposed to be a some ColumnBlob's internal blob,
+    // the return value is the reconstructed column.
+    // TODO(nickitat): fix signature
+    using FromBlob = std::function<ColumnPtr(const Blob &, int)>;
+
+    ColumnBlob(ToBlob task, size_t rows_) : rows(rows_), to_blob_task(std::move(task)) { }
+
+    ColumnBlob(FromBlob task, size_t rows_) : rows(rows_), from_blob_task(std::move(task)) { }
 
     const char * getFamilyName() const override { return "Blob"; }
 
-    size_t size() const override { return src_col.column->size(); }
-    size_t byteSize() const override { return src_col.column->byteSize(); }
-    size_t allocatedBytes() const override { return src_col.column->allocatedBytes(); }
+    size_t size() const override { return rows; }
 
-    const ColumnPtr & getNestedColumn() const { return src_col.column; }
+    Blob & getBlob() { return blob; }
+    const Blob & getBlob() const { return blob; }
 
-    /// Helper methods for compression / decompression.
+    void convertTo()
+    {
+        chassert(to_blob_task);
+        to_blob_task(blob);
+    }
 
-    /// If data is not worth to be compressed - returns nullptr.
-    /// By default it requires that compressed data is at least 50% smaller than original.
-    /// With `force_compression` set to true, it requires compressed data to be not larger than the source data.
-    /// Note: shared_ptr is to allow to be captured by std::function.
-    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool force_compression);
+    ColumnPtr convertFrom() const
+    {
+        chassert(from_blob_task);
+        return from_blob_task(blob, 0);
+    }
 
-    static void decompressBuffer(const void * compressed_data, void * decompressed_data, size_t compressed_size, size_t decompressed_size);
+    /// Creates serialized and compressed blob from the source column.
+    static void toBlob(
+        Blob & blob,
+        ColumnWithTypeAndName concrete_column,
+        CompressionCodecPtr codec,
+        UInt64 client_revision,
+        const std::optional<FormatSettings> & format_settings)
+    {
+        WriteBufferFromVector<Blob> wbuf(blob);
+        CompressedWriteBuffer compressed_buffer(wbuf, codec);
+        auto serialization = NativeWriter::getSerialization(client_revision, concrete_column);
+        NativeWriter::writeData(
+            *serialization, concrete_column.column, compressed_buffer, format_settings, 0, concrete_column.column->size(), client_revision);
+        compressed_buffer.finalize();
+    }
+
+    /// Decompresses and deserializes the blob into the source column.
+    static ColumnPtr fromBlob(
+        const Blob & blob,
+        ColumnPtr nested,
+        SerializationPtr nested_serialization,
+        size_t rows,
+        const std::optional<FormatSettings> & format_settings)
+    {
+        ReadBufferFromMemory rbuf(blob.data(), blob.size());
+        CompressedReadBuffer decompressed_buffer(rbuf);
+        // TODO(nickitat): support
+        double avg_value_size_hint = 0;
+        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
+        return nested;
+    }
 
     /// All other methods throw the exception.
+
+    size_t byteSize() const override { throwInapplicable(); }
+    size_t allocatedBytes() const override { throwInapplicable(); }
 
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
@@ -119,16 +157,11 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
 
 private:
-    using Blob = std::vector<std::byte>;
-
     Blob blob;
 
-    // Maybe we shouldn't keep this reference
-    ColumnWithTypeAndName src_col;
-
-    CompressionCodecPtr codec;
-    UInt64 client_revision;
-    std::optional<FormatSettings> format_settings;
+    const size_t rows;
+    ToBlob to_blob_task;
+    FromBlob from_blob_task;
 
     // void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
     // {
@@ -139,29 +172,6 @@ private:
     // {
     //     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
     // }
-
-    /// Creates serialized and compressed blob from the source column.
-    void preprocess()
-    {
-        WriteBufferFromVector<Blob> wbuf(blob);
-        CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        auto serialization = NativeWriter::getSerialization(client_revision, src_col);
-        NativeWriter::writeData(
-            *serialization, src_col.column, compressed_buffer, format_settings, 0, src_col.column->size(), client_revision);
-        compressed_buffer.finalize();
-    }
-
-    /// Decompresses and deserializes blob into the source column.
-    void postprocess()
-    {
-        ReadBufferFromMemory rbuf(blob.data(), blob.size());
-        CompressedReadBuffer decompressed_buffer(rbuf);
-        auto serialization = NativeWriter::getSerialization(client_revision, src_col);
-        // TODO(nickitat): support
-        size_t rows = 0;
-        double avg_value_size_hint = 0;
-        NativeReader::readData(*serialization, src_col.column, decompressed_buffer, format_settings, rows, avg_value_size_hint);
-    }
 
     [[noreturn]] static void throwInapplicable()
     {

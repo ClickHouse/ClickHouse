@@ -103,7 +103,13 @@ prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, 
     {
         ColumnWithTypeAndName column = elem;
         column.column = recursiveRemoveSparse(column.column);
-        column.column = ColumnBlob::create(column, codec, client_revision, format_settings);
+
+        auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
+        { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
+        auto col = ColumnBlob::create(std::move(task), column.column->size());
+        col->convertTo();
+
+        column.column = std::move(col);
         res.insert(std::move(column));
     }
     return res;

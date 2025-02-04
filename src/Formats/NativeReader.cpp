@@ -10,6 +10,8 @@
 #include <base/range.h>
 #include <Common/typeid_cast.h>
 #include "Columns/ColumnBlob.h"
+#include "Columns/IColumn.h"
+#include "Core/ColumnWithTypeAndName.h"
 
 #include <Formats/NativeReader.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -102,8 +104,11 @@ void NativeReader::readData(
     serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}", column->size(), rows);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
+            column->size(),
+            rows);
 }
 
 
@@ -112,18 +117,11 @@ Block NativeReader::getHeader() const
     return header;
 }
 
-static Block prepare(const Block & block)
+static void prepare(ColumnWithTypeAndName & column, SerializationPtr, size_t, const std::optional<FormatSettings> &)
 {
     /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
-    Block res;
-    for (const auto & elem : block)
-    {
-        ColumnWithTypeAndName column = elem;
-        if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
-            column.column = col->getNestedColumn();
-        res.insert(std::move(column));
-    }
-    return res;
+    if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
+        column.column = col->convertFrom();
 }
 
 Block NativeReader::read()
@@ -232,6 +230,7 @@ Block NativeReader::read()
             readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
+        prepare(column, serialization, rows, format_settings);
 
         bool use_in_result = true;
         if (header)
@@ -322,7 +321,7 @@ Block NativeReader::read()
     if (res.rows() != rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
-    return prepare(res);
+    return res;
 }
 
 void NativeReader::updateAvgValueSizeHints(const Block & block)
