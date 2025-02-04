@@ -3,7 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <Common/LockGuard.h>
+#include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <chrono>
@@ -288,7 +288,7 @@ void BackgroundSchedulePool::threadFunction()
         TaskInfoPtr task;
 
         {
-            LockGuard tasks_lock(tasks_mutex);
+            UniqueLock tasks_lock(tasks_mutex);
 
             /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't understand within the lambda that the
             /// tasks_lock has already locked tasks_mutex.
@@ -320,7 +320,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         bool found = false;
 
         {
-            LockGuard lock(delayed_tasks_mutex);
+            UniqueLock lock(delayed_tasks_mutex);
 
             while (!shutdown)
             {

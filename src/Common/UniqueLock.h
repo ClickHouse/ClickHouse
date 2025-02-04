@@ -12,15 +12,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
-/** LockGuard provides RAII-style locking mechanism for a mutex.
+/** UniqueLock provides RAII-style locking mechanism for a mutex.
  ** It's intended to be used like std::unique_lock but with TSA annotations
   */
 template <typename Mutex>
-class TSA_SCOPED_LOCKABLE LockGuard
+class TSA_SCOPED_LOCKABLE UniqueLock
 {
 public:
-    explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : unique_lock(mutex_) { }
-    ~LockGuard() TSA_RELEASE() = default;
+    explicit UniqueLock(Mutex & mutex_) TSA_ACQUIRE(mutex_) : unique_lock(mutex_) { }
+    ~UniqueLock() TSA_RELEASE() = default;
 
     void lock() TSA_ACQUIRE()
     {
@@ -46,17 +46,17 @@ private:
     bool locked = true;
 };
 
-template <template<typename> typename TLockGuard, typename Mutex>
+template <template<typename> typename TUniqueLock, typename Mutex>
 class TSA_SCOPED_LOCKABLE LockAndOverCommitTrackerBlocker
 {
 public:
-    explicit LockAndOverCommitTrackerBlocker(Mutex & mutex_) TSA_ACQUIRE(mutex_) : lock(TLockGuard(mutex_)) {}
+    explicit LockAndOverCommitTrackerBlocker(Mutex & mutex_) TSA_ACQUIRE(mutex_) : lock(TUniqueLock(mutex_)) {}
     ~LockAndOverCommitTrackerBlocker() TSA_RELEASE() = default;
 
-    TLockGuard<Mutex> & getUnderlyingLock() { return lock; }
+    TUniqueLock<Mutex> & getUnderlyingLock() { return lock; }
 
 private:
-    TLockGuard<Mutex> lock;
+    TUniqueLock<Mutex> lock;
     OvercommitTrackerBlockerInThread blocker = {};
 };
 
