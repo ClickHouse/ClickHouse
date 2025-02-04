@@ -74,7 +74,6 @@
                 <path>local_cache_3/</path>
                 <max_size>22548578304</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
             </local_cache_3>
             <!-- multi layer cache -->
             <s3_cache_multi>
