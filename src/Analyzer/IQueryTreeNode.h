@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <deque>
 
 #include <Common/TypePromotion.h>
 
