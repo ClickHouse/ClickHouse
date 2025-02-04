@@ -17,30 +17,36 @@ namespace impl
 
 namespace CurrentHistogramMetrics
 {
+    constexpr size_t METRICS_COUNTER_START_ = __COUNTER__;
     #define M(NAME, DOCUMENTATION, ...) extern const Metric NAME = Metric(__COUNTER__);
         APPLY_TO_METRICS(M)
     #undef M
+    constexpr Metric END = Metric(__COUNTER__ - METRICS_COUNTER_START_);
 
     #define M(NAME, DOCUMENTATION, ...) + impl::va_count(__VA_ARGS__) + 1 // NOLINT(bugprone-macro-parentheses)
     constexpr size_t TOTAL_BUCKETS =
         0 + APPLY_TO_METRICS(M);
     #undef M
 
-    std::atomic<CountType> data[TOTAL_BUCKETS]{};
+    AtomicCounter data[TOTAL_BUCKETS]{};
+    AtomicSum sums[END]{};
 
     template<typename ... Buckets>
-    MetricInfo prepareMetricInfo(Buckets ... buckets)
+    MetricInfo prepareMetricInfo(std::string name, std::string documentation, Buckets ... buckets)
     {
         static size_t offset = 0;
-        constexpr size_t bucket_count = impl::va_count(buckets...) + 1;
-        MetricInfo metric_info;
-        metric_info.counts = std::span(data + offset, bucket_count);
-        metric_info.buckets = std::vector<Value>{ buckets... };
-        offset += bucket_count;
-        return metric_info;
+        constexpr size_t num_counters = impl::va_count(buckets...) + 1;
+        MetricInfo result{
+            .name = name,
+            .documentation = documentation,
+            .buckets = std::vector<Value>{ buckets... },
+            .counters = std::span(data + offset, num_counters),
+        };
+        offset += num_counters;
+        return result;
     }
 
-    #define M(NAME, DOCUMENTATION, ...) prepareMetricInfo(__VA_ARGS__),
+    #define M(NAME, DOCUMENTATION, ...) prepareMetricInfo(#NAME, DOCUMENTATION, __VA_ARGS__),
     MetricInfo metrics [] = {
         APPLY_TO_METRICS(M)
     };
@@ -51,6 +57,12 @@ namespace CurrentHistogramMetrics
         MetricInfo & info = metrics[metric];
         const auto it = std::lower_bound(info.buckets.begin(), info.buckets.end(), value);
         const size_t bucket_idx = std::distance(info.buckets.begin(), it);
-        info.counts[bucket_idx].fetch_add(1, std::memory_order_relaxed);
+        info.counters[bucket_idx].fetch_add(1, std::memory_order_relaxed);
+        sums[metric].fetch_add(value, std::memory_order_relaxed);
+    }
+
+    Metric end()
+    {
+        return END;
     }
 }
