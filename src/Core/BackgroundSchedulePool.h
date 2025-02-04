@@ -63,13 +63,13 @@ private:
     void threadFunction();
     void delayExecutionThreadFunction();
 
-    void scheduleTask(TaskInfoPtr task_info);
+    void scheduleTask(TaskInfo & task_info);
 
     /// Schedule task for execution after specified delay from now.
-    void scheduleDelayedTask(const TaskInfoPtr & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
+    void scheduleDelayedTask(TaskInfo & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     /// Remove task, that was scheduled with delay, from schedule.
-    void cancelDelayedTask(const TaskInfoPtr & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
+    void cancelDelayedTask(TaskInfo & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     std::atomic<bool> shutdown {false};
 
