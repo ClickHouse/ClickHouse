@@ -1703,45 +1703,17 @@ public:
                 {
                     /// The operation does nothing.
                 }
-                if (char_override)
-                {
-                    if (to_remove)
-                        elements.insert(elements.begin() + 1, to_remove);
-                    if (trim_left && trim_right)
-                        function_name = "trimBoth";
-                    else if (trim_left)
-                        function_name = "trimLeft";
-                    else
-                        function_name = "trimRight";
-
-                    // node = makeASTFunction(function_name, elements);
-                    // ASTPtr pattern_node;
-
-                    auto pattern_func_node = std::make_shared<ASTFunction>();
-                    // auto pattern_list_args = std::make_shared<ASTExpressionList>();
-                    if (trim_left && trim_right)
-                    {
-                        function_name = "trimBoth";
-                    }
-
-                    pattern_func_node->name = "concat";
-                }
+                if (trim_left && trim_right)
+                    function_name = "trimBoth";
+                else if (trim_left)
+                    function_name = "trimLeft";
                 else
-                {
-                    if (trim_left && trim_right)
-                    {
-                        function_name = "trimBoth";
-                    }
-                    else
-                    {
-                        if (trim_left)
-                            function_name = "trimLeft";
-                        else
-                            function_name = "trimRight";
-                    }
-                    // node = makeASTFunction("trimBoth", elements[0], std::make_shared<ASTLiteral>(" "));
-                }
+                    function_name = "trimRight";
 
+                if (char_override && to_remove)
+                {
+                    elements.push_back(std::move(to_remove));
+                }
                 finished = true;
             }
         }
