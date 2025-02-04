@@ -975,4 +975,40 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNo
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
 }
 
+
+static bool canBecomeNullable(const DataTypePtr & type)
+{
+    bool can_be_inside = type->canBeInsideNullable();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        can_be_inside |= low_cardinality_type->getDictionaryType()->canBeInsideNullable();
+    return can_be_inside;
+}
+
+QueryTreeNodePtr applyJoinUseNullsForColumn(
+    const QueryTreeNodePtr & resolved_identifier,
+    const JoinKind & join_kind,
+    std::optional<JoinTableSide> resolved_side,
+    const ContextPtr & context)
+{
+    if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
+        canBecomeNullable(resolved_identifier->getResultType()) &&
+        (isFull(join_kind) ||
+        (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
+        (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
+    {
+        auto nullable_resolved_identifier = resolved_identifier->clone();
+        auto & resolved_column = nullable_resolved_identifier->as<ColumnNode &>();
+        auto new_result_type = makeNullableOrLowCardinalityNullable(resolved_column.getColumnType());
+        resolved_column.setColumnType(new_result_type);
+        if (resolved_column.hasExpression())
+        {
+            auto & resolved_expression = resolved_column.getExpression();
+            if (!resolved_expression->getResultType()->equals(*new_result_type))
+                resolved_expression = buildCastFunction(resolved_expression, new_result_type, context, true);
+        }
+        return nullable_resolved_identifier;
+    }
+    return nullptr;
+}
+
 }

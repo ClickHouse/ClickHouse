@@ -1,6 +1,8 @@
 -- { echoOn }
+
+SET join_use_nulls = 1;
 SET join_algorithm='hash';
-SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -11,30 +13,30 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1	d	4	7	2	\N	\N	\N	\N	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 key1	a	1	1	2	key1	A	1	2	1
@@ -57,11 +59,11 @@ key1	e	5	5	5	key1	A	1	2	1
 key1	e	5	5	5	key1	B	2	1	2
 key1	e	5	5	5	key1	C	3	4	5
 key1	e	5	5	5	key1	D	4	1	6
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -70,9 +72,9 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -84,14 +86,14 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
@@ -123,7 +125,7 @@ key1	e	5	5	5	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -133,8 +135,8 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -146,19 +148,19 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
@@ -167,7 +169,6 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
 SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
-		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -189,10 +190,11 @@ key1	e	5	5	5	key1	B	2	1	2
 key1	e	5	5	5	key1	C	3	4	5
 key1	e	5	5	5	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -202,8 +204,8 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -214,38 +216,37 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1	d	4	7	2	\N	\N	\N	\N	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
 SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
-		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -266,12 +267,13 @@ key1	e	5	5	5	key1	A	1	2	1
 key1	e	5	5	5	key1	B	2	1	2
 key1	e	5	5	5	key1	C	3	4	5
 key1	e	5	5	5	key1	D	4	1	6
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 FULL JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -280,10 +282,10 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
 SET join_algorithm='grace_hash';
-SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -294,30 +296,30 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1	d	4	7	2	\N	\N	\N	\N	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
 key1	a	1	1	2	key1	A	1	2	1
@@ -340,11 +342,11 @@ key1	e	5	5	5	key1	A	1	2	1
 key1	e	5	5	5	key1	B	2	1	2
 key1	e	5	5	5	key1	C	3	4	5
 key1	e	5	5	5	key1	D	4	1	6
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -353,9 +355,9 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -367,14 +369,14 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
@@ -406,7 +408,7 @@ key1	e	5	5	5	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -416,8 +418,8 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -429,19 +431,19 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
@@ -450,7 +452,6 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
 SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT t1.*, t2.* from t1 RIGHT JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
-		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -472,10 +473,11 @@ key1	e	5	5	5	key1	B	2	1	2
 key1	e	5	5	5	key1	C	3	4	5
 key1	e	5	5	5	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -485,8 +487,8 @@ key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -497,38 +499,37 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key1	b	2	3	2	key1	C	3	4	5
 key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1	d	4	7	2	\N	\N	\N	\N	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
 SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT t1.*, t2.* from t1 FULL JOIN t2 ON t1.key = t2.key and t1.c ORDER BY (t1.key, t1.attr, t2.key, t2.attr) SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0;
-		0	0	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -549,12 +550,13 @@ key1	e	5	5	5	key1	A	1	2	1
 key1	e	5	5	5	key1	B	2	1	2
 key1	e	5	5	5	key1	C	3	4	5
 key1	e	5	5	5	key1	D	4	1	6
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 FULL JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL;
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 3))) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	C	3	4	5
 key1	b	2	3	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
@@ -563,224 +565,224 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	C	3	4	5
 key1	e	5	5	5	key1	C	3	4	5
-key2	a2	1	1	1			0	0	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
 SET join_algorithm='hash';
-SELECT t1.*, t2.* FROM t1 LEFT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1	d	4	7	2	\N	\N	\N	\N	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 LEFT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 LEFT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	e	5	5	5	key1		0	0	\N
-key2	a2	1	1	1	key2		0	0	\N
-SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	e	5	5	5	key1		0	0	\N
-key2	a2	1	1	1	key2		0	0	\N
-key4	f	2	3	4	key4		0	0	\N
-SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	d	4	7	2	key1		0	0	\N
-key1	e	5	5	5	key1		0	0	\N
-key2	a2	1	1	1	key2		0	0	\N
-key4	f	2	3	4	key4		0	0	\N
+SELECT t1.*, t2.* FROM t1 LEFT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+key1	e	5	5	5	key1	\N	\N	\N	\N
+key2	a2	1	1	1	key2	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+key1	e	5	5	5	key1	\N	\N	\N	\N
+key2	a2	1	1	1	key2	\N	\N	\N	\N
+key4	f	2	3	4	key4	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+key1	d	4	7	2	key1	\N	\N	\N	\N
+key1	e	5	5	5	key1	\N	\N	\N	\N
+key2	a2	1	1	1	key2	\N	\N	\N	\N
+key4	f	2	3	4	key4	\N	\N	\N	\N
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT ANTI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
-SELECT t1.*, t2.* FROM t1 RIGHT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 RIGHT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT ANTI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 SET join_algorithm='grace_hash';
-SELECT t1.*, t2.* FROM t1 LEFT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1	d	4	7	2	\N	\N	\N	\N	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
+key2	a2	1	1	1	\N	\N	\N	\N	\N
+key4	f	2	3	4	\N	\N	\N	\N	\N
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 LEFT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 LEFT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 LEFT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	e	5	5	5	key1		0	0	\N
-key2	a2	1	1	1	key2		0	0	\N
-SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	e	5	5	5	key1		0	0	\N
-key2	a2	1	1	1	key2		0	0	\N
-key4	f	2	3	4	key4		0	0	\N
-SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	d	4	7	2	key1		0	0	\N
-key1	e	5	5	5	key1		0	0	\N
-key2	a2	1	1	1	key2		0	0	\N
-key4	f	2	3	4	key4		0	0	\N
+SELECT t1.*, t2.* FROM t1 LEFT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+key1	e	5	5	5	key1	\N	\N	\N	\N
+key2	a2	1	1	1	key2	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+key1	e	5	5	5	key1	\N	\N	\N	\N
+key2	a2	1	1	1	key2	\N	\N	\N	\N
+key4	f	2	3	4	key4	\N	\N	\N	\N
+SELECT t1.*, t2.* from t1 LEFT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+key1	d	4	7	2	key1	\N	\N	\N	\N
+key1	e	5	5	5	key1	\N	\N	\N	\N
+key2	a2	1	1	1	key2	\N	\N	\N	\N
+key4	f	2	3	4	key4	\N	\N	\N	\N
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 LEFT ANTI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
-SELECT t1.*, t2.* FROM t1 RIGHT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 RIGHT SEMI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 RIGHT SEMI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT SEMI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
-SELECT t1.*, t2.* FROM t1 RIGHT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-		0	0	\N	key1	A	1	2	1
-		0	0	\N	key3	a3	1	1	1
-		0	0	\N	key4	F	1	1	1
+SELECT t1.*, t2.* FROM t1 RIGHT ANTI JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
+SELECT t1.*, t2.* from t1 RIGHT ANTI  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
+\N	\N	\N	\N	\N	key1	A	1	2	1
+\N	\N	\N	\N	\N	key3	a3	1	1	1
+\N	\N	\N	\N	\N	key4	F	1	1	1
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 RIGHT ANTI JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 SET join_algorithm='hash';
-SELECT t1.* FROM t1 LEFT ANY JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 LEFT ANY JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2
 key1	b	2	3	2
 key1	c	3	2	1
@@ -788,32 +790,32 @@ key1	d	4	7	2
 key1	e	5	5	5
 key2	a2	1	1	1
 key4	f	2	3	4
-SELECT t1.* FROM t1 LEFT SEMI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 LEFT SEMI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2
 key1	b	2	3	2
 key1	c	3	2	1
 key1	d	4	7	2
 key2	a2	1	1	1
 key4	f	2	3	4
-SELECT t1.* FROM t1 LEFT ANTI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 LEFT ANTI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	e	5	5	5
-SELECT t1.* FROM t1 RIGHT ANY JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 RIGHT ANY JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
-SELECT t1.* FROM t1 RIGHT SEMI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 RIGHT SEMI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
 key1	a	1	1	2
-SELECT t1.* FROM t1 RIGHT ANTI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 RIGHT ANTI JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 SET join_algorithm='hash';
-SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -826,29 +828,12 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
+key1	e	5	5	5	\N	\N	\N	\N	\N
 key2	a2	1	1	1	key1	A	1	2	1
 key2	a2	1	1	1	key3	a3	1	1	1
 key2	a2	1	1	1	key4	F	1	1	1
 key4	f	2	3	4	key1	B	2	1	2
-SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-key1	a	1	1	2	key1	A	1	2	1
-key1	a	1	1	2	key1	B	2	1	2
-key1	a	1	1	2	key1	C	3	4	5
-key1	a	1	1	2	key1	D	4	1	6
-key1	a	1	1	2	key3	a3	1	1	1
-key1	a	1	1	2	key4	F	1	1	1
-key1	b	2	3	2	key1	B	2	1	2
-key1	b	2	3	2	key1	C	3	4	5
-key1	b	2	3	2	key1	D	4	1	6
-key1	c	3	2	1	key1	C	3	4	5
-key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2	key1	D	4	1	6
-key2	a2	1	1	1	key1	A	1	2	1
-key2	a2	1	1	1	key3	a3	1	1	1
-key2	a2	1	1	1	key4	F	1	1	1
-key4	f	2	3	4	key1	B	2	1	2
-SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -865,7 +850,7 @@ key2	a2	1	1	1	key1	A	1	2	1
 key2	a2	1	1	1	key3	a3	1	1	1
 key2	a2	1	1	1	key4	F	1	1	1
 key4	f	2	3	4	key1	B	2	1	2
-SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
@@ -878,67 +863,84 @@ key1	b	2	3	2	key1	D	4	1	6
 key1	c	3	2	1	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 key1	d	4	7	2	key1	D	4	1	6
-key1	e	5	5	5			0	0	\N
+key2	a2	1	1	1	key1	A	1	2	1
+key2	a2	1	1	1	key3	a3	1	1	1
+key2	a2	1	1	1	key4	F	1	1	1
+key4	f	2	3	4	key1	B	2	1	2
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
+key1	a	1	1	2	key1	A	1	2	1
+key1	a	1	1	2	key1	B	2	1	2
+key1	a	1	1	2	key1	C	3	4	5
+key1	a	1	1	2	key1	D	4	1	6
+key1	a	1	1	2	key3	a3	1	1	1
+key1	a	1	1	2	key4	F	1	1	1
+key1	b	2	3	2	key1	B	2	1	2
+key1	b	2	3	2	key1	C	3	4	5
+key1	b	2	3	2	key1	D	4	1	6
+key1	c	3	2	1	key1	C	3	4	5
+key1	c	3	2	1	key1	D	4	1	6
+key1	d	4	7	2	key1	D	4	1	6
+key1	e	5	5	5	\N	\N	\N	\N	\N
 key2	a2	1	1	1	key1	A	1	2	1
 key2	a2	1	1	1	key3	a3	1	1	1
 key2	a2	1	1	1	key4	F	1	1	1
 key4	f	2	3	4	key1	B	2	1	2
 SET join_algorithm='hash';
-SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
 SET join_algorithm='grace_hash';
-SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
 SET join_algorithm='parallel_hash';
-SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* FROM t1 INNER ANY JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	C	3	4	5
 key1	d	4	7	2	key1	D	4	1	6
 key4	f	2	3	4	key4	F	1	1	1
-SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.b + t2.b == t1.c + t2.c) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	A	1	2	1
 key1	b	2	3	2	key1	B	2	1	2
 key1	c	3	2	1	key1	B	2	1	2
 key1	d	4	7	2	key1	D	4	1	6
-SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
+SELECT t1.*, t2.* from t1 INNER ANY  JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2	key1	B	2	1	2
 key1	b	2	3	2	key1	C	3	4	5
 key1	c	3	2	1	key1	D	4	1	6
 SELECT * FROM (SELECT 1 AS a, 1 AS b, 1 AS c) AS t1 INNER ANY JOIN (SELECT 1 AS a, 1 AS b, 1 AS c) AS t2 ON t1.a = t2.a AND (t1.b > 0 OR t2.b > 0);
 1	1	1	1	1	1
 SET join_algorithm='hash';
-SELECT t1.* FROM t1 INNER ANY JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL;
+SELECT t1.* FROM t1 INNER ANY JOIN t2 ON t1.key = t2.key AND t1.a < t2.a OR t1.a = t2.a ORDER BY ALL NULLS FIRST;
 key1	a	1	1	2
 key1	b	2	3	2
 key1	c	3	2	1

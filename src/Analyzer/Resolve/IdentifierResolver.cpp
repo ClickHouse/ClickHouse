@@ -53,27 +53,10 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
-        JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
-        (isFull(join_kind) ||
-        (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
-        (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
-    {
-        auto nullable_resolved_identifier = resolved_identifier->clone();
-        auto & resolved_column = nullable_resolved_identifier->as<ColumnNode &>();
-        auto new_result_type = makeNullableOrLowCardinalityNullable(resolved_column.getColumnType());
-        resolved_column.setColumnType(new_result_type);
-        if (resolved_column.hasExpression())
-        {
-            auto & resolved_expression = resolved_column.getExpression();
-            if (!resolved_expression->getResultType()->equals(*new_result_type))
-                resolved_expression = buildCastFunction(resolved_expression, new_result_type, scope.context, true);
-        }
-        if (!nullable_resolved_identifier->isEqual(*resolved_identifier))
-            scope.join_columns_with_changed_types[nullable_resolved_identifier] = resolved_identifier;
-        return nullable_resolved_identifier;
-    }
-    return nullptr;
+    auto nullable_resolved_identifier = applyJoinUseNullsForColumn(resolved_identifier, join_kind, resolved_side, scope.context);
+    if (nullable_resolved_identifier && !nullable_resolved_identifier->isEqual(*resolved_identifier))
+        scope.join_columns_with_changed_types[nullable_resolved_identifier] = resolved_identifier;
+    return nullable_resolved_identifier;
 }
 
 bool IdentifierResolver::isExpressionNodeType(QueryTreeNodeType node_type)

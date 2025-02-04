@@ -266,4 +266,12 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
 
 void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
 
+/* Convert columns from the outer table to nullable if `join_use_nulls` setting is enabled.
+ * Used for constructing the proper actions DAG for JOIN ON section expressions involving both tables
+ * (with in fact executed after columns are joined and thus nullable).
+ * FIXME: Refactor query analysis, so columns in JOIN ON expression should probably have nullable type.
+ */
+QueryTreeNodePtr applyJoinUseNullsVisitor(const QueryTreeNodePtr & node, const JoinNode & join_node, const ContextPtr & context);
+
+
 }

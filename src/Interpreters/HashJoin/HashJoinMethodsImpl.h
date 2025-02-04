@@ -584,7 +584,8 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
         if (required_cols.empty())
         {
             Block block;
-            added_columns.additional_filter_expression->execute(block);
+            size_t num_rows = selected_rows.size();
+            added_columns.additional_filter_expression->execute(block, num_rows);
             result_column = block.getByPosition(0).column->cloneResized(selected_rows.size());
             break;
         }

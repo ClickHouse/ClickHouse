@@ -17,13 +17,14 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -180,7 +181,7 @@ struct JoinInfoBuildContext
         return JoinSource::Both;
     }
 
-    JoinActionRef addExpression(const QueryTreeNodePtr & node, JoinSource src)
+    JoinActionRef addExpression(QueryTreeNodePtr node, JoinSource src)
     {
         const ActionsDAG::Node * dag_node_ptr = nullptr;
         if (src == JoinSource::Left)
@@ -188,7 +189,10 @@ struct JoinInfoBuildContext
         else if (src == JoinSource::Right)
             dag_node_ptr = appendExpression(result_join_expression_actions.right_pre_join_actions, node, planner_context);
         else
+        {
+            node = applyJoinUseNullsVisitor(node, join_node, planner_context->getQueryContext());
             dag_node_ptr = appendExpression(result_join_expression_actions.post_join_actions, node, planner_context);
+        }
         return JoinActionRef(dag_node_ptr);
     }
 

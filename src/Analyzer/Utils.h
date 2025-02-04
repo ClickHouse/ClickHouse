@@ -7,6 +7,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/Joins.h>
 
 namespace DB
 {
@@ -159,5 +160,11 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
   */
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
 
+
+QueryTreeNodePtr applyJoinUseNullsForColumn(
+    const QueryTreeNodePtr & resolved_identifier,
+    const JoinKind & join_kind,
+    std::optional<JoinTableSide> resolved_side,
+    const ContextPtr & context);
 
 }
