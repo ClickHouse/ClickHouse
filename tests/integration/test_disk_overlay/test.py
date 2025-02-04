@@ -64,10 +64,15 @@ def test_simple(started_cluster):
     """)
     assert 10 == int(node2.query("SELECT count() FROM overlay"))
 
-    # TODO: support creating DiskOverlay via AST
+    # TODO: make this test more complex to cover all disk operations.
+    # E.g. insert more data into overlay disk, check that merges are tested, backup, etc.
+
+    # TODO: Add a test with ReplicatedMergeTree.
+
+    # TODO: Support creating DiskOverlay via AST
     # e.g. CREATE TABLE test ... SETTINGS disk = disk(type = overlay, diff_disk='', ...);
     # Currently getDiskConfigurationFromAST() does not support dotted keys,
     # but we need one to specify, for example, forward_metadata.metadata_type.
     # See src/Disks/getDiskConfigurationFromAST.cpp.
 
-    # TODO: add a test with ReplicatedMergeTree.
+    # TODO:  Check non-local metadata type for forward metadata and tracked metadata.
