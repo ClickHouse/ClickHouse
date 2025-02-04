@@ -38,6 +38,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
+#include <Disks/DiskOverlay.h>
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -1848,6 +1849,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 /// So now we need to add cache layers to defined disk names.
                 auto caches = disk->getCacheLayersNames();
                 defined_disk_names.insert(caches.begin(), caches.end());
+            }
+
+            if (const auto * overlay = dynamic_cast<const DiskOverlay *>(disk.get()))
+            {
+                defined_disk_names.insert(overlay->getBaseDiskName());
+                defined_disk_names.insert(overlay->getDiffDiskName());
             }
         }
 

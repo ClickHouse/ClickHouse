@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Disks/DiskOverlay.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
@@ -286,6 +287,19 @@ bool IStorage::isStaticStorage() const
     {
         for (const auto & disk : storage_policy->getDisks())
             if (!(disk->isReadOnly() || disk->isWriteOnce()))
+                return false;
+        return true;
+    }
+    return false;
+}
+
+bool IStorage::isOverlayStorage() const
+{
+    auto storage_policy = getStoragePolicy();
+    if (storage_policy)
+    {
+        for (const auto & disk : storage_policy->getDisks())
+            if (!dynamic_cast<const DiskOverlay *>(disk.get()))
                 return false;
         return true;
     }

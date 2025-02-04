@@ -695,6 +695,7 @@ public:
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
     virtual bool isStaticStorage() const;
+    virtual bool isOverlayStorage() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

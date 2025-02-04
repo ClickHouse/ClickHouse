@@ -117,6 +117,9 @@ public:
     /// Overrode in remote fs disks.
     bool supportZeroCopyReplication() const override { return false; }
 
+    std::string getBaseDiskName() const { return disk_base->getName(); }
+    std::string getDiffDiskName() const { return disk_diff->getName(); }
+
 private:
     DiskPtr disk_base, disk_diff;
     MetadataStoragePtr forward_metadata, tracked_metadata;

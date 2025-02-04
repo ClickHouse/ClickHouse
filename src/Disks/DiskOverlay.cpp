@@ -5,6 +5,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -73,13 +74,18 @@ DiskOverlay::DiskOverlay(
     String forward_metadata_name = config_.getString(config_prefix_ + ".forward_metadata.metadata_type");
     String tracked_metadata_name = config_.getString(config_prefix_ + ".tracked_metadata.metadata_type");
 
-    disk_base = map_.at(disk_base_name);
-    disk_diff = map_.at(disk_diff_name);
+    if (auto it = map_.find(disk_base_name); it != map_.end())
+        disk_base = it->second;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk `{}` (from `disk_base`) does not exist", disk_base_name);
+
+    if (auto it = map_.find(disk_diff_name); it != map_.end())
+        disk_diff = it->second;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk `{}` (from `disk_diff`) does not exist", disk_base_name);
 
     if (disk_diff -> isReadOnly())
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Diff disk has to be writable");
-    }
 
     forward_metadata = MetadataStorageFactory::instance().create(
         forward_metadata_name, config_, config_prefix_ + ".forward_metadata", nullptr, "", false);
@@ -90,7 +96,7 @@ DiskOverlay::DiskOverlay(
 
 const String & DiskOverlay::getPath() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Overlay doesn't have its own path");
+    return disk_diff->getPath();
 }
 
 UInt64 DiskOverlay::getKeepingFreeSpace() const
@@ -218,7 +224,8 @@ void DiskOverlay::createDirectories(const String & path)
 {
     if (existsFileOrDirectory(path))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create directories: path already exists");
+        /// createDirectories semantic implies "create if not exists".
+        return;
     }
     ensureHaveDirectories(path);
 }
@@ -226,9 +233,8 @@ void DiskOverlay::createDirectories(const String & path)
 void DiskOverlay::clearDirectory(const String & path)
 {
     if (!existsDirectory(path))
-    {
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Cannot clear directory: path doesn't exist");
-    }
+
     std::vector<String> files;
     listFiles(path, files);
     for (const String & file : files)
@@ -296,64 +302,77 @@ public:
         DirectoryIteratorPtr diff_iter_,
         DirectoryIteratorPtr base_iter_,
         MetadataStoragePtr tracked_metadata_)
-        : done_diff(false)
-        , diff_iter(std::move(diff_iter_))
+        : diff_iter(std::move(diff_iter_))
         , base_iter(std::move(base_iter_))
         , tracked_metadata(tracked_metadata_)
     {
-        upd();
     }
 
     void next() override
     {
-        if (!done_diff)
+        if (diff_iter->isValid())
         {
             diff_iter->next();
+            if (diff_iter->isValid())
+                return;
         }
-        else
+
+        while (base_iter->isValid())
         {
             base_iter->next();
+            if (!tracked_metadata->existsFile(dataPath(base_iter->path())))
+            {
+                LOG_TEST(log, "Found path {} in the base disk", base_iter->path());
+                break;
+            }
+            LOG_TEST(log, "File {} is removed in the diff disk", base_iter->path());
         }
-        upd();
     }
 
     bool isValid() const override
     {
-        return done_diff ? base_iter->isValid() : true;
+        LOG_TEST(
+            log, "Diff disk valid: {}, base disk valid: {}",
+            diff_iter->isValid(), base_iter->isValid());
+
+        return base_iter->isValid() || diff_iter->isValid();
     }
 
     String path() const override
     {
-        return done_diff ? base_iter->path() : diff_iter->path();
+        String path;
+        if (diff_iter->isValid())
+            path = diff_iter->path();
+        else if (base_iter->isValid())
+            path = base_iter->path();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Neither diff disk nor base disk is valid");
+
+        LOG_TEST(log, "Path: {}", path);
+        return path;
     }
 
     String name() const override
     {
-        return fileName(path());
+        auto current_path = path();
+        if (current_path.ends_with('/'))
+            current_path.pop_back();
+        return fs::path(current_path).filename();
     }
 
 private:
-    bool done_diff;
     DirectoryIteratorPtr diff_iter;
     DirectoryIteratorPtr base_iter;
     MetadataStoragePtr tracked_metadata;
-
-    void upd()
-    {
-        if (!done_diff && !diff_iter->isValid())
-        {
-            done_diff = true;
-        }
-        while (done_diff && base_iter->isValid() && tracked_metadata->existsFile(dataPath(base_iter->path())))
-        {
-            next();
-        }
-    }
+    LoggerPtr log = getLogger("DiskOverlay");
 };
 
 DirectoryIteratorPtr DiskOverlay::iterateDirectory(const String & path) const
 {
-    return std::make_unique<DiskOverlayDirectoryIterator>(disk_diff->iterateDirectory(path), disk_base->iterateDirectory(path), tracked_metadata);
+    return std::make_unique<DiskOverlayDirectoryIterator>(
+        disk_diff->iterateDirectory(path),
+        disk_base->iterateDirectory(path),
+        tracked_metadata);
 }
 
 void DiskOverlay::createFile(const String & path)
