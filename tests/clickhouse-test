@@ -1750,7 +1750,7 @@ class TestCase:
         description_full = messages[result.status]
         description_full += self.print_test_time(result.total_time)
         if result.reason is not None:
-            description_full += f"\nReason: {result.reason.value} "
+            description_full += f" (reason: {result.reason.value})"
 
         description_full += result.description
 
