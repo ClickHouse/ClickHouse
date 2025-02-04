@@ -1,7 +1,6 @@
-#include "config.h"
-
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>

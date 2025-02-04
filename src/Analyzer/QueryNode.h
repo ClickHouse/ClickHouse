@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>

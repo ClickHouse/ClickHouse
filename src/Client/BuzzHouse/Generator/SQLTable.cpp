@@ -134,8 +134,8 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             }
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
