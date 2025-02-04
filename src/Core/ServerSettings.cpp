@@ -234,20 +234,20 @@ namespace DB
     DECLARE(UInt64, aggregate_function_group_array_max_element_size, 0xFFFFFF, R"(Max array element size in bytes for groupArray function. This limit is checked at serialization and help to avoid large state size.)", 0) \
     DECLARE(GroupArrayActionWhenLimitReached, aggregate_function_group_array_action_when_limit_is_reached, GroupArrayActionWhenLimitReached::THROW, R"(Action to execute when max array element size is exceeded in groupArray: `throw` exception, or `discard` extra values)", 0) \
     DECLARE(UInt64, max_server_memory_usage, 0, R"(
-    Limit on total memory usage.
-    The default [`max_server_memory_usage`](#max_server_memory_usage) value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
+    The maximum amount of memory the server is allowed to use, expressed in bytes.
 
     :::note
-    A value of `0` (default) means unlimited.
+    The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage_to_ram_ratio`.
     :::
+
+    As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
     )", 0) \
     DECLARE(Double, max_server_memory_usage_to_ram_ratio, 0.9, R"(
-    Same as [`max_server_memory_usage`](#max_server_memory_usage) but in a ratio to physical RAM. Allows lowering the memory usage on low-memory systems.
-
-    On hosts with low RAM and swap, you possibly need setting [`max_server_memory_usage_to_ram_ratio`](#max_server_memory_usage_to_ram_ratio) larger than 1.
+    The maximum amount of memory the server is allowed to use, expressed as a ratio to all available memory.
+    For example, a value of `0.9` (default) means that the server may consume 90% of the available memory.
 
     :::note
-    A value of `0` means unlimited.
+    The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
     :::
     )", 0) \
     DECLARE(UInt64, merges_mutations_memory_usage_soft_limit, 0, R"(
