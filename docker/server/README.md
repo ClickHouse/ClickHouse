@@ -73,11 +73,13 @@ docker rm some-clickhouse-server
 
 ### networking
 
+> ⚠️ Note: the predefined user `default` does not have the network access unless the password is set, see "How to create default database and user on starting" and "Managing `default` user" below
+
 You can expose your ClickHouse running in docker by [mapping a particular port](https://docs.docker.com/config/containers/container-networking/) from inside the container using host ports:
 
 ```bash
-docker run -d -p 18123:8123 -p19000:9000 --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
-echo 'SELECT version()' | curl 'http://localhost:18123/' --data-binary @-
+docker run -d -p 18123:8123 -p19000:9000 -e CLICKHOUSE_PASSWORD=changeme --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+echo 'SELECT version()' | curl 'http://localhost:18123/?password=changeme' --data-binary @-
 ```
 
 `22.6.3.35`
@@ -90,6 +92,8 @@ echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 `22.6.3.35`
+
+> ⚠️ Note: the user `default` in the example above is available only for the localhost requests
 
 ### Volumes
 
@@ -158,6 +162,16 @@ Sometimes you may want to create a user (user named `default` is used by default
 
 ```bash
 docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp clickhouse/clickhouse-server
+```
+
+#### Managing `default` user
+
+The user `default` has disabled network access by default in the case none of `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, or `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` are set.
+
+There's a way to make `default` user insecurely available by setting environment variable `CLICKHOUSE_SKIP_USER_SETUP` to 1:
+
+```bash
+docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp clickhouse/clickhouse-server
 ```
 
 ## How to extend this image
