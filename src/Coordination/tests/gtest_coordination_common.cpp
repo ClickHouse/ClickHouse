@@ -1,5 +1,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
+#if USE_NURAFT
+
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
 
@@ -39,3 +41,5 @@ getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Co
     auto buffer = DB::IKeeperStateMachine::getZooKeeperLogEntry(request_for_session);
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
+
+#endif
