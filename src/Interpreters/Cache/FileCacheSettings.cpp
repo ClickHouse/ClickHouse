@@ -25,8 +25,8 @@ namespace ErrorCodes
 
 #define LIST_OF_FILE_CACHE_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, path, "", "Cache directory path", 0) \
-    DECLARE(UInt64, max_size, 0, "Maximim cache size", 0) \
-    DECLARE(UInt64, max_elements, FILECACHE_DEFAULT_MAX_ELEMENTS, "Maximim number of cache elements, e.g. file segments (limits number of files on filesystem)", 0) \
+    DECLARE(UInt64, max_size, 0, "Maximum cache size", 0) \
+    DECLARE(UInt64, max_elements, FILECACHE_DEFAULT_MAX_ELEMENTS, "Maximum number of cache elements, e.g. file segments (limits number of files on filesystem)", 0) \
     DECLARE(UInt64, max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE, "Maximum size of a single file segment", 0) \
     DECLARE(UInt64, boundary_alignment, FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT, "File segment alignment", 0) \
     DECLARE(Bool, cache_on_write_operations, false, "Enables write-through cache (cache on INSERT and MERGE)", 0) \
@@ -37,10 +37,10 @@ namespace ErrorCodes
     DECLARE(UInt64, background_download_max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD, "Maximum size which can be downloaded in background download", 0) \
     DECLARE(UInt64, load_metadata_threads, FILECACHE_DEFAULT_LOAD_METADATA_THREADS, "Number of threads to load cache metadata at server startup. Value 0 disables asynchronous loading of metadata", 0) \
     DECLARE(UInt64, load_metadata_asynchronously, false, "Enables asynchronous loading of metadata on server startup", 0) \
-    DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "", 0) \
-    DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "", 0) \
-    DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "", 0) \
-    DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limitting maximum size of cache which can be written within a query", 0) \
+    DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
+    DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
+    DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
+    DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "", 0) \
     DECLARE(UInt64, cache_hits_threshold, 0, "", 0) \
     DECLARE(Bool, bypass_cache_threshold, 0, "", 0) \
