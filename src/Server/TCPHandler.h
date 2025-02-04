@@ -296,7 +296,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(QueryState & state, const Block & block);    /// Write a block to the network.
+    void sendData(QueryState & state, const Block & block_); /// Write a block to the network.
     void sendLogData(QueryState & state, const Block & block);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);

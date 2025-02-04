@@ -37,6 +37,8 @@
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
 
+#include <Columns/ColumnBlob.h>
+
 #include <Common/config_version.h>
 #include <Core/Types.h>
 #include "config.h"
@@ -1346,6 +1348,21 @@ Block Connection::receiveLogData()
 }
 
 
+static Block prepare(const Block & block)
+{
+    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
+    Block res;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+        if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
+            column.column = col->convertFrom();
+        res.insert(std::move(column));
+    }
+    return res;
+}
+
+
 Block Connection::receiveDataImpl(NativeReader & reader)
 {
     String external_table_name;
@@ -1355,6 +1372,7 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 
     /// Read one block from network.
     Block res = reader.read();
+    res = prepare(res);
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);

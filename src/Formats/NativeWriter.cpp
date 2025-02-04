@@ -61,8 +61,7 @@ void NativeWriter::flush()
     ostr.next();
 }
 
-
-void NativeWriter::writeData(
+/*static*/ void NativeWriter::writeData(
     const ISerialization & serialization,
     const ColumnPtr & column,
     WriteBuffer & ostr,
@@ -91,31 +90,7 @@ void NativeWriter::writeData(
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-static Block
-prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const std::optional<FormatSettings> & format_settings)
-{
-    if (!codec)
-        return block;
-
-    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
-    Block res;
-    for (const auto & elem : block)
-    {
-        ColumnWithTypeAndName column = elem;
-        column.column = recursiveRemoveSparse(column.column);
-
-        auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
-        { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
-        auto col = ColumnBlob::create(std::move(task), column.column->size());
-        col->convertTo();
-
-        column.column = std::move(col);
-        res.insert(std::move(column));
-    }
-    return res;
-}
-
-SerializationPtr NativeWriter::getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column)
+/*static*/ SerializationPtr NativeWriter::getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
@@ -126,10 +101,8 @@ SerializationPtr NativeWriter::getSerialization(UInt64 client_revision, const Co
     return column.type->getDefaultSerialization();
 }
 
-size_t NativeWriter::write(const Block & block_, CompressionCodecPtr codec)
+size_t NativeWriter::write(const Block & block)
 {
-    Block block = prepare(block_, codec, client_revision, format_settings);
-
     size_t written_before = ostr.count();
 
     /// Additional information about the block.

@@ -31,7 +31,7 @@ public:
     Block getHeader() const { return header; }
 
     /// Returns the number of bytes written.
-    size_t write(const Block & block_, CompressionCodecPtr codec = nullptr);
+    size_t write(const Block & block);
     void flush();
 
     static String getContentType() { return "application/octet-stream"; }

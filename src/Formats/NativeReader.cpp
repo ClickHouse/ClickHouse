@@ -117,13 +117,6 @@ Block NativeReader::getHeader() const
     return header;
 }
 
-static void prepare(ColumnWithTypeAndName & column, SerializationPtr, size_t, const std::optional<FormatSettings> &)
-{
-    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
-    if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
-        column.column = col->convertFrom();
-}
-
 Block NativeReader::read()
 {
     Block res;
@@ -230,7 +223,6 @@ Block NativeReader::read()
             readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
-        prepare(column, serialization, rows, format_settings);
 
         bool use_in_result = true;
         if (header)

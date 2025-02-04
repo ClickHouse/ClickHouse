@@ -51,6 +51,9 @@
 #include <base/defines.h>
 #include <base/scope_guard.h>
 
+#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnSparse.h>
+
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
@@ -2445,8 +2448,38 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 }
 
 
-void TCPHandler::sendData(QueryState & state, const Block & block)
+static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
+    if (!codec)
+        return block;
+
+    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
+    Block res;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+        column.column = recursiveRemoveSparse(column.column);
+
+        auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
+        { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
+        auto col = ColumnBlob::create(std::move(task), column.column);
+        col->convertTo();
+
+        column.column = std::move(col);
+        res.insert(std::move(column));
+    }
+    return res;
+}
+
+
+void TCPHandler::sendData(QueryState & state, const Block & block_)
+{
+    auto block = prepare(
+        block_,
+        getCompressionCodec(state.query_context->getSettingsRef(), state.compression),
+        client_tcp_protocol_version,
+        getFormatSettings(state.query_context));
+
     initBlockOutput(state, block);
 
     size_t prev_bytes_written_out = out->count();
@@ -2485,8 +2518,7 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
             writeStringBinary("", *out);
         }
 
-        auto codec = getCompressionCodec(state.query_context->getSettingsRef(), state.compression);
-        state.block_out->write(block, codec);
+        state.block_out->write(block);
 
         if (state.maybe_compressed_out != out)
             state.maybe_compressed_out->next();

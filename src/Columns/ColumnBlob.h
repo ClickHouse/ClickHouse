@@ -38,13 +38,18 @@ public:
     // TODO(nickitat): fix signature
     using FromBlob = std::function<ColumnPtr(const Blob &, int)>;
 
-    ColumnBlob(ToBlob task, size_t rows_) : rows(rows_), to_blob_task(std::move(task)) { }
+    ColumnBlob(ToBlob task, ColumnPtr concrete_column_)
+        : rows(concrete_column_->size()), concrete_column(std::move(concrete_column_)), to_blob_task(std::move(task))
+    {
+    }
 
     ColumnBlob(FromBlob task, size_t rows_) : rows(rows_), from_blob_task(std::move(task)) { }
 
     const char * getFamilyName() const override { return "Blob"; }
 
     size_t size() const override { return rows; }
+
+    MutableColumnPtr cloneEmpty() const override { return concrete_column->cloneEmpty(); }
 
     Blob & getBlob() { return blob; }
     const Blob & getBlob() const { return blob; }
@@ -160,6 +165,7 @@ private:
     Blob blob;
 
     const size_t rows;
+    ColumnPtr concrete_column;
     ToBlob to_blob_task;
     FromBlob from_blob_task;
 
