@@ -12,7 +12,7 @@ class DeserializationTask
 {
 public:
 
-    DeserializationTask(std::function<void()> deserialize_) : deserialize(std::move(deserialize_))
+    explicit DeserializationTask(std::function<void()> deserialize_) : deserialize(std::move(deserialize_))
     {
     }
 

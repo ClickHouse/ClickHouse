@@ -414,13 +414,13 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         auto safe_dynamic_subcolumns_callback = [&](const SubstreamPath & path)
         {
             std::unique_lock lock(callbacks_mutex);
-            return settings.dynamic_subcolumns_callback(path);
+            settings.dynamic_subcolumns_callback(path);
         };
 
         auto safe_prefixes_prefetch_callback = [&](const SubstreamPath & path)
         {
             std::unique_lock lock(callbacks_mutex);
-            return settings.prefixes_prefetch_callback(path);
+            settings.prefixes_prefetch_callback(path);
         };
 
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths.size() / num_tasks, 1ul);
