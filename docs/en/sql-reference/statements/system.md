@@ -205,6 +205,10 @@ Disables background data distribution when inserting data into distributed table
 SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
+:::note
+In case of [`prefer_localhost_replica`](../../operations/settings/settings.md#prefer_localhost_replica) is set (default), the data to local shard will be INSERTed anyway.
+:::
+
 ### FLUSH DISTRIBUTED
 
 Forces ClickHouse to send data to cluster nodes synchronously. If any nodes are unavailable, ClickHouse throws an exception and stops query execution. You can retry the query until it succeeds, which will happen when all nodes are back online.
