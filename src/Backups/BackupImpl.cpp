@@ -3,6 +3,7 @@
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
@@ -30,6 +31,7 @@ namespace ProfileEvents
     extern const Event BackupsOpenedForWrite;
     extern const Event BackupReadMetadataMicroseconds;
     extern const Event BackupWriteMetadataMicroseconds;
+    extern const Event BackupLockFileReads;
 }
 
 namespace DB
@@ -543,8 +545,12 @@ void BackupImpl::createLockFile()
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    if (!lock_file_name.empty() && uuid && writer->fileContentsEqual(lock_file_name, toString(*uuid)))
-        return true;
+    if (!lock_file_name.empty() && uuid)
+    {
+        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
+            return true;
+    }
 
     if (throw_if_failed)
     {

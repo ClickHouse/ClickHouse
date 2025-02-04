@@ -1,16 +1,16 @@
-#include <Interpreters/ClientInfo.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <unistd.h>
 
 #include <Common/config_version.h>
 
 #include <format>
+#include <unistd.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -20,6 +20,23 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
+{
+    if (forwarded_for.empty())
+        return {};
+    String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
+    boost::trim(last);
+    try
+    {
+        return Poco::Net::SocketAddress{last};
+    }
+    catch (const Poco::InvalidArgumentException &)
+    {
+        return Poco::Net::SocketAddress{last, 0};
+    }
+}
+
 
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
@@ -225,11 +242,6 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 String ClientInfo::getVersionStr() const
 {
     return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-}
-
-VersionNumber ClientInfo::getVersionNumber() const
-{
-    return VersionNumber(client_version_major, client_version_minor, client_version_patch);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
