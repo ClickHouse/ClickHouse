@@ -564,7 +564,7 @@ public:
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
     virtual void forEachMutableSubcolumn(MutableColumnCallback) {}
 
-    /// Default implementation calls the mutable overload using const_cast.
+    /// Note: If you implement forEachSubcolumn(Recursively), you must also implement forEachMutableSubcolumn(Recursively), and vice versa
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
     virtual void forEachSubcolumn(ColumnCallback) const {}
 
