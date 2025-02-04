@@ -4,8 +4,10 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <stack>
+#include <ranges>
 
 namespace DB
 {
@@ -105,6 +107,38 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
+bool readingFromParallelReplicas(const QueryPlan::Node * input_node)
+{
+    struct Frame
+    {
+        const QueryPlan::Node * node;
+        size_t next_child = 0;
+    };
+
+    std::stack<const QueryPlan::Node*> stack;
+    stack.push(input_node);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        IQueryPlanStep * step = node->step.get();
+        while (!node->children.empty())
+        {
+            for (const auto * child : node->children | std::views::drop(1))
+                stack.push(child);
+
+            step = node->children.front()->step.get();
+            node = node->children.front();
+        }
+
+        if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+            return true;
+    }
+
+    return false;
+}
+
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
@@ -136,6 +170,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
+    auto distinct_in_order = optimization_settings.distinct_in_order;
+    if (distinct_in_order)
+        distinct_in_order = !readingFromParallelReplicas(&root);
+
     stack.push_back({.node = &root});
     while (!stack.empty())
     {
@@ -151,7 +189,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
-            if (optimization_settings.distinct_in_order)
+            if (distinct_in_order)
                 optimizeDistinctInOrder(*frame.node, nodes);
         }
 
