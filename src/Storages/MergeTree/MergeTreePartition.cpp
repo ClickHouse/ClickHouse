@@ -426,7 +426,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
     if (!partition_key_sample)
         return nullptr;
 
-    auto out = data_part_storage.writeFile("partition.dat", DBMS_DEFAULT_BUFFER_SIZE, settings);
+    auto out = data_part_storage.writeFile("partition.dat", 4096, settings);
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
     {
