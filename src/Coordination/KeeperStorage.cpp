@@ -1015,8 +1015,7 @@ void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int6
         if (!zxids_to_apply.contains(it->zxid))
             continue;
 
-        uint64_t digest = 0;
-        other.uncommitted_state.applyDelta(*it, &digest);
+        other.uncommitted_state.applyDelta(*it, nullptr);
         other.uncommitted_state.deltas.push_back(*it);
     }
 }
@@ -3240,11 +3239,14 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
 
     {
         std::lock_guard lock(transaction_mutex);
-        if (!keeper_context->digestEnabledOnCommit())
-            nodes_digest = uncommitted_transactions.front().nodes_digest.value;
 
         if (new_last_zxid)
+        {
+            if (!keeper_context->digestEnabledOnCommit())
+                nodes_digest = uncommitted_transactions.front().nodes_digest.value;
+
             uncommitted_transactions.pop_front();
+        }
 
         if (commit_zxid < zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit smaller ZXID, commit ZXID: {}, current ZXID {}", commit_zxid, zxid);
