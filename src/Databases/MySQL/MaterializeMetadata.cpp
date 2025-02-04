@@ -243,7 +243,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 
     {
         auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-        auto out = db_disk->writeFile(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE);
+        auto out = db_disk->writeFile(persistent_tmp_path, 1024);
 
         /// TSV format metadata file.
         writeString("Version:\t" + toString(meta_version), *out);

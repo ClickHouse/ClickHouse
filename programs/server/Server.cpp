@@ -1758,16 +1758,15 @@ try
             new_server_settings.loadSettingsFromConfig(*config);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
-            double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
-
-            size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
-            size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
+            const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+            const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
+            const size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
-                    " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                LOG_INFO(log, "Changed setting 'max_server_memory_usage' to {}"
+                    " ({} available memory * {:.2f} max_server_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
@@ -1775,10 +1774,9 @@ try
             else if (max_server_memory_usage > default_max_server_memory_usage)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
-                    " because the system has low amount of memory. The amount was"
-                    " calculated as {} available"
-                    " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                LOG_INFO(log, "Lowered setting 'max_server_memory_usage' to {}"
+                    " because the system has too little memory. The new value was"
+                    " calculated as {} available memory * {:.2f} max_server_memory_usage_to_ram_ratio",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
