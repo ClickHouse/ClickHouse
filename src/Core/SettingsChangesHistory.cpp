@@ -109,8 +109,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
             {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
             {"merge_tree_prefixes_deserialization_thread_pool_size", "auto", "auto", "A new setting controlling the size of the thread pool used in prefixes deserialization in MergeTree"},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
+            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",
@@ -122,8 +125,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
-            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},

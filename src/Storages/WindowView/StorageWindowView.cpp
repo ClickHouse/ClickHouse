@@ -50,6 +50,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
