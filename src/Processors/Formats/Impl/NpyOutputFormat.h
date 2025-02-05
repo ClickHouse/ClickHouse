@@ -7,7 +7,6 @@
 #include <Columns/IColumn_fwd.h>
 
 #include <vector>
-#include <string>
 
 
 namespace DB
