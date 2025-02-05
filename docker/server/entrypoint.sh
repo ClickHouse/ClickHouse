@@ -88,12 +88,6 @@ function create_directory_and_do_chown() {
     fi
 }
 
-create_directory_and_do_chown "$DATA_DIR"
-
-# Change working directory to $DATA_DIR in case there're paths relative to $DATA_DIR, also avoids running
-# clickhouse-server at root directory.
-cd "$DATA_DIR"
-
 function manage_clickhouse_directories() {
     for dir in "$ERROR_LOG_DIR" \
       "$LOG_DIR" \
@@ -238,6 +232,12 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
+
+    create_directory_and_do_chown "$DATA_DIR"
+
+    # Change working directory to $DATA_DIR in case there're paths relative to $DATA_DIR, also avoids running
+    # clickhouse-server at root directory.
+    cd "$DATA_DIR"
 
     # Using functions here to avoid unnecessary work in case of launching other binaries,
     # inspired by postgres, mariadb etc. entrypoints
