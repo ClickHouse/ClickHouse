@@ -18,6 +18,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from pprint import pformat
 from shutil import copy2, copytree, rmtree
 from sys import executable
 from typing import Any
@@ -326,6 +327,13 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Script to update all docker library repositories",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="set the script verbosity, could be used multiple",
+    )
     parser.add_argument("--token", help="github token, if not set, used from smm")
     parser.add_argument(
         "--ldf-repo",
@@ -344,19 +352,14 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument("--dry-run", action="store_true", help="do not create anything")
-    parser.add_argument(
-        "--debug-helpers",
-        action="store_true",
-        help="add debug logging for git_helper and github_helper",
-    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if args.debug_helpers:
-        logging.getLogger("github_helper").setLevel(logging.DEBUG)
-        logging.getLogger("git_helper").setLevel(logging.DEBUG)
+    log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
+    logging.basicConfig(level=log_levels[min(args.verbose, 3)])
+    logging.debug("Arguments are %s", pformat(args.__dict__))
     token = args.token or get_best_robot_token()
 
     gh = GitHub(token, create_cache_dir=False)
