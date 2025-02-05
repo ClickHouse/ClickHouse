@@ -2,7 +2,9 @@
 #include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
+
 
 namespace DB
 {
@@ -518,7 +520,12 @@ Token Lexer::nextTokenImpl()
             pos = skipWhitespacesUTF8(pos, end);
             if (pos > token_begin)
                 return Token(TokenType::Whitespace, token_begin, pos);
-            return Token(TokenType::Error, token_begin, ++pos);
+
+            ++pos;
+            while (pos < end && UTF8::isContinuationOctet(*pos))
+                ++pos;
+
+            return Token(TokenType::Error, token_begin, pos);
     }
 }
 
