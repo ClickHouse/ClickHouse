@@ -6,7 +6,10 @@
 
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/SummingStateMachine.h>
-
+#include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperConstants.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
