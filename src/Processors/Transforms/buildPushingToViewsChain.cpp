@@ -511,7 +511,7 @@ Chain buildPushingToViewsChain(
     auto log = getLogger("buildPushingToViewsChain");
     LOG_TEST(log, "Views: {}", views.size());
 
-    if (no_destination && views.size() == 0)
+    if (no_destination && views.empty())
         LOG_WARNING(log, "No views attached and no_destination = 1");
 
     ViewsDataPtr views_data;
