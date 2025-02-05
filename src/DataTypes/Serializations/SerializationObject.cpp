@@ -10,6 +10,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentThread.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -445,7 +448,19 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             };
 
             auto task = std::make_shared<DeserializationTask>(deserialize);
-            static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task](){ task_ptr->tryExecute(); }));
+            static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
+            {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachFromGroupIfNotDetached();
+                );
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
+                setThreadName("DynamicPathsPrefixesReader");
+                task_ptr->tryExecute();
+            }));
+
             tasks.push_back(task);
             caches.push_back(std::move(cache_copy));
         }
