@@ -1264,13 +1264,6 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!distinct->getSortDescription().empty())
         return;
 
-    /// in case of parallel replicas
-    /// avoid applying read-in-order optimization for local replica
-    /// since it will lead to different parallel replicas modes
-    /// between local and remote nodes
-    if (readingFromParallelReplicas(&node))
-        return;
-
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));

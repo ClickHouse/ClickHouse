@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <stack>
@@ -171,9 +172,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     }
 
     auto distinct_in_order = optimization_settings.distinct_in_order;
-    if (distinct_in_order)
-        distinct_in_order = !readingFromParallelReplicas(&root);
-
     stack.push_back({.node = &root});
     while (!stack.empty())
     {
@@ -190,7 +188,18 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (distinct_in_order)
-                optimizeDistinctInOrder(*frame.node, nodes);
+            {
+                /// in case of parallel replicas
+                /// avoid applying reading in order optimization for distinct on local replica
+                /// since it will lead to different parallel replicas modes between local and remote replicas
+                /// (InOrder on local replica and Default on remote)
+                auto * distinct = typeid_cast<DistinctStep *>(frame.node->step.get());
+                if (distinct && !distinct->isPreliminary())
+                    distinct_in_order = !readingFromParallelReplicas(frame.node);
+
+                if (distinct_in_order)
+                    optimizeDistinctInOrder(*frame.node, nodes);
+            }
         }
 
         /// Traverse all children first.
