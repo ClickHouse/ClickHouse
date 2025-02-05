@@ -6,17 +6,17 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserInsertQuery.h>
-#include <Parsers/ASTDropQuery.h>
 
 #include <unordered_set>
 
@@ -40,13 +40,14 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <pcg_random.hpp>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/SipHash.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -55,41 +56,69 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_DEEP_RECURSION;
+extern const int TOO_DEEP_RECURSION;
 }
 
 Field QueryFuzzer::getRandomField(int type)
 {
     static constexpr Int64 bad_int64_values[]
-        = {-2, -1, 0, 1, 2, 3, 7, 10, 100, 255, 256, 257, 1023, 1024,
-           1025, 65535, 65536, 65537, 1024 * 1024 - 1, 1024 * 1024,
-           1024 * 1024 + 1, INT_MIN - 1ll, INT_MIN, INT_MIN + 1,
-           INT_MAX - 1, INT_MAX, INT_MAX + 1ll, INT64_MIN, INT64_MIN + 1,
-           INT64_MAX - 1, INT64_MAX};
+        = {-2,
+           -1,
+           0,
+           1,
+           2,
+           3,
+           7,
+           10,
+           100,
+           255,
+           256,
+           257,
+           1023,
+           1024,
+           1025,
+           65535,
+           65536,
+           65537,
+           1024 * 1024 - 1,
+           1024 * 1024,
+           1024 * 1024 + 1,
+           INT_MIN - 1ll,
+           INT_MIN,
+           INT_MIN + 1,
+           INT_MAX - 1,
+           INT_MAX,
+           INT_MAX + 1ll,
+           INT64_MIN,
+           INT64_MIN + 1,
+           INT64_MAX - 1,
+           INT64_MAX};
     switch (type)
     {
-    case 0:
-    {
-        return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
-    }
-    case 1:
-    {
-        static constexpr double values[]
-                = {NAN, INFINITY, -INFINITY, 0., -0., 0.0001, 0.5, 0.9999,
-                   1., 1.0001, 2., 10.0001, 100.0001, 1000.0001, 1e10, 1e20,
-                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % std::size(values)];
-    }
-    case 2:
-    {
-        static constexpr UInt64 scales[] = {0, 1, 2, 10};
-        return DecimalField<Decimal64>(
-            bad_int64_values[fuzz_rand() % std::size(bad_int64_values)],
-            static_cast<UInt32>(scales[fuzz_rand() % std::size(scales)])
-        );
-    }
-    default:
-        assert(false);
-        return Null{};
+        case 0: {
+            return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
+        }
+        case 1: {
+            static constexpr double values[] = {NAN,       INFINITY,
+                                                -INFINITY, 0.,
+                                                -0.,       0.0001,
+                                                0.5,       0.9999,
+                                                1.,        1.0001,
+                                                2.,        10.0001,
+                                                100.0001,  1000.0001,
+                                                1e10,      1e20,
+                                                FLT_MIN,   FLT_MIN + FLT_EPSILON,
+                                                FLT_MAX,   FLT_MAX + FLT_EPSILON};
+            return values[fuzz_rand() % std::size(values)];
+        }
+        case 2: {
+            static constexpr UInt64 scales[] = {0, 1, 2, 10};
+            return DecimalField<Decimal64>(
+                bad_int64_values[fuzz_rand() % std::size(bad_int64_values)], static_cast<UInt32>(scales[fuzz_rand() % std::size(scales)]));
+        }
+        default:
+            assert(false);
+            return Null{};
     }
 }
 
@@ -99,8 +128,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
     int type_index = -1;
 
-    if (type == Field::Types::Int64
-        || type == Field::Types::UInt64)
+    if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
         type_index = 0;
     }
@@ -108,9 +136,8 @@ Field QueryFuzzer::fuzzField(Field field)
     {
         type_index = 1;
     }
-    else if (type == Field::Types::Decimal32
-        || type == Field::Types::Decimal64
-        || type == Field::Types::Decimal128
+    else if (
+        type == Field::Types::Decimal32 || type == Field::Types::Decimal64 || type == Field::Types::Decimal128
         || type == Field::Types::Decimal256)
     {
         type_index = 2;
@@ -138,24 +165,24 @@ Field QueryFuzzer::fuzzField(Field field)
         UInt64 action = fuzz_rand() % 10;
         switch (action)
         {
-        case 0:
-            str = "";
-            break;
-        case 1:
-            str = str + str;
-            break;
-        case 2:
-            str = str + str + str + str;
-            break;
-        case 4:
-            if (!str.empty())
-            {
-                str[fuzz_rand() % str.size()] = '\0';
-            }
-            break;
-        default:
-            // Do nothing
-            break;
+            case 0:
+                str = "";
+                break;
+            case 1:
+                str = str + str;
+                break;
+            case 2:
+                str = str + str + str + str;
+                break;
+            case 4:
+                if (!str.empty())
+                {
+                    str[fuzz_rand() % str.size()] = '\0';
+                }
+                break;
+            default:
+                // Do nothing
+                break;
         }
     }
     else if (type == Field::Types::Array)
@@ -185,7 +212,6 @@ Field QueryFuzzer::fuzzField(Field field)
                 if (debug_stream)
                     *debug_stream << "inserted (0)\n";
             }
-
         }
 
         for (auto & element : arr)
@@ -223,7 +249,6 @@ Field QueryFuzzer::fuzzField(Field field)
                 if (debug_stream)
                     *debug_stream << "inserted (0)\n";
             }
-
         }
 
         for (auto & element : arr)
@@ -305,8 +330,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
     {
         // Don't remove last element -- this leads to questionable
         // constructs such as empty select.
-        list->children.erase(list->children.begin()
-                             + fuzz_rand() % list->children.size());
+        list->children.erase(list->children.begin() + fuzz_rand() % list->children.size());
     }
 
     // Add element
@@ -350,8 +374,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     {
         // Don't remove last element -- this leads to questionable
         // constructs such as empty select.
-        impl->children.erase(impl->children.begin()
-                             + fuzz_rand() % impl->children.size());
+        impl->children.erase(impl->children.begin() + fuzz_rand() % impl->children.size());
     }
 
     // Add element
@@ -361,9 +384,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
-        else
-            if (debug_stream)
-                *debug_stream << "No random column.\n";
+        else if (debug_stream)
+            *debug_stream << "No random column.\n";
     }
 
     // We don't have to recurse here to fuzz the children, this is handled by
@@ -384,18 +406,15 @@ void QueryFuzzer::fuzzNullsAction(NullsAction & action)
     {
         switch (fuzz_rand() % 3)
         {
-            case 0:
-            {
+            case 0: {
                 action = NullsAction::EMPTY;
                 break;
             }
-            case 1:
-            {
+            case 1: {
                 action = NullsAction::RESPECT_NULLS;
                 break;
             }
-            default:
-            {
+            default: {
                 action = NullsAction::IGNORE_NULLS;
                 break;
             }
@@ -407,26 +426,23 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
     switch (fuzz_rand() % 40)
     {
-        case 0:
-        {
+        case 0: {
             const auto r = fuzz_rand() % 3;
             def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
-                : r == 1 ? WindowFrame::FrameType::RANGE
-                    : WindowFrame::FrameType::GROUPS;
+                : r == 1            ? WindowFrame::FrameType::RANGE
+                                    : WindowFrame::FrameType::GROUPS;
             break;
         }
-        case 1:
-        {
+        case 1: {
             const auto r = fuzz_rand() % 3;
             def.frame_begin_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
-                : r == 1 ? WindowFrame::BoundaryType::Current
-                    : WindowFrame::BoundaryType::Offset;
+                : r == 1                  ? WindowFrame::BoundaryType::Current
+                                          : WindowFrame::BoundaryType::Offset;
 
             if (def.frame_begin_type == WindowFrame::BoundaryType::Offset)
             {
                 // The offsets are fuzzed normally through 'children'.
-                def.frame_begin_offset
-                    = std::make_shared<ASTLiteral>(getRandomField(0));
+                def.frame_begin_offset = std::make_shared<ASTLiteral>(getRandomField(0));
             }
             else
             {
@@ -434,17 +450,15 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             }
             break;
         }
-        case 2:
-        {
+        case 2: {
             const auto r = fuzz_rand() % 3;
             def.frame_end_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
-                : r == 1 ? WindowFrame::BoundaryType::Current
-                    : WindowFrame::BoundaryType::Offset;
+                : r == 1                ? WindowFrame::BoundaryType::Current
+                                        : WindowFrame::BoundaryType::Offset;
 
             if (def.frame_end_type == WindowFrame::BoundaryType::Offset)
             {
-                def.frame_end_offset
-                    = std::make_shared<ASTLiteral>(getRandomField(0));
+                def.frame_end_offset = std::make_shared<ASTLiteral>(getRandomField(0));
             }
             else
             {
@@ -452,13 +466,11 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             }
             break;
         }
-        case 5:
-        {
+        case 5: {
             def.frame_begin_preceding = fuzz_rand() % 2;
             break;
         }
-        case 6:
-        {
+        case 6: {
             def.frame_end_preceding = fuzz_rand() % 2;
             break;
         }
@@ -466,10 +478,8 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             break;
     }
 
-    if (def.frame_type == WindowFrame::FrameType::RANGE
-        && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
-        && def.frame_begin_preceding
-        && def.frame_end_type == WindowFrame::BoundaryType::Current)
+    if (def.frame_type == WindowFrame::FrameType::RANGE && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
+        && def.frame_begin_preceding && def.frame_end_type == WindowFrame::BoundaryType::Current)
     {
         def.frame_is_default = true; /* NOLINT clang-tidy could you just shut up please */
     }
@@ -536,9 +546,9 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     SipHash sip_hash;
     sip_hash.update(original_name);
     if (create.columns_list)
-        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
+        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/true);
     if (create.storage)
-        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
+        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/true);
 
     const auto hash = getSipHash128AsPair(sip_hash);
 
@@ -554,8 +564,8 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
         auto data_type = fuzzDataType(DataTypeFactory::instance().get(column.type));
 
         ParserDataType parser;
-        column.type = parseQuery(parser, data_type->getName(),
-            DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        column.type = parseQuery(
+            parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
 }
 
@@ -573,9 +583,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         for (const auto & element : type_tuple->getElements())
             elements.push_back(fuzzDataType(element));
 
-        return type_tuple->haveExplicitNames()
-            ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
-            : std::make_shared<DataTypeTuple>(elements);
+        return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
+                                               : std::make_shared<DataTypeTuple>(elements);
     }
 
     const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
@@ -655,15 +664,14 @@ DataTypePtr QueryFuzzer::getRandomType()
 #define DISPATCH(DECIMAL) \
     if (type_id == TypeIndex::DECIMAL) \
         return std::make_shared<DataTypeDecimal<DECIMAL>>( \
-            DataTypeDecimal<DECIMAL>::maxPrecision(), \
-            (fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision()) + 1);
+            DataTypeDecimal<DECIMAL>::maxPrecision(), (fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision()) + 1);
 
     DISPATCH(Decimal32)
     DISPATCH(Decimal64)
     DISPATCH(Decimal128)
     DISPATCH(Decimal256)
 #undef DISPATCH
-/// NOLINTEND(bugprone-macro-parentheses)
+    /// NOLINTEND(bugprone-macro-parentheses)
 
     if (type_id == TypeIndex::FixedString)
         return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20);
@@ -807,8 +815,18 @@ static ASTPtr tryParseInsertQuery(const String & full_query)
     ParserInsertQuery parser(end, false);
     String message;
 
-    return tryParseQuery(parser, pos, end, message, false, "", false,
-        DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
+    return tryParseQuery(
+        parser,
+        pos,
+        end,
+        message,
+        false,
+        "",
+        false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+        true);
 }
 
 ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
@@ -834,6 +852,35 @@ ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
         /// which are not copied during clone.
         auto & query = queries.emplace_back(tryParseInsertQuery(full_query));
         query->as<ASTInsertQuery>()->setTable(fuzzed_name);
+    }
+
+    return queries;
+}
+
+/// I am still not very expert in templates to reuse the code above
+ASTs QueryFuzzer::getOptimizeQueriesForFuzzedTables(const String & full_query)
+{
+    auto parsed_query = tryParseInsertQuery(full_query);
+    if (!parsed_query)
+        return {};
+
+    const auto & opt = *parsed_query->as<ASTOptimizeQuery>();
+    if (!opt.table)
+        return {};
+
+    auto table_name = opt.getTable();
+    auto it = original_table_name_to_fuzzed.find(table_name);
+    if (it == original_table_name_to_fuzzed.end())
+        return {};
+
+    ASTs queries;
+    for (const auto & fuzzed_name : it->second)
+    {
+        ParserOptimizeQuery parser;
+        auto & query = queries.emplace_back(parseQuery(
+            parser, full_query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+
+        query->as<ASTOptimizeQuery>()->setTable(fuzzed_name);
     }
 
     return queries;
@@ -1008,7 +1055,11 @@ struct ScopedIncrement
 {
     size_t & counter;
 
-    explicit ScopedIncrement(size_t & counter_) : counter(counter_) { ++counter; }
+    explicit ScopedIncrement(size_t & counter_)
+        : counter(counter_)
+    {
+        ++counter;
+    }
     ~ScopedIncrement() { --counter; }
 };
 
@@ -1105,18 +1156,21 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         // end up in a very slow and useless loop. It also makes sense to set it
         // lower than the default max parse depth on the server (1000), so that
         // we don't get the useless error about parse depth from the server either.
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-            "AST depth exceeded while fuzzing ({})", current_ast_depth);
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST depth exceeded while fuzzing ({})", current_ast_depth);
     }
 
     // Check for loops.
     auto [_, inserted] = debug_visited_nodes.insert(ast.get());
     if (!inserted)
     {
-        fmt::print(stderr, "The AST node '{}' was already visited before."
+        fmt::print(
+            stderr,
+            "The AST node '{}' was already visited before."
             " Depth {}, {} visited nodes, current top AST:\n{}\n",
-            static_cast<void *>(ast.get()), current_ast_depth,
-            debug_visited_nodes.size(), (*debug_top_ast)->dumpTree());
+            static_cast<void *>(ast.get()),
+            current_ast_depth,
+            debug_visited_nodes.size(),
+            (*debug_top_ast)->dumpTree());
         assert(false);
     }
 

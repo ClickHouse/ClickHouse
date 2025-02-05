@@ -1,9 +1,9 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+#include <DataTypes/IDataType.h>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -49,6 +49,7 @@ public:
     void fuzzMain(ASTPtr & ast);
 
     ASTs getInsertQueriesForFuzzedTables(const String & full_query);
+    ASTs getOptimizeQueriesForFuzzedTables(const String & full_query);
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
 

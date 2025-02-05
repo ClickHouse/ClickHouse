@@ -8,6 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -167,6 +168,11 @@ bool Client::processWithFuzzing(const String & full_query)
     {
         this_query_runs = 1;
         queries_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
+    }
+    else if (const auto * /*optimize*/ _ = orig_ast->as<ASTOptimizeQuery>())
+    {
+        this_query_runs = 1;
+        queries_for_fuzzed_tables = fuzzer.getOptimizeQueriesForFuzzedTables(full_query);
     }
     else if (const auto * drop = orig_ast->as<ASTDropQuery>())
     {
