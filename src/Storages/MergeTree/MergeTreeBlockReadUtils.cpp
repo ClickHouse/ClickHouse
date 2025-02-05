@@ -88,8 +88,11 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
-}
-
+/** If some of the requested columns are not in the part,
+  * then find out which columns may need to be read further,
+  * so that you can calculate the DEFAULT expression for these columns.
+  * Adds them to the `columns`.
+  */
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
@@ -134,6 +137,8 @@ NameSet injectRequiredColumns(
     }
 
     return injected_columns;
+}
+
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
@@ -271,15 +276,6 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
     return std::make_shared<PrewhereExprStep>(std::move(step));
 }
 
-static void addColumnsToRead(const Names & columns_to_add, NameSet & added_columns_set, Names & added_columns_vec)
-{
-    for (const auto & name : columns_to_add)
-    {
-        if (added_columns_set.emplace(name).second)
-            added_columns_vec.push_back(name);
-    }
-}
-
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
@@ -290,19 +286,18 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
 {
+    MergeTreeReadTaskColumns result;
+    NameSet columns_from_previous_steps;
     Names column_to_read_after_prewhere = required_columns;
 
     /// Inject columns required for defaults evaluation
-    injectRequiredColumns(
-        data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    MergeTreeReadTaskColumns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
-    NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
@@ -325,9 +320,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// results from previous steps.
         /// Example: step1: sin(a)>b, step2: sin(a)>c
 
-        auto required_source_columns = step.actions
-            ? step.actions->getActionsDAG().getRequiredColumnsNames()
-            : Names{step.filter_column_name};
+        /// If step actions are empty then step
+        Names required_source_columns;
+        if (step.actions)
+            required_source_columns = step.actions->getActionsDAG().getRequiredColumnsNames();
+        else if (!step.filter_column_name.empty())
+            required_source_columns = Names{step.filter_column_name};
 
         for (const auto & name : required_source_columns)
         {
@@ -348,17 +346,17 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
         Names columns_to_read_in_step;
-        addColumnsToRead(step_column_names, columns_from_previous_steps, columns_to_read_in_step);
+        for (const auto & name : step_column_names)
+        {
+            if (columns_from_previous_steps.emplace(name).second)
+                columns_to_read_in_step.push_back(name);
+        }
 
         /// Add results of the step to the list of already "known" columns so that we don't read or compute them again.
         if (step.actions)
         {
             for (const auto & name : step.actions->getActionsDAG().getNames())
                 columns_from_previous_steps.insert(name);
-        }
-        else if (!step.remove_filter_column)
-        {
-            columns_from_previous_steps.insert(step.filter_column_name);
         }
 
         result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
@@ -378,10 +376,14 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             add_step(*step);
     }
 
-    Names post_column_names;
-
     /// Remove columns read in prewehere from the list of columns to read.
-    addColumnsToRead(column_to_read_after_prewhere, columns_from_previous_steps, post_column_names);
+    Names post_column_names;
+    for (const auto & name : column_to_read_after_prewhere)
+    {
+        if (!columns_from_previous_steps.contains(name))
+            post_column_names.push_back(name);
+    }
+
     result.columns = storage_snapshot->getColumnsByNames(options, post_column_names);
     return result;
 }

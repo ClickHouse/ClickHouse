@@ -177,7 +177,8 @@ void MergeTreeSequentialSource::updateRowsToRead(size_t mark_number)
 Chunk MergeTreeSequentialSource::generate()
 try
 {
-    if (current_mark >= read_task_info->data_part->index_granularity->getMarksCountWithoutFinal())
+    const auto & index_granularity = read_task_info->data_part->index_granularity;
+    if (current_mark >= index_granularity->getMarksCountWithoutFinal())
     {
         finish();
         return {};
@@ -201,15 +202,15 @@ try
         updateRowsToRead(current_mark);
     }
 
-    const auto & header = getPort().getHeader();
+    const auto & result_header = getPort().getHeader();
     const auto & reader_header = readers_chain.getSampleBlock();
 
     Columns result_columns;
-    result_columns.reserve(reader_header.columns());
+    result_columns.reserve(result_header.columns());
 
-    for (size_t i = 0; i < header.columns(); ++i)
+    for (size_t i = 0; i < result_header.columns(); ++i)
     {
-        auto pos = reader_header.getPositionByName(header.safeGetByPosition(i).name);
+        auto pos = reader_header.getPositionByName(result_header.safeGetByPosition(i).name);
         result_columns.emplace_back(std::move(read_result.columns[pos]));
         result_columns.back()->assumeMutableRef().shrinkToFit();
     }
