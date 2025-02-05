@@ -95,18 +95,14 @@ public:
     }
 
     /// Decompresses and deserializes the blob into the source column.
-    static ColumnPtr fromBlob(
-        const Blob & blob,
-        ColumnPtr nested,
-        SerializationPtr nested_serialization,
-        size_t rows,
-        const std::optional<FormatSettings> & format_settings)
+    static ColumnPtr
+    fromBlob(const Blob & blob, ColumnPtr nested, SerializationPtr nested_serialization, size_t rows, bool data_types_binary_encoding)
     {
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         // TODO(nickitat): support
         double avg_value_size_hint = 0;
-        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
+        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, data_types_binary_encoding, rows, avg_value_size_hint);
         return nested;
     }
 
@@ -180,16 +176,6 @@ private:
     ColumnPtr concrete_column;
     ToBlob to_blob_task;
     FromBlob from_blob_task;
-
-    // void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
-    // {
-    //     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
-    // }
-    //
-    // void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
-    // {
-    //     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
-    // }
 
     [[noreturn]] static void throwInapplicable()
     {

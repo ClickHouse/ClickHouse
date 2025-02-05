@@ -48,7 +48,7 @@ public:
         const ISerialization & serialization,
         ColumnPtr & column,
         ReadBuffer & istr,
-        const std::optional<FormatSettings> & format_settings,
+        bool data_types_binary_encoding,
         size_t rows,
         double avg_value_size_hint);
 

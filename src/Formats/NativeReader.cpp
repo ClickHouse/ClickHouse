@@ -87,7 +87,7 @@ void NativeReader::readData(
     const ISerialization & serialization,
     ColumnPtr & column,
     ReadBuffer & istr,
-    const std::optional<FormatSettings> & format_settings,
+    bool data_types_binary_encoding,
     size_t rows,
     double avg_value_size_hint)
 {
@@ -96,7 +96,7 @@ void NativeReader::readData(
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
-    settings.data_types_binary_encoding = format_settings && format_settings->native.decode_types_in_binary_format;
+    settings.data_types_binary_encoding = data_types_binary_encoding;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
@@ -218,9 +218,10 @@ Block NativeReader::read()
         /// Data
         ColumnPtr read_column = column.type->createColumn(*serialization);
 
+        const bool data_types_binary_encoding = format_settings && format_settings->native.decode_types_in_binary_format;
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
+            readData(*serialization, read_column, istr, data_types_binary_encoding, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
 

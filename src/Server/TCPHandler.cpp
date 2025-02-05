@@ -2453,7 +2453,6 @@ static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 clie
     if (!codec)
         return block;
 
-    /// TODO(nickitat): check client revision and fallback to the default serialization for old clients
     Block res;
     for (const auto & elem : block)
     {
