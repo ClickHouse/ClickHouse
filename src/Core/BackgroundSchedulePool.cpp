@@ -6,6 +6,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include "base/scope_guard.h"
 #include <chrono>
 
 
@@ -14,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes { extern const int CANNOT_SCHEDULE_TASK; }
 
+static auto logger = getLogger("PMO");
 
 BackgroundSchedulePoolTaskInfo::BackgroundSchedulePoolTaskInfo(
     BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_)
@@ -23,6 +25,14 @@ BackgroundSchedulePoolTaskInfo::BackgroundSchedulePoolTaskInfo(
 
 bool BackgroundSchedulePoolTaskInfo::schedule()
 {
+    static std::atomic_bool logged = false;
+    if (!logged)
+    {
+        auto size = sizeof(*this);
+        LOG_INFO(logger, "Size of task_info: {} bytes", size);
+        LOG_INFO(logger, "offsetof(executing): {} bytes", reinterpret_cast<char*>(&this->executing) - reinterpret_cast<char*>(this));
+    }
+
     std::lock_guard lock(schedule_mutex);
 
     if (deactivated || scheduled)
@@ -213,6 +223,8 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         {
             std::lock_guard lock_tasks(tasks_mutex);
             std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
+            LOG_INFO(logger, "~BackgroundSchedulePool lock acquired");
+            SCOPE_EXIT(LOG_INFO(logger, "~BackgroundSchedulePool lock released"); );
 
             shutdown = true;
         }
@@ -254,6 +266,8 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
 
     {
         std::lock_guard lock(delayed_tasks_mutex);
+        LOG_INFO(logger, "scheduleDelayedTask lock acquired");
+        SCOPE_EXIT(LOG_INFO(logger, "scheduleDelayedTask lock released"); );
 
         if (task.delayed)
             delayed_tasks.erase(task.iterator);
@@ -270,6 +284,8 @@ void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<
 {
     {
         std::lock_guard lock(delayed_tasks_mutex);
+        LOG_INFO(logger, "cancelDelayedTask lock acquired");
+        SCOPE_EXIT(LOG_INFO(logger, "cancelDelayedTask lock released"); );
         delayed_tasks.erase(task.iterator);
         task.delayed = false;
         task.iterator = delayed_tasks.end();
@@ -321,6 +337,8 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
         {
             UniqueLock lock(delayed_tasks_mutex);
+            LOG_INFO(logger, "delayExecutionThreadFunction lock acquired");
+            SCOPE_EXIT(LOG_INFO(logger, "delayExecutionThreadFunction lock released"); );
 
             while (!shutdown)
             {
