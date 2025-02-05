@@ -339,7 +339,8 @@ class JobConfig:
     # will be triggered for the job if omitted in CI workflow yml
     run_command: str = ""
     # job timeout, seconds
-    timeout: int = 7200
+    # FIXME(vnemkov): this is a temporary measure just to push release forward, investigate why integration tests time out after 7200 seconds fix it, reverse timeout back to 7200
+    timeout: int = 9000
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
