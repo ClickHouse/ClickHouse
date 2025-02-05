@@ -846,12 +846,19 @@ void Client::processOptions(
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-    buzz_house = !buzz_house_options_path.empty();
-    if (query_fuzzer_runs || buzz_house)
+    buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
+    if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
+#if USE_BUZZHOUSE
+        if (!buzz_house_options_path.empty())
+        {
+            fc = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
+            ei = std::make_unique<BuzzHouse::ExternalIntegrations>(*fc);
+        }
+#endif
     }
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))

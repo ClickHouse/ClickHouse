@@ -119,6 +119,13 @@ public:
     bool tableHasPartitions(bool detached, const String & database, const String & table) const;
 
     String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
+
+    void comparePerformanceResults(
+        const String & oracle_name,
+        const uint64_t query_duration_ms1,
+        const uint64_t memory_usage1,
+        const uint64_t query_duration_ms2,
+        const uint64_t memory_usage2) const;
 };
 
 }

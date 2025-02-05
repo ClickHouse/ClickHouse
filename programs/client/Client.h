@@ -2,6 +2,9 @@
 
 #include <Client/ClientApplicationBase.h>
 
+#if USE_BUZZHOUSE
+#    include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#endif
 
 namespace DB
 {
@@ -53,6 +56,9 @@ private:
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
+    std::unique_ptr<BuzzHouse::FuzzConfig> fc;
+    std::unique_ptr<BuzzHouse::ExternalIntegrations> ei;
+
     bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
     bool processBuzzHouseQuery(const String & full_query);
 #endif
