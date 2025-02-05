@@ -120,6 +120,10 @@ struct ProjectionMutationContext
     void prepareSomePart(bool always_use_copy_instead_of_hardlinks, CompressionCodecPtr compression_codec);
 
     void finalizeSomePart(bool need_sync, CompressionCodecPtr compression_codec, ContextPtr context);
+
+    void setNewPart(MergeTreeData::MutableDataPartPtr parent_new_data_part, const MutationCommands & commands);
+
+    void setFilesToSkip();
 };
 
 using ProjectionMutationContextPtr = std::shared_ptr<ProjectionMutationContext>;
@@ -1271,6 +1275,27 @@ void ProjectionMutationContext::finalizeSomePart(
         compression_codec, context, metadata_snapshot, need_sync, {});
 }
 
+void ProjectionMutationContext::setNewPart(MergeTreeData::MutableDataPartPtr parent_new_data_part, const MutationCommands & commands)
+{
+    new_part = parent_new_data_part->getProjectionPartBuilder(name, false).withPartType(source_part->getType()).build();
+
+    auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
+        source_part, updated_header, metadata_snapshot->getColumns().getAllPhysical(),
+        source_part->getSerializationInfos(), commands, {});
+
+    new_part->setColumns(projection_new_columns, projection_new_infos, metadata_snapshot->getMetadataVersion());
+
+    mrk_extension = source_part->index_granularity_info.mark_type.getFileExtension();
+}
+
+void ProjectionMutationContext::setFilesToSkip()
+{
+    if (kind != ProjectionMutationContext::MutationKind::SOME)
+        return;
+
+    files_to_skip = MutationHelpers::collectFilesToSkip(source_part, new_part, updated_header, {}, mrk_extension, {}, {});
+}
+
 // This class is responsible for:
 // 1. get projection pipeline and a sink to write parts
 // 2. build an executor that can write block to the input stream (actually we can write through it to generate as many parts as possible)
@@ -2349,6 +2374,98 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     return false;
 }
 
+void MutateTask::processProjectionsWithLightweightDelete(
+    std::vector<MutationCommands> & projection_commands,
+    ContextPtr context_for_reading,
+    const MutationsInterpreter::Settings & settings,
+    AlterConversionsPtr alter_conversions)
+{
+    ASTPtr lightweight_delete_condition = ctx->commands_for_part.front().predicate->clone();
+    if (!lightweight_delete_condition)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected lightweight_delete_condition is nullptr");
+
+    IdentifierNameSet lightweight_delete_columns;
+    lightweight_delete_condition->collectIdentifierNames(lightweight_delete_columns);
+
+    const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
+    for (const auto & proj_desc : ctx->metadata_snapshot->getProjections())
+    {
+        if (!ctx->source_part->hasProjection(proj_desc.name))
+            continue;
+
+        if (ctx->source_part->hasBrokenProjection(proj_desc.name))
+        {
+            if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                == LightweightMutationProjectionMode::REBUILD)
+                ctx->materialized_projections.insert(proj_desc.name);
+
+            continue;
+        }
+
+        /// TODO: might extend to more cases in the future.
+        if (proj_desc.type == ProjectionDescription::Type::Aggregate
+            || proj_desc.type == ProjectionDescription::Type::Normal)
+        {
+            const auto & sort_columns = proj_desc.metadata->sorting_key.column_names;
+            NameSet groupby_columns(sort_columns.begin(), sort_columns.end());
+            bool is_subset_of_groupby = std::all_of(
+                lightweight_delete_columns.begin(),
+                lightweight_delete_columns.end(),
+                [&](const auto & col) { return groupby_columns.contains(col); });
+
+            if (!is_subset_of_groupby)
+            {
+                if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                    == LightweightMutationProjectionMode::REBUILD)
+                    ctx->materialized_projections.insert(proj_desc.name);
+
+                continue;
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown projection type");
+        }
+
+        ctx->materialized_projections.erase(proj_desc.name);
+
+        ctx->projection_mutation_contexts.emplace_back(std::make_shared<ProjectionMutationContext>());
+        auto mutation_context = ctx->projection_mutation_contexts.back();
+
+        mutation_context->name = proj_desc.name;
+        mutation_context->metadata_snapshot = proj_desc.metadata;
+        mutation_context->source_part = projections_name_and_part.find(proj_desc.name)->second;
+
+        auto & commands= projection_commands.emplace_back();
+
+        MutationHelpers::splitAndModifyMutationCommands(
+            mutation_context->source_part,
+            proj_desc.metadata,
+            alter_conversions,
+            ctx->commands_for_part,
+            commands,
+            ctx->for_file_renames,
+            ctx->log);
+
+        chassert(!commands.empty());
+
+        auto projection_interpreter = std::make_unique<MutationsInterpreter>(
+            *ctx->data, mutation_context->source_part, alter_conversions,
+            proj_desc.metadata, commands,
+            proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+
+        mutation_context->mutating_pipeline_builder = projection_interpreter->execute();
+        mutation_context->updated_header = projection_interpreter->getUpdatedHeader();
+
+        mutation_context->kind = MutationHelpers::haveMutationsOfDynamicColumns(
+            mutation_context->source_part, ctx->commands_for_part)
+            || !isWidePart(mutation_context->source_part)
+            || !isFullPartStorage(mutation_context->source_part->getDataPartStorage())
+            || (projection_interpreter && projection_interpreter->isAffectingAllColumns())
+            ? ProjectionMutationContext::MutationKind::ALL : ProjectionMutationContext::MutationKind::SOME;
+    }
+}
+
 bool MutateTask::prepare()
 {
     ProfileEvents::increment(ProfileEvents::MutationTotalParts);
@@ -2478,93 +2595,7 @@ bool MutateTask::prepare()
         lightweight_delete_mode = ctx->commands_for_part.hasOnlyLightweightDeleteCommand();
         if (lightweight_delete_mode)
         {
-            ASTPtr lightweight_delete_condition = ctx->commands_for_part.front().predicate->clone();
-            if (!lightweight_delete_condition)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected lightweight_delete_condition is nullptr");
-
-            IdentifierNameSet lightweight_delete_columns;
-            lightweight_delete_condition->collectIdentifierNames(lightweight_delete_columns);
-
-            // std::cout<<serializeAST(*condition)<<std::endl;
-            // std::cout<<condition->dumpTree()<<std::endl;
-
-            const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
-            for (const auto & proj_desc : ctx->metadata_snapshot->getProjections())
-            {
-                if (!ctx->source_part->hasProjection(proj_desc.name))
-                    continue;
-
-                if (ctx->source_part->hasBrokenProjection(proj_desc.name))
-                {
-                    if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
-                        == LightweightMutationProjectionMode::REBUILD)
-                        ctx->materialized_projections.insert(proj_desc.name);
-
-                    continue;
-                }
-
-                /// TODO: might extend to more cases in the future.
-                if (proj_desc.type == ProjectionDescription::Type::Aggregate
-                    || proj_desc.type == ProjectionDescription::Type::Normal)
-                {
-                    const auto & sort_columns = proj_desc.metadata->sorting_key.column_names;
-                    NameSet groupby_columns(sort_columns.begin(), sort_columns.end());
-                    bool is_subset_of_groupby = std::all_of(
-                        lightweight_delete_columns.begin(),
-                        lightweight_delete_columns.end(),
-                        [&](const auto & col) { return groupby_columns.contains(col); });
-
-                    if (!is_subset_of_groupby)
-                    {
-                        if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
-                            == LightweightMutationProjectionMode::REBUILD)
-                            ctx->materialized_projections.insert(proj_desc.name);
-
-                        continue;
-                    }
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown projection type");
-                }
-
-                ctx->materialized_projections.erase(proj_desc.name);
-
-                ctx->projection_mutation_contexts.emplace_back(std::make_shared<ProjectionMutationContext>());
-                auto mutation_context = ctx->projection_mutation_contexts.back();
-
-                mutation_context->name = proj_desc.name;
-                mutation_context->metadata_snapshot = proj_desc.metadata;
-                mutation_context->source_part = projections_name_and_part.find(proj_desc.name)->second;
-
-                auto & commands= projection_commands.emplace_back();
-
-                MutationHelpers::splitAndModifyMutationCommands(
-                    mutation_context->source_part,
-                    proj_desc.metadata,
-                    alter_conversions,
-                    ctx->commands_for_part,
-                    commands,
-                    ctx->for_file_renames,
-                    ctx->log);
-
-                chassert(!commands.empty());
-
-                auto projection_interpreter = std::make_unique<MutationsInterpreter>(
-                    *ctx->data, mutation_context->source_part, alter_conversions,
-                    proj_desc.metadata, commands,
-                    proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
-
-                mutation_context->mutating_pipeline_builder = projection_interpreter->execute();
-                mutation_context->updated_header = projection_interpreter->getUpdatedHeader();
-
-                mutation_context->kind = MutationHelpers::haveMutationsOfDynamicColumns(
-                    mutation_context->source_part, ctx->commands_for_part)
-                    || !isWidePart(mutation_context->source_part)
-                    || !isFullPartStorage(mutation_context->source_part->getDataPartStorage())
-                    || (projection_interpreter && projection_interpreter->isAffectingAllColumns())
-                    ? ProjectionMutationContext::MutationKind::ALL : ProjectionMutationContext::MutationKind::SOME;
-            }
+            processProjectionsWithLightweightDelete(projection_commands, context_for_reading, settings, alter_conversions);
         }
     }
 
@@ -2603,15 +2634,7 @@ bool MutateTask::prepare()
     size_t proj_cmds_idx = 0;
     for (const auto & mutation_context : ctx->projection_mutation_contexts)
     {
-        mutation_context->new_part = ctx->new_data_part->getProjectionPartBuilder(mutation_context->name, false).withPartType(mutation_context->source_part->getType()).build();
-
-        auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
-            mutation_context->source_part, mutation_context->updated_header, mutation_context->metadata_snapshot->getColumns().getAllPhysical(),
-            mutation_context->source_part->getSerializationInfos(), projection_commands[proj_cmds_idx++], ctx->for_file_renames);
-
-        mutation_context->new_part->setColumns(projection_new_columns, projection_new_infos, mutation_context->metadata_snapshot->getMetadataVersion());
-
-        mutation_context->mrk_extension = mutation_context->source_part->index_granularity_info.mark_type.getFileExtension();
+        mutation_context->setNewPart(ctx->new_data_part, projection_commands[proj_cmds_idx++]);
     }
 
     const auto data_settings = ctx->data->getSettings();
@@ -2715,17 +2738,7 @@ bool MutateTask::prepare()
 
     for (const auto & mutation_context : ctx->projection_mutation_contexts)
     {
-        if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
-            continue;
-
-        mutation_context->files_to_skip = MutationHelpers::collectFilesToSkip(
-            mutation_context->source_part,
-            mutation_context->new_part,
-            mutation_context->updated_header,
-            {},
-            mutation_context->mrk_extension,
-            {},
-            {});
+        mutation_context->setFilesToSkip();
     }
 
     return true;

@@ -55,6 +55,12 @@ private:
 
     bool prepare();
 
+    void processProjectionsWithLightweightDelete(
+        std::vector<MutationCommands> & projection_commands,
+        ContextPtr context_for_reading,
+        const MutationsInterpreter::Settings & settings,
+        AlterConversionsPtr alter_conversions);
+
     enum class State : uint8_t
     {
         NEED_PREPARE,
