@@ -42,13 +42,15 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
         res_columns[3]->insertDefault();
     }
 
-    for (size_t i = 0, end = CurrentHistogramMetrics::end(); i < end; ++i)
+    const auto & descriptors = CurrentHistogramMetrics::collect();
+    for (const auto & metric_descriptor : descriptors)
     {
-        
+        const auto & counters = metric_descriptor.counters;
+        const auto & buckets = metric_descriptor.buckets;
 
-        const CurrentHistogramMetrics::MetricInfo & metric_info = CurrentHistogramMetrics::metrics[i];
-        const auto & buckets = metric_info.buckets;
-        const auto & counters = metric_info.counters;
+        Tuple extra_label;
+        extra_label.push_back(metric_descriptor.label.first);
+        extra_label.push_back(metric_descriptor.label.second);
 
         // _bucket metrics
         UInt64 partial_sum = 0;
@@ -56,35 +58,37 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
         {
             partial_sum += counters[counter_idx].load(std::memory_order_relaxed);
 
-            res_columns[0]->insert(metric_info.name + "_bucket");
+            res_columns[0]->insert(metric_descriptor.name + "_bucket");
             res_columns[1]->insert(partial_sum);
-            res_columns[2]->insert(metric_info.documentation);
+            res_columns[2]->insert(metric_descriptor.documentation);
 
             Map labels;
             {
-                const std::string le = counter_idx < buckets.size() ? std::to_string(buckets[counter_idx]) : "+Inf";
-
-                Tuple pair;
-                pair.push_back("le");
-                pair.push_back(le);
-
-                labels.push_back(std::move(pair));
+                Tuple le;
+                le.push_back("le");
+                le.push_back(counter_idx < buckets.size() ? std::to_string(buckets[counter_idx]) : "+Inf");
+                labels.push_back(std::move(le));
             }
+
+            labels.push_back(extra_label);
+
             res_columns[3]->insert(std::move(labels));
         }
 
+        Map labels;
+        labels.push_back(extra_label);
+
         // _count metric
-        res_columns[0]->insert(metric_info.name + "_count");
+        res_columns[0]->insert(metric_descriptor.name + "_count");
         res_columns[1]->insert(partial_sum);
-        res_columns[2]->insert(metric_info.documentation);
-        res_columns[3]->insertDefault();
+        res_columns[2]->insert(metric_descriptor.documentation);
+        res_columns[3]->insert(labels);
 
         // _sum metric
-        const Int64 values_sum = CurrentHistogramMetrics::sums[i].load(std::memory_order_relaxed);
-        res_columns[0]->insert(metric_info.name + "_sum");
-        res_columns[1]->insert(values_sum);
-        res_columns[2]->insert(metric_info.documentation);
-        res_columns[3]->insertDefault();
+        res_columns[0]->insert(metric_descriptor.name + "_sum");
+        res_columns[1]->insert(metric_descriptor.sum->load(std::memory_order_relaxed));
+        res_columns[2]->insert(metric_descriptor.documentation);
+        res_columns[3]->insert(labels);
     }
 }
 

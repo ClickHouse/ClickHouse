@@ -52,15 +52,15 @@ namespace CurrentHistogramMetrics
             std::lower_bound(buckets.begin(), buckets.end(), value)
         );
         
-        MetricState<m, label>::data[bucket_idx].fetch_add(1);
-        MetricState<m, label>::sum.fetch_add(value);
+        MetricDataHolder<m, label>::counters[bucket_idx].fetch_add(1);
+        MetricDataHolder<m, label>::sum.fetch_add(value);
     }
 
-    const std::vector<MetricStatus> & getStatus()
+    const MetricDescriptors & collect()
     {
-        static const std::vector<MetricStatus> status = []()
+        static const MetricDescriptors descriptors = []()
         {
-            std::vector<MetricStatus> result;
+            MetricDescriptors result;
 
             #define M(NAME, DOCUMENTATION, BUCKETS, LABEL_NAME) \
             { \
@@ -73,9 +73,9 @@ namespace CurrentHistogramMetrics
                             #NAME, \
                             #DOCUMENTATION, \
                             std::pair{#LABEL_NAME, std::string(labelValue)}, \
-                            MetricState<NAME, labelEnum>::data, \
+                            MetricDataHolder<NAME, labelEnum>::counters, \
                             MetricTraits<NAME>::buckets, \
-                            &MetricState<NAME, labelEnum>::sum \
+                            &MetricDataHolder<NAME, labelEnum>::sum \
                         ); \
                     }(), ...); \
                 }(std::make_index_sequence<entries.size()>{}); \
@@ -86,7 +86,7 @@ namespace CurrentHistogramMetrics
 
             return result;
         }();
-        return status;
+        return descriptors;
     }
 }
 
