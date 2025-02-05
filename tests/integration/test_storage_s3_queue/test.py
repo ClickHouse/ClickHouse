@@ -2280,6 +2280,7 @@ def test_alter_settings(started_cluster):
 
     table_name = f"test_alter_settings_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1000
@@ -2326,13 +2327,12 @@ def test_alter_settings(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"r.{table_name}", dst_table_name)
-    create_mv(node2, f"r.{table_name}", dst_table_name)
+    create_mv(node1, f"r.{table_name}", f"r.{dst_table_name}", mv_name = f"r.{mv_name}")
 
     def get_count():
         return int(
             node1.query(
-                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+                f"SELECT count() FROM clusterAllReplicas(cluster, r.{dst_table_name})"
             )
         )
 
