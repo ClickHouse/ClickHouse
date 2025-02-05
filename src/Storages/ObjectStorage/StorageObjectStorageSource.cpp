@@ -414,6 +414,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        if (!object_info->getPath().empty())
+            input_format->setStorageRelatedUniqueKey(context_->getServerSettings(), context_->getSettingsRef(), object_info->getPath() + ":" + object_info->metadata->etag);
+
         builder.init(Pipe(input_format));
 
         if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
