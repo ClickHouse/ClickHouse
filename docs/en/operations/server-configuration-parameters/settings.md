@@ -1581,6 +1581,35 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
+## http_options_response
+
+Used to add headers to the response in an `OPTIONS` HTTTP request. The `OPTIONS` method is used when making CORS preflight requests.
+
+For more information, see [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
+
+By default, it is set to:
+
+```xml
+<http_options_response>
+        <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>*</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Headers</name>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Methods</name>
+            <value>POST, GET, OPTIONS</value>
+        </header>
+        <header>
+            <name>Access-Control-Max-Age</name>
+            <value>86400</value>
+        </header>
+    </http_options_response>
+```
+
 ## hsts_max_age
 
 Expired time for HSTS in seconds.
@@ -2046,6 +2075,22 @@ Keys:
 <send_crash_reports>
     <enabled>true</enabled>
 </send_crash_reports>
+```
+
+## ssh_server
+
+Configuration for writing the public part of the host key to the known_hosts file
+on the SSH client side on the first connect.
+
+Host Key Configurations are inactive by default. Uncomment the host key configurations,
+and provide the path to the respective ssh key to active them:
+
+```xml
+<ssh_server>
+    <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
+    <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
+    <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
+</ssh_server>
 ```
 
 ## macros
@@ -2763,6 +2808,22 @@ The default server configuration file `config.xml` contains the following settin
 </crash_log>
 ```
 
+## custom_cached_disks_base_directory
+
+This setting specifies the cache path for custom (created from SQL) cached disks.
+`custom_cached_disks_base_directory` has higher priority for custom disks over `filesystem_caches_path` (found in `filesystem_caches_path.xml`), which is used if the former one is absent.
+The filesystem cache setting path must lie inside that directory, otherwise an exception will be thrown preventing the disk from being created.
+
+:::note
+This will not affect disks created on an older version for which the server was upgraded. In this case, the exception will not be thrown, to allow the server to successfully start.
+:::
+
+It is set by default to `/var/lib/clickhouse/caches/`:
+
+```xml
+<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+```
+
 ## backup_log
 
 Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
@@ -2941,6 +3002,26 @@ Path on the local filesystem to store temporary data for processing large querie
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
+## url_scheme_mappers
+
+Configuration for translating shortened or symbolic URL prefixes into full URLs.
+
+By default, it is set to:
+
+```xml
+<url_scheme_mappers>
+    <s3>
+        <to>https://{bucket}.s3.amazonaws.com</to>
+    </s3>
+    <gs>
+        <to>https://storage.googleapis.com/{bucket}</to>
+    </gs>
+    <oss>
+        <to>https://{bucket}.oss.aliyuncs.com</to>
+    </oss>
+</url_scheme_mappers>
+```
+
 ## user_files_path
 
 The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
@@ -2988,6 +3069,16 @@ Path to the file that contains:
 
 ``` xml
 <users_config>users.xml</users_config>
+```
+
+## validate_tcp_client_information
+
+Determines whether validation of client information is enabled when a query packet is received.
+
+By default, it is `false`:
+
+```xml
+<validate_tcp_client_information>false</validate_tcp_client_information>
 ```
 
 ## users_without_row_policies_can_read_rows
@@ -3264,6 +3355,34 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 Type: String
 
 Default: `/var/lib/clickhouse/access/`.
+
+## allow_plaintext_password
+
+Sets whether an insecure password type of plaintext-password is allowed or not.
+By default, it is set `1` (true) which means that authType plaintext_password is allowed.
+
+```xml
+<allow_plaintext_password>1</allow_plaintext_password>
+```
+
+## allow_no_password
+
+Sets whether an insecure password type of no_password is allowed or not.
+By default, it is set `1` (true) which means that authType no_password is allowed.
+
+```xml
+<allow_no_password>1</allow_no_password>
+```
+
+## allow_implicit_no_password
+
+Forbids creating a user with no password unless 'IDENTIFIED WITH no_password' is explicitly specified.
+
+By default, it is set to `1`:
+
+```xml
+<allow_implicit_no_password>1</allow_implicit_no_password>
+```
 
 ## user_directories
 
