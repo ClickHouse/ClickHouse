@@ -6,7 +6,8 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include "Common/StringHashForHeterogeneousLookup.h"
+#include <Coordination/KeeperCommon.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
@@ -27,7 +28,6 @@ using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
-using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct NodeStats
 {
@@ -268,47 +268,22 @@ private:
     ChildrenSet children{};
 };
 
+struct KeeperStorageStats
+{
+    std::atomic<uint64_t> nodes_count = 0;
+    std::atomic<uint64_t> approximate_data_size = 0;
+    std::atomic<uint64_t> total_watches_count = 0;
+    std::atomic<uint64_t> watched_paths_count = 0;
+    std::atomic<uint64_t> sessions_with_watches_count = 0;
+    std::atomic<uint64_t> session_with_ephemeral_nodes_count = 0;
+    std::atomic<uint64_t> total_emphemeral_nodes_count = 0;
+    std::atomic<int64_t> last_zxid = 0;
+};
+
 class KeeperStorageBase
 {
 public:
-    enum DigestVersion : uint8_t
-    {
-        NO_DIGEST = 0,
-        V1 = 1,
-        V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
-        V3 = 3, // fixed bug with casting, removed duplicate czxid usage
-        V4 = 4  // 0 is not a valid digest value
-    };
-
-    struct Digest
-    {
-        DigestVersion version{DigestVersion::NO_DIGEST};
-        uint64_t value{0};
-    };
-
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
-
     static String generateDigest(const String & userdata);
-
-    struct ResponseForSession
-    {
-        int64_t session_id;
-        Coordination::ZooKeeperResponsePtr response;
-        Coordination::ZooKeeperRequestPtr request = nullptr;
-    };
-    using ResponsesForSessions = std::vector<ResponseForSession>;
-
-    struct RequestForSession
-    {
-        int64_t session_id;
-        int64_t time{0};
-        Coordination::ZooKeeperRequestPtr request;
-        int64_t zxid{0};
-        std::optional<Digest> digest;
-        int64_t log_idx{0};
-        bool use_xid_64{false};
-    };
-    using RequestsForSessions = std::vector<RequestForSession>;
 
     struct AuthID
     {
@@ -369,19 +344,7 @@ public:
         const KeeperStorageBase::Delta & front() const;
     };
 
-    struct Stats
-    {
-        std::atomic<uint64_t> nodes_count = 0;
-        std::atomic<uint64_t> approximate_data_size = 0;
-        std::atomic<uint64_t> total_watches_count = 0;
-        std::atomic<uint64_t> watched_paths_count = 0;
-        std::atomic<uint64_t> sessions_with_watches_count = 0;
-        std::atomic<uint64_t> session_with_ephemeral_nodes_count = 0;
-        std::atomic<uint64_t> total_emphemeral_nodes_count = 0;
-        std::atomic<int64_t> last_zxid = 0;
-    };
-
-    Stats stats;
+    KeeperStorageStats stats;
 
     mutable std::mutex transaction_mutex;
 
@@ -416,7 +379,7 @@ public:
     Ephemerals committed_ephemerals;
     size_t committed_ephemeral_nodes{0};
 
-    static bool checkDigest(const Digest & first, const Digest & second);
+    static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
     void finalize();
 
@@ -439,9 +402,9 @@ public:
     /// Get all active sessions
     SessionAndTimeout getActiveSessions() const;
 
-    Digest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
+    KeeperDigest getNodesDigest(bool committed, bool lock_transaction_mutex) const;
 
-    const Stats & getStorageStats() const;
+    const KeeperStorageStats & getStorageStats() const;
 
     uint64_t getSessionWithEphemeralNodesCount() const;
     uint64_t getTotalEphemeralNodesCount() const;
@@ -465,7 +428,7 @@ protected:
     struct TransactionInfo
     {
         int64_t zxid;
-        Digest nodes_digest;
+        KeeperDigest nodes_digest;
         /// index in storage of the log containing the transaction
         int64_t log_idx = 0;
     };
@@ -618,7 +581,7 @@ public:
 
     /// Process user request and return response.
     /// check_acl = false only when converting data from ZooKeeper.
-    ResponsesForSessions processRequest(
+    KeeperResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         std::optional<int64_t> new_last_zxid,
@@ -630,7 +593,7 @@ public:
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl = true,
-        std::optional<Digest> digest = std::nullopt,
+        std::optional<KeeperDigest> digest = std::nullopt,
         int64_t log_idx = 0);
     void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
 
@@ -661,10 +624,5 @@ private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
 };
-
-using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
-#if USE_ROCKSDB
-using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
-#endif
 
 }

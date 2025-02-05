@@ -652,7 +652,7 @@ namespace
 
 }
 
-void KeeperServer::putLocalReadRequest(const KeeperStorageBase::RequestForSession & request_for_session)
+void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
     if (!request_for_session.request->isReadRequest())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
@@ -660,7 +660,7 @@ void KeeperServer::putLocalReadRequest(const KeeperStorageBase::RequestForSessio
     state_machine->processReadRequest(request_for_session);
 }
 
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests_for_sessions)
+RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
@@ -944,8 +944,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);
-                writeIntBinary(request_for_session->digest->version, write_buf);
-                if (request_for_session->digest->version != KeeperStorageBase::NO_DIGEST)
+                writeIntBinary(static_cast<uint8_t>(request_for_session->digest->version), write_buf);
+                if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
 
                 write_buf.finalize();

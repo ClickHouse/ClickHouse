@@ -132,14 +132,14 @@ void unregisterEphemeralPath(KeeperStorageBase::Ephemerals & ephemerals, int64_t
         ephemerals.erase(ephemerals_it);
 }
 
-KeeperStorageBase::ResponsesForSessions processWatchesImpl(
+KeeperResponsesForSessions processWatchesImpl(
     const String & path,
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches,
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers,
     Coordination::Event event_type)
 {
-    KeeperStorageBase::ResponsesForSessions result;
+    KeeperResponsesForSessions result;
     auto watch_it = watches.find(path);
     if (watch_it != watches.end())
     {
@@ -154,7 +154,7 @@ KeeperStorageBase::ResponsesForSessions processWatchesImpl(
             [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
                 KeeperStorageBase::WatchInfo{.path = path, .is_list_watch = false});
             chassert(erased);
-            result.push_back(KeeperStorageBase::ResponseForSession{watcher_session, watch_response});
+            result.push_back(KeeperResponseForSession{watcher_session, watch_response});
         }
 
         watches.erase(watch_it);
@@ -195,7 +195,7 @@ KeeperStorageBase::ResponsesForSessions processWatchesImpl(
                 [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
                     KeeperStorageBase::WatchInfo{.path = path_to_check, .is_list_watch = true});
                 chassert(erased);
-                result.push_back(KeeperStorageBase::ResponseForSession{watcher_session, watch_list_response});
+                result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
             }
 
             list_watches.erase(watch_it);
@@ -204,7 +204,7 @@ KeeperStorageBase::ResponsesForSessions processWatchesImpl(
     return result;
 }
 
-// When this function is updated, update CURRENT_DIGEST_VERSION!!
+// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
 template <typename Node>
 uint64_t calculateDigest(std::string_view path, const Node & node)
 {
@@ -1446,7 +1446,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 }
 
 template <std::derived_from<Coordination::ZooKeeperRequest> T>
-KeeperStorageBase::ResponsesForSessions processWatches(
+KeeperResponsesForSessions processWatches(
     const T & /*zk_request*/,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & /*watches*/,
@@ -1495,7 +1495,7 @@ bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage 
     return storage.checkACL(parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
 }
 
-KeeperStorageBase::ResponsesForSessions processWatches(
+KeeperResponsesForSessions processWatches(
     const Coordination::ZooKeeperCreateRequest & zk_request,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
@@ -1738,7 +1738,7 @@ bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage 
     return storage.checkACL(parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
-KeeperStorageBase::ResponsesForSessions processWatches(
+KeeperResponsesForSessions processWatches(
     const Coordination::ZooKeeperRemoveRequest & zk_request,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
@@ -2028,14 +2028,14 @@ bool checkAuth(const Coordination::ZooKeeperRemoveRecursiveRequest & zk_request,
     return storage.checkACL(parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
-KeeperStorageBase::ResponsesForSessions processWatches(
+KeeperResponsesForSessions processWatches(
     const Coordination::ZooKeeperRemoveRecursiveRequest & /*zk_request*/,
     KeeperStorageBase::DeltaRange deltas,
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches,
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers)
 {
-    KeeperStorageBase::ResponsesForSessions responses;
+    KeeperResponsesForSessions responses;
     for (const auto & delta : deltas)
     {
         const auto * remove_delta = std::get_if<RemoveNodeDelta>(&delta.operation);
@@ -2235,7 +2235,7 @@ bool checkAuth(const Coordination::ZooKeeperSetRequest & zk_request, Storage & s
     return storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local);
 }
 
-KeeperStorageBase::ResponsesForSessions processWatches(
+KeeperResponsesForSessions processWatches(
     const Coordination::ZooKeeperSetRequest & zk_request,
     KeeperStorageBase::DeltaRange /*deltas*/,
     KeeperStorageBase::Watches & watches,
@@ -2711,14 +2711,14 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
     return response;
 }
 
-KeeperStorageBase::ResponsesForSessions processWatches(
+KeeperResponsesForSessions processWatches(
     const Coordination::ZooKeeperMultiRequest & zk_request,
     KeeperStorageBase::DeltaRange deltas,
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches,
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers)
 {
-    KeeperStorageBase::ResponsesForSessions result;
+    KeeperResponsesForSessions result;
 
     const auto & subrequests = zk_request.requests;
     for (const auto & generic_request : subrequests)
@@ -3035,7 +3035,7 @@ void KeeperStorage<Container>::preprocessRequest(
     int64_t time,
     int64_t new_last_zxid,
     bool check_acl,
-    std::optional<Digest> digest,
+    std::optional<KeeperDigest> digest,
     int64_t log_idx)
 {
     Stopwatch watch;
@@ -3102,9 +3102,9 @@ void KeeperStorage<Container>::preprocessRequest(
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
-            transaction->nodes_digest = Digest{CURRENT_DIGEST_VERSION, new_digest};
+            transaction->nodes_digest = KeeperDigest{KEEPER_CURRENT_DIGEST_VERSION, new_digest};
         else
-            transaction->nodes_digest = Digest{DigestVersion::NO_DIGEST};
+            transaction->nodes_digest = KeeperDigest{KeeperDigestVersion::NO_DIGEST};
 
         uncommitted_state.applyDeltas(new_deltas);
         uncommitted_state.addDeltas(std::move(new_deltas));
@@ -3221,7 +3221,7 @@ void KeeperStorage<Container>::preprocessRequest(
 }
 
 template<typename Container>
-KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::processRequest(
+KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
     std::optional<int64_t> new_last_zxid,
@@ -3282,7 +3282,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
 
     KeeperStorageBase::DeltaRange deltas_range{.begin_it = deltas.begin(), .end_it = deltas.end()};
 
-    ResponsesForSessions results;
+    KeeperResponsesForSessions results;
 
     /// ZooKeeper update sessions expirity for each request, not only for heartbeats
     session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
@@ -3317,7 +3317,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         response->zxid = commit_zxid;
         session_expiry_queue.remove(session_id);
         session_and_timeout.erase(session_id);
-        results.push_back(ResponseForSession{session_id, response});
+        results.push_back(KeeperResponseForSession{session_id, response});
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
@@ -3329,7 +3329,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
         response->xid = zk_request->xid;
         response->zxid = commit_zxid;
 
-        results.push_back(ResponseForSession{session_id, response});
+        results.push_back(KeeperResponseForSession{session_id, response});
     }
     else /// normal requests proccession
     {
@@ -3402,7 +3402,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
             response->xid = zk_request->xid;
             response->zxid = commit_zxid;
 
-            results.push_back(ResponseForSession{session_id, response});
+            results.push_back(KeeperResponseForSession{session_id, response});
         };
 
         callOnConcreteRequestType(*zk_request, process_request);
@@ -3449,15 +3449,15 @@ void KeeperStorage<Container>::rollbackRequest(int64_t rollback_zxid, bool allow
     }
 }
 
-KeeperStorageBase::Digest KeeperStorageBase::getNodesDigest(bool committed, bool lock_transaction_mutex) const TSA_NO_THREAD_SAFETY_ANALYSIS
+KeeperDigest KeeperStorageBase::getNodesDigest(bool committed, bool lock_transaction_mutex) const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     if (!keeper_context->digestEnabled())
-        return {.version = DigestVersion::NO_DIGEST};
+        return {.version = KeeperDigestVersion::NO_DIGEST};
 
     if (committed)
     {
         std::shared_lock storage_lock(storage_mutex);
-        return {CURRENT_DIGEST_VERSION, nodes_digest};
+        return {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest};
     }
 
     std::unique_lock transaction_lock(transaction_mutex, std::defer_lock);
@@ -3469,7 +3469,7 @@ KeeperStorageBase::Digest KeeperStorageBase::getNodesDigest(bool committed, bool
         if (lock_transaction_mutex)
             transaction_lock.unlock();
         std::shared_lock storage_lock(storage_mutex);
-        return {CURRENT_DIGEST_VERSION, nodes_digest};
+        return {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest};
     }
 
     return uncommitted_transactions.back().nodes_digest;
@@ -3674,7 +3674,7 @@ void KeeperStorage<Container>::updateStats()
     stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
 }
 
-const KeeperStorageBase::Stats & KeeperStorageBase::getStorageStats() const
+const KeeperStorageStats & KeeperStorageBase::getStorageStats() const
 {
     return stats;
 }
@@ -3706,12 +3706,12 @@ void KeeperStorage<Container>::recalculateStats()
     stats.approximate_data_size.store(getApproximateDataSize(), std::memory_order_relaxed);
 }
 
-bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)
+bool KeeperStorageBase::checkDigest(const KeeperDigest & first, const KeeperDigest & second)
 {
     if (first.version != second.version)
         return true;
 
-    if (first.version == DigestVersion::NO_DIGEST)
+    if (first.version == KeeperDigestVersion::NO_DIGEST)
         return true;
 
     return first.value == second.value;
