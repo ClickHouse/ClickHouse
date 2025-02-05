@@ -2,6 +2,7 @@
 #include <base/sort.h>
 
 #include <Common/setThreadName.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -17,6 +18,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
+
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/String.h>
 
