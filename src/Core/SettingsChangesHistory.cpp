@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"merge_tree_min_rows_for_concurrent_read", 163840, 131072, "Tune the min_marks_for_concurrent_read to get better performance in high core count system"},
             {"merge_tree_min_bytes_for_concurrent_read", 251658240, 167772160, "Tune the min_marks_for_concurrent_read to get better performance in high core count system"},
+            {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -108,8 +109,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
+            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",
@@ -121,13 +125,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
-            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
-            {"skip_redundant_aliases_in_udf", false, false, "New setting."},
+            {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             /// Release closed. Please use 25.1

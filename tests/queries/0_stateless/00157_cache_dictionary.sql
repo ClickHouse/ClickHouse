@@ -1,4 +1,4 @@
--- Tags: stateful, no-tsan, no-parallel
+-- Tags: stateful, no-tsan, no-msan, no-asan, no-parallel
 
 DROP TABLE IF EXISTS test.hits_1m;
 

@@ -482,3 +482,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 PATTERN="allow_";
 DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
 [ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"
+
+# Don't allow the direct inclusion of magic_enum.hpp and instead point to base/EnumReflection.h
+find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
+do
+    echo "Found the inclusion of magic_enum.hpp in '${line}'. Please use <base/EnumReflection.h> instead"
+done
