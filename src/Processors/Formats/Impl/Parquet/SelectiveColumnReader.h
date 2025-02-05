@@ -498,9 +498,11 @@ public:
 
 protected:
     void decodePage();
+    void initDataPageDecoder(const parquet::Encoding::type encoding);
     virtual void skipPageIfNeed();
     bool readPage();
     void readDataPageV1(const parquet::DataPageV1 & page);
+    void readDataPageV2(const parquet::DataPageV2 & page);
 
     // for dictionary reader
     virtual void readDictPage(const parquet::DictionaryPage &) { }

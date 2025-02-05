@@ -24,7 +24,7 @@ public:
     void skipNextPage();
 
 private:
-    std::shared_ptr<arrow::Buffer> decompressIfNeeded(const uint8_t * data, size_t compressed_size, size_t uncompressed_size);
+    std::shared_ptr<arrow::Buffer> decompressIfNeeded(const uint8_t * data, size_t compressed_size, size_t uncompressed_size, size_t levels_byte_len = 0);
 
     std::unique_ptr<ReadBufferFromMemory> stream = nullptr   ;
     parquet::format::PageHeader current_page_header;

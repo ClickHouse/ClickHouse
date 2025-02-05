@@ -98,9 +98,10 @@ bool SelectiveColumnReader::readPage()
         }
         readDictPage(static_cast<const parquet::DictionaryPage &>(*dict_page));
     }
-    else if (page_type == parquet::format::PageType::DATA_PAGE)
+    else if (page_type == parquet::format::PageType::DATA_PAGE || page_type == parquet::format::PageType::DATA_PAGE_V2)
     {
-        state.offsets.reset(page_header.data_page_header.num_values);
+        auto rows = page_type == parquet::format::PageType::DATA_PAGE ? page_header.data_page_header.num_values : page_header.data_page_header_v2.num_values;
+        state.offsets.reset(rows);
         state.page.reset();
         skipPageIfNeed();
     }
@@ -109,6 +110,29 @@ bool SelectiveColumnReader::readPage()
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported page type {}", magic_enum::enum_name(page_type));
     }
     return true;
+}
+
+void SelectiveColumnReader::initDataPageDecoder(const parquet::Encoding::type encoding)
+{
+    if (encoding == parquet::Encoding::RLE_DICTIONARY || encoding == parquet::Encoding::PLAIN_DICTIONARY)
+    {
+        initIndexDecoderIfNeeded();
+        createDictDecoder();
+        plain = false;
+    }
+    else if (encoding == parquet::Encoding::PLAIN)
+    {
+        if (!plain)
+        {
+            downgradeToPlain();
+            plain = true;
+        }
+        plain_decoder = std::make_unique<PlainDecoder>(state.data, state.offsets);
+    }
+    else
+    {
+        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding type {}", magic_enum::enum_name(encoding));
+    }
 }
 
 void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
@@ -121,53 +145,101 @@ void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
     auto max_def_level = scan_spec.column_desc->max_definition_level();
     state.def_levels.resize(0);
     state.rep_levels.resize(0);
-    if (scan_spec.column_desc->max_repetition_level() > 0)
+    if (max_rep_level > 0)
     {
         auto rep_bytes = decoder.SetData(
             page.repetition_level_encoding(), max_rep_level, static_cast<int>(state.offsets.remain_rows), state.data.buffer, max_size);
         max_size -= rep_bytes;
         state.data.buffer += rep_bytes;
-        state.rep_levels.resize_fill(state.offsets.remain_rows);
+        state.rep_levels.resize(state.offsets.remain_rows);
         decoder.Decode(static_cast<int>(state.offsets.remain_rows), state.rep_levels.data());
     }
-    if (scan_spec.column_desc->max_definition_level() > 0)
+    if (max_def_level > 0)
     {
         auto def_bytes = decoder.SetData(
             page.definition_level_encoding(), max_def_level, static_cast<int>(state.offsets.remain_rows), state.data.buffer, max_size);
         max_size -= def_bytes;
         state.data.buffer += def_bytes;
-        state.def_levels.resize_fill(state.offsets.remain_rows);
+        state.def_levels.resize(state.offsets.remain_rows);
         decoder.Decode(static_cast<int>(state.offsets.remain_rows), state.def_levels.data());
     }
     state.data.buffer_size = max_size;
-    if (page.encoding() == parquet::Encoding::RLE_DICTIONARY || page.encoding() == parquet::Encoding::PLAIN_DICTIONARY)
-    {
-        initIndexDecoderIfNeeded();
-        createDictDecoder();
-        plain = false;
-    }
-    else if (page.encoding() == parquet::Encoding::PLAIN)
-    {
-        if (!plain)
-        {
-            downgradeToPlain();
-            plain = true;
-        }
-        plain_decoder = std::make_unique<PlainDecoder>(state.data, state.offsets);
-    }
-    else
-    {
-        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding type {}", magic_enum::enum_name(page.encoding()));
-    }
+    initDataPageDecoder(page.encoding());
     state.lazy_skip_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
     chassert(state.lazy_skip_rows == 0);
 }
+
+void SelectiveColumnReader::readDataPageV2(const parquet::DataPageV2 & page)
+{
+    state.data.buffer = page.data();
+    parquet::LevelDecoder decoder;
+
+    if (page.repetition_levels_byte_length() < 0 || page.definition_levels_byte_length() < 0)
+    {
+        throw Exception(
+            ErrorCodes::PARQUET_EXCEPTION, "Either RL or DL is negative, this should not happen. Most likely corrupt file or parsing issue");
+    }
+
+    const int32_t total_levels_length =
+        page.repetition_levels_byte_length() +
+        page.definition_levels_byte_length();
+
+    if (total_levels_length > page.size())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Data page too small for levels (corrupt header?)");
+    }
+
+    // ARROW-17453: Even if max_rep_level_ is 0, there may still be
+    // repetition level bytes written and/or reported in the header by
+    // some writers (e.g. Athena)
+    auto max_rep_level = scan_spec.column_desc->max_repetition_level();
+    auto max_def_level = scan_spec.column_desc->max_definition_level();
+    state.def_levels.resize(0);
+    state.rep_levels.resize(0);
+    auto rl_bytes = page.repetition_levels_byte_length();
+    if (max_rep_level > 0)
+    {
+        decoder.SetDataV2(rl_bytes, max_rep_level, static_cast<int>(state.offsets.remain_rows), state.data.buffer);
+        state.data.buffer += rl_bytes;
+        state.rep_levels.resize(state.offsets.remain_rows);
+        decoder.Decode(static_cast<int>(state.offsets.remain_rows), state.rep_levels.data());
+    }
+    state.data.buffer += rl_bytes;
+
+    auto dl_bytes = page.definition_levels_byte_length();
+    if (max_def_level > 0)
+    {
+        decoder.SetDataV2(
+            dl_bytes, max_def_level, static_cast<int>(state.offsets.remain_rows), state.data.buffer);
+        state.data.buffer += dl_bytes;
+        state.def_levels.resize(state.offsets.remain_rows);
+        decoder.Decode(static_cast<int>(state.offsets.remain_rows), state.def_levels.data());
+    }
+    state.data.buffer_size = page.size() - total_levels_length;
+
+    initDataPageDecoder(page.encoding());
+    state.lazy_skip_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
+    chassert(state.lazy_skip_rows == 0);
+}
+
 void SelectiveColumnReader::decodePage()
 {
     if (state.page)
         return;
     state.page = page_reader->nextPage();
-    readDataPageV1(static_cast<const parquet::DataPageV1 &>(*state.page));
+    switch (state.page->type())
+    {
+        case parquet::PageType::DATA_PAGE:
+            readDataPageV1(static_cast<const parquet::DataPageV1 &>(*state.page));
+            break;
+        case parquet::PageType::DATA_PAGE_V2:
+            readDataPageV2(static_cast<const parquet::DataPageV2 &>(*state.page));
+            break;
+        default:
+            throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported page type {}", magic_enum::enum_name(state.page->type()));
+    }
+
 }
 void SelectiveColumnReader::skipPageIfNeed()
 {
