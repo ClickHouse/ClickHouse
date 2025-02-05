@@ -305,6 +305,13 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 #endif
         }
+#if USE_BUZZHOUSE
+        if (fc && fc->measure_performance && ei)
+        {
+            auto u = ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
+            UNUSED(u);
+        }
+#endif
     }
 
     for (const auto & query : queries_for_fuzzed_tables)
@@ -350,7 +357,7 @@ bool Client::processWithFuzzing(const String & full_query)
             have_error = false;
         }
 #if USE_BUZZHOUSE
-        else if (fc && fc->measure_performance && ei)
+        if (fc && fc->measure_performance && ei)
         {
             auto u = ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
             UNUSED(u);
