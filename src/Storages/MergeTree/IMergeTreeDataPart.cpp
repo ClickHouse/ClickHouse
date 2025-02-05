@@ -7,6 +7,7 @@
 #include <string_view>
 #include <Common/quoteString.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
