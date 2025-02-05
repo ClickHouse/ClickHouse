@@ -1,7 +1,5 @@
 /// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include <iterator>
-#include <variant>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -29,7 +27,6 @@
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
 
-#include <functional>
 #include <shared_mutex>
 #include <base/defines.h>
 
@@ -451,11 +448,14 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     cached_digest = other.cached_digest;
 }
 
+KeeperStorageBase::KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context_, const String & superdigest_)
+    : keeper_context(keeper_context_), superdigest(superdigest_), session_expiry_queue(tick_time_ms)
+{}
 
-template<typename Container>
+template <typename Container>
 KeeperStorage<Container>::KeeperStorage(
     int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
-    : session_expiry_queue(tick_time_ms), keeper_context(keeper_context_), superdigest(superdigest_)
+    : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
 {
     if constexpr (use_rocksdb)
         container.initialize(keeper_context);
@@ -953,16 +953,20 @@ namespace
 
 }
 
+KeeperStorageBase::Delta::Delta(String path_, int64_t zxid_, Operation operation_) : path(std::move(path_)), zxid(zxid_), operation(std::move(operation_)) { }
+
+KeeperStorageBase::Delta::Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
+
+KeeperStorageBase::Delta::Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
+
 /// Get current committed zxid
-template<typename Container>
-int64_t KeeperStorage<Container>::getZXID() const
+int64_t KeeperStorageBase::getZXID() const
 {
     std::lock_guard lock(transaction_mutex);
     return zxid;
 }
 
-template<typename Container>
-int64_t KeeperStorage<Container>::getNextZXIDLocked() const
+int64_t KeeperStorageBase::getNextZXIDLocked() const
 {
     if (uncommitted_transactions.empty())
         return zxid + 1;
@@ -970,8 +974,7 @@ int64_t KeeperStorage<Container>::getNextZXIDLocked() const
     return uncommitted_transactions.back().zxid + 1;
 }
 
-template<typename Container>
-int64_t KeeperStorage<Container>::getNextZXID() const
+int64_t KeeperStorageBase::getNextZXID() const
 {
     std::lock_guard lock(transaction_mutex);
     return getNextZXIDLocked();
@@ -2816,8 +2819,7 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperGet
 }
 /// GETACL Request ///
 
-template<typename Container>
-void KeeperStorage<Container>::finalize()
+void KeeperStorageBase::finalize()
 {
     if (finalized)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage already finalized");
@@ -2833,8 +2835,7 @@ void KeeperStorage<Container>::finalize()
     session_expiry_queue.clear();
 }
 
-template<typename Container>
-bool KeeperStorage<Container>::isFinalized() const
+bool KeeperStorageBase::isFinalized() const
 {
     return finalized;
 }
@@ -3339,8 +3340,7 @@ void KeeperStorage<Container>::rollbackRequest(int64_t rollback_zxid, bool allow
     }
 }
 
-template<typename Container>
-KeeperStorageBase::Digest KeeperStorage<Container>::getNodesDigest(bool committed, bool lock_transaction_mutex) const TSA_NO_THREAD_SAFETY_ANALYSIS
+KeeperStorageBase::Digest KeeperStorageBase::getNodesDigest(bool committed, bool lock_transaction_mutex) const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     if (!keeper_context->digestEnabled())
         return {.version = DigestVersion::NO_DIGEST};
@@ -3384,8 +3384,7 @@ void KeeperStorage<Container>::addDigest(const Node & node, const std::string_vi
 }
 
 /// Allocate new session id with the specified timeouts
-template<typename Container>
-int64_t KeeperStorage<Container>::getSessionID(int64_t session_timeout_ms)
+int64_t KeeperStorageBase::getSessionID(int64_t session_timeout_ms)
 {
     auto result = session_id_counter++;
     session_and_timeout.emplace(result, session_timeout_ms);
@@ -3394,21 +3393,18 @@ int64_t KeeperStorage<Container>::getSessionID(int64_t session_timeout_ms)
 }
 
 /// Add session id. Used when restoring KeeperStorage from snapshot.
-template<typename Container>
-void KeeperStorage<Container>::addSessionID(int64_t session_id, int64_t session_timeout_ms)
+void KeeperStorageBase::addSessionID(int64_t session_id, int64_t session_timeout_ms)
 {
     session_and_timeout.emplace(session_id, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
 }
 
-template<typename Container>
-std::vector<int64_t> KeeperStorage<Container>::getDeadSessions() const
+std::vector<int64_t> KeeperStorageBase::getDeadSessions() const
 {
     return session_expiry_queue.getExpiredSessions();
 }
 
-template<typename Container>
-SessionAndTimeout KeeperStorage<Container>::getActiveSessions() const
+SessionAndTimeout KeeperStorageBase::getActiveSessions() const
 {
     return session_and_timeout;
 }
@@ -3460,14 +3456,12 @@ uint64_t KeeperStorage<Container>::getArenaDataSize() const
     return container.keyArenaSize();
 }
 
-template<typename Container>
-uint64_t KeeperStorage<Container>::getWatchedPathsCount() const
+uint64_t KeeperStorageBase::getWatchedPathsCount() const
 {
     return watches.size() + list_watches.size();
 }
 
-template<typename Container>
-void KeeperStorage<Container>::clearDeadWatches(int64_t session_id)
+void KeeperStorageBase::clearDeadWatches(int64_t session_id)
 {
     /// Clear all watches for this session
     auto watches_it = sessions_and_watchers.find(session_id);
@@ -3500,8 +3494,7 @@ void KeeperStorage<Container>::clearDeadWatches(int64_t session_id)
     sessions_and_watchers.erase(watches_it);
 }
 
-template<typename Container>
-void KeeperStorage<Container>::dumpWatches(WriteBufferFromOwnString & buf) const
+void KeeperStorageBase::dumpWatches(WriteBufferFromOwnString & buf) const
 {
     for (const auto & [session_id, watches_paths] : sessions_and_watchers)
     {
@@ -3511,8 +3504,7 @@ void KeeperStorage<Container>::dumpWatches(WriteBufferFromOwnString & buf) const
     }
 }
 
-template<typename Container>
-void KeeperStorage<Container>::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+void KeeperStorageBase::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
     auto write_int_container = [&buf](const auto & session_ids)
     {
@@ -3535,8 +3527,7 @@ void KeeperStorage<Container>::dumpWatchesByPath(WriteBufferFromOwnString & buf)
     }
 }
 
-template<typename Container>
-void KeeperStorage<Container>::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
+void KeeperStorageBase::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
     auto write_str_set = [&buf](const std::unordered_set<String> & ephemeral_paths)
     {
@@ -3574,32 +3565,27 @@ void KeeperStorage<Container>::updateStats()
     stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
 }
 
-template<typename Container>
-const KeeperStorageBase::Stats & KeeperStorage<Container>::getStorageStats() const
+const KeeperStorageBase::Stats & KeeperStorageBase::getStorageStats() const
 {
     return stats;
 }
 
-template<typename Container>
-uint64_t KeeperStorage<Container>::getTotalWatchesCount() const
+uint64_t KeeperStorageBase::getTotalWatchesCount() const
 {
     return total_watches_count;
 }
 
-template<typename Container>
-uint64_t KeeperStorage<Container>::getSessionWithEphemeralNodesCount() const
+uint64_t KeeperStorageBase::getSessionWithEphemeralNodesCount() const
 {
     return committed_ephemerals.size();
 }
 
-template<typename Container>
-uint64_t KeeperStorage<Container>::getSessionsWithWatchesCount() const
+uint64_t KeeperStorageBase::getSessionsWithWatchesCount() const
 {
     return sessions_and_watchers.size();
 }
 
-template<typename Container>
-uint64_t KeeperStorage<Container>::getTotalEphemeralNodesCount() const
+uint64_t KeeperStorageBase::getTotalEphemeralNodesCount() const
 {
     return committed_ephemeral_nodes;
 }
@@ -3630,8 +3616,7 @@ UInt64 KeeperStorageBase::WatchInfoHash::operator()(WatchInfo info) const
     return hash.get64();
 }
 
-template<typename Container>
-String KeeperStorage<Container>::generateDigest(const String & userdata)
+String KeeperStorageBase::generateDigest(const String & userdata)
 {
     std::vector<String> user_password;
     boost::split(user_password, userdata, [](char character) { return character == ':'; });
