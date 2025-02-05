@@ -1045,4 +1045,12 @@ void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements sche
     out.write("PAR1", 4);
 }
 
+size_t ColumnChunkWriteState::allocatedBytes() const
+{
+    size_t r = def.allocated_bytes() + rep.allocated_bytes();
+    if (primitive_column)
+        r += primitive_column->allocatedBytes();
+    return r;
+}
+
 }

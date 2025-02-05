@@ -2,6 +2,7 @@
 
 #if USE_PARQUET
 
+#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <parquet/arrow/writer.h>
