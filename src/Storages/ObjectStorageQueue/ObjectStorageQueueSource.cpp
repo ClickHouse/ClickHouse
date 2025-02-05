@@ -18,6 +18,16 @@
 namespace ProfileEvents
 {
     extern const Event ObjectStorageQueuePullMicroseconds;
+    extern const Event ObjectStorageQueueFailedToBatchSetProcessing;
+    extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
+    extern const Event ObjectStorageQueueTrySetProcessingFailed;
+    extern const Event ObjectStorageQueueListedFiles;
+    extern const Event ObjectStorageQueueFilteredFiles;
+    extern const Event ObjectStorageQueueReadFiles;
+    extern const Event ObjectStorageQueueReadRows;
+    extern const Event ObjectStorageQueueReadBytes;
+    extern const Event ObjectStorageQueueExceptionsDuringRead;
+    extern const Event ObjectStorageQueueExceptionsDuringInsert;
 }
 
 namespace DB
@@ -151,6 +161,8 @@ ObjectStorageQueueSource::FileIterator::next()
             LOG_TEST(log, "Received batch of size: {}", result->size());
 
             new_batch = std::move(result.value());
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
+
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
                 if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
@@ -214,6 +226,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 auto code = zk_client->tryMulti(requests, responses);
                 if (code == Coordination::Error::ZOK)
                 {
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);
+
                     LOG_TEST(log, "Successfully set {} files as processing", new_batch.size());
 
                     for (size_t i = 0; i < new_batch.size(); ++i)
@@ -230,6 +244,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
                 else
                 {
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedToBatchSetProcessing);
+
                     auto failed_idx = zkutil::getFailedOpIndex(code, responses);
 
                     LOG_TRACE(log, "Failed to set files as processing in one request: {} ({})",
@@ -267,6 +283,8 @@ ObjectStorageQueueSource::FileIterator::next()
 
         index = 0;
         object_infos = std::move(new_batch);
+
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFilteredFiles, object_infos.size());
     }
 
     if (index >= object_infos.size())
@@ -837,6 +855,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 progress->processed_rows += chunk.getNumRows();
                 progress->processed_bytes += chunk.bytes();
 
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
+
                 VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                     chunk, read_from_format_info.requested_virtual_columns,
                     {
@@ -858,6 +879,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
             /// Stop processing and commit what is already processed.
             return {};
         }
+
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadFiles);
 
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
@@ -975,6 +998,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 }
                 else
                 {
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
+
                     file_metadata->prepareFailedRequests(
                         requests,
                         exception_message,
@@ -993,6 +1018,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         file_state, file_metadata->getPath());
                 }
 
+                if (file_state != FileState::Cancelled)
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
+
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
@@ -1001,6 +1029,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             }
             case FileState::ErrorOnRead:
             {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringRead);
+
                 chassert(!exception_during_read.empty());
                 file_metadata->prepareFailedRequests(
                     requests,
