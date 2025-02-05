@@ -115,7 +115,7 @@ def update_docs(repos: LibraryRepos, dry_run: bool = True) -> None:
     try:
         docs_pr = open_images_prs[0]
         logging.info("There's open PRs in upstream repo, will update it if needed")
-        run(f"{GIT_PREFIX} checkout {LIBRARY_BRANCH}", cwd=temp_path)
+        run(f"{GIT_PREFIX} checkout {LIBRARY_BRANCH}", cwd=docs_dir)
     except IndexError:
         docs_pr = None
         run(f"{GIT_PREFIX} checkout -B {LIBRARY_BRANCH} --no-track", cwd=docs_dir)
@@ -271,7 +271,7 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
     try:
         images_pr = open_images_prs[0]
         logging.info("There's open PRs in upstream repo, will update it if needed")
-        run(f"{GIT_PREFIX} checkout {LIBRARY_BRANCH}", cwd=temp_path)
+        run(f"{GIT_PREFIX} checkout {LIBRARY_BRANCH}", cwd=images_dir)
     except IndexError:
         images_pr = None
         run(f"{GIT_PREFIX} checkout -B {LIBRARY_BRANCH} --no-track", cwd=images_dir)
