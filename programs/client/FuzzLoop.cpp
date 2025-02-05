@@ -294,8 +294,11 @@ bool Client::processWithFuzzing(const String & full_query)
                 && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>()
                     || orig_ast->as<ASTSelectIntersectExceptQuery>()))
             {
+                uint64_t memory_usage1 = 0;
+                uint64_t memory_usage2 = 0;
+                uint64_t query_duration_ms1 = 0;
+                uint64_t query_duration_ms2 = 0;
                 bool measure_performance = true;
-                uint64_t query_duration_ms1 = 0, memory_usage1 = 0, query_duration_ms2 = 0, memory_usage2 = 0;
 
                 measure_performance
                     &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, query_duration_ms1, memory_usage1);
