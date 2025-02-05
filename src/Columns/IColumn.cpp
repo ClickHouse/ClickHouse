@@ -20,6 +20,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumnDummy.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
@@ -478,4 +479,17 @@ template class IColumnHelper<ColumnObject, IColumn>;
 template class IColumnHelper<IColumnDummy, IColumn>;
 
 template class IColumnHelper<ColumnBlob, IColumn>;
+
+void intrusive_ptr_add_ref(const IColumn * c)
+{
+    BOOST_ASSERT(c != nullptr);
+    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
+}
+
+void intrusive_ptr_release(const IColumn * c)
+{
+    BOOST_ASSERT(c != nullptr);
+    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
+}
+
 }

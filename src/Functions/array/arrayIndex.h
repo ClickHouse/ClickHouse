@@ -15,6 +15,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include "Common/FieldVisitors.h"
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"

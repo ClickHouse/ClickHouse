@@ -21,9 +21,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
-struct FilterInfo;
-using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
@@ -75,15 +72,6 @@ struct PrewhereInfo
 
         return prewhere_info;
     }
-};
-
-/// Helper struct to store all the information about the filter expression.
-struct FilterInfo
-{
-    ExpressionActionsPtr alias_actions;
-    ExpressionActionsPtr actions;
-    String column_name;
-    bool do_remove_column = false;
 };
 
 /// Same as FilterInfo, but with ActionsDAG.
@@ -192,8 +180,6 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
-
-    ASTPtr parallel_replica_custom_key_ast;
 
     /// Filter actions dag for current storage
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
