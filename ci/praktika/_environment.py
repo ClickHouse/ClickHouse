@@ -103,8 +103,8 @@ class _Environment(MetaClasses.Serializable):
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
-            FORK_NAME = github_event["repository"]["full_name"]
             if "pull_request" in github_event:
+                FORK_NAME = github_event["pull_request"]["head"]["repo"]["full_name"]
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
                 PR_NUMBER = github_event["pull_request"]["number"]
                 SHA = github_event["pull_request"]["head"]["sha"]

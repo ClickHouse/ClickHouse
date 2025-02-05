@@ -14,6 +14,7 @@ from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
 from .runtime import RunConfig
+from .gh import GH
 from .s3 import S3
 from .settings import Settings
 from .utils import Shell, TeePopen, Utils
@@ -100,6 +101,8 @@ class Runner:
         return 0
 
     def _pre_run(self, workflow, job, local_run=False):
+        if job.name == Settings.CI_CONFIG_JOB_NAME:
+            GH.print_actions_debug_info()
         env = _Environment.get()
 
         result = Result(

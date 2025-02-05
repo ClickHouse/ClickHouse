@@ -101,27 +101,28 @@ def post_commit_status(
             if i == RETRY - 1:
                 raise ex
             time.sleep(i)
-    if pr_info and check_name not in (
-        CI.StatusNames.MERGEABLE,
-        CI.StatusNames.CI,
-        CI.StatusNames.PR_CHECK,
-        CI.StatusNames.SYNC,
-    ):
-        status_updated = False
-        for i in range(RETRY):
-            try:
-                set_status_comment(commit, pr_info)
-                status_updated = True
-                break
-            except Exception as ex:
-                logging.warning(
-                    "Failed to update the status commit, will retry %s times: %s",
-                    RETRY - i - 1,
-                    ex,
-                )
-
-        if not status_updated:
-            logging.error("Failed to update the status comment, continue anyway")
+    # Enable general comment if required, commented out to not interfere with new comment from praktika
+    # if pr_info and check_name not in (
+    #     CI.StatusNames.MERGEABLE,
+    #     CI.StatusNames.CI,
+    #     CI.StatusNames.PR_CHECK,
+    #     CI.StatusNames.SYNC,
+    # ):
+    #     status_updated = False
+    #     for i in range(RETRY):
+    #         try:
+    #             set_status_comment(commit, pr_info)
+    #             status_updated = True
+    #             break
+    #         except Exception as ex:
+    #             logging.warning(
+    #                 "Failed to update the status commit, will retry %s times: %s",
+    #                 RETRY - i - 1,
+    #                 ex,
+    #             )
+    #
+    #     if not status_updated:
+    #         logging.error("Failed to update the status comment, continue anyway")
     if dump_to_file:
         assert pr_info
         CommitStatusData(
