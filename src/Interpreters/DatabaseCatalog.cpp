@@ -1456,7 +1456,7 @@ void DatabaseCatalog::addDependencies(
 
     if (!new_view_dependencies.empty())
     {
-        for (auto & new_view_dependency : new_view_dependencies)
+        for (const auto & new_view_dependency : new_view_dependencies)
         {
             view_dependencies.addDependency(StorageID{new_view_dependency}, StorageID{table_name});
         }
