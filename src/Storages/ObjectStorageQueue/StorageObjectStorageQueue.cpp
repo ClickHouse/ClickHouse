@@ -34,6 +34,13 @@
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+    extern const Event ObjectStorageQueueCommitRequests;
+    extern const Event ObjectStorageQueueRemovedObjects;
+    extern const Event ObjectStorageQueueInsertIterations;
+}
+
 namespace DB
 {
 namespace Setting
@@ -598,6 +605,8 @@ bool StorageObjectStorageQueue::streamToViews()
         std::atomic_size_t rows = 0;
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
+
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
@@ -642,7 +651,10 @@ void StorageObjectStorageQueue::commit(
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
         object_storage->removeObjectsIfExist(successful_objects);
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects);
     }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests);
 
     auto zk_client = getZooKeeper();
     Coordination::Responses responses;
