@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
 #include <Common/COW.h>
@@ -49,8 +50,6 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
-using EqualRanges = std::vector<EqualRange>;
-
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -61,9 +60,6 @@ struct ColumnCheckpoint
     explicit ColumnCheckpoint(size_t size_) : size(size_) {}
     virtual ~ColumnCheckpoint() = default;
 };
-
-using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
-using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
 {
@@ -755,13 +751,6 @@ private:
     }
 #endif
 };
-
-using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr = IColumn::MutablePtr;
-using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutableColumnPtr>;
-
-using ColumnRawPtrs = std::vector<const IColumn *>;
 
 
 template <typename ... Args>
