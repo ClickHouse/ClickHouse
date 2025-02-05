@@ -6,6 +6,9 @@
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
+#include <Poco/Logger.h>
+#include "Common/logger_useful.h"
+#include "Core/SortDescription.h"
 
 namespace DB
 {
@@ -34,13 +37,15 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
-    , sort_description(group_by_description_)
+    , sort_description(sort_description_for_merging)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
+
+    LOG_TEST(&Poco::Logger::get("AggregatingInOrderTransform"), "Will use sort description: {}", dumpSortDescription(sort_description));
 
     for (size_t i = 0; i < sort_description_for_merging.size(); ++i)
     {
@@ -53,6 +58,9 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
         group_by_key = true;
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
         key_columns_raw.resize(params->params.keys_size);
+
+        for (size_t i = sort_description.size(); i < group_by_description_.size(); ++i)
+            sort_description.push_back(group_by_description_[i]);
     }
 }
 
@@ -167,7 +175,12 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             else
             {
                 if (group_by_key)
+                {
+                    auto range_start = variants.size();
                     params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
+                    auto range_end = variants.size();
+                    equal_ranges.push_back({range_start, range_end});
+                }
                 else
                     params->aggregator.executeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_function_instructions.data());
             }
@@ -189,6 +202,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                         = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
+                equal_ranges.clear();
                 return;
             }
 
@@ -317,7 +331,7 @@ void AggregatingInOrderTransform::generate()
     {
         /// Sorting is required after aggregation, for proper merging, via
         /// FinishAggregatingInOrderTransform/MergingAggregatedBucketTransform
-        sortBlock(group_by_block, sort_description);
+        sortBlock(group_by_block, sort_description, 0, std::move(equal_ranges));
         to_push_chunk = convertToChunk(group_by_block);
     }
 
