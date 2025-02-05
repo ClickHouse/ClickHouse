@@ -54,7 +54,7 @@ readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-fi
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD_FILE="${CLICKHOUSE_PASSWORD_FILE:-}"
 if [[ -n "${CLICKHOUSE_PASSWORD_FILE}" && -f "${CLICKHOUSE_PASSWORD_FILE}" ]]; then
-  CLICKHOUSE_PASSWORD="$(cat "${CLICKHOUSE_PASSWORD_FILE}")"
+    CLICKHOUSE_PASSWORD="$(cat "${CLICKHOUSE_PASSWORD_FILE}")"
 fi
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
@@ -94,23 +94,26 @@ create_directory_and_do_chown "$DATA_DIR"
 # clickhouse-server at root directory.
 cd "$DATA_DIR"
 
-for dir in "$ERROR_LOG_DIR" \
-  "$LOG_DIR" \
-  "$TMP_DIR" \
-  "$USER_PATH" \
-  "$FORMAT_SCHEMA_PATH" \
-  "${DISKS_PATHS[@]}" \
-  "${DISKS_METADATA_PATHS[@]}"
-do
-    create_directory_and_do_chown "$dir"
-done
+function manage_clickhouse_directories() {
+    for dir in "$ERROR_LOG_DIR" \
+      "$LOG_DIR" \
+      "$TMP_DIR" \
+      "$USER_PATH" \
+      "$FORMAT_SCHEMA_PATH" \
+      "${DISKS_PATHS[@]}" \
+      "${DISKS_METADATA_PATHS[@]}"
+    do
+        create_directory_and_do_chown "$dir"
+    done
+}
 
-if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
-    echo "$0: explicitly skip changing user 'default'"
-# if clickhouse user is defined - create it (user "default" already exists out of box)
-elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
-    echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
-    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+function manage_clickhouse_user() {
+    if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
+        echo "$0: explicitly skip changing user 'default'"
+        # if clickhouse user is defined - create it (user "default" already exists out of box)
+    elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
+        echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
+        cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
   <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
   <users>
@@ -130,9 +133,9 @@ elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$
   </users>
 </clickhouse>
 EOT
-else
-    echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
-    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+    else
+        echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
+        cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
   <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
   <users>
@@ -146,85 +149,88 @@ else
   </users>
 </clickhouse>
 EOT
-fi
+    fi
+}
 
 CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS="${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS:-}"
 
-# checking $DATA_DIR for initialization
-if [ -d "${DATA_DIR%/}/data" ]; then
-    DATABASE_ALREADY_EXISTS='true'
-fi
+function init_clickhouse_db() {
+    # checking $DATA_DIR for initialization
+    if [ -d "${DATA_DIR%/}/data" ]; then
+        DATABASE_ALREADY_EXISTS='true'
+    fi
 
-# run initialization if flag CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS is not empty or data directory is empty
-if [[ -n "${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS}" || -z "${DATABASE_ALREADY_EXISTS}" ]]; then
-  RUN_INITDB_SCRIPTS='true'
-fi
+    # run initialization if flag CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS is not empty or data directory is empty
+    if [[ -n "${CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS}" || -z "${DATABASE_ALREADY_EXISTS}" ]]; then
+      RUN_INITDB_SCRIPTS='true'
+    fi
 
-if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
-    if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
-        # port is needed to check if clickhouse-server is ready for connections
-        HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
-        HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
+    if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
+        if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
+            # port is needed to check if clickhouse-server is ready for connections
+            HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
+            HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
 
-        if [ -n "$HTTP_PORT" ]; then
-            URL="http://127.0.0.1:$HTTP_PORT/ping"
-        else
-            URL="https://127.0.0.1:$HTTPS_PORT/ping"
-        fi
+            if [ -n "$HTTP_PORT" ]; then
+                URL="http://127.0.0.1:$HTTP_PORT/ping"
+            else
+                URL="https://127.0.0.1:$HTTPS_PORT/ping"
+            fi
 
-        # Listen only on localhost until the initialization is done
-        clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
-        pid="$!"
+            # Listen only on localhost until the initialization is done
+            clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+            pid="$!"
 
-        # check if clickhouse is ready to accept connections
-        # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
-        tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
-        while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
-            if [ "$tries" -le "0" ]; then
-                echo >&2 'ClickHouse init process timeout.'
+            # check if clickhouse is ready to accept connections
+            # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
+            tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
+            while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
+                if [ "$tries" -le "0" ]; then
+                    echo >&2 'ClickHouse init process timeout.'
+                    exit 1
+                fi
+                tries=$(( tries-1 ))
+                sleep 1
+            done
+
+            clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
+
+            echo
+
+            # create default database, if defined
+            if [ -n "$CLICKHOUSE_DB" ]; then
+                echo "$0: create database '$CLICKHOUSE_DB'"
+                "${clickhouseclient[@]}" -q "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
+            fi
+
+            for f in /docker-entrypoint-initdb.d/*; do
+                case "$f" in
+                    *.sh)
+                        if [ -x "$f" ]; then
+                            echo "$0: running $f"
+                            "$f"
+                        else
+                            echo "$0: sourcing $f"
+                            # shellcheck source=/dev/null
+                            . "$f"
+                        fi
+                        ;;
+                    *.sql)    echo "$0: running $f"; "${clickhouseclient[@]}" < "$f" ; echo ;;
+                    *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${clickhouseclient[@]}"; echo ;;
+                    *)        echo "$0: ignoring $f" ;;
+                esac
+                echo
+            done
+
+            if ! kill -s TERM "$pid" || ! wait "$pid"; then
+                echo >&2 'Finishing of ClickHouse init process failed.'
                 exit 1
             fi
-            tries=$(( tries-1 ))
-            sleep 1
-        done
-
-        clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
-
-        echo
-
-        # create default database, if defined
-        if [ -n "$CLICKHOUSE_DB" ]; then
-            echo "$0: create database '$CLICKHOUSE_DB'"
-            "${clickhouseclient[@]}" -q "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
         fi
-
-        for f in /docker-entrypoint-initdb.d/*; do
-            case "$f" in
-                *.sh)
-                    if [ -x "$f" ]; then
-                        echo "$0: running $f"
-                        "$f"
-                    else
-                        echo "$0: sourcing $f"
-                        # shellcheck source=/dev/null
-                        . "$f"
-                    fi
-                    ;;
-                *.sql)    echo "$0: running $f"; "${clickhouseclient[@]}" < "$f" ; echo ;;
-                *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${clickhouseclient[@]}"; echo ;;
-                *)        echo "$0: ignoring $f" ;;
-            esac
-            echo
-        done
-
-        if ! kill -s TERM "$pid" || ! wait "$pid"; then
-            echo >&2 'Finishing of ClickHouse init process failed.'
-            exit 1
-        fi
+    else
+        echo "ClickHouse Database directory appears to contain a database; Skipping initialization"
     fi
-else
-    echo "ClickHouse Database directory appears to contain a database; Skipping initialization"
-fi
+}
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
@@ -233,9 +239,18 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
 
+    # Using functions here to avoid unnecessary work in case of launching other binaries,
+    # inspired by postgres, mariadb etc. entrypoints
+    # It is necessary to pass the docker library consistency test
+    manage_clickhouse_directories
+    manage_clickhouse_user
+    init_clickhouse_db
+
     # This replaces the shell script with the server:
     exec clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image
 exec "$@"
+
+# vi: ts=4: sw=4: sts=4: expandtab
