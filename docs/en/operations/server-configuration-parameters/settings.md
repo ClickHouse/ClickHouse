@@ -2990,6 +2990,117 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
+## users_without_row_policies_can_read_rows
+
+Sets whether users without permissive row policies can still read rows using a `SELECT` query.
+
+For example, if there are two users A and B and a row policy is defined only for A, then
+if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.
+
+Default: `true`
+
+You can find this setting in server-configuration file `config.xml`.
+
+```xml title="config.xml"
+<access_control_improvements>
+    <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+</access_control_improvements>
+```
+
+## on_cluster_queries_require_cluster_grant
+
+Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.
+
+Default: `true`
+
+You can find this setting in server-configuration file `config.xml`.
+
+```xml title="config.xml"
+<access_control_improvements>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+</access_control_improvements>
+```
+
+## select_from_system_db_requires_grant
+
+Sets whether `SELECT * FROM system.<table>` requires any grants and can be executed
+by any user. If set to true then this query requires `GRANT SELECT ON system.<table>` just as for non-system tables.
+
+Exceptions: a few system tables (`tables`, `columns`, `databases`, and some constant tables like `one`, `contributors`)
+are still accessible for everyone; and if there is a `SHOW` privilege (e.g. `SHOW USERS`) granted then the corresponding system
+table (i.e. `system.users`) will be accessible.
+
+Default: `true`
+
+You can find this setting in server-configuration file `config.xml`.
+
+```xml title="config.xml"
+<access_control_improvements>
+    <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+</access_control_improvements>
+```
+
+## select_from_information_schema_requires_grant
+
+Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be
+executed by any user.
+
+If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.
+
+Default: `true`
+
+You can find this setting in server-configuration file `config.xml`.
+
+```xml title="config.xml"
+<access_control_improvements>
+    <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+</access_control_improvements>
+```
+
+## settings_constraints_replace_previous
+
+Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint.
+
+It also enables the `changeable_in_readonly` constraint type.
+
+Default: `true`
+
+You can find this setting in server-configuration file `config.xml`.
+
+```xml title="config.xml"
+<access_control_improvements>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+</access_control_improvements>
+```
+
+## table_engines_require_grant
+
+Sets whether creating a table with a specific table engine requires a grant.
+
+You can find this setting in server-configuration file `config.xml`.
+
+Default: `false`
+
+```xml title="config.xml"
+<access_control_improvements>
+    <table_engines_require_grant>false</table_engines_require_grant>
+</access_control_improvements>
+```
+
+## role_cache_expiration_time_seconds
+
+Sets the number of seconds since last access, that a role is stored in the Role Cache.
+
+You can find this setting in server-configuration file `config.xml`.
+
+Default: `600`
+
+```xml title="config.xml"
+<access_control_improvements>
+    <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+</access_control_improvements>
+```
+
 ## wait_dictionaries_load_at_startup
 
 This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
