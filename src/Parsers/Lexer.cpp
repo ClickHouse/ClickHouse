@@ -556,7 +556,7 @@ const char * getErrorTokenDescription(TokenType type)
         case TokenType::ErrorWrongNumber:
             return "Wrong number";
         case TokenType::ErrorMaxQuerySizeExceeded:
-            return "Max query size exceeded";
+            return "Max query size exceeded (can be increased with the `max_query_size` setting)";
         default:
             return "Not an error";
     }
