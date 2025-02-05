@@ -6315,7 +6315,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
                 continue;
 
             /// Don't mark as changed if the value isn't really changed
-            if (get(final_name) != change.previous_value)
+            if (get(final_name) == change.previous_value)
                 continue;
 
             BaseSettings::set(final_name, change.previous_value);
