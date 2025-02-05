@@ -39,7 +39,7 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     auto cache_data = FileCacheFactory::instance().getByName(ast.cache_name);
     auto settings = cache_data->getSettings();
     MutableColumnsAndConstraints params(res_columns, constraints);
-    settings.dumpToSystemSettingsColumns(params, cache_data->cache);
+    settings.dumpToSystemSettingsColumns(params, ast.cache_name, cache_data->cache);
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();

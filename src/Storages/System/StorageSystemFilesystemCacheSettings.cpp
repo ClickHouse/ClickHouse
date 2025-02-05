@@ -38,7 +38,7 @@ void StorageSystemFilesystemCacheSettings::fillData(
     {
         const auto & settings = cache_data->getSettings();
         MutableColumnsAndConstraints params(res_columns, constraints);
-        settings.dumpToSystemSettingsColumns(params, cache_data->cache);
+        settings.dumpToSystemSettingsColumns(params, cache_name, cache_data->cache);
     }
 }
 

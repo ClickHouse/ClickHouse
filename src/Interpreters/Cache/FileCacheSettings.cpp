@@ -43,7 +43,7 @@ namespace ErrorCodes
     DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
     DECLARE(UInt64, cache_hits_threshold, FILECACHE_DEFAULT_HITS_THRESHOLD, "Number of cache hits required to cache corresponding file segment", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
-    DECLARE(Bool, bypass_cache_threshold, 0, "Undocumented. Not recommended for use", 0) \
+    DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Private setting", 0)
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
@@ -97,6 +97,11 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
 {
     FileCacheSettingsImpl impl;
     ColumnsDescription result;
+
+    result.add(
+        ColumnDescription(
+            "cache_name", std::make_shared<DataTypeString>(), "Cache name"));
+
     for (const auto & setting : impl.all())
     {
         ColumnDescription desc;
@@ -118,6 +123,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         desc.comment = setting.getDescription();
         result.add(desc);
     }
+
     result.add(
         ColumnDescription(
             "is_initialized", std::make_shared<DataTypeUInt8>(), "Indicates whether cache was successfully initialized"));
@@ -125,10 +131,14 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
     return result;
 }
 
-void FileCacheSettings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, const FileCachePtr & cache) const
+void FileCacheSettings::dumpToSystemSettingsColumns(
+    MutableColumnsAndConstraints & params,
+    const std::string & cache_name,
+    const FileCachePtr & cache) const
 {
     MutableColumns & res_columns = params.res_columns;
     size_t i = 0;
+    res_columns[i++]->insert(cache_name);
     for (const auto & setting : impl->all())
         res_columns[i++]->insert(setting.getValue());
     res_columns[i++]->insert(cache->isInitialized());
@@ -149,6 +159,7 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
+    validate();
 }
 
 void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
@@ -157,6 +168,18 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
     {
         impl->set(key, collection.get<String>(key));
     }
+    validate();
+}
+
+void FileCacheSettings::validate()
+{
+    auto settings = *this;
+    if (!settings[FileCacheSetting::path].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
+    if (!settings[FileCacheSetting::max_size].changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` is required parameter of cache configuration");
+    if (settings[FileCacheSetting::max_size] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` cannot be 0");
 }
 
 }

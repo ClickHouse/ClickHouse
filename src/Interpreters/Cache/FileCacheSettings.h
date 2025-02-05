@@ -38,7 +38,12 @@ struct FileCacheSettings
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     void loadFromCollection(const NamedCollection & collection);
-    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, const FileCachePtr & cache) const;
+    void dumpToSystemSettingsColumns(
+        MutableColumnsAndConstraints & params,
+        const std::string & cache_name,
+        const FileCachePtr & cache) const;
+
+    void validate();
 
 private:
     std::unique_ptr<FileCacheSettingsImpl> impl;
