@@ -24,7 +24,6 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event ObjectStorageQueueLockLocalFileStatusesMicroseconds;
-    extern const Event ObjectStorageQueueRegisteredServers;
 };
 
 namespace CurrentMetrics

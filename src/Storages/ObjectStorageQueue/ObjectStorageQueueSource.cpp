@@ -20,7 +20,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueuePullMicroseconds;
     extern const Event ObjectStorageQueueFailedToBatchSetProcessing;
     extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
-    extern const Event ObjectStorageQueueTrySetProcessingFailed;
     extern const Event ObjectStorageQueueListedFiles;
     extern const Event ObjectStorageQueueFilteredFiles;
     extern const Event ObjectStorageQueueReadFiles;
