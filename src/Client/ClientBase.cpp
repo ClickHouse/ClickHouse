@@ -1704,26 +1704,35 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         {},
         [&](const Progress & progress) { onProgress(progress); });
 
-    if (send_external_tables)
-        sendExternalTables(parsed_query);
-
-    startKeystrokeInterceptorIfExists();
-    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
-
-    /// Receive description of table structure.
-    Block sample;
-    ColumnsDescription columns_description;
-    if (receiveSampleBlock(sample, columns_description, parsed_query))
+    try
     {
-        /// If structure was received (thus, server has not thrown an exception),
-        /// send our data with that structure.
-        if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
-        {
-            setInsertionTable(parsed_insert_query);
-        }
+        if (send_external_tables)
+            sendExternalTables(parsed_query);
 
-        sendData(sample, columns_description, parsed_query);
+        startKeystrokeInterceptorIfExists();
+        SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
+
+        /// Receive description of table structure.
+        Block sample;
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        {
+            /// If structure was received (thus, server has not thrown an exception),
+            /// send our data with that structure.
+            if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+            {
+                setInsertionTable(parsed_insert_query);
+            }
+
+            sendData(sample, columns_description, parsed_query);
+            receiveEndOfQuery();
+        }
+    }
+    catch (...)
+    {
+        connection->sendCancel();
         receiveEndOfQuery();
+        throw;
     }
 }
 
@@ -1901,7 +1910,6 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 }
 
 void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
-try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -1948,12 +1956,6 @@ try
 
     if (!have_more_data)
         connection->sendData({}, "", false);
-}
-catch (...)
-{
-    connection->sendCancel();
-    receiveEndOfQuery();
-    throw;
 }
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
