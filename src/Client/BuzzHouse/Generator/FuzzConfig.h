@@ -124,7 +124,7 @@ public:
         const String & oracle_name,
         uint64_t query_duration_ms1,
         uint64_t memory_usage1,
-        int64_t query_duration_ms2,
+        uint64_t query_duration_ms2,
         uint64_t memory_usage2) const;
 };
 
