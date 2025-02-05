@@ -1,4 +1,6 @@
 #include "PostgreSQLOutputFormat.h"
+
+#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 

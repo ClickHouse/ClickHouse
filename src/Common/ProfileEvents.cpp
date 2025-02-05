@@ -43,6 +43,9 @@
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).", ValueType::Bytes) \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).", ValueType::Number) \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).", ValueType::Bytes) \
+    M(CompressedReadBufferChecksumDoesntMatch, "Number of times the compressed block checksum did not match.", ValueType::Number) \
+    M(CompressedReadBufferChecksumDoesntMatchSingleBitMismatch, "Number of times a compressed block checksum mismatch was caused by a single-bit difference.", ValueType::Number) \
+    M(CompressedReadBufferChecksumDoesntMatchMicroseconds, "Total time spent detecting bit-flips due to compressed block checksum mismatches.", ValueType::Microseconds) \
     M(UncompressedCacheHits, "Number of times a block of data has been found in the uncompressed cache (and decompression was avoided).", ValueType::Number) \
     M(UncompressedCacheMisses, "Number of times a block of data has not been found in the uncompressed cache (and required decompression).", ValueType::Number) \
     M(UncompressedCacheWeightLost, "Number of bytes evicted from the uncompressed cache.", ValueType::Bytes) \
