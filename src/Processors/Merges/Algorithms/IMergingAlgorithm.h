@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Chunk.h>
+#include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 
 namespace DB

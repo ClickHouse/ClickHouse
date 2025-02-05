@@ -958,7 +958,7 @@ if __name__ == "__main__":
         "Integration tests (asan, flaky check)": "42e58be3aa",
         "Compatibility check (release)": "ecb69d8c4b",
         "Compatibility check (aarch64)": "ecb69d8c4b",
-        "Unit tests (release)": "09d00b702e",
+        "Unit tests (binary)": "09d00b702e",
         "Unit tests (asan)": "09d00b702e",
         "Unit tests (msan)": "09d00b702e",
         "Unit tests (tsan)": "09d00b702e",
