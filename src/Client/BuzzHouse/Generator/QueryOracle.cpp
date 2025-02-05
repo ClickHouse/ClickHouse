@@ -346,12 +346,19 @@ void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
-    InsertSelect * insel = nullptr;
+    bool explain = false;
     Select * sel = nullptr;
+    InsertSelect * insel = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
+
     peer_query = pq;
-    measure_performance = fc.measure_performance && peer_query == PeerQuery::ClickHouseOnly && rg.nextBool();
-    const bool explain = fc.compare_explains && peer_query == PeerQuery::ClickHouseOnly && !measure_performance && rg.nextSmallNumber() < 3;
+    if (peer_query == PeerQuery::ClickHouseOnly && (fc.measure_performance || fc.compare_explains) && rg.nextBool())
+    {
+        const uint32_t next_opt = rg.nextSmallNumber();
+
+        measure_performance = !fc.compare_explains || next_opt < 7;
+        explain = !fc.measure_performance || next_opt > 6;
+    }
     const bool global_aggregate = !measure_performance && !explain && rg.nextSmallNumber() < 4;
 
     if (measure_performance)
