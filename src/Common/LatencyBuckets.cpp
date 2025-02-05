@@ -9,16 +9,14 @@
     M(S3FirstByteWriteAttempt2Microseconds, "Time of first byte write to S3 storage (attempt 2).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(S3FirstByteReadAttemptNMicroseconds, "Time of first byte read from S3 storage (attempt N).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(S3FirstByteWriteAttemptNMicroseconds, "Time of first byte write to S3 storage (attempt N).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
-    M(S3ReadConnectMicroseconds, "Time to connect for GET and HEAD requests to S3 storage.", 100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000) \
-    M(S3WriteConnectMicroseconds, "Time to connect for POST, DELETE, PUT and PATCH requests to S3 storage.", 100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000) \
+    M(S3ConnectMicroseconds, "Time to connect for requests to S3 storage.", 100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000) \
     M(DiskS3FirstByteReadAttempt1Microseconds, "Time of first byte read from DiskS3 storage (attempt 1).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(DiskS3FirstByteWriteAttempt1Microseconds, "Time of first byte write to DiskS3 storage (attempt 1).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(DiskS3FirstByteReadAttempt2Microseconds, "Time of first byte read from DiskS3 storage (attempt 2).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(DiskS3FirstByteWriteAttempt2Microseconds, "Time of first byte write to DiskS3 storage (attempt 2).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(DiskS3FirstByteReadAttemptNMicroseconds, "Time of first byte read from DiskS3 storage (attempt N).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
     M(DiskS3FirstByteWriteAttemptNMicroseconds, "Time of first byte write to DiskS3 storage (attempt N).", 100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000) \
-    M(DiskS3ReadConnectMicroseconds, "Time to connect for GET and HEAD requests to DiskS3 storage.", 100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000) \
-    M(DiskS3WriteConnectMicroseconds, "Time to connect for POST, DELETE, PUT and PATCH requests to DiskS3 storage.", 100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000) \
+    M(DiskS3ConnectMicroseconds, "Time to connect for requests to DiskS3 storage.", 100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000) \
 
 
 namespace LatencyBuckets

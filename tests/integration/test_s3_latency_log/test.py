@@ -69,7 +69,7 @@ def test_latency_log(cluster):
     latency_log_before = literal_eval(
         node.query(
             """
-        SELECT (LatencyEvent_S3WriteConnectMicroseconds, LatencyEvent_S3FirstByteWriteAttempt1Microseconds, LatencyEvent_S3FirstByteWriteAttempt2Microseconds, LatencyEvent_S3FirstByteWriteAttemptNMicroseconds)
+        SELECT (LatencyEvent_S3ConnectMicroseconds, LatencyEvent_S3FirstByteWriteAttempt1Microseconds, LatencyEvent_S3FirstByteWriteAttempt2Microseconds, LatencyEvent_S3FirstByteWriteAttemptNMicroseconds)
         FROM system.latency_log
         ORDER BY event_time_microseconds DESC LIMIT 1
         """
@@ -78,9 +78,9 @@ def test_latency_log(cluster):
     connect_times_before = literal_eval(
         node.query(
             """
-        WITH (SELECT LatencyEvent_DiskS3WriteConnectMicroseconds FROM system.latency_buckets) AS buckets
+        WITH (SELECT LatencyEvent_DiskS3ConnectMicroseconds FROM system.latency_buckets) AS buckets
         SELECT format('[{}]', arrayStringConcat(arrayMap((t, c) ->
-            format('({},{})', toString(t), c), buckets, LatencyEvent_DiskS3WriteConnectMicroseconds), ','))
+            format('({},{})', toString(t), c), buckets, LatencyEvent_DiskS3ConnectMicroseconds), ','))
         FROM system.latency_log
         ORDER BY event_time_microseconds DESC LIMIT 1
         """
@@ -109,7 +109,7 @@ def test_latency_log(cluster):
     latency_log_after = literal_eval(
         node.query(
             """
-        SELECT (LatencyEvent_S3WriteConnectMicroseconds, LatencyEvent_S3FirstByteWriteAttempt1Microseconds, LatencyEvent_S3FirstByteWriteAttempt2Microseconds, LatencyEvent_S3FirstByteWriteAttemptNMicroseconds)
+        SELECT (LatencyEvent_S3ConnectMicroseconds, LatencyEvent_S3FirstByteWriteAttempt1Microseconds, LatencyEvent_S3FirstByteWriteAttempt2Microseconds, LatencyEvent_S3FirstByteWriteAttemptNMicroseconds)
         FROM system.latency_log
         ORDER BY event_time_microseconds DESC LIMIT 1
         """
@@ -118,9 +118,9 @@ def test_latency_log(cluster):
     connect_times_after = literal_eval(
         node.query(
             """
-        WITH (SELECT LatencyEvent_DiskS3WriteConnectMicroseconds FROM system.latency_buckets) AS buckets
+        WITH (SELECT LatencyEvent_DiskS3ConnectMicroseconds FROM system.latency_buckets) AS buckets
         SELECT format('[{}]', arrayStringConcat(arrayMap((t, c) ->
-            format('({},{})', toString(t), c), buckets, LatencyEvent_DiskS3WriteConnectMicroseconds), ','))
+            format('({},{})', toString(t), c), buckets, LatencyEvent_DiskS3ConnectMicroseconds), ','))
         FROM system.latency_log
         ORDER BY event_time_microseconds DESC LIMIT 1
         """
