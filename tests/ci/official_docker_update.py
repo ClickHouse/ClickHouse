@@ -23,7 +23,8 @@ from shutil import copy2, copytree, rmtree
 from sys import executable
 from typing import Any
 
-from env_helper import TEMP_PATH
+from ci_buddy import CIBuddy
+from env_helper import IS_CI, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow
 from github_helper import GitHub, Repository
@@ -364,8 +365,21 @@ def main() -> None:
 
     gh = GitHub(token, create_cache_dir=False)
     repos = LibraryRepos.get_repos(gh, args)
-    update_library_images(repos, args.dry_run)
-    update_docs(repos, args.dry_run)
+    try:
+        update_library_images(repos, args.dry_run)
+        update_docs(repos, args.dry_run)
+    except Exception as e:
+        logging.error("The process has finished with error: %s", e)
+        if IS_CI:
+            ci_buddy = CIBuddy()
+            ci_buddy.post_job_error(
+                f"The cherry-pick finished with errors: {e}",
+                with_instance_info=True,
+                with_wf_link=True,
+                critical=True,
+            )
+        raise
+
 
 
 if __name__ == "__main__":
