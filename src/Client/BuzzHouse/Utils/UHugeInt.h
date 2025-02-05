@@ -1,14 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include <Client/BuzzHouse/Utils/Nlimits.h>
-#include <base/types.h>
 
 namespace BuzzHouse
 {
 
-/// Forward declaration to allow conversion between hugeint and uhugeint
+// Forward declaration to allow conversion between hugeint and uhugeint
 struct HugeInt;
 
 struct UHugeInt
@@ -25,9 +25,9 @@ public:
     UHugeInt & operator=(const UHugeInt & rhs) = default;
     UHugeInt & operator=(UHugeInt && rhs) = default;
 
-    String toString() const;
+    void toString(std::string & res) const;
 
-    /// Comparison operators
+    // comparison operators
     bool operator==(const UHugeInt & rhs) const;
     bool operator!=(const UHugeInt & rhs) const;
     bool operator<=(const UHugeInt & rhs) const;
@@ -35,7 +35,7 @@ public:
     bool operator>(const UHugeInt & rhs) const;
     bool operator>=(const UHugeInt & rhs) const;
 
-    /// Arithmetic operators
+    // arithmetic operators
     UHugeInt operator+(const UHugeInt & rhs) const;
     UHugeInt operator-(const UHugeInt & rhs) const;
     UHugeInt operator*(const UHugeInt & rhs) const;
@@ -43,7 +43,7 @@ public:
     UHugeInt operator%(const UHugeInt & rhs) const;
     UHugeInt operator-() const;
 
-    /// Bitwise operators
+    // bitwise operators
     UHugeInt operator>>(const UHugeInt & rhs) const;
     UHugeInt operator<<(const UHugeInt & rhs) const;
     UHugeInt operator&(const UHugeInt & rhs) const;
@@ -51,7 +51,7 @@ public:
     UHugeInt operator^(const UHugeInt & rhs) const;
     UHugeInt operator~() const;
 
-    /// In-place operators
+    // in-place operators
     UHugeInt & operator+=(const UHugeInt & rhs);
     UHugeInt & operator-=(const UHugeInt & rhs);
     UHugeInt & operator*=(const UHugeInt & rhs);
@@ -63,7 +63,7 @@ public:
     UHugeInt & operator|=(const UHugeInt & rhs);
     UHugeInt & operator^=(const UHugeInt & rhs);
 
-    /// Boolean operators
+    // boolean operators
     explicit operator bool() const;
     bool operator!() const;
 };

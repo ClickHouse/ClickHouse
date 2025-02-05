@@ -1,5 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
--- no-parallel: SYSTEM DROP MARK CACHE is used.
+-- Tags: no-random-merge-tree-settings, no-random-settings
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 

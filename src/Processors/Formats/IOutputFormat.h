@@ -49,9 +49,6 @@ public:
     /// Passed values are deltas, that must be summarized.
     virtual void onProgress(const Progress & progress);
 
-    /// Set initial progress values on initialization of the format, before it starts writing the data.
-    void setProgress(Progress progress);
-
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 

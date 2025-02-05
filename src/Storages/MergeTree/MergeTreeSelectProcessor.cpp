@@ -233,30 +233,12 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeRangeReaders(all_prewhere_actions, read_steps_performance_counters);
+    task->initializeRangeReaders(all_prewhere_actions);
 }
 
 Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)
 {
     return SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
-}
-
-static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
-{
-    WriteBufferFromOwnString out;
-    const auto & all_counters = counters.getCounters();
-    for (size_t i = 0; i < all_counters.size(); ++i)
-    {
-        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read);
-        if (i + 1 < all_counters.size())
-            out << ", ";
-    }
-    return out.str();
-}
-
-void MergeTreeSelectProcessor::onFinish() const
-{
-    LOG_TRACE(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
 }
 
 }

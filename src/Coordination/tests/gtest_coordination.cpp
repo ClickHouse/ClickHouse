@@ -13,7 +13,6 @@
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/ZooKeeper/Types.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>

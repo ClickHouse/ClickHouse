@@ -242,6 +242,7 @@ private:
     Cache cache;
 };
 
+
 /// Single low cardinality column.
 template <typename SingleColumnMethod, typename Mapped, bool use_cache>
 struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
@@ -796,10 +797,4 @@ struct HashMethodHashed
 };
 
 }
-
-/// Explicit instantiation of LowCardinalityDictionaryCache::cache which is a really heavy template
-extern template class CacheBase<
-    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey,
-    ColumnsHashing::LowCardinalityDictionaryCache::CachedValues,
-    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash>;
 }

@@ -26,8 +26,6 @@ class Runner:
         Shell.check(
             f"mkdir -p {Settings.TEMP_DIR} {Settings.INPUT_DIR} {Settings.OUTPUT_DIR}"
         )
-        os.environ["JOB_NAME"] = job.name
-        os.environ["CHECK_NAME"] = job.name
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
@@ -62,7 +60,6 @@ class Runner:
             cache_success_base64=[],
             cache_artifacts={},
             cache_jobs={},
-            custom_data={},
         )
         for docker in workflow.dockers:
             workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
@@ -93,7 +90,6 @@ class Runner:
         env = _Environment.from_env()
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
-        os.environ["CHECK_NAME"] = job.name
         env.dump()
         print(env)
 
@@ -114,16 +110,9 @@ class Runner:
                 print("Update Job and Workflow Report")
                 HtmlRunnerHooks.pre_run(workflow, job)
 
-        if job.requires and job.name not in (
-            Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_JOB_NAME,
-            Settings.FINISH_WORKFLOW_JOB_NAME,
-        ):
-            print("Download required artifacts")
-            required_artifacts = []
-            # praktika service jobs do not require any of artifacts and excluded in if to not upload "hacky" artifact report.
-            #  this artifact is created to replace legacy build_report and maintain seamless transition to praktika
-            #  once there is no need for this "hacky" artifact report - second condition in "if" can be removed
+        print("Download required artifacts")
+        required_artifacts = []
+        if job.requires and workflow.artifacts:
             for requires_artifact_name in job.requires:
                 for artifact in workflow.artifacts:
                     if (
@@ -131,67 +120,40 @@ class Runner:
                         and artifact.type == Artifact.Type.S3
                     ):
                         required_artifacts.append(artifact)
-                else:
-                    if (
-                        requires_artifact_name
-                        in [
-                            job.name
-                            for job in workflow.jobs
-                            if job.name
-                            not in (
-                                Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_JOB_NAME,
-                                Settings.FINISH_WORKFLOW_JOB_NAME,
-                            )
-                        ]
-                        and Settings.ENABLE_ARTIFACTS_REPORT
-                    ):
-                        print(
-                            f"Artifact report for [{requires_artifact_name}] will be uploaded"
-                        )
-                        required_artifacts.append(
-                            Artifact.Config(
-                                name=requires_artifact_name,
-                                type=Artifact.Type.PHONY,
-                                path=f"artifact_report_{Utils.normalize_string(requires_artifact_name)}.json",
-                                _provided_by=requires_artifact_name,
-                            )
-                        )
-
-            print(f"--- Job requires s3 artifacts [{required_artifacts}]")
-            if workflow.enable_cache:
-                prefixes = CacheRunnerHooks.pre_run(
-                    _job=job, _workflow=workflow, _required_artifacts=required_artifacts
-                )
+        print(f"--- Job requires s3 artifacts [{required_artifacts}]")
+        if workflow.enable_cache:
+            prefixes = CacheRunnerHooks.pre_run(
+                _job=job, _workflow=workflow, _required_artifacts=required_artifacts
+            )
+        else:
+            prefixes = [env.get_s3_prefix()] * len(required_artifacts)
+        for artifact, prefix in zip(required_artifacts, prefixes):
+            if isinstance(artifact.path, (tuple, list)):
+                artifact_paths = artifact.path
             else:
-                prefixes = [env.get_s3_prefix()] * len(required_artifacts)
-            for artifact, prefix in zip(required_artifacts, prefixes):
-                if isinstance(artifact.path, (tuple, list)):
-                    artifact_paths = artifact.path
+                artifact_paths = [artifact.path]
+            for artifact_path in artifact_paths:
+                recursive = False
+                include_pattern = ""
+                if "*" in artifact_path:
+                    s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
+                    recursive = True
+                    include_pattern = Path(artifact_path).name
+                    assert "*" in include_pattern
                 else:
-                    artifact_paths = [artifact.path]
-                for artifact_path in artifact_paths:
-                    recursive = False
-                    include_pattern = ""
-                    if "*" in artifact_path:
-                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/"
-                        recursive = True
-                        include_pattern = Path(artifact_path).name
-                        assert "*" in include_pattern
-                    else:
-                        s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    if not S3.copy_file_from_s3(
+                    s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
+                if job.no_download_requires:
+                    print(
+                        f"WARNING: no_download_requires selected for job [{job.name}]. Dump artifact url [{s3_path}]"
+                    )
+                    S3._dump_urls(s3_path)
+                else:
+                    assert S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
-                    ):
-                        if artifact.type != Artifact.Type.PHONY:
-                            Utils.raise_with_error(
-                                f"Failed to download artifact [{artifact.name}]"
-                            )
-                        else:
-                            print(f"NOTE: no artifact report from [{artifact.name}]")
+                    )
 
         return 0
 
@@ -203,12 +165,10 @@ class Runner:
 
         # work around for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
-        if job.name != Settings.CI_CONFIG_JOB_NAME:
+        if workflow.dockers and job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data.get(
-                        "digest_dockers", "latest"
-                    )
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -349,8 +309,6 @@ class Runner:
                             providing_artifacts.append(artifact)
             if providing_artifacts:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
-                artifact_links = []
-                s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
                 for artifact in providing_artifacts:
                     if isinstance(artifact.path, (tuple, list)):
                         artifact_paths = artifact.path
@@ -361,29 +319,17 @@ class Runner:
                             assert Shell.check(
                                 f"ls -l {artifact_path}", verbose=True
                             ), f"Artifact {artifact_path} not found"
+                            s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
                             for file_path in glob.glob(artifact_path):
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path, local_path=file_path
                                 )
                                 result.set_link(link)
-                                artifact_links.append(link)
                         except Exception as e:
                             error = f"ERROR: Failed to upload artifact [{artifact.name}:{artifact_path}], ex [{e}]"
                             print(error)
                             info_errors.append(error)
                             result.set_status(Result.Status.ERROR)
-                if Settings.ENABLE_ARTIFACTS_REPORT and artifact_links:
-                    artifact_report = {"build_urls": artifact_links}
-                    print(
-                        f"Artifact report enabled and will be uploaded: [{artifact_report}]"
-                    )
-                    artifact_report_file = f"{Settings.TEMP_DIR}/artifact_report_{Utils.normalize_string(env.JOB_NAME)}.json"
-                    with open(artifact_report_file, "w", encoding="utf-8") as f:
-                        json.dump(artifact_report, f)
-                    link = S3.copy_file_to_s3(
-                        s3_path=s3_path, local_path=artifact_report_file
-                    )
-                    result.set_link(link)
 
         if workflow.enable_cidb:
             print("Insert results to CIDB")

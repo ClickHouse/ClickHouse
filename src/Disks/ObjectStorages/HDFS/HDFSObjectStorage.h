@@ -90,7 +90,6 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    HDFSFileInfo hdfsListDirectoryWrapper(const std::string & path) const;
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     String getObjectsNamespace() const override { return ""; }
@@ -102,8 +101,6 @@ public:
         ContextPtr context) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override { return true; }
 
     bool isRemote() const override { return true; }
 

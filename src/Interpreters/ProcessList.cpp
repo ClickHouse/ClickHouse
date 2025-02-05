@@ -9,7 +9,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -110,7 +109,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     std::shared_ptr<QueryStatus> query;
 
     {
-        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
+        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); // To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
         IAST::QueryKind query_kind = ast->getQueryKind();
 

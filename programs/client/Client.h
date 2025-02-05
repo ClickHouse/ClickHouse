@@ -53,8 +53,8 @@ private:
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
-    bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
-    bool processBuzzHouseQuery(const String & full_query);
+    void processQueryAndLog(std::ofstream & outf, const std::string & full_query);
+    bool processBuzzHouseQuery(const std::string & full_query);
 #endif
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();

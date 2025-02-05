@@ -192,8 +192,9 @@ ObjectStorageQueueSource::FileIterator::next()
                 size_t num_successful_objects = 0;
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
+                    const auto & object = new_batch[i];
                     file_metadatas[i] = metadata->getFileMetadata(
-                        new_batch[i]->relative_path,
+                        object->relative_path,
                         /* bucket_info */{}); /// No buckets for Unordered mode.
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
@@ -205,7 +206,6 @@ ObjectStorageQueueSource::FileIterator::next()
                     else
                     {
                         new_batch[i] = nullptr;
-                        file_metadatas[i] = nullptr;
                     }
                 }
 
@@ -215,7 +215,6 @@ ObjectStorageQueueSource::FileIterator::next()
                 if (code == Coordination::Error::ZOK)
                 {
                     LOG_TEST(log, "Successfully set {} files as processing", new_batch.size());
-
                     for (size_t i = 0; i < new_batch.size(); ++i)
                     {
                         if (!new_batch[i])
@@ -240,28 +239,16 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
-                    size_t batch_i = 0;
-                    for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
+                    Source::ObjectInfos new_batch_copy;
+                    new_batch_copy.reserve(num_successful_objects);
+
+                    for (auto & object : new_batch)
                     {
-                        while (batch_i < new_batch.size() && !new_batch[batch_i])
-                            ++batch_i;
-
-                        if (batch_i == new_batch.size())
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Mismatch num_successful_objects ({}) is less than the number of valid objects",
-                                num_successful_objects);
-                        }
-
-                        new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (object)
+                            new_batch_copy.push_back(std::move(object));
                     }
-                    new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    new_batch = std::move(new_batch_copy);
                 }
-
-                chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
             }
         }
 
@@ -281,12 +268,10 @@ ObjectStorageQueueSource::FileIterator::next()
         object_infos[index],
         file_metadatas.empty() ? nullptr : file_metadatas[index]);
 
-    if (result.second && result.first->getPath() != result.second->getPath())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Mismatch {} and {}", result.first->getPath(), result.second->getPath());
-    }
+    if (result.second)
+        chassert(
+            result.first->getPath() == result.second->getPath(),
+            fmt::format("Mismatch {} vs {}", result.first->getPath(), result.second->getPath()));
 
     ++index;
     return result;

@@ -46,7 +46,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
+    extern const SettingsUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
@@ -533,8 +533,7 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, const Cont
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
-        if (!read_progress.empty())
-            format->setProgress(std::move(read_progress));
+        format->onProgress(read_progress);
 
         /// Update the start of the statistics to use the start of the query, and not the creation of the format class
         format->setStartTime(element_id->getQueryCPUStartTime(), true);

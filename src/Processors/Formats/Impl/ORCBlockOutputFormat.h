@@ -62,7 +62,7 @@ private:
     void writeStrings(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap);
 
     /// ORC column TimestampVectorBatch stores only seconds and nanoseconds,
-    /// GetSecondsFunc and GetNanosecondsFunc are needed to extract them from DateTime type.
+    /// GetSecondsFunc and GetNanosecondsFunc are needed to extract them from DataTime type.
     template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
     void writeDateTimes(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap,
                         GetSecondsFunc get_seconds, GetNanosecondsFunc get_nanoseconds);

@@ -282,7 +282,7 @@ const ActionsDAG::Node & findInput(ActionsDAG & actions_dag, const JoinActionRef
         return node;
     }
 
-    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} not found in actions DAG: {}", action.column_name, actions_dag.dumpDAG());
+    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} not found in actions DAG", action.column_name);
 }
 
 
@@ -435,14 +435,14 @@ JoinActionRef buildSingleActionForJoinCondition(const JoinCondition & join_condi
     auto left_filter_conditions_action = concatConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions, query_context);
     if (left_filter_conditions_action)
     {
-        left_filter_conditions_action.node = &findInput(expression_actions.post_join_actions, left_filter_conditions_action, true);
+        left_filter_conditions_action.node = &findInput(expression_actions.post_join_actions, left_filter_conditions_action);
         all_conditions.push_back(left_filter_conditions_action);
     }
 
     auto right_filter_conditions_action = concatConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions, query_context);
     if (right_filter_conditions_action)
     {
-        right_filter_conditions_action.node = &findInput(expression_actions.post_join_actions, right_filter_conditions_action, true);
+        right_filter_conditions_action.node = &findInput(expression_actions.post_join_actions, right_filter_conditions_action);
         all_conditions.push_back(right_filter_conditions_action);
     }
 
@@ -534,9 +534,6 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
 
         if (!has_keys)
         {
-            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithm, JoinAlgorithm::HASH))
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot convert JOIN ON expression to CROSS JOIN, because hash join is disabled");
-
             table_join_clauses.pop_back();
             bool can_convert_to_cross = (isInner(join_info.kind) || isCrossOrComma(join_info.kind))
                 && join_info.strictness == JoinStrictness::All

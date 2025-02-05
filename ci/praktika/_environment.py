@@ -144,23 +144,6 @@ class _Environment(MetaClasses.Serializable):
                 COMMIT_URL = CHANGE_URL
             else:
                 assert False, "TODO: not supported"
-            INSTANCE_TYPE = (
-                os.getenv("INSTANCE_TYPE", None)
-                or Shell.get_output("ec2metadata --instance-type")
-                or ""
-            )
-            INSTANCE_ID = (
-                os.getenv("INSTANCE_ID", None)
-                or Shell.get_output("ec2metadata --instance-id")
-                or ""
-            )
-            INSTANCE_LIFE_CYCLE = (
-                os.getenv("INSTANCE_LIFE_CYCLE", None)
-                or Shell.get_output(
-                    "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
-                )
-                or ""
-            )
         else:
             print("WARNING: Local execution - dummy Environment will be generated")
             SHA = "TEST"
@@ -168,9 +151,24 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TYPE = Workflow.Event.PUSH
             CHANGE_URL = ""
             COMMIT_URL = ""
-            INSTANCE_TYPE = ""
-            INSTANCE_ID = ""
-            INSTANCE_LIFE_CYCLE = ""
+
+        INSTANCE_TYPE = (
+            os.getenv("INSTANCE_TYPE", None)
+            or Shell.get_output("ec2metadata --instance-type")
+            or ""
+        )
+        INSTANCE_ID = (
+            os.getenv("INSTANCE_ID", None)
+            or Shell.get_output("ec2metadata --instance-id")
+            or ""
+        )
+        INSTANCE_LIFE_CYCLE = (
+            os.getenv("INSTANCE_LIFE_CYCLE", None)
+            or Shell.get_output(
+                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+            )
+            or ""
+        )
 
         return _Environment(
             WORKFLOW_NAME=WORKFLOW_NAME,
@@ -199,15 +197,11 @@ class _Environment(MetaClasses.Serializable):
         )
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
+        return self.get_s3_prefix_static(self.PR_NUMBER, self.SHA, latest)
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
-        assert pr_number or branch
-        if pr_number:
-            prefix = f"PRs/{pr_number}"
-        else:
-            prefix = f"REFs/{branch}"
+    def get_s3_prefix_static(cls, pr_number, sha, latest=False):
+        prefix = f"{pr_number}"
         assert sha or latest
         assert pr_number >= 0
         if latest:

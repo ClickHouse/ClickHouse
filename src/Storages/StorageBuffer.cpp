@@ -41,7 +41,6 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 
 

@@ -64,13 +64,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.2",
-        {
-            {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
-        });
         addSettingsChanges(settings_changes_history, "25.1",
         {
-            /// Release closed. Please use 25.2
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
             {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
@@ -107,7 +102,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
-            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
@@ -645,12 +639,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.2",
-        {
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
-            /// Release closed. Please use 25.2
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", false, false, "New setting to fetch parts data from other replicas"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
@@ -682,7 +672,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_use_metadata_hints_cache", true, true, "Cloud sync"},
             {"notify_newest_block_number", false, false, "Cloud sync"},
             {"allow_reduce_blocking_parts_task", false, false, "Cloud sync"},
-            /// Release closed. Please use 25.2
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Block.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
@@ -130,9 +130,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePoolTaskHolder holder;
+        BackgroundSchedulePool::TaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
-        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_) : holder(std::move(task_)) { }
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
 
     enum class AssignmentChange
@@ -176,7 +176,7 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-    BackgroundSchedulePoolTaskHolder activating_task;
+    BackgroundSchedulePool::TaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
     bool activate();

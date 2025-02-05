@@ -816,8 +816,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprStep * prewhere_info_,
     bool last_reader_in_chain_,
-    bool main_reader_,
-    ReadStepPerformanceCountersPtr performance_counters_)
+    bool main_reader_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
     , prev_reader(prev_reader_)
@@ -825,7 +824,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , last_reader_in_chain(last_reader_in_chain_)
     , main_reader(main_reader_)
     , is_initialized(true)
-    , performance_counters(performance_counters_)
 {
     if (prev_reader)
         result_sample_block = prev_reader->getSampleBlock();
@@ -1163,7 +1161,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
     fillVirtualColumns(result.columns, result, leading_begin_part_offset, leading_end_part_offset);
 
-    updatePerformanceCounters(result.numReadRows());
+    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * result.numReadRows());
+    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * result.numReadRows());
 
     return result;
 }
@@ -1283,16 +1282,10 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
 
     fillVirtualColumns(columns, result, leading_begin_part_offset, leading_end_part_offset);
 
-    updatePerformanceCounters(num_rows);
+    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows);
+    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows);
 
     return columns;
-}
-
-void MergeTreeRangeReader::updatePerformanceCounters(size_t num_rows_read)
-{
-    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows_read);
-    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows_read);
-    performance_counters->rows_read += num_rows_read;
 }
 
 static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)

@@ -3,7 +3,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -83,14 +83,13 @@ private:
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
 
-    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
 
-    BackgroundSchedulePoolTaskHolder task;
+    BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
     UInt64 reschedule_processing_interval_ms;
 

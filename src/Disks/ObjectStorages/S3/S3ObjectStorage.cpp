@@ -530,11 +530,6 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
     return key_generator->generate(path, /* is_directory */ false, key_prefix);
 }
 
-bool S3ObjectStorage::areObjectKeysRandom() const
-{
-    return key_generator->isRandom();
-}
-
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
 {
     return client.get();
