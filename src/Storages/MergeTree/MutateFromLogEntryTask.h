@@ -7,9 +7,10 @@
 #include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
-#include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/randomSeed.h>
+
+#include <Storages/MergeTree/ZeroCopyLock.h>
 
 namespace DB
 {
@@ -40,8 +41,13 @@ public:
     }
 
 private:
+    virtual bool prepareAfterReservation(
+        const String & source_part_name,
+        MergeTreeData::DataPartPtr active_containing_part,
+        size_t estimated_space_for_result,
+        bool & need_to_check_missing_part_in_fetch) { return true; };
 
-    ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
+        ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
 
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
@@ -59,7 +65,7 @@ private:
     MutationCommandsConstPtr commands;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
-    std::optional<ZeroCopyLock> zero_copy_lock;
+    
     StopwatchUniquePtr stopwatch_ptr{nullptr};
 
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
@@ -67,6 +73,23 @@ private:
 
     MutateTaskPtr mutate_task;
     pcg64 rng;
+};
+
+class MutateZeroCopyFromLogEntryTask: public MutateFromLogEntryTask
+{
+public:
+    using MutateFromLogEntryTask::MutateFromLogEntryTask;
+
+private:
+    bool prepareAfterReservation(
+        const String & source_part_name,
+        MergeTreeData::DataPartPtr active_containing_part,
+        size_t estimated_space_for_result,
+        bool & need_to_check_missing_part_in_fetch) override;
+
+    bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
+    
+    std::optional<ZeroCopyLock> zero_copy_lock;
 };
 
 

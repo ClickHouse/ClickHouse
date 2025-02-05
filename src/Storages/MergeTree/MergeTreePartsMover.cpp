@@ -261,7 +261,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         disk->createDirectories(path_to_clone);
 
         /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
-        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name); // TODO: make ZeroCopyPartsMover
 
         if (zero_copy_part)
         {

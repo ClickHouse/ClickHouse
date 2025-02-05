@@ -208,6 +208,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeBinary(projections.size(), out);
         }
 
+        // TODO ZeroCopy: Move to virtual method
         if ((*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
@@ -371,6 +372,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", name);
 
+    // TODO ZeroCopy: move all below to virtual method
     bool zero_copy_enabled = (*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
     if (!zero_copy_enabled)
         return part;
@@ -417,7 +419,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     bool to_detached,
     const String & tmp_prefix_,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
-    bool try_zero_copy,
+    bool try_zero_copy,  // Make method virtual and try without explicit flag
     DiskPtr disk)
 {
     if (blocker.isCancelled())
@@ -796,7 +798,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), disk->getDataSourceDescription().toString());
 
         LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.", part_name, part_id, disk->getName());
-        zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk);
+        zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk); // TODO: ZeroCopy fetcher with factory function
     }
     else
     {

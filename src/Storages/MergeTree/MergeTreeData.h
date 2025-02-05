@@ -255,16 +255,16 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
+        virtual DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
         /// Rename should be done explicitly, before calling commit(), to
         /// guarantee that no lock held during rename (since rename is IO
         /// bound, while data parts lock is the bottleneck)
         void renameParts();
 
-        void addPart(MutableDataPartPtr & part, bool need_rename);
+        virtual void addPart(MutableDataPartPtr & part, bool need_rename);
 
-        void rollback(DataPartsLock * lock = nullptr);
+        virtual void rollback(DataPartsLock * lock = nullptr);
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
@@ -273,7 +273,7 @@ public:
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
 
-        ~Transaction()
+        virtual ~Transaction()
         {
             try
             {
@@ -1102,15 +1102,6 @@ public:
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
     bool areBackgroundMovesNeeded() const;
-
-
-    /// Lock part in zookeeper for shared data in several nodes
-    /// Overridden in StorageReplicatedMergeTree
-    virtual void lockSharedData(const IMergeTreeDataPart &, bool = false, std::optional<HardlinkedFiles> = {}) const {} /// NOLINT
-
-    /// Unlock shared data part in zookeeper
-    /// Overridden in StorageReplicatedMergeTree
-    virtual std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart &) const { return std::make_pair(true, NameSet{}); }
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree

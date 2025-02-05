@@ -57,7 +57,7 @@ private:
 
 /** Client for getting the parts from the table *MergeTree.
   */
-class Fetcher final : private boost::noncopyable
+class Fetcher: private boost::noncopyable
 {
 public:
     explicit Fetcher(StorageReplicatedMergeTree & data_);

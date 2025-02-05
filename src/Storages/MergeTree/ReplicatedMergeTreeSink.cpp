@@ -942,7 +942,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         storage.getLockSharedDataOps(*part, zookeeper, /*replace_zero_copy_lock*/ false, {}, ops);
         size_t shared_lock_op_id_end = ops.size();
 
-        storage.getCommitPartOps(ops, part, block_id_path);
+        storage.getCommitPartOps(ops, part, block_id_path); // TODO: make virtual
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
