@@ -38,24 +38,32 @@
                     </div>
                 </div>
                 <div class="row">
-                    <div class="form-group col-md-4">
+                    <div class="form-group col-md-6">
                         <label for="method">Method:</label>
                         <select class="form-control form-control-sm" id="method">
                             <!-- will be populated dynamically -->
                         </select>
                     </div>
-                    <div class="form-group col-md-4">
+                    <div class="form-group col-md-6">
                         <label for="solver">Solver:</label>
                         <select class="form-control form-control-sm" id="solver">
                             <!-- will be populated dynamically -->
                         </select>
                     </div>
-                    <div class="form-group col-md-4">
+                    <div class="form-group col-md-6">
                         <label for="x-axis">X Axis:</label>
                         <select class="form-control form-control-sm" id="x-axis">
                             <!-- will be populated dynamically -->
                         </select>
                     </div>
+                    <div class="form-group col-md-6">
+                        <label for="y-axis">Y Axis:</label>
+                        <select class="form-control form-control-sm" id="y-axis">
+                            <!-- will be populated dynamically -->
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
                 </div>
                 <div class="row mt-3">
                     <div class="col">
@@ -172,6 +180,19 @@
                 "Workers": "workers",
             };
 
+            const yAxes = {
+                "log(Base)": "log(base)",
+                "log(Merges)": "log(merges)",
+                "log(Alpha)": "log(alpha)",
+                "log(PartTimeIntegral)": "log(cost)",
+                "log(Density)": "log(density)",
+                "Base": "base",
+                "Merges": "merges",
+                "Alpha": "alpha",
+                "PartTimeIntegral": "cost",
+                "Density": "density",
+            };
+
             // Populate methods dropdown
             const methodSelect = document.getElementById('method');
             for (const [name] of Object.entries(methods)) {
@@ -199,6 +220,15 @@
                 xAxesSelect.appendChild(option);
             }
 
+            // Populate yAxes dropdown
+            const yAxesSelect = document.getElementById('y-axis');
+            for (const [name] of Object.entries(yAxes)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                yAxesSelect.appendChild(option);
+            }
+
             function selectMethod() {
                 const selectedMethodName = document.getElementById('method').value;
                 return methods[selectedMethodName];
@@ -214,6 +244,11 @@
                 return xAxes[selectedXAxisName];
             }
 
+            function selectYAxis() {
+                const selectedYAxisName = document.getElementById('y-axis').value;
+                return yAxes[selectedYAxisName];
+            }
+
             function readParams() {
                 let params = {
                     insertPartSizeArray: parseArray(document.getElementById('insertPartSize').value),
@@ -225,6 +260,7 @@
                     selectedMethod: selectMethod(),
                     selectedSolver: selectSolver(),
                     xAxis: selectXAxis(),
+                    yAxis: selectYAxis(),
                 };
                 console.log("PARAMS", params);
                 return params;
@@ -244,7 +280,8 @@
                     maxPartSizeArray,
                     selectedMethod,
                     selectedSolver,
-                    xAxis
+                    xAxis,
+                    yAxis
                 } = readParams();
 
                 const startTime = performance.now(); // Start timing
@@ -281,7 +318,7 @@
                             this.chartDiv,
                             xAxis,
                             yAxis,
-                            `This chart shows solutions`
+                            `This chart shows solutions. One point = one solution`
                         );
                         this.xAxis = xAxis;
                         this.yAxis = yAxis;
@@ -339,7 +376,8 @@
                     }
 
                     ignoreKey(key) {
-                        this.ignore.add(key);
+                        if (key != this.x && key != this.y)
+                            this.ignore.add(key);
                     }
                 }
 
@@ -357,7 +395,7 @@
                     .map(d => `${d}: ${paramText[d]}`)
                     .join('║');
 
-                const series = new SeriesManager(title, xAxis);
+                const series = new SeriesManager(title, xAxis, yAxis);
 
                 let runners = {};
                 if (selectedMethod)
@@ -365,6 +403,11 @@
                 if (selectedSolver)
                     runners.BLI = selectedSolver;
 
+                series.ignoreKey('base');
+                series.ignoreKey('merges');
+                series.ignoreKey('alpha');
+                series.ignoreKey('cost');
+                series.ignoreKey('density');
                 if (insertPartSizeArray.length == 1)
                     series.ignoreKey('insertPartSize');
                 if (maxSourcePartsArray.length == 1)
@@ -397,7 +440,12 @@
                                         for (const L of layersArray) {
                                             if ((L - 1) in xs) {
                                                 const base = bases[L - 1];
-                                                series.addPoint({...params, L, base});
+                                                const entropy = xs[L - 1];
+                                                const merges = parts / base;
+                                                const alpha = Math.max(1, merges / workers);
+                                                const cost = 0.5 * ((alpha + 1) * base + alpha - 1); // we assume B = 1 and merge speed = 1
+                                                const density = cost / entropy; // cost per utility (here utility = entropy due to B = 1)
+                                                series.addPoint({...params, L, base, merges, alpha, cost, density});
                                             }
                                         }
                                     }
