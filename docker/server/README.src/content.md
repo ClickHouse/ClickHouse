@@ -43,7 +43,7 @@ By default, starting above server instance will be run as the `default` user wit
 ### connect to it from a native client
 
 ```bash
-docker run -it --rm --link some-clickhouse-server:clickhouse-server --entrypoint clickhouse-client %%IMAGE%% --host clickhouse-server
+docker run -it --rm --network=container:some-clickhouse-server --entrypoint clickhouse-client %%IMAGE%%
 # OR
 docker exec -it some-clickhouse-server clickhouse-client
 ```
@@ -53,7 +53,7 @@ More information about the [ClickHouse client](https://clickhouse.com/docs/en/in
 ### connect to it using curl
 
 ```bash
-echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --link some-clickhouse-server:clickhouse-server buildpack-deps:curl curl 'http://clickhouse-server:8123/?query=' -s --data-binary @-
+echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --network=container:some-clickhouse-server buildpack-deps:curl curl 'http://localhost:8123/?query=' -s --data-binary @-
 ```
 
 More information about the [ClickHouse HTTP Interface](https://clickhouse.com/docs/en/interfaces/http/).
