@@ -106,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
             {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
