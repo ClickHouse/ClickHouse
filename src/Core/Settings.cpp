@@ -1659,7 +1659,7 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
 ```
 
@@ -5863,7 +5863,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 - cross to inner join optimization
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
-Populate constant comparison in AND chains to enhance filtering ability. Support operators <, <=, >, >=, = and mix of them. For example, (a < b) AND (b < c) AND (c < 5) would be (a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5).
+Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
@@ -5988,7 +5988,7 @@ If it is set to true, allow to use experimental full-text index.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
-Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y.
+Support join with inequal conditions which involve columns from both left and right table. e.g. `t1.y < t2.y`.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
