@@ -51,7 +51,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
     auto column = createColumn();
-    if (serialization.getKind() == ISerialization::Kind::SPARSE)
+    if (serialization.getKind() == ISerialization::Kind::SPARSE || serialization.getKind() == ISerialization::Kind::DETACHED_OVER_SPARSE)
         return ColumnSparse::create(std::move(column));
 
     return column;
@@ -283,8 +283,9 @@ SerializationPtr IDataType::getSerialization(ISerialization::Kind kind) const
     if (kind == ISerialization::Kind::DETACHED)
         return std::make_shared<SerializationDetached>(getDefaultSerialization());
 
-    if (supportsSparseSerialization() && kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
-        return std::make_shared<SerializationDetached>(getSparseSerialization());
+    if (kind == ISerialization::Kind::DETACHED_OVER_SPARSE)
+        return std::make_shared<SerializationDetached>(
+            supportsSparseSerialization() ? getSparseSerialization() : getDefaultSerialization());
 
     return getDefaultSerialization();
 }

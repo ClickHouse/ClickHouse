@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Exception.h>
-#include "Storages/MergeTree/MergeTreeIndexVectorSimilarity.h"
 
 namespace DB
 {
@@ -17,30 +16,11 @@ class SerializationDetached final : public ISerialization
 public:
     explicit SerializationDetached(const SerializationPtr & nested_);
 
-    Kind getKind() const override { return Kind::DETACHED; }
-
-    // void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;
-
-    // void serializeBinaryBulkStatePrefix(
-    //     const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const override;
-    //
-    // void serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const override;
-
-    // void deserializeBinaryBulkStatePrefix(
-    //     DeserializeBinaryBulkSettings & settings,
-    //     DeserializeBinaryBulkStatePtr & state,
-    //     SubstreamsDeserializeStatesCache * cache) const override;
+    Kind getKind() const override { return nested->getKind() == Kind::DEFAULT ? Kind::DETACHED : Kind::DETACHED_OVER_SPARSE; }
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-
-    // void serializeBinaryBulkWithMultipleStreams(
-    //     const IColumn & column,
-    //     size_t offset,
-    //     size_t limit,
-    //     SerializeBinaryBulkSettings & settings,
-    //     SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,

@@ -2458,7 +2458,6 @@ static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 clie
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;
-        column.column = recursiveRemoveSparse(column.column);
 
         auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
         { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
