@@ -5,8 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 mkdir -p "${CLICKHOUSE_SCHEMA_FILES}"
+mkdir -p "${CLICKHOUSE_SCHEMA_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 SOURCE_SCHEMA_FILE="${CURDIR}/format_schemas/03234_proto_simple_nested_repeated_noexception.proto"
-TARGET_SCHEMA_FILE="${CLICKHOUSE_SCHEMA_FILES}/03234_proto_simple_nested_repeated_noexception.proto"
+TARGET_SCHEMA_FILE="${CLICKHOUSE_SCHEMA_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/03234_proto_simple_nested_repeated_noexception.proto"
 cp "${SOURCE_SCHEMA_FILE}" "${TARGET_SCHEMA_FILE}"
 
 echo "DROP TABLE IF EXISTS table_file;
@@ -16,7 +17,7 @@ CREATE TABLE table_file (
     \`v.x\`   Array(UInt32),
     \`v.y\`   Array(Array(UInt32)),
     \`v.z\`   Array(Array(UInt32))
-) ENGINE File(Protobuf) SETTINGS format_schema = '03234_proto_simple_nested_repeated_noexception.proto:M';
+) ENGINE File(Protobuf) SETTINGS format_schema = '$CLICKHOUSE_TEST_UNIQUE_NAME/03234_proto_simple_nested_repeated_noexception.proto:M';
 INSERT INTO table_file SELECT * FROM generateRandom() limit 1000000;
 DROP TABLE table_file;" | $CLICKHOUSE_CLIENT -m &
 
@@ -25,4 +26,4 @@ do
     $CLICKHOUSE_CLIENT -q "SYSTEM DROP FORMAT SCHEMA CACHE"
 done
 
-rm -f "${TARGET_SCHEMA_FILE}"
+rm -rf "${CLICKHOUSE_SCHEMA_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
