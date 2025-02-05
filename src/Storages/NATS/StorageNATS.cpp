@@ -1,3 +1,4 @@
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>

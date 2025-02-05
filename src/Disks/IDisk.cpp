@@ -240,7 +240,7 @@ try
 
     /// write
     {
-        auto file = writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite);
         try
         {
             file->write(payload.data(), payload.size());

@@ -3,7 +3,7 @@
 #include <atomic>
 #include <mutex>
 #include <uv.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
@@ -100,8 +100,8 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder subscribe_consumers_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder subscribe_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -135,7 +135,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
