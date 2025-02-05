@@ -285,8 +285,6 @@ def main():
 
     args = parse_args()
 
-    NAME = f"Push to Dockerhub {args.suffix}"
-
     if args.push:
         logging.info("login to docker hub")
         docker_login()
@@ -322,6 +320,7 @@ def main():
     else:
         missing_images = json.loads(args.missing_images)
 
+    print(f"Images to build: {missing_images}")
     images_build_list = get_images_oredered_list()
 
     for image in images_build_list:
@@ -359,10 +358,12 @@ def main():
             break  # No need to continue with next images
 
     if args.multiarch_manifest:
+        print("Create multiarch manifests")
         images = get_images_oredered_list()
         for image_obj in images:
-            if image_tags[image_obj.repo] not in missing_images and not args.set_latest:
+            if image_obj.repo not in missing_images and not args.set_latest:
                 continue
+            print(f"Create multiarch manifests for {image_obj.repo}")
             tag = image_tags[image_obj.repo]
             if image_obj.only_amd64:
                 tags = [
