@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 
@@ -585,8 +584,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw;
         }
 
-        if (col->empty())
-            return Field(Null());
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
@@ -663,19 +660,7 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
 
 std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings)
 {
-        //Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
-
-    Field result_value;
-    try
-    {
-        result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
-    }
-    catch (Exception & e)
-    {
-        if (isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
-            return {};
-        throw;
-    }
+    Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {

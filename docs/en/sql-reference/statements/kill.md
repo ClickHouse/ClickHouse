@@ -139,3 +139,7 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 The query is useful when a mutation is stuck and cannot finish (e.g. if some function in the mutation query throws an exception when applied to the data contained in the table).
 
 Changes already made by the mutation are not rolled back.
+
+:::note 
+`is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/docs/en/operations/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
+:::

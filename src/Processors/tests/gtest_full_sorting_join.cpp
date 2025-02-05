@@ -18,10 +18,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
-
-#include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 

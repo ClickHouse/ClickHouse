@@ -110,5 +110,9 @@ void DistributedSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
+bool DistributedSettings::hasBuiltin(std::string_view name)
+{
+    return DistributedSettingsImpl::hasBuiltin(name);
+}
 }
 

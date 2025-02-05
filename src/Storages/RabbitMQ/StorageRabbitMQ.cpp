@@ -1,4 +1,5 @@
 #include <amqpcpp.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,6 +34,7 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
 
@@ -330,6 +332,13 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 
     /// check for non-rabbitmq-related settings
     modified_context->applySettingsChanges(rabbitmq_settings->getFormatSettings());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    modified_context->setSetting("input_format_csv_detect_header", false);
+    modified_context->setSetting("input_format_tsv_detect_header", false);
+    modified_context->setSetting("input_format_custom_detect_header", false);
 
     return modified_context;
 }
@@ -841,7 +850,7 @@ void StorageRabbitMQ::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), shared_from_this(), local_context, query_info);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
@@ -1330,6 +1339,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessType::RABBITMQ,
+            .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
         });
 }
 

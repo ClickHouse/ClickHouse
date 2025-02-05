@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
 #include <Common/COW.h>
@@ -34,6 +35,8 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -47,8 +50,6 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
-using EqualRanges = std::vector<EqualRange>;
-
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -59,9 +60,6 @@ struct ColumnCheckpoint
     explicit ColumnCheckpoint(size_t size_) : size(size_) {}
     virtual ~ColumnCheckpoint() = default;
 };
-
-using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
-using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
 {
@@ -143,6 +141,8 @@ public:
 
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
+
+    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -751,13 +751,6 @@ private:
     }
 #endif
 };
-
-using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr = IColumn::MutablePtr;
-using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutableColumnPtr>;
-
-using ColumnRawPtrs = std::vector<const IColumn *>;
 
 
 template <typename ... Args>

@@ -7,10 +7,6 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </disk_s3>
-            <disk_hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/</endpoint>
-            </disk_hdfs>
             <disk_encrypted>
                 <type>encrypted</type>
                 <disk>disk_s3</disk>

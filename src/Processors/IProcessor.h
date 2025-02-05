@@ -69,7 +69,6 @@ using Processors = std::vector<ProcessorPtr>;
   *
   * Simple transformation. Has single input and single output port. Pulls data, transforms it and pushes to output port.
   * Example: expression calculator.
-  * TODO Better to make each function a separate processor. It's better for pipeline analysis. Also keep in mind 'sleep' and 'rand' functions.
   *
   * Squashing or filtering transformation. Pulls data, possibly accumulates it, and sometimes pushes it to output port.
   * Examples: DISTINCT, WHERE, squashing of blocks for INSERT SELECT.
@@ -151,7 +150,7 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will return descriptor.
+        /// You may call 'schedule' method and processor will return a descriptor.
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
