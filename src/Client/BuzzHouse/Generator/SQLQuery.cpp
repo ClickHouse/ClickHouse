@@ -52,10 +52,10 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-void StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, Select * sel)
+void StatementGenerator::generateDerivedTable(
+    RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, const uint32_t ncols, Select * sel)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
 
     for (const auto & entry : this->levels)
     {
@@ -84,15 +84,21 @@ void StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation 
     }
     else if (sel->has_set_query())
     {
-        const Select * aux = &sel->set_query().sel1();
+        const ExplainQuery * aux = &sel->set_query().sel1();
 
-        while (aux->has_set_query())
+        while (!aux->is_explain() && aux->inner_query().select().sel().has_set_query())
         {
-            aux = &aux->set_query().sel1();
+            aux = &aux->inner_query().select().sel().set_query().sel1();
         }
-        if (aux->has_select_core())
+
+        if (aux->is_explain())
         {
-            const SelectStatementCore & scc = aux->select_core();
+            rel.cols.emplace_back(SQLRelationCol(rel.name, {"explain"}));
+        }
+        else if (aux->inner_query().select().sel().has_select_core())
+        {
+            const SelectStatementCore & scc = aux->inner_query().select().sel().select_core();
+
             for (int i = 0; i < scc.result_columns_size(); i++)
             {
                 rel.cols.emplace_back(SQLRelationCol(rel.name, {scc.result_columns(i).eca().col_alias().column()}));
@@ -228,8 +234,18 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     {
         SQLRelation rel(name);
         JoinedDerivedQuery * jdq = tos->mutable_joined_derived_query();
+        ExplainQuery * eq = jdq->mutable_select();
+        const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
 
-        generateDerivedTable(rg, rel, allowed_clauses, jdq->mutable_select());
+        if (ncols == 1 && rg.nextMediumNumber() < 11)
+        {
+            generateNextExplain(rg, eq);
+            rel.cols.emplace_back(SQLRelationCol(rel.name, {"explain"}));
+        }
+        else
+        {
+            generateDerivedTable(rg, rel, allowed_clauses, ncols, eq->mutable_inner_query()->mutable_select()->mutable_sel());
+        }
         jdq->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -1132,9 +1148,10 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
         CTEquery * cte = i == 0 ? qctes->mutable_cte() : qctes->add_other_ctes();
         const String name = fmt::format("cte{}d{}", std::to_string(i), std::to_string(this->current_level));
         SQLRelation rel(name);
+        const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
 
         cte->mutable_table()->set_table(name);
-        generateDerivedTable(rg, rel, allowed_clauses, cte->mutable_query());
+        generateDerivedTable(rg, rel, allowed_clauses, ncols, cte->mutable_query());
         this->ctes[this->current_level][name] = std::move(rel);
         this->width++;
     }
@@ -1153,17 +1170,33 @@ void StatementGenerator::generateSelect(
         && rg.nextSmallNumber() < 3)
     {
         SetQuery * setq = sel->mutable_set_query();
+        ExplainQuery * eq1 = setq->mutable_sel1();
+        ExplainQuery * eq2 = setq->mutable_sel2();
 
         setq->set_set_op(static_cast<SetQuery_SetOp>((rg.nextRandomUInt32() % static_cast<uint32_t>(SetQuery::SetOp_MAX)) + 1));
         setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
 
         this->depth++;
         this->current_level++;
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        generateSelect(rg, false, false, ncols, allowed_clauses, setq->mutable_sel1());
+        if (ncols == 1 && rg.nextMediumNumber() < 11)
+        {
+            generateNextExplain(rg, eq1);
+        }
+        else
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            generateSelect(rg, false, false, ncols, allowed_clauses, eq1->mutable_inner_query()->mutable_select()->mutable_sel());
+        }
         this->width++;
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        generateSelect(rg, false, false, ncols, allowed_clauses, setq->mutable_sel2());
+        if (ncols == 1 && rg.nextMediumNumber() < 11)
+        {
+            generateNextExplain(rg, eq2);
+        }
+        else
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            generateSelect(rg, false, false, ncols, allowed_clauses, eq2->mutable_inner_query()->mutable_select()->mutable_sel());
+        }
         this->current_level--;
         this->depth--;
         this->width--;
@@ -1267,7 +1300,7 @@ void StatementGenerator::generateSelect(
             }
         }
     }
-    // This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
+    /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
     if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextSmallNumber() < 3)
     {
         generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
@@ -1281,7 +1314,6 @@ void StatementGenerator::generateTopSelect(
 {
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1), UINT32_C(1));
 
-    chassert(this->levels.empty());
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, ts->mutable_sel());
     this->levels.clear();

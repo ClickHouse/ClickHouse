@@ -1823,7 +1823,7 @@ message ExprIn {
     required bool not = 3;
     oneof exprin_oneof {
         ExprList exprs = 4;
-        Select sel = 5;
+        ExplainQuery sel = 5;
     }
 }
 
@@ -1831,7 +1831,7 @@ message ExprAny {
     required Expr expr = 1;
     required BinaryOperator op = 2;
     required bool anyall = 3;
-    required Select sel = 4;
+    required ExplainQuery sel = 4;
 }
 
 message ExprNullTests {
@@ -1853,7 +1853,7 @@ message ExprWhenThen {
 
 message ExprExists {
     required bool not = 1;
-    required Select select = 3;
+    required ExplainQuery select = 3;
 }
 
 message ExprLike {
@@ -2076,7 +2076,7 @@ message ComplicatedExpr {
         ExprExists expr_exists = 11;
         ExprLike expr_like = 12;
         CondExpr expr_cond = 13;
-        Select subquery = 14;
+        ExplainQuery subquery = 14;
         SQLFuncCall func_call = 15;
         WindowFuncCall window_call = 16;
         IntervalExpr interval = 17;
@@ -2351,7 +2351,7 @@ message JoinClause {
 }
 
 message JoinedDerivedQuery {
-    required Select select = 1;
+    required ExplainQuery select = 1;
     optional Table table_alias = 2;
 }
 
@@ -2574,10 +2574,10 @@ message SetQuery {
         EXCEPT = 2;
         INTERSECT = 3;
     }
-    required Select sel1 = 1;
+    required ExplainQuery sel1 = 1;
     required SetOp set_op = 2;
     required AllOrDistinct s_or_d = 3;
-    required Select sel2 = 4;
+    required ExplainQuery sel2 = 4;
 }
 
 message CTEquery {
@@ -3565,17 +3565,17 @@ message ExplainQuery {
         ESTIMATE = 6;
         TABLE_OVERRIDE = 7;
     }
-    optional ExplainValues expl = 1;
-    repeated ExplainOption opts = 2;
-    required SQLQueryInner inner_query = 3;
+    optional bool is_explain = 1;
+    optional ExplainValues expl = 2;
+    repeated ExplainOption opts = 3;
+    required SQLQueryInner inner_query = 4;
 }
 
 message SQLQuery {
     oneof query_oneof {
-        SQLQueryInner inner_query = 1;
-        ExplainQuery explain = 2;
-        bool start_trans = 3;
-        bool commit_trans = 4;
-        bool rollback_trans = 5;
+        ExplainQuery explain = 1;
+        bool start_trans = 2;
+        bool commit_trans = 3;
+        bool rollback_trans = 4;
     }
 }

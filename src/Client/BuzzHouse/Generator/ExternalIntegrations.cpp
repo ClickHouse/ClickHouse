@@ -1335,16 +1335,16 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     String buf;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
-    if (clickhouse->performQueryOnServerOrRemote(
+    if (clickhouse->performQueryOnServerOrRemote(pt, "SYSTEM FLUSH LOGS;")
+        && clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
-                "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE "
-                "'{}' "
-                "TRUNCATE FORMAT TabSeparated;",
+                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
+                "system.query_log ORDER BY event_time_microseconds DESC LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
-        if (std::getline(infile, buf))
+        if (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
             {
@@ -1379,7 +1379,7 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
             fc.fuzz_out.generic_string())))
     {
         std::ifstream infile(fc.fuzz_out);
-        while (std::getline(infile, buf))
+        while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
             {

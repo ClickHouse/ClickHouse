@@ -1070,6 +1070,8 @@ CONV_FN(ExprBetween, ebetween)
     ret += "))";
 }
 
+CONV_FN(ExplainQuery, explain);
+
 CONV_FN(ExprIn, ein)
 {
     const ExprList & elist = ein.expr();
@@ -1096,7 +1098,7 @@ CONV_FN(ExprIn, ein)
     }
     else if (ein.has_sel())
     {
-        SelectToString(ret, ein.sel());
+        ExplainQueryToString(ret, ein.sel());
     }
     else
     {
@@ -1111,7 +1113,7 @@ CONV_FN(ExprAny, eany)
     BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
     ret += eany.anyall() ? "ALL" : "ANY";
     ret += "(";
-    SelectToString(ret, eany.sel());
+    ExplainQueryToString(ret, eany.sel());
     ret += ")";
 }
 
@@ -1120,7 +1122,7 @@ CONV_FN(ExprExists, exists)
     if (exists.not_())
         ret += "NOT ";
     ret += "EXISTS (";
-    SelectToString(ret, exists.select());
+    ExplainQueryToString(ret, exists.select());
     ret += ")";
 }
 
@@ -1519,7 +1521,7 @@ CONV_FN(ComplicatedExpr, expr)
             break;
         case ExprType::kSubquery:
             ret += "(";
-            SelectToString(ret, expr.subquery());
+            ExplainQueryToString(ret, expr.subquery());
             ret += ")";
             break;
         case ExprType::kFuncCall:
@@ -1711,7 +1713,7 @@ CONV_FN(JoinClause, jc)
 CONV_FN(JoinedDerivedQuery, tos)
 {
     ret += "(";
-    SelectToString(ret, tos.select());
+    ExplainQueryToString(ret, tos.select());
     ret += ")";
     if (tos.has_table_alias())
     {
@@ -2235,13 +2237,13 @@ CONV_FN(SelectStatementCore, ssc)
 CONV_FN(SetQuery, setq)
 {
     ret += "(";
-    SelectToString(ret, setq.sel1());
+    ExplainQueryToString(ret, setq.sel1());
     ret += ") ";
     ret += SetQuery_SetOp_Name(setq.set_op());
     ret += " ";
     ret += AllOrDistinct_Name(setq.s_or_d());
     ret += " (";
-    SelectToString(ret, setq.sel2());
+    ExplainQueryToString(ret, setq.sel2());
     ret += ")";
 }
 
@@ -4046,30 +4048,33 @@ CONV_FN(SQLQueryInner, query)
 
 CONV_FN(ExplainQuery, explain)
 {
-    ret += "EXPLAIN ";
-    if (explain.has_expl())
+    if (explain.is_explain())
     {
-        String nexplain = ExplainQuery_ExplainValues_Name(explain.expl());
-
-        std::replace(nexplain.begin(), nexplain.end(), '_', ' ');
-        ret += nexplain;
-        ret += " ";
-    }
-    if (explain.opts_size())
-    {
-        for (int i = 0; i < explain.opts_size(); i++)
+        ret += "EXPLAIN ";
+        if (explain.has_expl())
         {
-            const ExplainOption & eopt = explain.opts(i);
+            String nexplain = ExplainQuery_ExplainValues_Name(explain.expl());
 
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ret += ExplainOption_ExplainOpt_Name(eopt.opt());
-            ret += " = ";
-            ret += std::to_string(eopt.val());
+            std::replace(nexplain.begin(), nexplain.end(), '_', ' ');
+            ret += nexplain;
+            ret += " ";
         }
-        ret += " ";
+        if (explain.opts_size())
+        {
+            for (int i = 0; i < explain.opts_size(); i++)
+            {
+                const ExplainOption & eopt = explain.opts(i);
+
+                if (i != 0)
+                {
+                    ret += ", ";
+                }
+                ret += ExplainOption_ExplainOpt_Name(eopt.opt());
+                ret += " = ";
+                ret += std::to_string(eopt.val());
+            }
+            ret += " ";
+        }
     }
     SQLQueryInnerToString(ret, explain.inner_query());
 }
@@ -4079,9 +4084,6 @@ CONV_FN(SQLQuery, query)
     using QueryType = SQLQuery::QueryOneofCase;
     switch (query.query_oneof_case())
     {
-        case QueryType::kInnerQuery:
-            SQLQueryInnerToString(ret, query.inner_query());
-            break;
         case QueryType::kExplain:
             ExplainQueryToString(ret, query.explain());
             break;

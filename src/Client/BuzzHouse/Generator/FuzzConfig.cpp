@@ -107,6 +107,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
         {"measure_performance", [&](const JSONObjectType & value) { measure_performance = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
+        {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -243,7 +244,7 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
             fuzz_out.generic_string())))
     {
         std::ifstream infile(fuzz_out);
-        while (std::getline(infile, buf))
+        while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
             {
