@@ -738,7 +738,7 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
     M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data", ValueType::Microseconds) \
     M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses", ValueType::Microseconds) \
-    M(ObjectStorageQueueFailedToBatchSetProcessing, "Number of times batched set processing request succeeded", ValueType::Number)\
+    M(ObjectStorageQueueFailedToBatchSetProcessing, "Number of times batched set processing request failed", ValueType::Number)\
     M(ObjectStorageQueueTrySetProcessingRequests, "The number of times we tried to make set processing request", ValueType::Number)\
     M(ObjectStorageQueueTrySetProcessingSucceeded, "The number of times we successfully set file as processing", ValueType::Number)\
     M(ObjectStorageQueueTrySetProcessingFailed, "The number of times we unsuccessfully set file as processing", ValueType::Number)\
