@@ -4,10 +4,34 @@ from ci.workflows.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 
 class JobConfigs:
+    docker_build_arm = Job.Config(
+        name=JobNames.DOCKER_BUILDS_ARM,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./docker",
+                "./tests/ci/docker_images_check.py",
+            ],
+        ),
+        command="python3 ./tests/ci/docker_images_check.py --suffix aarch64",
+    )
+    docker_build_amd = Job.Config(
+        name=JobNames.DOCKER_BUILDS_AMD,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./docker",
+                "./tests/ci/docker_images_check.py",
+            ],
+        ),
+        command="python3 ./tests/ci/docker_images_check.py --suffix amd64 --multiarch-manifest",
+        requires=[JobNames.DOCKER_BUILDS_ARM],
+    )
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        requires=[JobNames.DOCKER_BUILDS_AMD],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -22,6 +46,7 @@ class JobConfigs:
                 "./docker",
             ]
         ),
+        requires=[JobNames.DOCKER_BUILDS_AMD],
         timeout=3000,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
     )
