@@ -448,6 +448,121 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     cached_digest = other.cached_digest;
 }
 
+struct CreateNodeDelta
+{
+    Coordination::Stat stat;
+    Coordination::ACLs acls;
+    String data;
+};
+
+struct RemoveNodeDelta
+{
+    int32_t version{-1};
+    NodeStats stat;
+    Coordination::ACLs acls;
+    String data;
+};
+
+struct UpdateNodeStatDelta
+{
+    template <is_any_of<KeeperMemNode, KeeperRocksNode> Node>
+    explicit UpdateNodeStatDelta(const Node & node)
+        : old_stats(node.stats)
+        , new_stats(node.stats)
+    {}
+
+    NodeStats old_stats;
+    NodeStats new_stats;
+    int32_t version{-1};
+};
+
+struct UpdateNodeDataDelta
+{
+
+    std::string old_data;
+    std::string new_data;
+    int32_t version{-1};
+};
+
+struct SetACLDelta
+{
+    Coordination::ACLs old_acls;
+    Coordination::ACLs new_acls;
+    int32_t version{-1};
+};
+
+struct ErrorDelta
+{
+    Coordination::Error error;
+};
+
+struct FailedMultiDelta
+{
+    std::vector<Coordination::Error> error_codes;
+    Coordination::Error global_error{Coordination::Error::ZOK};
+};
+
+// Denotes end of a subrequest in multi request
+struct SubDeltaEnd
+{
+};
+
+struct AddAuthDelta
+{
+    int64_t session_id;
+    std::shared_ptr<KeeperStorageBase::AuthID> auth_id;
+};
+
+struct CloseSessionDelta
+{
+    int64_t session_id;
+};
+
+using Operation = std::variant<
+    CreateNodeDelta,
+    RemoveNodeDelta,
+    UpdateNodeStatDelta,
+    UpdateNodeDataDelta,
+    SetACLDelta,
+    AddAuthDelta,
+    ErrorDelta,
+    SubDeltaEnd,
+    FailedMultiDelta,
+    CloseSessionDelta>;
+
+struct KeeperStorageBase::Delta
+{
+    Delta(String path_, int64_t zxid_, Operation operation_) : path(std::move(path_)), zxid(zxid_), operation(std::move(operation_)) { }
+
+    Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
+
+    Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
+
+    String path;
+    int64_t zxid;
+    Operation operation;
+};
+
+KeeperStorageBase::DeltaIterator KeeperStorageBase::DeltaRange::begin() const
+{
+    return begin_it;
+}
+
+KeeperStorageBase::DeltaIterator KeeperStorageBase::DeltaRange::end() const
+{
+    return end_it;
+}
+
+bool KeeperStorageBase::DeltaRange::empty() const
+{
+    return begin_it == end_it;
+}
+
+const KeeperStorageBase::Delta & KeeperStorageBase::DeltaRange::front() const
+{
+    return *begin_it;
+}
+
 KeeperStorageBase::KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context_, const String & superdigest_)
     : keeper_context(keeper_context_), superdigest(superdigest_), session_expiry_queue(tick_time_ms)
 {}
@@ -750,6 +865,9 @@ void KeeperStorage<Container>::UncommittedState::applyDeltas(const std::list<Del
 }
 
 template<typename Container>
+KeeperStorage<Container>::UncommittedState::~UncommittedState() = default;
+
+template<typename Container>
 void KeeperStorage<Container>::UncommittedState::addDeltas(std::list<Delta> new_deltas)
 {
     std::lock_guard lock(deltas_mutex);
@@ -953,12 +1071,6 @@ namespace
 
 }
 
-KeeperStorageBase::Delta::Delta(String path_, int64_t zxid_, Operation operation_) : path(std::move(path_)), zxid(zxid_), operation(std::move(operation_)) { }
-
-KeeperStorageBase::Delta::Delta(int64_t zxid_, Coordination::Error error) : Delta("", zxid_, ErrorDelta{error}) { }
-
-KeeperStorageBase::Delta::Delta(int64_t zxid_, Operation subdelta) : Delta("", zxid_, subdelta) { }
-
 /// Get current committed zxid
 int64_t KeeperStorageBase::getZXID() const
 {
@@ -1027,7 +1139,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
 
                     return Coordination::Error::ZOK;
                 }
-                else if constexpr (std::same_as<DeltaType, KeeperStorage::UpdateNodeStatDelta> || std::same_as<DeltaType, KeeperStorage::UpdateNodeDataDelta>)
+                else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta> || std::same_as<DeltaType, UpdateNodeDataDelta>)
                 {
                     auto node_it = container.find(path);
                     if (node_it == container.end())
@@ -1040,7 +1152,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
                         removeDigest(node_it->value, path);
                     auto updated_node = container.updateValue(path, [&](auto & node)
                     {
-                        if constexpr (std::same_as<DeltaType, KeeperStorage::UpdateNodeStatDelta>)
+                        if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
                             node.stats = operation.new_stats;
                         else
                             node.setData(std::move(operation.new_data));
@@ -1087,7 +1199,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
                     committed_session_and_auth[operation.session_id].emplace_back(std::move(*operation.auth_id));
                     return Coordination::Error::ZOK;
                 }
-                else if constexpr (std::same_as<DeltaType, KeeperStorage::CloseSessionDelta>)
+                else if constexpr (std::same_as<DeltaType, CloseSessionDelta>)
                 {
                     return Coordination::Error::ZOK;
                 }
@@ -1458,7 +1570,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     int32_t parent_cversion = zk_request.parent_cversion;
 
-    KeeperStorageBase::UpdateNodeStatDelta update_parent_delta(*parent_node);
+    UpdateNodeStatDelta update_parent_delta(*parent_node);
     update_parent_delta.new_stats.increaseSeqNum();
 
     if (parent_cversion == -1)
@@ -1488,7 +1600,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
-        typename Storage::CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
+        CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
 
     digest = storage.calculateNodesDigest(digest, new_deltas);
     return new_deltas;
@@ -1514,7 +1626,7 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
         deltas.begin(),
         deltas.end(),
         [](const auto & delta)
-        { return std::holds_alternative<KeeperStorageBase::CreateNodeDelta>(delta.operation); });
+        { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
 
     if (create_delta_it != deltas.end())
         created_path = create_delta_it->path;
@@ -1661,7 +1773,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     auto parent_path = parentNodePath(zk_request.path);
     auto parent_node = storage.uncommitted_state.getNode(parent_path);
 
-    std::optional<KeeperStorageBase::UpdateNodeStatDelta> update_parent_delta;
+    std::optional<UpdateNodeStatDelta> update_parent_delta;
     if (parent_node)
         update_parent_delta.emplace(*parent_node);
 
@@ -1713,8 +1825,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_deltas.emplace_back(
         zk_request.path,
         zxid,
-        KeeperStorageBase::RemoveNodeDelta{
-            zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
+        RemoveNodeDelta{zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
 
     if (node->stats.isEphemeral())
     {
@@ -1900,7 +2011,7 @@ private:
 
     void addDelta(StringRef path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
     {
-        deltas.emplace_front(std::string{path}, zxid, KeeperStorageBase::RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
+        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
     }
 
     bool checkLimits(const Storage::Node & node)
@@ -1927,7 +2038,7 @@ KeeperStorageBase::ResponsesForSessions processWatches(
     KeeperStorageBase::ResponsesForSessions responses;
     for (const auto & delta : deltas)
     {
-        const auto * remove_delta = std::get_if<KeeperStorageBase::RemoveNodeDelta>(&delta.operation);
+        const auto * remove_delta = std::get_if<RemoveNodeDelta>(&delta.operation);
         if (remove_delta)
         {
             auto new_responses = processWatchesImpl(delta.path, watches, list_watches, sessions_and_watchers, Coordination::Event::DELETED);
@@ -1965,7 +2076,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     auto parent_path = parentNodePath(zk_request.path);
     auto parent_node = storage.uncommitted_state.getNode(parent_path);
 
-    std::optional<KeeperStorageBase::UpdateNodeStatDelta> update_parent_delta;
+    std::optional<UpdateNodeStatDelta> update_parent_delta;
     if (parent_node)
         update_parent_delta.emplace(*parent_node);
 
@@ -2024,7 +2135,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     for (const auto & delta : delete_deltas)
     {
-        const auto * remove_delta = std::get_if<KeeperStorageBase::RemoveNodeDelta>(&delta.operation);
+        const auto * remove_delta = std::get_if<RemoveNodeDelta>(&delta.operation);
         if (remove_delta && remove_delta->stat.ephemeralOwner())
         {
             unregisterEphemeralPath(
@@ -2167,9 +2278,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_deltas.emplace_back(
         zk_request.path,
         zxid,
-        KeeperStorageBase::UpdateNodeDataDelta{.old_data = std::string{node->getData()}, .new_data = zk_request.data, .version = zk_request.version});
+        UpdateNodeDataDelta{.old_data = std::string{node->getData()}, .new_data = zk_request.data, .version = zk_request.version});
 
-    KeeperStorageBase::UpdateNodeStatDelta node_delta(*node);
+    UpdateNodeStatDelta node_delta(*node);
     node_delta.version = zk_request.version;
     auto & new_stats = node_delta.new_stats;
     new_stats.version++;
@@ -2180,7 +2291,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     auto parent_path = parentNodePath(zk_request.path);
     auto parent_node = storage.uncommitted_state.getNode(parent_path);
-    KeeperStorageBase::UpdateNodeStatDelta parent_delta(*parent_node);
+    UpdateNodeStatDelta parent_delta(*parent_node);
     ++parent_delta.new_stats.cversion;
     new_deltas.emplace_back(std::string{parent_path}, zxid, std::move(parent_delta));
 
@@ -2498,7 +2609,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
         if (!new_subdeltas.empty())
         {
-            if (auto * error = std::get_if<KeeperStorageBase::ErrorDelta>(&new_subdeltas.back().operation);
+            if (auto * error = std::get_if<ErrorDelta>(&new_subdeltas.back().operation);
                 error && zk_request.getOpNum() == Coordination::OpNum::Multi)
             {
                 storage.uncommitted_state.rollback(std::move(new_deltas));
@@ -2507,11 +2618,11 @@ std::list<KeeperStorageBase::Delta> preprocess(
                 for (size_t j = i + 1; j < subrequests.size(); ++j)
                     response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
 
-                return {typename Storage::Delta{zxid, typename Storage::FailedMultiDelta{std::move(response_errors)}}};
+                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{std::move(response_errors)}}};
             }
         }
 
-        new_subdeltas.emplace_back(zxid, KeeperStorageBase::SubDeltaEnd{});
+        new_subdeltas.emplace_back(zxid, SubDeltaEnd{});
         response_errors.push_back(Coordination::Error::ZOK);
 
         // manually add deltas so that the result of previous request in the transaction is used in the next request
@@ -2531,7 +2642,7 @@ KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & d
 
     for (; it != deltas.end(); ++it)
     {
-        if (std::holds_alternative<KeeperStorageBase::SubDeltaEnd>(it->operation))
+        if (std::holds_alternative<SubDeltaEnd>(it->operation))
         {
             ++it;
             break;
@@ -2559,7 +2670,7 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     // the deltas will have at least SubDeltaEnd or FailedMultiDelta
     chassert(!deltas.empty());
-    if (auto * failed_multi = std::get_if<typename Storage::FailedMultiDelta>(&deltas.front().operation))
+    if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
         for (size_t i = 0; i < subrequests.size(); ++i)
         {
@@ -2641,7 +2752,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     {
         auto auth = std::make_shared<KeeperStorageBase::AuthID>();
         auth->scheme = "super";
-        new_deltas.emplace_back(zxid, KeeperStorageBase::AddAuthDelta{session_id, std::move(auth)});
+        new_deltas.emplace_back(zxid, AddAuthDelta{session_id, std::move(auth)});
     }
     else
     {
@@ -2649,7 +2760,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         new_auth->scheme = zk_request.scheme;
         new_auth->id = std::move(auth_digest);
         if (!storage.uncommitted_state.hasACL(session_id, false, [&](const auto & auth_id) { return *new_auth == auth_id; }))
-            new_deltas.emplace_back(zxid, KeeperStorageBase::AddAuthDelta{session_id, std::move(new_auth)});
+            new_deltas.emplace_back(zxid, AddAuthDelta{session_id, std::move(new_auth)});
     }
 
     return new_deltas;
@@ -2716,12 +2827,10 @@ std::list<KeeperStorageBase::Delta> preprocess(
     if (!fixupACL(zk_request.acls, session_id, uncommitted_state, node_acls))
         return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
-    KeeperStorageBase::UpdateNodeStatDelta update_stat_delta(*node);
+    UpdateNodeStatDelta update_stat_delta(*node);
     ++update_stat_delta.new_stats.aversion;
     std::list<KeeperStorageBase::Delta> new_deltas{
-        {zk_request.path,
-         zxid,
-         KeeperStorageBase::SetACLDelta{uncommitted_state.getACLs(zk_request.path), std::move(node_acls), zk_request.version}},
+        {zk_request.path, zxid, SetACLDelta{uncommitted_state.getACLs(zk_request.path), std::move(node_acls), zk_request.version}},
         {zk_request.path, zxid, std::move(update_stat_delta)}};
 
     digest = storage.calculateNodesDigest(digest, new_deltas);
@@ -3096,7 +3205,7 @@ void KeeperStorage<Container>::preprocessRequest(
                 std::vector<Coordination::Error> response_errors;
                 response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
                 new_deltas.emplace_back(
-                    new_last_zxid, KeeperStorage<Container>::FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+                    new_last_zxid, FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
             }
             else
             {

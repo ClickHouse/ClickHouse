@@ -354,102 +354,8 @@ public:
     //    state of that same object from the storage and applying the deltas
     //    in the same order as they are defined
     //  - quickly commit the changes to the storage
-    //struct CreateNodeDelta
-    //{
-    //    Coordination::Stat stat;
-    //    Coordination::ACLs acls;
-    //    String data;
-    //};
 
-    //struct RemoveNodeDelta
-    //{
-    //    int32_t version{-1};
-    //    NodeStats stat;
-    //    Coordination::ACLs acls;
-    //    String data;
-    //};
-
-    //struct UpdateNodeStatDelta
-    //{
-    //    template <is_any_of<KeeperMemNode, KeeperRocksNode> Node>
-    //    explicit UpdateNodeStatDelta(const Node & node)
-    //        : old_stats(node.stats)
-    //        , new_stats(node.stats)
-    //    {}
-
-    //    NodeStats old_stats;
-    //    NodeStats new_stats;
-    //    int32_t version{-1};
-    //};
-
-    //struct UpdateNodeDataDelta
-    //{
-
-    //    std::string old_data;
-    //    std::string new_data;
-    //    int32_t version{-1};
-    //};
-
-    //struct SetACLDelta
-    //{
-    //    Coordination::ACLs old_acls;
-    //    Coordination::ACLs new_acls;
-    //    int32_t version{-1};
-    //};
-
-    //struct ErrorDelta
-    //{
-    //    Coordination::Error error;
-    //};
-
-    //struct FailedMultiDelta
-    //{
-    //    std::vector<Coordination::Error> error_codes;
-    //    Coordination::Error global_error{Coordination::Error::ZOK};
-    //};
-
-    //// Denotes end of a subrequest in multi request
-    //struct SubDeltaEnd
-    //{
-    //};
-
-    //struct AddAuthDelta
-    //{
-    //    int64_t session_id;
-    //    std::shared_ptr<AuthID> auth_id;
-    //};
-
-    //struct CloseSessionDelta
-    //{
-    //    int64_t session_id;
-    //};
-
-    //using Operation = std::variant<
-    //    CreateNodeDelta,
-    //    RemoveNodeDelta,
-    //    UpdateNodeStatDelta,
-    //    UpdateNodeDataDelta,
-    //    SetACLDelta,
-    //    AddAuthDelta,
-    //    ErrorDelta,
-    //    SubDeltaEnd,
-    //    FailedMultiDelta,
-    //    CloseSessionDelta>;
-
-    //struct Delta
-    //{
-    //    Delta(String path_, int64_t zxid_, Operation operation_);
-
-    //    Delta(int64_t zxid_, Coordination::Error error);
-
-    //    Delta(int64_t zxid_, Operation subdelta);
-
-    //    String path;
-    //    int64_t zxid;
-    //    Operation operation;
-    //};
-
-    class Delta;
+    struct Delta;
 
     using DeltaIterator = std::list<KeeperStorageBase::Delta>::const_iterator;
     struct DeltaRange
@@ -457,25 +363,10 @@ public:
         DeltaIterator begin_it;
         DeltaIterator end_it;
 
-        auto begin() const
-        {
-            return begin_it;
-        }
-
-        auto end() const
-        {
-            return end_it;
-        }
-
-        bool empty() const
-        {
-            return begin_it == end_it;
-        }
-
-        const auto & front() const
-        {
-            return *begin_it;
-        }
+        DeltaIterator begin() const;
+        DeltaIterator end() const;
+        bool empty() const;
+        const KeeperStorageBase::Delta & front() const;
     };
 
     struct Stats
@@ -629,6 +520,8 @@ public:
     struct UncommittedState
     {
         explicit UncommittedState(KeeperStorage & storage_) : storage(storage_) { }
+
+        ~UncommittedState();
 
         void addDeltas(std::list<Delta> new_deltas);
         void cleanup(int64_t commit_zxid);
