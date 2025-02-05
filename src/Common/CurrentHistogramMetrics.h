@@ -10,27 +10,38 @@
 
 namespace CurrentHistogramMetrics
 {
-    using Metric = StrongTypedef<size_t, struct MetricTag>;
+    using Metric = size_t;
     using Value = Int64;
     using AtomicCounter = std::atomic<UInt64>;
     using AtomicSum = std::atomic<Value>;
 
-    struct MetricInfo
+    template <Metric m> 
+    struct MetricTraits;
+
+    template <Metric m, auto label>
+    struct MetricState
+    {
+        static_assert(
+            std::is_same_v<decltype(label), typename MetricTraits<m>::LabelType>,
+            "The passed label has an unexpected type."
+        );
+
+        static inline std::array<AtomicCounter, MetricTraits<m>::BUCKETS_COUNT> data{};
+        static inline AtomicSum sum{};
+    };
+
+    struct MetricStatus
     {
         const std::string name;
         const std::string documentation;
-        const std::vector<Value> buckets;
-        std::span<AtomicCounter> counters;
+        const std::pair<std::string, std::string> label;
+        const std::span<AtomicCounter> counters;
+        const std::span<Value> buckets;
+        const AtomicSum * sum;
     };
 
-    extern AtomicCounter data[];
-    extern AtomicSum sums[];
-    extern MetricInfo metrics[];
+    template <Metric m, auto label>
+    void observe(Value value);
 
-    const char * getName(Metric metric);
-    const char * getDocumentation(Metric metric);
-
-    inline void observe(Metric metric, Value value);
-
-    Metric end();
+    const std::vector<MetricStatus> & getStatus();
 }
