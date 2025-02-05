@@ -850,7 +850,7 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values in JSON output format will be printed in pretty format.
+When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
 
 Enabled by default.
 )", 0) \

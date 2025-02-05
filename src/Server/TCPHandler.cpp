@@ -7,6 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -177,9 +178,10 @@ namespace
 // "ClickHouse" or "ClickHouse " was sent with the query message.
 void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo & client_info)
 {
-    if (client_info.getVersionNumber() <= VersionNumber(23, 8, 1) &&
-        session_client_info.client_name == "ClickHouse client" &&
-        (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
+    if (VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+            <= VersionNumber(23, 8, 1)
+        && session_client_info.client_name == "ClickHouse client"
+        && (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
     {
         client_info.client_name = "ClickHouse client";
     }
@@ -2139,7 +2141,9 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
     /// different servers.
-    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+            < VersionNumber(23, 3, 0)
         && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
 
@@ -2314,7 +2318,8 @@ void TCPHandler::initBlockInput(QueryState & state)
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
-            client_tcp_protocol_version);
+            client_tcp_protocol_version,
+            getFormatSettings(state.query_context));
     }
 }
 
@@ -2364,7 +2369,7 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2375,7 +2380,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     {
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
