@@ -368,7 +368,6 @@ function run_tests()
         --check-zookeeper-session
         --hung-check
         --print-time
-        --no-drop-if-fail
         --capture-client-stacktrace
         --queries "/repo/tests/queries"
         --test-runs "$NUM_TRIES"
