@@ -29,7 +29,7 @@ def can_be_trusted():
     if CAN_BE_TESTED in Info().pr_labels:
         print("It's approved by 'can be tested' label")
         return ""
-    org = Shell.check(f"gh api users/{Info().user_name}/orgs --jq '.[].login'")
+    org = Shell.get_output(f"gh api users/{Info().user_name}/orgs --jq '.[].login'")
     if org == "ClickHouse":
         print("It's an internal contributor using fork - why?")
         return ""

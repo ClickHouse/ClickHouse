@@ -36,6 +36,7 @@ from commit_status_helper import (
     get_commit,
     get_commit_filtered_statuses,
     post_commit_status,
+    set_status_comment,
 )
 from digest_helper import DockerDigester
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_ID, IS_CI, REPO_COPY, TEMP_PATH
@@ -670,18 +671,11 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
                 _ = future.result()
             except Exception as e:
                 raise e
-    # print("Going to update overall CI report")
-    # for retry in range(2):
-    #     try:
-    #         set_status_comment(commit, pr_info)
-    #         break
-    #     except Exception as e:
-    #         print(
-    #             f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
-    #         )
-    #         time.sleep(1)
-    # else:
-    #     print("ERROR: All retry attempts failed.")
+    print("Going to update overall CI report")
+    try:
+        set_status_comment(commit, pr_info)
+    except Exception as e:
+        print(f"WARNING: Failed to update CI Running status, ex [{e}]")
     print("... CI report update - done")
 
 
