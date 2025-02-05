@@ -10,11 +10,11 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
 from .runtime import RunConfig
-from .gh import GH
 from .s3 import S3
 from .settings import Settings
 from .utils import Shell, TeePopen, Utils

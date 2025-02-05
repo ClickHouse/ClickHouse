@@ -53,6 +53,7 @@ from report import (
     JOB_STARTED_TEST_NAME,
     OK,
     PENDING,
+    SKIPPED,
     SUCCESS,
     BuildResult,
     JobReport,
@@ -1431,7 +1432,9 @@ def main() -> int:
             gh = GitHub(get_best_robot_token(), per_page=100)
             commit = get_commit(gh, pr_info.sha)
             if not job_report.dummy:
-                if job_report.status != SUCCESS and not CI.is_build_job(check_name):
+                if job_report.status not in (SUCCESS, SKIPPED) and not CI.is_build_job(
+                    check_name
+                ):
                     # create and post statuses only for not success jobs
                     check_url = upload_result_helper.upload_results(
                         s3,

@@ -495,6 +495,7 @@ class JobReport:
             ERROR,
             FAILURE,
             PENDING,
+            SKIPPED,
         ), f"Invalid status [{self.status}]"
 
     @classmethod
