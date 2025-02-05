@@ -17,6 +17,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/ServerUUID.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <exception>
 #include <filesystem>
