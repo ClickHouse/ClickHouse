@@ -20,7 +20,9 @@ $CLICKHOUSE_CLIENT -q "
   INSERT INTO t2 SELECT number, number FROM numbers_mt(1e6);
 "
 
+# list of query_id-s that expected to be executed without preallocation
 queries_without_preallocation=()
+# list of query_id-s that expected to be executed with preallocation
 queries_with_preallocation=()
 
 run_new_query() {
@@ -50,6 +52,9 @@ $CLICKHOUSE_CLIENT "${opts[@]}" --query_id="$query_id" -q "SELECT * FROM t1 AS x
 
 # now t1 is the right table
 run_new_query "SELECT * FROM t2 AS x INNER JOIN t1 AS y ON x.a = y.a"
+
+run_new_query "SELECT * FROM t1 AS x INNER JOIN t2 AS y ON x.a = y.a WHERE a < 200_000"
+run_new_query "SELECT * FROM t1 AS x INNER JOIN t2 AS y ON x.a = y.a WHERE a >= 200_000"
 
 ##################################
 

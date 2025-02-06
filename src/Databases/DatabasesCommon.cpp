@@ -23,6 +23,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -30,8 +31,9 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
+extern const SettingsBool fsync_metadata;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 }
 namespace ErrorCodes
 {
@@ -55,8 +57,8 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         serialized_query.data() + serialized_query.size(),
         "after altering table ",
         0,
-        context->getSettingsRef()[Setting::max_parser_backtracks],
-        context->getSettingsRef()[Setting::max_parser_depth]);
+        context->getSettingsRef()[Setting::max_parser_depth],
+        context->getSettingsRef()[Setting::max_parser_backtracks]);
     const auto & new_query = new_query_raw->as<const ASTCreateQuery &>();
     /// If there are no columns, then there is nothing much we can do
     if (!new_query.columns_list || !new_query.columns_list->columns)
@@ -199,6 +201,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
+        else if (metadata.settings_changes)
+        {
+            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            if (!settings_changes.empty())
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
     }
 
     if (metadata.comment.empty())
@@ -292,13 +300,34 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format = nullptr;
+    query.format_ast = nullptr;
     query.out_file = nullptr;
+}
+
+String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
+{
+    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
+    String content;
+    readStringUntilEOF(content, *read_buf);
+
+    return content;
+}
+
+void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
+{
+    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
+    writeString(content, *out);
+
+    out->next();
+    if (fsync_metadata)
+        out->sync();
+    out->finalize();
+    out.reset();
 }
 
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
 {
 }
 
@@ -382,7 +411,8 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
         LOG_TEST(log, "Counting detached table {} to database {}", table_name, database_name);
-        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
+        for (auto metric : getAttachedCountersForStorage(table_storage))
+            CurrentMetrics::sub(metric);
     }
 
     auto table_id = table_storage->getStorageID();
@@ -430,7 +460,8 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
         LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
-        CurrentMetrics::add(getAttachedCounterForStorage(table));
+        for (auto metric : getAttachedCountersForStorage(table))
+            CurrentMetrics::add(metric);
     }
 }
 

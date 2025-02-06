@@ -22,6 +22,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "WindowTransform.h"
 
 #include <algorithm>
 #include <limits>
@@ -64,6 +65,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+}
+
+RowNumber IWindowFunction::firstRequiredRowInFrame(const WindowTransform * transform) const
+{
+    return transform->prev_frame_start;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -470,15 +476,18 @@ void WindowTransform::advancePartitionEnd()
     // dropped the blocks where the partition starts, but any other row in the
     // partition will do. We can't use frame_start or frame_end or current_row (the next row
     // for which we are calculating the window functions), because they all might be
-    // past the end of the partition. prev_frame_start is suitable, because it
+    // past the end of the partition. prev_partition_row is suitable, because it
     // is a pointer to the first row of the previous frame that must have been
     // valid, or to the first row of the partition, and we make sure not to drop
     // its block.
-    assert(partition_start <= prev_frame_start);
+    auto prev_partition_row = first_required_row;
+    if (prev_partition_row < prev_frame_start)
+        prev_partition_row = prev_frame_start;
+    assert(partition_start <= prev_partition_row);
     // The frame start should be inside the prospective partition, except the
     // case when it still has no rows.
-    assert(prev_frame_start < partition_end || partition_start == partition_end);
-    assert(first_block_number <= prev_frame_start.block);
+    assert(prev_partition_row < partition_end || partition_start == partition_end);
+    assert(first_block_number <= prev_partition_row.block);
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
@@ -486,12 +495,12 @@ void WindowTransform::advancePartitionEnd()
         for (; i < partition_by_columns; ++i)
         {
             const auto * reference_column
-                = inputAt(prev_frame_start)[partition_by_indices[i]].get();
+                = inputAt(prev_partition_row)[partition_by_indices[i]].get();
             const auto * compared_column
                 = inputAt(partition_end)[partition_by_indices[i]].get();
 
             if (compared_column->compareAt(partition_end.row,
-                    prev_frame_start.row, *reference_column,
+                    prev_partition_row.row, *reference_column,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -1075,6 +1084,29 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
+void WindowTransform::updateFirstRequiredRow()
+{
+    first_required_row = current_row;
+    for (auto & ws : workspaces)
+    {
+        RowNumber row;
+        if (ws.window_function_impl)
+            row = ws.window_function_impl->firstRequiredRowInFrame(this);
+        else
+        {
+            /// For aggregate functions, if the start bound is preceding unbounded, blocks before
+            /// the current row are no longer in use. peer_group_start may be used by other
+            /// functions
+            if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+                row = peer_group_start;
+            else
+                row = prev_frame_start;
+        }
+        if (row < first_required_row)
+            first_required_row = row;
+    }
+}
+
 static void assertSameColumns(const Columns & left_all,
     const Columns & right_all)
 {
@@ -1153,7 +1185,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            block.casted_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
+            block.cast_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
@@ -1479,8 +1511,9 @@ void WindowTransform::work()
     // than the current frame start, so we don't have to check the latter. Note
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    updateFirstRequiredRow();
     assert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    const auto first_used_block = std::min({next_output_block_number, first_required_row.block, current_row.block});
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1488,8 +1521,6 @@ void WindowTransform::work()
         first_block_number = first_used_block;
 
         assert(next_output_block_number >= first_block_number);
-        assert(frame_start.block >= first_block_number);
-        assert(prev_frame_start.block >= first_block_number);
         assert(current_row.block >= first_block_number);
         assert(peer_group_start.block >= first_block_number);
     }
@@ -1511,6 +1542,14 @@ struct WindowFunctionRank final : public StatelessWindowFunction
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_start_row_number);
     }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        if (transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Current)
+            return transform->peer_group_start;
+        return transform->frame_start;
+    }
 };
 
 struct WindowFunctionDenseRank final : public StatelessWindowFunction
@@ -1528,6 +1567,14 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_number);
+    }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        if (transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Current)
+            return transform->peer_group_start;
+        return transform->frame_start;
     }
 };
 
@@ -2004,6 +2051,18 @@ struct WindowFunctionRowNumber final : public StatelessWindowFunction
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->current_row_number);
     }
+
+    RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const override
+    {
+        /// Current block is the only one required to be kept in memory.
+        if (transform->window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded
+            && transform->window_description.frame.end_type == WindowFrame::BoundaryType::Current)
+        {
+            auto [row, _] = transform->moveRowNumber(transform->current_row, -1);
+            return row;
+        }
+        return transform->frame_start;
+    }
 };
 
 namespace
@@ -2350,7 +2409,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             }
         };
 
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size(), /* dry_run = */ false);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2401,8 +2460,8 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
             {
                 // Column with default values is specified.
                 const IColumn & default_column =
-                    current_block.casted_columns[function_index] ?
-                        *current_block.casted_columns[function_index].get() :
+                    current_block.cast_columns[function_index] ?
+                        *current_block.cast_columns[function_index].get() :
                         *current_block.input_columns[workspace.argument_column_indices[2]].get();
 
                 to.insert(default_column[transform->current_row.row]);

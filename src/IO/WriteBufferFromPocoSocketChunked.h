@@ -2,7 +2,6 @@
 
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <algorithm>
 
 
 namespace DB
@@ -16,7 +15,6 @@ public:
 
     void enableChunked();
     void finishChunk();
-    ~WriteBufferFromPocoSocketChunked() override;
 
 protected:
     void nextImpl() override;

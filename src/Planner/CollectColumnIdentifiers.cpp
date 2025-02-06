@@ -2,6 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Planner/PlannerContext.h>
 
@@ -28,6 +29,7 @@ public:
             && child_node_type != QueryTreeNodeType::QUERY
             && child_node_type != QueryTreeNodeType::UNION
             && child_node_type != QueryTreeNodeType::JOIN
+            && child_node_type != QueryTreeNodeType::CROSS_JOIN
             && child_node_type != QueryTreeNodeType::ARRAY_JOIN;
     }
 

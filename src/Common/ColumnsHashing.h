@@ -5,6 +5,7 @@
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <base/unaligned.h>
 
@@ -25,6 +26,19 @@ namespace ErrorCodes
 
 namespace ColumnsHashing
 {
+
+/// Hash a set of keys into a UInt128 value.
+static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
+    size_t i,
+    size_t keys_size,
+    const ColumnRawPtrs & key_columns)
+{
+    SipHash hash;
+    for (size_t j = 0; j < keys_size; ++j)
+        key_columns[j]->updateHashWithValue(i, hash);
+
+    return hash.get128();
+}
 
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
@@ -228,7 +242,6 @@ private:
     Cache cache;
 };
 
-
 /// Single low cardinality column.
 template <typename SingleColumnMethod, typename Mapped, bool use_cache>
 struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
@@ -302,7 +315,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
-        bool is_shared_dict = column->isSharedDictionary();
+        const bool is_shared_dict = column->isSharedDictionary();
 
         typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
@@ -783,4 +796,10 @@ struct HashMethodHashed
 };
 
 }
+
+/// Explicit instantiation of LowCardinalityDictionaryCache::cache which is a really heavy template
+extern template class CacheBase<
+    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey,
+    ColumnsHashing::LowCardinalityDictionaryCache::CachedValues,
+    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash>;
 }

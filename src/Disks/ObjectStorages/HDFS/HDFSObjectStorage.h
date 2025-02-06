@@ -77,11 +77,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects & objects) override;
-
     void removeObjectIfExists(const StoredObject & object) override;
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
@@ -95,6 +90,7 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
+    HDFSFileInfo hdfsListDirectoryWrapper(const std::string & path) const;
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     String getObjectsNamespace() const override { return ""; }
@@ -107,6 +103,8 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
+    bool areObjectKeysRandom() const override { return true; }
+
     bool isRemote() const override { return true; }
 
     void startup() override { }
@@ -116,6 +114,11 @@ public:
 private:
     void initializeHDFSFS() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
+
+    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    void removeObject(const StoredObject & object);
+
+    void removeObjects(const StoredObjects & objects);
 
     const Poco::Util::AbstractConfiguration & config;
 

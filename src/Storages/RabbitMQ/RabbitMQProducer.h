@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <list>
-#include <mutex>
-#include <atomic>
-#include <amqpcpp.h>
+#include <Columns/IColumn_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Names.h>
+
+#include <atomic>
+#include <amqpcpp.h>
 
 namespace DB
 {
@@ -27,6 +26,7 @@ public:
         LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
+    void cancel() noexcept override;
 
 private:
     String getProducingTaskName() const override { return "RabbitMQProducingTask"; }

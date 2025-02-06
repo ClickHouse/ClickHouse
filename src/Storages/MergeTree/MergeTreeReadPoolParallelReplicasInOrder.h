@@ -14,6 +14,7 @@ public:
         RangesInDataParts parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        bool has_limit_below_one_block_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
@@ -31,6 +32,7 @@ public:
 private:
     const ParallelReadingExtension extension;
     const CoordinationMode mode;
+    const bool has_limit_below_one_block;
 
     size_t min_marks_per_task{0};
     bool no_more_tasks{false};
@@ -38,6 +40,7 @@ private:
     RangesInDataPartsDescription buffered_tasks;
 
     mutable std::mutex mutex;
+    std::vector<size_t> per_part_marks_in_range;
 };
 
 };

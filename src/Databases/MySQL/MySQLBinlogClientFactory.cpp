@@ -13,9 +13,10 @@ BinlogClientPtr BinlogClientFactory::getClient(const String & host, UInt16 port,
 {
     std::lock_guard lock(mutex);
     String binlog_client_name;
-    WriteBufferFromString stream(binlog_client_name);
-    stream << user << "@" << host << ":" << port;
-    stream.finalize();
+    {
+        WriteBufferFromString stream(binlog_client_name);
+        stream << user << "@" << host << ":" << port;
+    }
     String binlog_client_key = binlog_client_name + ":" + password;
     auto it = clients.find(binlog_client_key);
     BinlogClientPtr ret = it != clients.end() ? it->second.lock() : nullptr;

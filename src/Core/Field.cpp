@@ -1,14 +1,15 @@
+#include <Common/FieldVisitorDump.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorWriteBinary.h>
+#include <Core/AccurateComparison.h>
+#include <Core/DecimalComparison.h>
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/readDecimalText.h>
-#include <Core/Field.h>
-#include <Core/DecimalComparison.h>
-#include <Common/FieldVisitorDump.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorWriteBinary.h>
 
 
 using namespace std::literals;
@@ -529,22 +530,25 @@ Field Field::restoreFromDump(std::string_view dump_)
 template <typename T>
 bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
+    bool check_overflow = true;
     using Comparator = DecimalComparison<T, T, EqualsOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    return Comparator::compare(x, y, x_scale, y_scale, check_overflow);
 }
 
 template <typename T>
 bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
+    bool check_overflow = true;
     using Comparator = DecimalComparison<T, T, LessOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    return Comparator::compare(x, y, x_scale, y_scale, check_overflow);
 }
 
 template <typename T>
 bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
+    bool check_overflow = true;
     using Comparator = DecimalComparison<T, T, LessOrEqualsOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    return Comparator::compare(x, y, x_scale, y_scale, check_overflow);
 }
 
 

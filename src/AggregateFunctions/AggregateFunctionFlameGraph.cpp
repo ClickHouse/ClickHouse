@@ -217,7 +217,7 @@ static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UIn
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
-void dumpFlameGraph(
+static void dumpFlameGraph(
     const AggregateFunctionFlameGraphTree::Traces & traces,
     DB::PaddedPODArray<UInt8> & chars,
     DB::PaddedPODArray<UInt64> & offsets)
@@ -630,7 +630,7 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name, argument_types[2]->getName());
 }
 
-AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
+static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
     if (!(*settings)[Setting::allow_introspection_functions])
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,

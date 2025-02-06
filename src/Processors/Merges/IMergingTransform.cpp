@@ -1,3 +1,4 @@
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
 
 namespace DB
@@ -101,11 +102,16 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// setNotNeeded after reading first chunk, because in optimismtic case
         /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
         /// we won't have to read any chunks anymore;
-        auto chunk = input.pull(limit_hint != 0);
-        if ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end)
+        /// If virtual row exists, let it pass through, so don't read more chunks.
+        auto chunk = input.pull(true);
+        bool virtual_row = isVirtualRow(chunk);
+        if (limit_hint == 0 && !virtual_row)
             input.setNeeded();
 
-        if (!chunk.hasRows())
+        if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
+            input.setNeeded();
+
+        if (!virtual_row && !chunk.hasRows())
         {
             if (!input.isFinished())
             {

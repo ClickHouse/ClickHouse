@@ -121,7 +121,7 @@ void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeIntercepto
     if (available <= 0)
         return;
 
-    if (read(fd, &ch, 1) > 0)
+    if (read(fd, &ch, 1) > 0)  /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
     {
         auto it = map.find(ch);
         if (it != map.end())

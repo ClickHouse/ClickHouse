@@ -1,7 +1,5 @@
 -- Tags: no-parallel
 
-SET allow_experimental_bigint_types = 1;
-
 DROP TABLE IF EXISTS dictionary_decimal_source_table;
 CREATE TABLE dictionary_decimal_source_table
 (

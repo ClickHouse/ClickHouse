@@ -2,8 +2,9 @@
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
-#include "Common/VersionNumber.h"
+#include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Client/ClientApplicationBase.h>
 #include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -34,6 +35,7 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 
     out.write(command.data(), command.size());
     out.next();
+    out.finalize();
 
     String result;
     readStringUntilEOF(result, in);
@@ -144,6 +146,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("port"));
 
     options.addOption(
+        Poco::Util::Option("password", "", "password to connect to keeper server")
+            .argument("<password>")
+            .binding("password"));
+
+    options.addOption(
         Poco::Util::Option("query", "q", "will execute given query, then exit.")
             .argument("<query>")
             .binding("query"));
@@ -243,6 +250,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         }
     }
 
+    history_max_entries = config().getUInt("history-max-entries", 1000000);
+
     String default_log_level;
     if (config().has("query"))
         /// We don't want to see any information log in query mode, unless it was set explicitly
@@ -319,12 +328,14 @@ void KeeperClient::runInteractiveReplxx()
     ReplxxLineReader lr(
         suggest,
         history_file,
+        history_max_entries,
         /* multiline= */ false,
         /* ignore_shell_suspend= */ false,
         query_extenders,
         query_delimiters,
         word_break_characters,
-        /* highlighter_= */ {});
+        /* highlighter_= */ {}
+    );
     lr.enableBracketedPaste();
 
     while (true)
@@ -416,6 +427,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     zk_args.use_xid_64 = config().hasOption("use-xid-64");
+    zk_args.password = config().getString("password", "");
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))
@@ -445,7 +457,8 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -455,6 +468,7 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     catch (...)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

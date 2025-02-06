@@ -189,11 +189,11 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     if (settings[Setting::http_max_multipart_form_data_size])
         read_buffer = std::make_unique<LimitReadBuffer>(
             stream,
-            settings[Setting::http_max_multipart_form_data_size],
-            /* trow_exception */ true,
-            /* exact_limit */ std::optional<size_t>(),
-            "the maximum size of multipart/form-data. "
-            "This limit can be tuned by 'http_max_multipart_form_data_size' setting");
+            LimitReadBuffer::Settings{
+                .read_no_more = settings[Setting::http_max_multipart_form_data_size],
+                .expect_eof = true,
+                .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
+            });
     else
         read_buffer = wrapReadBufferReference(stream);
 

@@ -1,5 +1,15 @@
 #include <Client/ClientApplicationBase.h>
 
+#include <filesystem>
+#include <vector>
+#include <string>
+#include <utility>
+
+#include <boost/program_options.hpp>
+
+namespace po = boost::program_options;
+
+
 namespace DB
 {
 
@@ -70,17 +80,6 @@ private:
 
 void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    if (allow_repeated_settings)
-        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
-    else
-        cmd_settings.addToProgramOptions(options_description.main_description.value());
-
-    if (allow_merge_tree_settings)
-    {
-        auto & main_options = options_description.main_description.value();
-        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
-    }
-
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments)
                       .options(options_description.main_description.value())
@@ -108,6 +107,7 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
         {
             /// Two special cases for better usability:
             /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
+            /// - if the option is a filesystem file, then it's likely a queries file (clickhouse repro.sql)
             /// These are relevant for interactive usage - user-friendly, but questionable in general.
             /// In case of ambiguity or for scripts, prefer using proper options.
 
@@ -115,8 +115,11 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
             po::variable_value value(boost::any(op.value), false);
 
             const char * option;
+            std::error_code ec;
             if (token.contains(' '))
                 option = "query";
+            else if (std::filesystem::is_regular_file(std::filesystem::path{token}, ec))
+                option = "queries-file";
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
 

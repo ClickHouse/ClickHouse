@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -154,6 +155,9 @@ struct RestoreSettings
     /// UUID of the restore. If it's not set it will be generated randomly.
     /// This is used to generate coordination path and for concurrency check
     std::optional<UUID> restore_uuid;
+
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

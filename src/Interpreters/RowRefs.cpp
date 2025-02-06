@@ -1,10 +1,13 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Common/RadixSort.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
+#include <Common/assert_cast.h>
 #include <Core/Joins.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/RadixSort.h>
 
 
 namespace DB
@@ -183,7 +186,7 @@ private:
         if (sorted.load(std::memory_order_relaxed))
             return;
 
-        if constexpr (std::is_arithmetic_v<TKey> && !std::is_floating_point_v<TKey>)
+        if constexpr (std::is_arithmetic_v<TKey> && !is_floating_point<TKey>)
         {
             if (likely(entries.size() > 256))
             {

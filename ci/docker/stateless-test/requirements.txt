@@ -1,0 +1,13 @@
+Jinja2==3.1.3
+numpy==1.26.4
+requests==2.32.3
+pandas==1.5.3
+scipy==1.12.0
+pyarrow==18.0.0
+grpcio==1.47.0
+protobuf==4.25.3
+
+# performance tests >>
+clickhouse_driver
+scipy==1.12.0
+# << performance tests

@@ -228,10 +228,20 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!fixed_uuid)
     {
-        if (to_inner_uuid != UUIDHelpers::Nil)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
-        if (to_table_id.hasUUID())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
+        if (mode >= LoadingStrictnessLevel::ATTACH)
+        {
+            /// Old versions of ClickHouse (when refreshable MV was experimental) could add useless
+            /// UUIDs to attach queries.
+            to_table_id.uuid = UUIDHelpers::Nil;
+            to_inner_uuid = UUIDHelpers::Nil;
+        }
+        else
+        {
+            if (to_inner_uuid != UUIDHelpers::Nil)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
+            if (to_table_id.hasUUID())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
+        }
     }
 
     if (!has_inner_table)
@@ -382,6 +392,7 @@ void StorageMaterializedView::read(
         }
 
         query_plan.addStorageHolder(storage);
+        query_plan.addInterpreterContext(context);
         query_plan.addTableLock(std::move(lock));
     }
 }
@@ -405,6 +416,7 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 
     auto sink = storage->write(query, metadata_snapshot, context, async_insert);
 
+    sink->addInterpreterContext(context);
     sink->addTableLock(lock);
     return sink;
 }

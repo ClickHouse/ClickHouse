@@ -143,6 +143,8 @@ public:
 
     void get(size_t n, Field & res) const override;
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+
     bool isDefaultAt(size_t n) const override
     {
         return variant_column_ptr->isDefaultAt(n);
@@ -319,6 +321,8 @@ public:
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
+    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
@@ -333,7 +337,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
@@ -376,12 +380,14 @@ public:
     bool addNewVariant(const DataTypePtr & new_variant) { return addNewVariant(new_variant, new_variant->getName()); }
 
     bool hasDynamicStructure() const override { return true; }
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+    size_t getGlobalMaxDynamicTypes() const { return global_max_dynamic_types; }
 
     /// Check if we can add new variant types.
     /// Shared variant doesn't count in the limit but always presents,

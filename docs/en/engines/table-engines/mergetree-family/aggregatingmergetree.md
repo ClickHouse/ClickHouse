@@ -10,6 +10,11 @@ The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-fa
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
+You can see an example of how to use the AggregatingMergeTree and Aggregate functions in the below video:
+<div class='vimeo-container'>
+<iframe width="1030" height="579" src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
+
 The engine processes all columns with the following types:
 
 ## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)

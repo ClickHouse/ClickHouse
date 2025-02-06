@@ -16,6 +16,7 @@
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
 #include <Interpreters/Context.h>
+#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <IO/S3/BlobStorageLogWriter.h>
@@ -326,19 +327,9 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                       ProfileEvents::DiskS3DeleteObjects);
 }
 
-void S3ObjectStorage::removeObject(const StoredObject & object)
-{
-    removeObjectImpl(object, false);
-}
-
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
-}
-
-void S3ObjectStorage::removeObjects(const StoredObjects & objects)
-{
-    removeObjectsImpl(objects, false);
 }
 
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
@@ -399,8 +390,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
+        auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+        const auto read_settings_to_use = patchSettings(read_settings);
 
         try
         {
@@ -414,10 +406,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*dest_bucket=*/dest_s3->uri.bucket,
                 /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
-                patchSettings(read_settings),
+                read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
-                object_to_attributes,
-                scheduler);
+                scheduler,
+                [&, this]{ return readObject(object_from, read_settings_to_use);},
+                object_to_attributes);
             return;
         }
         catch (S3Exception & exc)
@@ -445,6 +438,7 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto settings_ptr = s3_settings.get();
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+    const auto read_settings_to_use = patchSettings(read_settings);
 
     copyS3File(
         /*src_s3_client=*/current_client,
@@ -456,10 +450,11 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*dest_bucket=*/uri.bucket,
         /*dest_key=*/object_to.remote_path,
         settings_ptr->request_settings,
-        patchSettings(read_settings),
+        read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
-        object_to_attributes,
-        scheduler);
+        scheduler,
+        [&, this]{ return readObject(object_from, read_settings_to_use);},
+        object_to_attributes);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
@@ -533,6 +528,11 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
     return key_generator->generate(path, /* is_directory */ false, key_prefix);
+}
+
+bool S3ObjectStorage::areObjectKeysRandom() const
+{
+    return key_generator->isRandom();
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()

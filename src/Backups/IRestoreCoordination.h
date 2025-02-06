@@ -1,30 +1,45 @@
 #pragma once
 
+#include <exception>
 #include <Core/Types.h>
 
 
 namespace DB
 {
-class Exception;
 enum class UserDefinedSQLObjectType : uint8_t;
 class ASTCreateQuery;
+struct ZooKeeperRetriesInfo;
 
 /// Replicas use this class to coordinate what they're reading from a backup while executing RESTORE ON CLUSTER.
-/// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationRemote.
+/// There are two implementation of this interface: RestoreCoordinationLocal and RestoreCoordinationOnCluster.
 /// RestoreCoordinationLocal is used while executing RESTORE without ON CLUSTER and performs coordination in memory.
-/// RestoreCoordinationRemote is used while executing RESTORE with ON CLUSTER and performs coordination via ZooKeeper.
+/// RestoreCoordinationOnCluster is used while executing RESTORE with ON CLUSTER and performs coordination via ZooKeeper.
 class IRestoreCoordination
 {
 public:
     virtual ~IRestoreCoordination() = default;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & new_stage, const String & message) = 0;
-    virtual void setError(const Exception & exception) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    /// Sets that the restore query was sent to other hosts.
+    /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
+    virtual void setRestoreQueryIsSentToOtherHosts() = 0;
+    virtual bool isRestoreQuerySentToOtherHosts() const = 0;
 
-    static constexpr const char * kErrorStatus = "error";
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
+
+    /// Lets other hosts know that the current host has encountered an error.
+    /// Returns true if the information is successfully passed so other hosts can read it.
+    virtual bool setError(std::exception_ptr exception, bool throw_if_error) = 0;
+
+    /// Waits until all the other hosts finish their work.
+    /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
+    virtual bool waitOtherHostsFinish(bool throw_if_error) const = 0;
+
+    /// Lets other hosts know that the current host has finished its work.
+    virtual bool finish(bool throw_if_error) = 0;
+
+    /// Removes temporary nodes in ZooKeeper.
+    virtual bool cleanup(bool throw_if_error) = 0;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;
@@ -49,9 +64,7 @@ public:
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     virtual void generateUUIDForTable(ASTCreateQuery & create_query) = 0;
 
-    /// This function is used to check if concurrent restores are running
-    /// other than the restore passed to the function
-    virtual bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const = 0;
+    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
 };
 
 }

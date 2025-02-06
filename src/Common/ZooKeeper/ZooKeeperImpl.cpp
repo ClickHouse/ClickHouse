@@ -306,6 +306,14 @@ void ZooKeeper::flushWriteBuffer()
     out->next();
 }
 
+void ZooKeeper::cancelWriteBuffer() noexcept
+{
+    if (compressed_out)
+         compressed_out->cancel();
+    if (out)
+        out->cancel();
+}
+
 ReadBuffer & ZooKeeper::getReadBuffer()
 {
     if (compressed_in)
@@ -440,7 +448,9 @@ void ZooKeeper::connect(
     if (nodes.empty())
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
 
-    static constexpr size_t num_tries = 3;
+    /// We always have at least one attempt to connect.
+    size_t num_tries = args.num_connection_retries + 1;
+
     bool connected = false;
     bool dns_error = false;
 
@@ -546,6 +556,7 @@ void ZooKeeper::connect(
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
+                cancelWriteBuffer();
             }
         }
 
@@ -587,8 +598,8 @@ void ZooKeeper::sendHandshake()
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
-    constexpr int32_t passwd_len = 16;
-    std::array<char, passwd_len> passwd {};
+    std::string password = args.password;
+    password.resize(Coordination::PASSWORD_LENGTH, '\0');
     bool read_only = true;
 
     write(handshake_length);
@@ -608,7 +619,7 @@ void ZooKeeper::sendHandshake()
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
-    write(passwd);
+    write(password);
     write(read_only);
     flushWriteBuffer();
 }
@@ -1084,6 +1095,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
         /// Set expired flag after we sent close event
         expire_session_if_not_expired();
+
+        cancelWriteBuffer();
 
         try
         {

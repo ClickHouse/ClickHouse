@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -75,7 +76,6 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_columns_to_read;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
@@ -381,17 +381,15 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         LimitReadBuffer limit_buf(
             *read_buf,
-            query_context->getSettingsRef()[Setting::async_insert_max_data_size],
-            /*throw_exception=*/false,
-            /*exact_limit=*/{});
+            {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
-        WriteBufferFromString write_buf(bytes);
-        copyData(limit_buf, write_buf);
+        {
+            WriteBufferFromString write_buf(bytes);
+            copyData(limit_buf, write_buf);
+        }
 
         if (!read_buf->eof())
         {
-            write_buf.finalize();
-
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             std::vector<std::unique_ptr<ReadBuffer>> buffers;
@@ -980,6 +978,7 @@ try
         if (chunk.getNumRows() == 0)
         {
             finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
+            pipeline.cancel();
             return;
         }
 

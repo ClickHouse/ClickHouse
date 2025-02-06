@@ -158,7 +158,7 @@ def configure_from_zk(zk, querier=None):
 @contextlib.contextmanager
 def sync_loaded_config(querier):
     # Depending on whether we test a change on tcp or http
-    # we monitor canges using the other, untouched, protocol
+    # we monitor changes using the other, untouched, protocol
     loads_before = querier(LOADS_QUERY)
     yield
     wait_loaded_config_changed(loads_before, querier)
@@ -378,7 +378,7 @@ def test_reload_via_client(cluster, zk):
                         configure_from_zk(zk)
                     break
                 except QueryRuntimeException:
-                    logging.exception("The new socket is not binded yet")
+                    logging.exception("The new socket is not bound yet")
                     time.sleep(0.1)
 
     if exception:

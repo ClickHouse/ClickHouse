@@ -11,6 +11,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
@@ -568,7 +569,7 @@ std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() cons
     std::vector<std::string> collections;
     collections.reserve(paths.size());
     for (const auto & path : paths)
-        collections.push_back(std::filesystem::path(path).stem());
+        collections.push_back(unescapeForFileName(std::filesystem::path(path).stem()));
     return collections;
 }
 

@@ -2,6 +2,7 @@
 SET enable_analyzer=1;
 SET distributed_foreground_insert=1;
 
+DROP TABLE IF EXISTS first_table_lr SYNC;
 CREATE TABLE first_table_lr
 (
     id String,
@@ -11,6 +12,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03080/alter', '
 ORDER BY id;
 
 
+DROP TABLE IF EXISTS first_table;
 CREATE TABLE first_table
 (
     id String,
@@ -19,6 +21,7 @@ CREATE TABLE first_table
 ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'first_table_lr');
 
 
+DROP TABLE IF EXISTS second_table_lr;
 CREATE TABLE second_table_lr
 (
     id String,
@@ -26,6 +29,7 @@ CREATE TABLE second_table_lr
 ) ENGINE = MergeTree()
 ORDER BY id;
 
+DROP TABLE IF EXISTS second_table;
 CREATE TABLE second_table
 (
     id String,
@@ -36,6 +40,7 @@ ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'second_table_lr
 INSERT INTO first_table VALUES ('1', '2'), ('3', '4');
 INSERT INTO second_table VALUES ('1', '2'), ('3', '4');
 
+DROP TABLE IF EXISTS two_tables;
 CREATE TABLE two_tables
 (
     id String,

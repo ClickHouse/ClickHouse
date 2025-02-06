@@ -2,7 +2,6 @@
 #include <cstring>
 
 #include <base/types.h>
-#include <base/unaligned.h>
 #include <base/defines.h>
 
 #include <IO/WriteHelpers.h>
@@ -69,6 +68,7 @@ void CompressedWriteBuffer::finalizeImpl()
     /// Don't try to resize buffer in nextImpl.
     use_adaptive_buffer_size = false;
     next();
+    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
 CompressedWriteBuffer::CompressedWriteBuffer(
@@ -79,13 +79,14 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
     , adaptive_buffer_max_size(buf_size)
 {
+    if (!codec)
+        codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
 
-CompressedWriteBuffer::~CompressedWriteBuffer()
+void CompressedWriteBuffer::cancelImpl() noexcept
 {
-    if (!canceled)
-        finalize();
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+    out.cancel();
 }
-
 
 }

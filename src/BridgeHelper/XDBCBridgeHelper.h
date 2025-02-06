@@ -11,6 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
@@ -144,7 +145,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        getContext()->addBridgeCommand(std::move(cmd));
+       ShellCommandsHolder::instance().addCommand(std::move(cmd));
     }
 
 

@@ -8,7 +8,7 @@ sidebar_label: FROM
 `FROM` 子句指定从以下数据源中读取数据:
 
 -   [表](../../../engines/table-engines/index.md)
--   [子查询](../../../sql-reference/statements/select/index.md) {## TODO: better link ##}
+-   [子查询](../../../sql-reference/statements/select/index.md)
 -   [表函数](../../../sql-reference/table-functions/index.md#table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) 和 [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) 子句也可以用来扩展 `FROM` 的功能
@@ -35,7 +35,7 @@ sidebar_label: FROM
 -   在查询执行期间合并数据。
 -   查询与 `FINAL` 除了读取查询中指定的列之外，还读取主键列。
 
-**在大多数情况下，避免使用 `FINAL`.** 常见的方法是使用假设后台进程的不同查询 `MergeTree` 引擎还没有发生，并通过应用聚合（例如，丢弃重复项）来处理它。 {## TODO: examples ##}
+**在大多数情况下，避免使用 `FINAL`.** 常见的方法是使用假设后台进程的不同查询 `MergeTree` 引擎还没有发生，并通过应用聚合（例如，丢弃重复项）来处理它
 
 ## 实现细节 {#implementation-details}
 

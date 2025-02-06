@@ -17,7 +17,7 @@ struct ModuloOrZeroImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if constexpr (std::is_floating_point_v<ResultType>)
+        if constexpr (is_floating_point<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);

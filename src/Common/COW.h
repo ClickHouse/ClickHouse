@@ -75,9 +75,14 @@
 template <typename Derived>
 class COW : public boost::intrusive_ref_counter<Derived>
 {
+    friend Derived;
+
 private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
+
+    COW() = default;
+    COW(const COW&) = default;
 
 protected:
     template <typename T>
@@ -271,9 +276,14 @@ public:
 template <typename Base, typename Derived>
 class COWHelper : public Base
 {
+    friend Derived;
+
 private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
+
+    COWHelper() = default;
+    COWHelper(const COWHelper &) = default;
 
 public:
     using Ptr = typename Base::template immutable_ptr<Derived>;

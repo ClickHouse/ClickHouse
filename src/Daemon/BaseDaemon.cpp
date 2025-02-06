@@ -35,6 +35,7 @@
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
 #include <base/coverage.h>
+#include <base/scope_guard.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
@@ -440,17 +441,19 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
     HandledSignals::instance().addSignalHandler({SIGHUP}, closeLogsSignalHandler, true);
+    HandledSignals::instance().addSignalHandler({SIGCHLD}, childSignalHandler, true);
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
-    signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
+
+    signal_listener_thread.start(*signal_listener);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -630,8 +633,8 @@ void BaseDaemon::setupWatchdog()
             logger().setChannel(log);
         }
 
-        /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
-        ///  but rotating them from two threads is disastrous.
+        /// Concurrent writing logs to the same file from two threads is questionable on its own,
+        /// but rotating them from two threads is disastrous.
         if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");

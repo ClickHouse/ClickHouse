@@ -140,7 +140,14 @@ public:
     bool hasGrantOptionWildcard(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
 
     /// Checks if a given `access_rights` is a subset for the current access rights.
+    /// This function checks both access rights with and without grant option.
+    ///
+    /// root ⊇ other.root && root_with_grant_option ⊇ other.root_with_grant_option
     bool contains(const AccessRights & access_rights) const;
+
+    /// Similar to `contains`, but checks that current access rights with grant option contain other access rights
+    ///
+    /// root_with_grant_option ⊇ other.root
     bool containsWithGrantOption(const AccessRights & access_rights) const;
 
     /// Merges two sets of access rights together.
@@ -159,7 +166,8 @@ public:
         const AccessFlags & min_flags_with_children,
         const AccessFlags & max_flags_with_children,
         const size_t level,
-        bool grant_option)>;
+        bool grant_option,
+        bool leaf_or_wildcard)>;
     void modifyFlags(const ModifyFlagsFunction & function);
 
     friend bool operator ==(const AccessRights & left, const AccessRights & right);

@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
 #include <Common/ArenaUtils.h>
+#include <Core/callOnTypeIndex.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -298,7 +299,8 @@ namespace impl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
+            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
+                && !std::is_same_v<DataType, DataTypeBFloat16>)
             {
                 using ColumnType = typename DataType::ColumnType;
                 func(TypePair<ColumnType, void>());

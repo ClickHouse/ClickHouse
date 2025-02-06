@@ -42,7 +42,7 @@ SELECT simpleJSONHas(json, 'foo') FROM jsons;
 SELECT simpleJSONHas(json, 'bar') FROM jsons;)",
             .result = R"(1
 0)"}},
-        .categories{"JSON"}});
+        .category{"JSON"}});
     factory.registerAlias("visitParamHas", "simpleJSONHas");
 }
 
