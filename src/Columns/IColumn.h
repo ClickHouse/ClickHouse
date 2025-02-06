@@ -37,6 +37,8 @@ class WeakHash32;
 class ColumnConst;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
+using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -348,7 +350,7 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-    using Filter = PaddedPODArray<UInt8>;
+    using Filter = IColumnFilter;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
@@ -361,7 +363,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = PaddedPODArray<size_t>;
+    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
