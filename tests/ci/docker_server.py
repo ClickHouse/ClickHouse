@@ -22,7 +22,7 @@ from env_helper import (
 )
 from git_helper import Git
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
+from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import ClickHouseVersion, get_version_from_repo, version_arg
@@ -218,10 +218,11 @@ def build_and_push_image(
     # images must be built separately and merged together with `docker manifest`
     digests = []
     multiplatform_sw = Stopwatch()
+    temp_path = Path(TEMP_PATH)
     for arch in ARCH:
         single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
-        metadata_path = p.join(TEMP_PATH, arch_tag)
+        metadata_path = temp_path / arch_tag
         dockerfile = p.join(image.path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
         urls = []
@@ -246,12 +247,12 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = Path(TEMP_PATH) / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
+        log_file = temp_path / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
         if retry_popen(cmd, log_file) != 0:
             result.append(
                 TestResult(
                     f"{image.repo}:{tag}-{arch}",
-                    "FAIL",
+                    FAIL,
                     single_sw.duration_seconds,
                     [log_file],
                 )
@@ -260,7 +261,7 @@ def build_and_push_image(
         result.append(
             TestResult(
                 f"{image.repo}:{tag}-{arch}",
-                "OK",
+                OK,
                 single_sw.duration_seconds,
                 [log_file],
             )
@@ -277,12 +278,12 @@ def build_and_push_image(
         if retry_popen(cmd, Path("/dev/null")) != 0:
             result.append(
                 TestResult(
-                    f"{image.repo}:{tag}", "FAIL", multiplatform_sw.duration_seconds
+                    f"{image.repo}:{tag}", FAIL, multiplatform_sw.duration_seconds
                 )
             )
             return result
         result.append(
-            TestResult(f"{image.repo}:{tag}", "OK", multiplatform_sw.duration_seconds)
+            TestResult(f"{image.repo}:{tag}", OK, multiplatform_sw.duration_seconds)
         )
     else:
         logging.info(
@@ -381,7 +382,7 @@ def main():
                     image, push, repo_urls, os, tag, args.version, direct_urls
                 )
             )
-            if test_results[-1].status != "OK":
+            if test_results[-1].status != OK:
                 status = FAILURE
 
     description = f"Processed tags: {', '.join(tags)}"
