@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Cache/QueryCacheUsage.h>
 #include <Core/Block.h>
 #include <Parsers/IAST.h>
 #include <Processors/Chunk.h>
@@ -32,14 +33,6 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryCache
 {
 public:
-    enum class Usage : uint8_t
-    {
-        Unknown,  /// we don't know what what happened
-        None,     /// query result neither written nor read into/from query cache
-        Write,    /// query result written into query cache
-        Read,     /// query result read from query cache
-    };
-
     /// Represents a query result in the cache.
     struct Key
     {
