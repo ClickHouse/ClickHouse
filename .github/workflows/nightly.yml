@@ -43,7 +43,7 @@ jobs:
     uses: ./.github/workflows/docker_test_images.yml
     with:
       data: "${{ needs.RunConfig.outputs.data }}"
-      set_latest: ${{ github.ref == 'refs/heads/master' }}
+      set_latest: true
 
   Builds_1:
     needs: [RunConfig]

@@ -115,19 +115,6 @@ private:
     using Pair = PairNoInit<Float32, Weight>;
 
     template <typename T>
-    static inline T safeCast(Float32 x)
-    {
-        if constexpr (!std::is_floating_point_v<T>)
-        {
-            if (unlikely(x > std::numeric_limits<T>::max()))
-                return std::numeric_limits<T>::max();
-            if (unlikely(x < std::numeric_limits<T>::min()))
-                return std::numeric_limits<T>::min();
-        }
-        return static_cast<T>(x);
-    }
-
-    template <typename T>
     T getImpl(Float64 level) const
     {
         size_t size = data.size();
@@ -157,10 +144,10 @@ private:
             accumulated += p->second;
 
             if (accumulated >= threshold)
-                return safeCast<T>(p->first);
+                return static_cast<T>(p->first);
         }
 
-        return safeCast<T>(array[size - 1].first);
+        return static_cast<T>(array[size - 1].first);
     }
 
     template <typename T>
@@ -200,7 +187,7 @@ private:
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = safeCast<T>(p->first);
+                result[indices[level_index]] = static_cast<T>(p->first);
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -212,7 +199,7 @@ private:
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = safeCast<T>(array[size - 1].first);
+            result[indices[level_index]] = static_cast<T>(array[size - 1].first);
             ++level_index;
         }
     }

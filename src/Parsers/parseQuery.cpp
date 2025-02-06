@@ -467,7 +467,7 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        if (ASTInsertQuery * insert = getInsertAST(ast); insert && insert->data)
+        if (ASTInsertQuery * insert = getInsertAST(ast))
         {
             /// Data for INSERT is broken on the new line
             pos = insert->data;

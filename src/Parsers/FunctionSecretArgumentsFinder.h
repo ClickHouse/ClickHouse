@@ -102,7 +102,7 @@ protected:
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
                  (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3"))
+                 (function->name() == "gcs"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -112,7 +112,7 @@ protected:
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
         }
-        else if ((function->name() == "azureBlobStorage") || (function->name() == "icebergAzure"))
+        else if (function->name() == "azureBlobStorage")
         {
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
@@ -475,10 +475,8 @@ protected:
         {
             findMongoDBSecretArguments();
         }
-        else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS")
-                 || (engine_name == "DeltaLake") || (engine_name == "Hudi")
-                 || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
-                 || (engine_name == "S3Queue"))
+        else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
+                    (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg") || (engine_name == "S3Queue"))
         {
             /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
             findS3TableEngineSecretArguments();
@@ -582,9 +580,9 @@ protected:
     void findDatabaseEngineSecretArguments()
     {
         const String & engine_name = function->name();
-        if (engine_name == "MySQL" ||
-            engine_name == "PostgreSQL" ||
-            engine_name == "MaterializedPostgreSQL")
+        if ((engine_name == "MySQL") || (engine_name == "MaterializeMySQL") ||
+            (engine_name == "MaterializedMySQL") || (engine_name == "PostgreSQL") ||
+            (engine_name == "MaterializedPostgreSQL"))
         {
             /// MySQL('host:port', 'database', 'user', 'password')
             /// PostgreSQL('host:port', 'database', 'user', 'password')
