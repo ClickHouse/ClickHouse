@@ -21,7 +21,7 @@ Before studying the settings, we recommend to read the [Configuration files](../
 
 Allows to use jemalloc memory.
 
-Type: Bool
+Type: `Bool`
 
 Default: `1`
 
@@ -29,7 +29,7 @@ Default: `1`
 
 Period in seconds for updating asynchronous metrics.
 
-Type: UInt32
+Type: `UInt32`
 
 Default: `120`
 
@@ -64,7 +64,7 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 
 ```xml
 <clickhouse>
-<asynchronous_metric_log remove="1" />
+    <asynchronous_metric_log remove="1" />
 </clickhouse>
 ```
 
@@ -75,7 +75,7 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 
 Period in seconds for updating asynchronous metrics.
 
-Type: UInt32
+Type: `UInt32`
 
 Default: `1`
 
@@ -87,7 +87,7 @@ Use originating address for authentication for clients connected through proxy.
 This setting should be used with extra caution since forwarded addresses can be easily spoofed - servers accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
 :::
 
-Type: Bool
+Type: `Bool`
 
 Default: `0`
 
@@ -95,7 +95,7 @@ Default: `0`
 
 The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/docs/en/engines/table-engines/special/buffer) in the background.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `16`
 
@@ -103,7 +103,7 @@ Default: `16`
 
 The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/docs/en/engines/table-engines/mergetree-family) tables in the background.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `8`
 
@@ -111,7 +111,7 @@ Default: `8`
 
 The maximum number of threads that will be used for executing distributed sends.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `16`
 
@@ -119,7 +119,7 @@ Default: `16`
 
 The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/docs/en/engines/table-engines/mergetree-family) tables in the background.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `16`
 
@@ -135,7 +135,7 @@ You can only increase this ratio at runtime. To lower it you have to restart the
 As with the [`background_pool_size`](#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
 :::
 
-Type: Float
+Type: `Float`
 
 Default: `2`
 
@@ -207,7 +207,7 @@ This setting is configured by default as:
 
 The maximum number of threads to execute `BACKUP` requests.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `16`
 
@@ -219,7 +219,7 @@ The maximum number of jobs that can be scheduled on the Backups IO Thread pool. 
 A value of `0` (default) means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -230,14 +230,16 @@ Work factor for the bcrypt_password authentication type.
 Default: `12`
 
 ```xml
-<bcrypt_workfactor>12</bcrypt_workfactor>
+<bcrypt_workfactor>
+    12
+</bcrypt_workfactor>
 ```
 
 ## cache_size_to_ram_max_ratio
 
 Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.
 
-Type: Double
+Type: `Double`
 
 Default: `0.5`
 
@@ -249,7 +251,7 @@ The maximum number of query processing threads, excluding threads for retrieving
 A value of `0` (default) means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -257,7 +259,7 @@ Default: `0`
 
 Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num), but with ratio to cores.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -265,7 +267,7 @@ Default: `0`
 
 The default database name.
 
-Type: String
+Type: `String`
 
 Default: `default`
 
@@ -274,7 +276,7 @@ Default: `default`
 Disables the internal DNS cache. Recommended for operating ClickHouse in systems
 with frequently changing infrastructure such as Kubernetes.
 
-Type: Bool
+Type: `Bool`
 
 Default: `0`
 
@@ -282,7 +284,7 @@ Default: `0`
 
 Internal DNS cache max entries.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `10000`
 
@@ -291,7 +293,7 @@ Default: `10000`
 
 Internal DNS cache update period in seconds.
 
-Type: Int32
+Type: `Int32`
 
 Default: `15`
 
@@ -300,7 +302,7 @@ Default: `15`
 
 Max consecutive resolving failures before dropping a host from ClickHouse DNS cache
 
-Type: UInt32
+Type: `UInt32`
 
 Default: `10`
 
@@ -309,7 +311,7 @@ Default: `10`
 
 Index mark cache policy name.
 
-Type: String
+Type: `String`
 
 Default: `SLRU`
 
@@ -324,7 +326,7 @@ A value of `0` means disabled.
 This setting can be modified at runtime and will take effect immediately.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -332,7 +334,7 @@ Default: `0`
 
 The size of the protected queue (in case of SLRU policy) in the index mark cache relative to the cache's total size.
 
-Type: Double
+Type: `Double`
 
 Default: `0.5`
 
@@ -340,7 +342,7 @@ Default: `0.5`
 
 Index uncompressed cache policy name.
 
-Type: String
+Type: `String`
 
 Default: `SLRU`
 
@@ -354,7 +356,7 @@ A value of `0` means disabled.
 This setting can be modified at runtime and will take effect immediately.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -362,7 +364,7 @@ Default: `0`
 
 The size of the protected queue (in case of SLRU policy) in the index uncompressed cache relative to the cache's total size.
 
-Type: Double
+Type: `Double`
 
 Default: `0.5`
 
@@ -370,9 +372,9 @@ Default: `0.5`
 
 Skipping index cache policy name.
 
-Type: String
+Type: `String`
 
-Default: SLRU
+Default: `SLRU`
 
 ## skipping_index_cache_size
 
@@ -382,25 +384,25 @@ Size of cache for skipping indexes. Zero means disabled.
 This setting can be modified at runtime and will take effect immediately.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
-Default: 5368709120 (= 5 GiB)
+Default: `5368709120` (= 5 GiB)
 
 ## skipping_index_cache_size_ratio
 
 The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.
 
-Type: Double
+Type: `Double`
 
-Default: 0.5
+Default: `0.5`
 
 ## skipping_index_cache_max_entries
 
 The maximum number of entries in the skipping index cache.
 
-Type: UInt64
+Type: `UInt64`
 
-Default: 10000000
+Default: `10000000`
 
 ## io_thread_pool_queue_size
 
@@ -410,7 +412,7 @@ The maximum number of jobs that can be scheduled on the IO Thread pool.
 A value of `0` means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `10000`
 
@@ -418,7 +420,7 @@ Default: `10000`
 
 Mark cache policy name.
 
-Type: String
+Type: `String`
 
 Default: `SLRU`
 
@@ -430,7 +432,7 @@ Maximum size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-e
 This setting can be modified at runtime and will take effect immediately.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `5368709120`
 
@@ -438,7 +440,7 @@ Default: `5368709120`
 
 The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
 
-Type: Double
+Type: `Double`
 
 Default: `0.5`
 
@@ -446,7 +448,7 @@ Default: `0.5`
 
 The maximum read speed in bytes per second for all backups on server. Zero means unlimited.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -454,7 +456,7 @@ Default: `0`
 
 If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -462,7 +464,7 @@ Default: `0`
 
 ClickHouse uses threads from the Backups IO Thread pool to do S3 backup IO operations. `max_backups_io_thread_pool_size` limits the maximum number of threads in the pool.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `1000`
 
@@ -482,7 +484,7 @@ A value of `0` (default) means unlimited.
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -497,7 +499,7 @@ A value of `0` (default) means unlimited.
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -512,7 +514,7 @@ A value of `0` (default) means unlimited.
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -540,7 +542,7 @@ A value of `0` (default) means unlimited.
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -548,7 +550,7 @@ Default: `0`
 
 Max server connections.
 
-Type: Int32
+Type: `Int32`
 
 Default: `1024`
 
@@ -556,7 +558,7 @@ Default: `1024`
 
 If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -564,7 +566,7 @@ Default: `0`
 
 ClickHouse uses threads from the IO Thread pool to do some IO operations (e.g. to interact with S3). `max_io_thread_pool_size` limits the maximum number of threads in the pool.
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `100`
 
@@ -576,7 +578,7 @@ The maximum speed of local reads in bytes per second.
 A value of `0` means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -588,7 +590,7 @@ The maximum speed of local writes in bytes per seconds.
 A value of `0` means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -608,10 +610,12 @@ This limitation does not restrict drop table and truncate table, see [max_table_
 **Example**
 
 ```xml
-<max_partition_size_to_drop>0</max_partition_size_to_drop>
+<max_partition_size_to_drop>
+    0
+</max_partition_size_to_drop>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `50`
 
@@ -623,7 +627,7 @@ The maximum speed of data exchange over the network in bytes per second for read
 A value of `0` (default) means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -635,7 +639,7 @@ The maximum speed of data exchange over the network in bytes per second for writ
 A value of `0` (default) means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -648,7 +652,7 @@ The default [`max_server_memory_usage`](#max_server_memory_usage) value is calcu
 A value of `0` (default) means unlimited.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -662,7 +666,7 @@ On hosts with low RAM and swap, you possibly need setting [`max_server_memory_us
 A value of `0` means unlimited.
 :::
 
-Type: Double
+Type: `Double`
 
 Default: `0.9`
 
@@ -674,7 +678,7 @@ The maximum number of threads to use for building vector indexes.
 A value of `0` means all cores.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `16`
 
@@ -688,7 +692,7 @@ see settings:
 - [`cgroup_memory_watcher_hard_limit_ratio`](#cgroup_memory_watcher_hard_limit_ratio)
 - [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio).
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `15`
 
@@ -701,7 +705,7 @@ See settings:
 - [`cgroups_memory_usage_observer_wait_time`](#cgroups_memory_usage_observer_wait_time)
 - [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio)
 
-Type: Double
+Type: `Double`
 
 Default: `0.95`
 
@@ -714,7 +718,7 @@ See settings:
 - [`cgroups_memory_usage_observer_wait_time`](#cgroups_memory_usage_observer_wait_time)
 - [`cgroup_memory_watcher_hard_limit_ratio`](#cgroup_memory_watcher_hard_limit_ratio)
 
-Type: Double
+Type: `Double`
 
 Default: `0.9`
 
@@ -725,10 +729,10 @@ If the number of attached databases exceeds the specified value, clickhouse serv
 **Example**
 
 ```xml
-<max_database_num_to_warn>50</max_database_num_to_warn>
+<max_database_num_to_warn>
+    50
+</max_database_num_to_warn>
 ```
-
-Type:
 
 Default: `1000`
 
@@ -739,7 +743,9 @@ If the number of attached tables exceeds the specified value, clickhouse server 
 **Example**
 
 ```xml
-<max_table_num_to_warn>400</max_table_num_to_warn>
+<max_table_num_to_warn>
+    400
+</max_table_num_to_warn>
 ```
 
 Default: `5000`
@@ -751,10 +757,12 @@ If the number of attached views exceeds the specified value, clickhouse server w
 **Example**
 
 ```xml
-<max_view_num_to_warn>400</max_view_num_to_warn>
+<max_view_num_to_warn>
+    400
+</max_view_num_to_warn>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `10000`
 
@@ -765,10 +773,12 @@ If the number of attached dictionaries exceeds the specified value, clickhouse s
 **Example**
 
 ```xml
-<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
+<max_dictionary_num_to_warn>
+    400
+</max_dictionary_num_to_warn>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `1000`
 
@@ -779,10 +789,12 @@ If the number of active parts exceeds the specified value, clickhouse server wil
 **Example**
 
 ```xml
-<max_part_num_to_warn>400</max_part_num_to_warn>
+<max_part_num_to_warn>
+    400
+</max_part_num_to_warn>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `100000`
 
@@ -808,10 +820,12 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_table_num_to_throw>400</max_table_num_to_throw>
+<max_table_num_to_throw>
+    400
+</max_table_num_to_throw>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -831,10 +845,12 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
+<max_replicated_table_num_to_throw>
+    400
+</max_replicated_table_num_to_throw>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -854,10 +870,12 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
+<max_dictionary_num_to_throw>
+    400
+</max_dictionary_num_to_throw>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -877,10 +895,12 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_view_num_to_throw>400</max_view_num_to_throw>
+<max_view_num_to_throw>
+    400
+</max_view_num_to_throw>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -898,7 +918,7 @@ A value of `0` (default) means no limitation.
 <max_database_num_to_throw>400</max_database_num_to_throw>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -915,9 +935,9 @@ See also:
 - [`max_temporary_data_on_disk_size_for_user`](/docs/en/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
 - [`max_temporary_data_on_disk_size_for_query`](/docs/en/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
 
-Type: UInt64
+Type: `UInt64`
 
-Default: 0
+Default: `0`
 
 ## max_thread_pool_free_size
 
@@ -926,10 +946,12 @@ If the number of **idle** threads in the Global Thread pool is greater than [`ma
 **Example**
 
 ```xml
-<max_thread_pool_free_size>1200</max_thread_pool_free_size>
+<max_thread_pool_free_size>
+    1200
+</max_thread_pool_free_size>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `0`
 
@@ -940,10 +962,12 @@ ClickHouse uses threads from the Global Thread pool to process queries. If there
 **Example**
 
 ```xml
-<max_thread_pool_size>12000</max_thread_pool_size>
+<max_thread_pool_size>
+    12000
+</max_thread_pool_size>
 ```
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `10000`
 
@@ -965,7 +989,7 @@ The amount of data in mapped files does not consume memory directly and is not a
 This setting can be modified at runtime and will take effect immediately.
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `1000`
 
@@ -981,7 +1005,7 @@ Default: `16`
 
 If it is set true will show addresses in stack traces
 
-Type: Bool
+Type: `Bool`
 
 Default: `1`
 
@@ -989,9 +1013,9 @@ Default: `1`
 
 If set true ClickHouse will wait for running queries finish before shutdown.
 
-Type: Bool
+Type: `Bool`
 
-Default: 0
+Default: `0`
 
 ## table_engines_require_grant
 
@@ -1001,7 +1025,7 @@ If set to true, users require a grant to create a table with a specific engine e
 By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
 :::
 
-Type: Bool
+Type: `Bool`
 
 Default: `false`
 
@@ -1047,7 +1071,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 </clickhouse>
 ```
 
-Type: String
+Type: `String`
 
 Default: ""
 
@@ -1062,7 +1086,9 @@ A value of `0` means unlimited.
 **Example**
 
 ```xml
-<thread_pool_queue_size>12000</thread_pool_queue_size>
+<thread_pool_queue_size>
+    12000
+</thread_pool_queue_size>
 ```
 
 Type: UInt64
@@ -1162,7 +1188,9 @@ ClickHouse reloads built-in dictionaries every x seconds. This makes it possible
 **Example**
 
 ```xml
-<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+<builtin_dictionaries_reload_interval>
+    3600
+</builtin_dictionaries_reload_interval>
 ```
 
 Type: UInt64
@@ -1174,7 +1202,7 @@ Default: `3600`
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
 :::note
-We recommend not to change this if you have just started using ClickHouse.
+We recommend not changing this if you have just started using ClickHouse.
 :::
 
 **Configuration template**:
@@ -1334,7 +1362,7 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ```xml
 <clickhouse>
-<error_log remove="1" />
+    <error_log remove="1" />
 </clickhouse>
 ```
 
@@ -1347,7 +1375,9 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 **Example**
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>
+    custom_
+</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -1366,7 +1396,9 @@ Hard limit is configured via system tools
 
 ```xml
 <core_dump>
-    <size_limit>1073741824</size_limit>
+    <size_limit>
+        1073741824
+    </size_limit>
 </core_dump>
 ```
 
@@ -1443,7 +1475,9 @@ Default settings profile. Settings profiles are located in the file specified in
 **Example**
 
 ```xml
-<default_profile>default</default_profile>
+<default_profile>
+    default
+</default_profile>
 ```
 
 ## default_replica_path
@@ -1453,7 +1487,9 @@ The path to the table in ZooKeeper.
 **Example**
 
 ```xml
-<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
+<default_replica_path>
+    /clickhouse/tables/{uuid}/{shard}
+</default_replica_path>
 ```
 
 ## default_replica_name
@@ -1463,7 +1499,9 @@ The replica name in ZooKeeper.
 **Example**
 
 ```xml
-<default_replica_name>{replica}</default_replica_name>
+<default_replica_name>
+    {replica}
+</default_replica_name>
 ```
 
 ## dictionaries_config
@@ -1481,7 +1519,9 @@ See also:
 **Example**
 
 ```xml
-<dictionaries_config>*_dictionary.xml</dictionaries_config>
+<dictionaries_config>
+    *_dictionary.xml
+</dictionaries_config>
 ```
 
 ## user_defined_executable_functions_config
@@ -1499,7 +1539,9 @@ See also:
 **Example**
 
 ```xml
-<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+<user_defined_executable_functions_config>
+    *_function.xml
+</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load
@@ -1517,7 +1559,9 @@ The server will wait at startup until all the dictionaries finish their loading 
 **Example**
 
 ```xml
-<dictionaries_lazy_load>true</dictionaries_lazy_load>
+<dictionaries_lazy_load>
+    true
+</dictionaries_lazy_load>
 ```
 
 ## format_schema_path
@@ -1527,8 +1571,10 @@ The path to the directory with the schemes for the input data, such as schemas f
 **Example**
 
 ```xml
-  <!-- Directory containing schema files for various input formats. -->
-  <format_schema_path>format_schemas/</format_schema_path>
+<!-- Directory containing schema files for various input formats. -->
+<format_schema_path>
+    format_schemas/
+</format_schema_path>
 ```
 
 ## graphite
@@ -1679,7 +1725,9 @@ The port for connecting to the server over HTTP(s).
 **Example**
 
 ```xml
-<https_port>9999</https_port>
+<https_port>
+    9999
+</https_port>
 ```
 
 ## http_server_default_response
@@ -1738,7 +1786,9 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 **Example**
 
 ```xml
-<hsts_max_age>600000</hsts_max_age>
+<hsts_max_age>
+    600000
+</hsts_max_age>
 ```
 
 ## mlock_executable
@@ -1753,7 +1803,9 @@ Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capabilit
 **Example**
 
 ```xml
-<mlock_executable>false</mlock_executable>
+<mlock_executable>
+    false
+</mlock_executable>
 ```
 
 ## include_from
@@ -1765,7 +1817,9 @@ For more information, see the section “[Configuration files](../../operations/
 **Example**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>
+    /etc/metrica.xml
+</include_from>
 ```
 
 ## interserver_listen_host
@@ -1780,8 +1834,12 @@ By default, the value is equal to the [`listen_host`](#listen_host) setting.
 **Example**
 
 ```xml
-<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
-<interserver_listen_host>10.0.0.1</interserver_listen_host>
+<interserver_listen_host>
+    ::ffff:a00:1
+</interserver_listen_host>
+<interserver_listen_host>
+    10.0.0.1
+</interserver_listen_host>
 ```
 
 Type:
@@ -1795,7 +1853,9 @@ Port for exchanging data between ClickHouse servers.
 **Example**
 
 ```xml
-<interserver_http_port>9009</interserver_http_port>
+<interserver_http_port>
+    9009
+</interserver_http_port>
 ```
 
 ## interserver_http_host
@@ -1809,7 +1869,9 @@ Useful for breaking away from a specific network interface.
 **Example**
 
 ```xml
-<interserver_http_host>example.clickhouse.com</interserver_http_host>
+<interserver_http_host>
+    example.clickhouse.com
+</interserver_http_host>
 ```
 
 ## interserver_https_port
@@ -1819,7 +1881,9 @@ Port for exchanging data between ClickHouse servers over `HTTPS`.
 **Example**
 
 ```xml
-<interserver_https_port>9010</interserver_https_port>
+<interserver_https_port>
+    9010
+</interserver_https_port>
 ```
 
 ## interserver_https_host
@@ -1829,7 +1893,9 @@ Similar to [`interserver_http_host`](#interserver_http_host), except that this h
 **Example**
 
 ```xml
-<interserver_https_host>example.clickhouse.com</interserver_https_host>
+<interserver_https_host>
+    example.clickhouse.com
+</interserver_https_host>
 ```
 
 ## interserver_http_credentials
@@ -1978,8 +2044,12 @@ Restriction on hosts that requests can come from. If you want the server to answ
 Examples:
 
 ```xml
-<listen_host>::1</listen_host>
-<listen_host>127.0.0.1</listen_host>
+<listen_host>
+    ::1
+</listen_host>
+<listen_host>
+    127.0.0.1
+</listen_host>
 ```
 
 ## listen_try
@@ -1989,7 +2059,9 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
 **Example**
 
 ```xml
-<listen_try>0</listen_try>
+<listen_try>
+    0
+</listen_try>
 ```
 
 ## listen_reuse_port
@@ -1999,7 +2071,9 @@ Allow multiple servers to listen on the same address:port. Requests will be rout
 **Example**
 
 ```xml
-<listen_reuse_port>0</listen_reuse_port>
+<listen_reuse_port>
+    0
+</listen_reuse_port>
 ```
 
 Type:
@@ -2021,7 +2095,9 @@ So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this cou
 **Example**
 
 ```xml
-<listen_backlog>4096</listen_backlog>
+<listen_backlog>
+    4096
+</listen_backlog>
 ```
 
 ## logger
@@ -2329,12 +2405,6 @@ The tags above define the following parameters for `disks`:
 The order of the disks does not matter.
 :::
 
-For example:
-
-```xml
-
-```
-
 ### Configuration of policies
 
 The tags above define the following parameters for `policies`:
@@ -2384,7 +2454,9 @@ Empty by default.
 **Example**
 
 ```xml
-<replica_group_name>backups</replica_group_name>
+<replica_group_name>
+    backups
+</replica_group_name>
 ```
 
 Type: String
@@ -2400,7 +2472,9 @@ This feature is highly experimental, and therefore set `false` by default.
 :::
 
 ```xml
-<remap_executable>false</remap_executable>
+<remap_executable>
+    false
+</remap_executable>
 ```
 
 ## max_open_files
@@ -2414,7 +2488,9 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 **Example**
 
 ```xml
-<max_open_files>262144</max_open_files>
+<max_open_files>
+    262144
+</max_open_files>
 ```
 
 ## max_session_timeout
@@ -2424,7 +2500,9 @@ Maximum session timeout, in seconds.
 Default: `3600`
 
 ```xml
-<max_session_timeout>3600</max_session_timeout>
+<max_session_timeout>
+    3600
+</max_session_timeout>
 ```
 
 
@@ -2443,7 +2521,9 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
 **Example**
 
 ```xml
-<max_table_size_to_drop>0</max_table_size_to_drop>
+<max_table_size_to_drop>
+    0
+</max_table_size_to_drop>
 ```
 
 Default: 50 GB.
@@ -2470,7 +2550,9 @@ Before changing it, please also take a look at related MergeTree settings, such 
 **Example**
 
 ```xml
-<background_pool_size>16</background_pool_size>
+<background_pool_size>
+    16
+</background_pool_size>
 ```
 
 Type:
@@ -2489,7 +2571,9 @@ A value of `0` means unlimited.
 **Example**
 
 ```xml
-<merges_mutations_memory_usage_soft_limit>0</merges_mutations_memory_usage_soft_limit>
+<merges_mutations_memory_usage_soft_limit>
+    0
+</merges_mutations_memory_usage_soft_limit>
 ```
 
 ## merges_mutations_memory_usage_to_ram_ratio
@@ -2513,7 +2597,9 @@ Asynchronous loading of databases and tables.
 **Example**
 
 ```xml
-<async_load_databases>true</async_load_databases>
+<async_load_databases>
+    true
+</async_load_databases>
 ```
 
 Default: `false`.
@@ -2528,7 +2614,9 @@ Asynchronous loading of system tables. Helpful if there is a high amount of log 
 **Example**
 
 ```xml
-<async_load_system_database>true</async_load_system_database>
+<async_load_system_database>
+    true
+</async_load_system_database>
 ```
 
 Default: `false`.
@@ -2596,7 +2684,7 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 
 ```xml
 <clickhouse>
-<metric_log remove="1" />
+    <metric_log remove="1" />
 </clickhouse>
 ```
 
@@ -2735,7 +2823,9 @@ The trailing slash is mandatory.
 **Example**
 
 ```xml
-<path>/var/lib/clickhouse/</path>
+<path>
+    /var/lib/clickhouse/
+</path>
 ```
 ## processors_profile_log
 
@@ -3049,7 +3139,9 @@ In this case, an exception will not be thrown, to allow the server to successful
 It is set by default to `/var/lib/clickhouse/caches/`:
 
 ```xml
-<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+<custom_cached_disks_base_directory>
+    /var/lib/clickhouse/caches/
+</custom_cached_disks_base_directory>
 ```
 
 ## backup_log
@@ -3160,7 +3252,9 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ```xml
-<timezone>Asia/Istanbul</timezone>
+<timezone>
+    Asia/Istanbul
+</timezone>
 ```
 
 **See also**
@@ -3174,7 +3268,9 @@ Port for communicating with clients over the TCP protocol.
 **Example**
 
 ```xml
-<tcp_port>9000</tcp_port>
+<tcp_port>
+    9000
+</tcp_port>
 ```
 
 ## tcp_port_secure
@@ -3184,7 +3280,9 @@ TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) 
 **Default value**
 
 ```xml
-<tcp_port_secure>9440</tcp_port_secure>
+<tcp_port_secure>
+    9440
+</tcp_port_secure>
 ```
 
 ## mysql_port
@@ -3199,7 +3297,9 @@ Port for communicating with clients over MySQL protocol.
 **Example**
 
 ```xml
-<mysql_port>9004</mysql_port>
+<mysql_port>
+    9004
+</mysql_port>
 ```
 
 ## postgresql_port
@@ -3214,7 +3314,9 @@ Port for communicating with clients over PostgreSQL protocol.
 **Example**
 
 ```xml
-<postgresql_port>9005</postgresql_port>
+<postgresql_port>
+    9005
+</postgresql_port>
 ```
 
 ## tmp_path
@@ -3229,7 +3331,9 @@ Path on the local filesystem to store temporary data for processing large querie
 **Example**
 
 ```xml
-<tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+<tmp_path>
+    /var/lib/clickhouse/tmp/
+</tmp_path>
 ```
 
 ## url_scheme_mappers
@@ -3259,7 +3363,9 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 **Example**
 
 ```xml
-<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+<user_files_path>
+    /var/lib/clickhouse/user_files/
+</user_files_path>
 ```
 
 ## user_scripts_path
@@ -3269,7 +3375,9 @@ The directory with user scripts files. Used for Executable user defined function
 **Example**
 
 ```xml
-<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+<user_scripts_path>
+    /var/lib/clickhouse/user_scripts/
+</user_scripts_path>
 ```
 
 Type:
@@ -3283,7 +3391,9 @@ The directory with user defined files. Used for SQL user defined functions [SQL 
 **Example**
 
 ```xml
-<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+<user_defined_path>
+    /var/lib/clickhouse/user_defined/
+</user_defined_path>
 ```
 
 ## users_config
@@ -3298,7 +3408,9 @@ Path to the file that contains:
 **Example**
 
 ```xml
-<users_config>users.xml</users_config>
+<users_config>
+    users.xml
+</users_config>
 ```
 
 ## validate_tcp_client_information
@@ -3308,7 +3420,9 @@ Determines whether validation of client information is enabled when a query pack
 By default, it is `false`:
 
 ```xml
-<validate_tcp_client_information>false</validate_tcp_client_information>
+<validate_tcp_client_information>
+    false
+</validate_tcp_client_information>
 ```
 
 ## users_without_row_policies_can_read_rows
