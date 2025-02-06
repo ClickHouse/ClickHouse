@@ -37,11 +37,11 @@ namespace HistogramMetrics
         M(KeeperResponseTime, "The response time of ClickHouse Keeper, in milliseconds", impl::make_buckets(1, 2, 5, 10, 20, 50), KeeperOperation) \
         M(TestingTMP, "Just a temporary second metric for testing the macros", impl::make_buckets(1, 2, 5, 10, 20, 50), KeeperOperation)
 
-    #define M(NAME, DOCUMENTATION, BUCKETS, LABEL_NAME) constexpr size_t NAME = __COUNTER__;
+    #define M(NAME, DOCUMENTATION, BUCKETS, LABEL_NAME) constexpr Metric NAME = __COUNTER__;
     APPLY_TO_METRICS(M)
     #undef M
 
-    template <size_t m> 
+    template <Metric m> 
     struct MetricTraits;
 
     #define M(NAME, DOCUMENTATION, BUCKETS, LABEL_NAME) \
@@ -54,7 +54,7 @@ namespace HistogramMetrics
     APPLY_TO_METRICS(M)
     #undef M
 
-    template <size_t m, auto label>
+    template <Metric m, auto label>
     struct MetricDataHolder
     {
         static_assert(
@@ -68,7 +68,7 @@ namespace HistogramMetrics
         static inline AtomicSum sum{};
     };
 
-    template <size_t m, auto label>
+    template <Metric m, auto label>
     void observe(Value value) {
         const auto & buckets = MetricTraits<m>::buckets;
         const size_t bucket_idx = std::distance(
