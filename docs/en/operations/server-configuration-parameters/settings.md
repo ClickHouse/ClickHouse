@@ -175,6 +175,30 @@ Type: UInt64
 
 Default: `512`
 
+## backups
+
+Settings for backups, used when writing `BACKUP TO File()`.
+
+:::note
+[ClickHouse Cloud](https://clickhouse.com/cloud) provides automatic backups to object storage.
+:::
+
+The following parameters can be configured:
+
+| Parameter                           | Description                                                                                                                                                                                |
+|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `allowed_path`                      | Path to backup to when using `File()`. This parameter must be set in order to use `File`.                                                                                                  |
+| `remove_backup_files_after_failure` | When `true`, if the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are |
+
+This setting is configured by default as:
+
+```xml
+<backups>
+    <allowed_path>backups</allowed_path>
+    <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
+</backups>
+```
+
 ## backup_threads
 
 The maximum number of threads to execute `BACKUP` requests.
@@ -194,6 +218,16 @@ A value of `0` (default) means unlimited.
 Type: UInt64
 
 Default: `0`
+
+## bcrypt_workfactor
+
+Work factor for bcrypt_password authentication type. 
+
+Default: `12`
+
+```xml
+<bcrypt_workfactor>12</bcrypt_workfactor>
+```
 
 ## cache_size_to_ram_max_ratio
 
@@ -1553,6 +1587,82 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 </graphite_rollup_example>
 ```
 
+## google_protos_path
+
+Defines a directory containing proto files for Protobuf types.
+
+By default, it is configured as:
+
+```xml
+<google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
+```
+
+## http_handlers
+
+Allows using custom http handlers. 
+To add a new http handler simple add a new `<rule>`. 
+Rules are checked from top to bottom as defined,
+and the first match will run the handler.
+
+Rules have the following parameters:
+
+| Parameter            | Definition                                                                                                                                       |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                          |
+| `empty_query_string` | Check that there is no query string in the URL                                                                                                   |
+| `methods`            | To match request method, you can use commas to separate multiple method matches (optional)                                                       |
+| `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
+| `handler`            | The request handler                                                                                                                              |
+
+`handler` contains the following parameters:
+
+| Parameter          | Definition                                                                                                                                                            |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `type`             | supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
+| `query`            | use with predefined_query_handler type, executes query when the handler is called                                                                                     |
+| `query_param_name` | use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params                             |
+| `status`           | use with static type, response status code                                                                                                                            |
+| `content_type`     | use with static type, response content-type                                                                                                                           |
+| `response_content` | use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
+| `url`              | a location for redirect                                                                                                                                               |
+
+
+Along with a list of rules, you can specify <defaults/> which specifies to enable all the default handlers.
+
+You will find the following example, commented out, in config.xml:
+
+```xml
+<http_handlers>
+    <rule>
+        <url>/</url>
+        <methods>POST,GET</methods>
+        <headers><pragma>no-cache</pragma></headers>
+        <handler>
+            <type>dynamic_query_handler</type>
+            <query_param_name>query</query_param_name>
+        </handler>
+    </rule>
+
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT * FROM system.settings</query>
+        </handler>
+    </rule>
+
+    <rule>
+        <handler>
+            <type>static</type>
+            <status>200</status>
+            <content_type>text/plain; charset=UTF-8</content_type>
+            <response_content>config://http_server_default_response</response_content>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
 ## http_port/https_port
 
 The port for connecting to the server over HTTP(s).
@@ -1786,6 +1896,72 @@ Maximal number of requests through a single keep-alive connection until it will 
 
 ``` xml
 <max_keep_alive_requests>10</max_keep_alive_requests>
+```
+
+## ldap_servers
+
+List LDAP servers with their connection parameters here to later 
+- use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
+- use them as remote user directories.
+
+The following parameters are accepted:
+
+| Parameter                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
+|--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `host`                         | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
+| `port`                         | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
+| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
+| `verification_cooldown`        | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
+| `enable_tls`                   | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
+| `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).                                                                                                                                                                                                                                                                                                                |
+| `tls_require_cert`             | SSL/TLS peer certificate verification behavior. Accepted values are: `never`, `allow`, `try`, `demand` (the default).                                                                                                                                                                                                                                                                                                                    |
+| `tls_cert_file`                | path to certificate file.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `tls_key_file`                 | path to certificate key file.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `tls_ca_cert_file`             | path to CA certificate file.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `tls_ca_cert_dir`              | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_cipher_suite`             | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
+
+Parameter `user_dn_detection` has sub-parameters:
+
+| Parameter       | Description                                                                                                                                                                                                                                                                                                                                    |
+|-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
+| `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |                                                                                                                               
+| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
+
+Example:
+
+```xml
+<my_ldap_server>
+    <host>localhost</host>
+    <port>636</port>
+    <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
+    <verification_cooldown>300</verification_cooldown>
+    <enable_tls>yes</enable_tls>
+    <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+    <tls_require_cert>demand</tls_require_cert>
+    <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+    <tls_key_file>/path/to/tls_key_file</tls_key_file>
+    <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+    <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+    <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
+</my_ldap_server>
+```
+
+Example (typical Active Directory with configured user DN detection for further role mapping):
+
+```xml
+<my_ad_server>
+    <host>localhost</host>
+    <port>389</port>
+    <bind_dn>EXAMPLE\{user_name}</bind_dn>
+    <user_dn_detection>
+        <base_dn>CN=Users,DC=example,DC=com</base_dn>
+        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+    </user_dn_detection>
+    <enable_tls>no</enable_tls>
+</my_ad_server>
 ```
 
 ## listen_host
@@ -2126,6 +2302,14 @@ Type: String
 
 Default: ""
 
+## remap_executable
+
+Reallocate memory for machine code ("text") using huge pages. Highly experimental.
+
+```xml
+<remap_executable>false</remap_executable>
+```
+
 ## max_open_files
 
 The maximum number of open files.
@@ -2139,6 +2323,17 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 ``` xml
 <max_open_files>262144</max_open_files>
 ```
+
+## max_session_timeout
+
+Maximum session timeout, in seconds. 
+
+Default: `3600`
+
+```xml
+<max_session_timeout>3600</max_session_timeout>
+```
+
 
 ## max_table_size_to_drop
 
@@ -2325,6 +2520,41 @@ For more information, see the MergeTreeSettings.h header file.
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </replicated_merge_tree>
 ```
+## opentelemetry_span_log
+
+Settings for the [`opentelemetry_span_log`](../system-tables/opentelemetry_span_log.md) system table.
+
+The following parameters can be used to configure the table:
+
+| Settings                           | Description                                                                                             |
+|------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `engine`                           | Specifies the storage engine used for the table.                                                        |
+| `database`                         | Specifies which data base the table will reside in.                                                     |
+| `table`                            | Defines the name of the table.                                                                          |
+| `flush_interval_milliseconds`      | Determines how often ClickHouse flushes data from memory to disk.                                       |
+| `max_size_rows`                    | Sets the maximum number of rows that can be held in memory before a flush to disk is triggered.         |
+| `reserved_size_rows`               | Reserves space in memory for a certain number of rows.                                                  |
+| `buffer_size_rows_flush_threshold` | Specifies the number of rows in the buffer at which a flush to disk is triggered.                       |
+| `flush_on_crash`                   | Determines whether data in the memory buffer should be flushed to disk in the event of a server crash.  |
+
+The default settings are:
+
+```xml
+<opentelemetry_span_log>
+    <engine>
+        engine MergeTree
+        partition by toYYYYMM(finish_date)
+        order by (finish_date, finish_time_us, trace_id)
+    </engine>
+    <database>system</database>
+    <table>opentelemetry_span_log</table>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>    
+</opentelemetry_span_log>
+```
 
 ## openSSL
 
@@ -2437,6 +2667,41 @@ The trailing slash is mandatory.
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
+```
+## processors_profile_log
+
+Settings for the [`processors_profile_log`](../system-tables/processors_profile_log.md) system table.
+
+The following parameters can be used to configure the table:
+
+| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
+|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
+| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
+| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
+| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
+| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
+| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
+| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
+| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs                                                                                                                                                             | `8192`              |
+| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
+| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
+| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional)                                                          |                     |
+
+The default settings are:
+
+```xml
+<processors_profile_log>
+    <database>system</database>
+    <table>processors_profile_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</processors_profile_log>
 ```
 
 ## Prometheus {#prometheus}
@@ -2830,7 +3095,6 @@ Settings for the [backup_log](../../operations/system-tables/backup_log.md) syst
 
 Parameters:
 
-
 | Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
 |------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
 | `database`                         | Database for storing a table.                                                                                                                                                                               |                     |
@@ -2862,6 +3126,39 @@ Parameters:
         <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
     </backup_log>
 </clickhouse>
+```
+
+## blog_storage_log
+
+Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
+
+The following parameters can be used to configure the table:
+
+| Parameter                          | Description                                                                                                                                                     |
+|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `database`                         | Database for storing the table.                                                                                                                                  |
+| `table`                            | Table name.                                                                                                                                                     |
+| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.       |
+| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                 |
+| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined. |
+| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                              |
+| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                     |
+| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                |
+| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                           |
+| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                        |
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                          |
+| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).             |
+
+The default settings are:
+
+```xml
+<blob_storage_log>
+    <database>system</database
+    <table>blob_storage_log</table
+    <partition_by>toYYYYMM(event_date)</partition_by> 
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds
+    <ttl>event_date + INTERVAL 30 DAY</ttl>
+</blob_storage_log>
 ```
 
 ## query_masking_rules
@@ -3110,6 +3407,39 @@ You can find this setting in server-configuration file `config.xml`.
 <access_control_improvements>
     <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
 </access_control_improvements>
+```
+
+## s3queue_log
+
+Settings for the `s3queue_log` system table.
+
+The following parameters can be used to configure the table:
+
+| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
+|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
+| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
+| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
+| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
+| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
+| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
+| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
+| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs                                                                                                                                                             | `8192`              |
+| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
+| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
+| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional)                                                          |                     |
+
+
+The default settings are:
+
+```xml
+<s3queue_log>
+    <database>system</database>
+    <table>s3queue_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</s3queue_log>
 ```
 
 ## select_from_system_db_requires_grant
@@ -3383,6 +3713,29 @@ By default, it is set to `1`:
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
+## default_session_timeout
+
+Default session timeout, in seconds. 
+
+Default: `60`
+
+```xml
+<default_session_timeout>60</default_session_timeout>
+```
+
+## default_password_type
+
+Sets the password type to be automatically set for in queries like `CREATE USER u IDENTIFIED BY 'p'`.
+
+Accepted values are:
+- `plaintext_password`
+- `sha256_password`
+- `double_sha1_password`
+- `bcrypt_password`
+
+```xml
+<default_password_type>sha256_password</default_password_type>
+```
 
 ## user_directories
 
@@ -3423,12 +3776,12 @@ Users, roles, row policies, quotas, and profiles can be also stored in ZooKeeper
 
 You can also define sections `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
 
-To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
+To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with the following settings:
 
-|Parameter| Description                                                                                                                                                                                                                                                                                                                                                                    |
-|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|`server` | one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                            |
-|`roles`  | section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect. |
+| Setting  | Description                                                                                                                                                                                                                                                                                                                                                                    |
+|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `server` | one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                            |
+| `roles`  | section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect. |
 
 **Example**
 
@@ -3440,6 +3793,18 @@ To add an LDAP server as a remote user directory of users that are not defined l
             <my_local_role2 />
         </roles>
 </ldap>
+```
+
+## top_level_domains_list
+
+Defines a list of custom top level domains to add where each entry is of the format `<name>/path/to/file</name>`.
+
+For example:
+
+```xml
+<top_level_domains_lists>
+    <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
+</top_level_domains_lists>
 ```
 
 ## total_memory_profiler_step
