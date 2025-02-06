@@ -32,7 +32,7 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     if (last[0] == '[')
         return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
 
-    int colons = std::count(last.begin(), last.end(), ':');
+    const auto colons = std::count(last.begin(), last.end(), ':');
 
     /// IPv6 address without port
     if (colons > 1)
