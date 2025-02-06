@@ -44,16 +44,6 @@ def fill_nodes(nodes, shard):
         )
 
 
-def clean_up(nodes):
-    for node in nodes:
-        node.query(
-            """
-                DROP DATABASE IF EXISTS test SYNC;
-                DROP USER IF EXISTS test_user_xnhds;
-            """
-        )
-
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -119,4 +109,6 @@ def test_drop_permissions(start_cluster):
         node2.start_clickhouse()
 
     finally:
-        clean_up(nodes)
+        for node in nodes:
+            node.query("DROP DATABASE IF EXISTS test SYNC;")
+            node.query("DROP USER IF EXISTS test_user_xnhds;")
