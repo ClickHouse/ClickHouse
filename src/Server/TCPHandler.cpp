@@ -2458,12 +2458,17 @@ static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 clie
     {
         ColumnWithTypeAndName column = elem;
 
-        auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
-        { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
-        auto col = ColumnBlob::create(std::move(task), column.column);
-        col->convertTo();
+        // TODO(nickitat): support Tuple
+        if (!elem.type->haveSubtypes())
+        {
+            auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
+            { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
+            auto col = ColumnBlob::create(std::move(task), column.column);
+            col->convertTo();
 
-        column.column = std::move(col);
+            column.column = std::move(col);
+        }
+
         res.insert(std::move(column));
     }
     return res;
