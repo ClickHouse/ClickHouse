@@ -1319,4 +1319,31 @@ TEST(LZ4Test, DecompressMalformedInput)
     ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
 }
 
+TEST(DoubleDeltaTest, TranscodeRawInput)
+{
+    for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+    {
+        DB::Memory<> source_memory;
+        source_memory.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+
+        for (size_t i = 0; i < buffer_size; ++i)
+            source_memory.data()[i] = i;
+
+        DB::Memory<> memory_for_compression;
+        memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+
+        auto codec = makeCodec("DoubleDelta", nullptr);
+
+        auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+        DB::Memory<> memory_for_decompression;
+        memory_for_decompression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+        auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+        ASSERT_EQ(decompressed, source_memory.size());
+        for (size_t i = 0; i < decompressed; ++i)
+            ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << " with buffer size " << buffer_size << " at position " << i;
+    }
+}
+
 }
