@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray.h>
@@ -68,13 +68,7 @@ struct ColumnChunkWriteState
     ColumnChunkWriteState & operator=(ColumnChunkWriteState &&) = default;
 
     /// Estimated memory usage.
-    size_t allocatedBytes() const
-    {
-        size_t r = def.allocated_bytes() + rep.allocated_bytes();
-        if (primitive_column)
-            r += primitive_column->allocatedBytes();
-        return r;
-    }
+    size_t allocatedBytes() const;
 };
 
 using SchemaElements = std::vector<parquet::format::SchemaElement>;

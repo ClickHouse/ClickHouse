@@ -68,6 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"query_plan_optimize_lazy_materialization", false, true, "Added new setting to use query plan for lazy materialization optimisation"},
             {"query_plan_max_limit_for_lazy_materialization", 10, 10, "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"},
+            {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
+            {"postgresql_fault_injection_probability", 0., 0., "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -108,12 +110,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
             {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
-            {"skip_redundant_aliases_in_udf", false, false, "New setting."},
             /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",

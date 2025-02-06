@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 
 namespace DB
