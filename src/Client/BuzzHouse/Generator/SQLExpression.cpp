@@ -800,7 +800,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         expr = eca->mutable_expr();
     }
 
-    if (noption < (this->inside_projection ? 76 : 151))
+    if (noption < (this->inside_projection ? 76 : 101))
     {
         generateLiteralValue(rg, expr);
     }
