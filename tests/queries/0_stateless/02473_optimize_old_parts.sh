@@ -68,7 +68,7 @@ SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = curren
 DROP TABLE test_with_merge;"
 
 # Partition 2 will ignore max_bytes_to_merge_at_max_space_in_pool
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 SELECT 'With merge partition only and disable limit';
 
 CREATE TABLE test_with_merge_limit (i Int64) ENGINE = MergeTree ORDER BY i PARTITION BY i
@@ -80,7 +80,7 @@ INSERT INTO test_with_merge_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
 wait_for_number_of_parts 'test_with_merge_limit' 2 100
 
 # Partition 2 will limit by max_bytes_to_merge_at_max_space_in_pool
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_with_merge_limit;
 
 SELECT 'With merge partition only and enable limit';
@@ -93,5 +93,5 @@ INSERT INTO test_with_merge_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
 
 wait_for_number_of_parts 'test_with_merge_limit' 3 100
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_with_merge_limit;"

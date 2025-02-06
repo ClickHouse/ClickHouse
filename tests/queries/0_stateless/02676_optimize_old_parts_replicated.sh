@@ -70,7 +70,7 @@ SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = curren
 DROP TABLE test_replicated;"
 
 # Partition 2 will ignore max_bytes_to_merge_at_max_space_in_pool
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 SELECT 'With merge replicated partition only and disable limit';
 
 CREATE TABLE test_replicated_limit (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only_limit', 'node')  ORDER BY i
@@ -84,7 +84,7 @@ INSERT INTO test_replicated_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
 wait_for_number_of_parts 'test_replicated_limit' 2 100
 
 # Partition 2 will limit by max_bytes_to_merge_at_max_space_in_pool
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_replicated_limit SYNC;
 
 SELECT 'With merge replicated partition only and enable limit';
@@ -99,5 +99,5 @@ INSERT INTO test_replicated_limit SELECT 2 SETTINGS insert_deduplicate = 0;"
 
 wait_for_number_of_parts 'test_replicated_limit' 3 100
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_replicated_limit;"
