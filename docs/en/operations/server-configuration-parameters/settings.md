@@ -8,6 +8,7 @@ keywords: [global server settings]
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import SystemLogParameters from '_snippets/_system-log-parameters.md'
 
 # Global Server Settings
 
@@ -66,6 +67,9 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 <asynchronous_metric_log remove="1" />
 </clickhouse>
 ```
+
+<SystemLogParameters/>
+
 
 ## asynchronous_metrics_update_period_s
 
@@ -1334,6 +1338,8 @@ To disable `error_log` setting, you should create the following file `/etc/click
 </clickhouse>
 ```
 
+<SystemLogParameters/>
+
 ## custom_settings_prefixes
 
 List of prefixes for [custom settings](../../operations/settings/index.md#custom_settings). The prefixes must be separated with commas.
@@ -2594,6 +2600,8 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 </clickhouse>
 ```
 
+<SystemLogParameters/>
+
 ## replicated_merge_tree
 
 Fine-tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md). This setting has a higher priority.
@@ -2611,18 +2619,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 Settings for the [`opentelemetry_span_log`](../system-tables/opentelemetry_span_log.md) system table.
 
-The following parameters can be used to configure the table:
-
-| Settings                           | Description                                                                                             |
-|------------------------------------|---------------------------------------------------------------------------------------------------------|
-| `engine`                           | Specifies the storage engine used for the table.                                                        |
-| `database`                         | Specifies which data base the table will reside in.                                                     |
-| `table`                            | Defines the name of the table.                                                                          |
-| `flush_interval_milliseconds`      | Determines how often ClickHouse flushes data from memory to disk.                                       |
-| `max_size_rows`                    | Sets the maximum number of rows that can be held in memory before a flush to disk is triggered.         |
-| `reserved_size_rows`               | Reserves space in memory for a certain number of rows.                                                  |
-| `buffer_size_rows_flush_threshold` | Specifies the number of rows in the buffer at which a flush to disk is triggered.                       |
-| `flush_on_crash`                   | Determines whether data in the memory buffer should be flushed to disk in the event of a server crash.  |
+<SystemLogParameters/>
 
 The default settings are:
 
@@ -2710,22 +2707,7 @@ Logging events that are associated with [MergeTree](../../engines/table-engines/
 
 Queries are logged in the [system.part_log](../../operations/system-tables/part_log.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
-Use the following parameters to configure logging:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default             |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
-| `table`                            | Name of the system table.                                                                                                                                                                                   |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                                                                                       |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              | 
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     | 
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
+<SystemLogParameters/>
 
 **Example**
 
@@ -2759,22 +2741,7 @@ The trailing slash is mandatory.
 
 Settings for the [`processors_profile_log`](../system-tables/processors_profile_log.md) system table.
 
-The following parameters can be used to configure the table:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs                                                                                                                                                             | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional)                                                          |                     |
+<SystemLogParameters/>
 
 The default settings are:
 
@@ -2835,22 +2802,7 @@ Setting for logging queries received with the [log_queries=1](../../operations/s
 
 Queries are logged in the [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
-Use the following parameters to configure logging:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs                                                                                                                                                             | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional)                                                          |                     |
+<SystemLogParameters/>
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -2902,6 +2854,8 @@ To disable `query_metric_log` setting, you should create the following file `/et
 </clickhouse>
 ```
 
+<SystemLogParameters/>
+
 ## query_cache
 
 [Query cache](../query-cache.md) configuration.
@@ -2937,22 +2891,7 @@ Setting for logging threads of queries received with the [log_query_threads=1](.
 
 Queries are logged in the [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
-Use the following parameters to configure logging:
-
-| Parameter                          | Description                                                                                                                                                                                                     | Default Value       |
-|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Name of the database.                                                                                                                                                                                           |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                         |                     | 
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.                                                                                                                        |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.                                                                                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` are defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                              |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size_rows, logs dumped to the disk.                                                                                                | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                                | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                           | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash                                                                                                                                         | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                          |                     |                                                                                                                                         
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                             |                     |
+<SystemLogParameters/>
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -2977,21 +2916,7 @@ Setting for logging views (live, materialized etc) dependant of queries received
 
 Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
-Use the following parameters to configure logging:
-
-| Parameters                         | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
+<SystemLogParameters/>
 
 If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -3014,25 +2939,16 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
 
-Parameters:
+<SystemLogParameters/>
+
+Additionally:
 
 | Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
 |------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
 | `level`                            | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
-| `database`                         | Database name.                                                                                                                                                                                              |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
 
 **Example**
+
 ```xml
 <clickhouse>
     <text_log>
@@ -3054,22 +2970,7 @@ Parameters:
 
 Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
-Parameters:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Database for storing the table.                                                                                                                                                                             |                     |
-| `table`                            | Name of the table.                                                                                                                                                                                          |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.                                             |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `symbolize`                        | If the server should try to symbolize the results (optional, default: `false`)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
+<SystemLogParameters/>
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -3091,20 +2992,7 @@ The default server configuration file `config.xml` contains the following settin
 
 Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
 
-Parameters:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Database name.                                                                                                                                                                                              |                     |
-| `table`                            | Table name.                                                                                                                                                                                                 |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.               |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
+<SystemLogParameters/>
 
 **Example**
 
@@ -3128,22 +3016,7 @@ Parameters:
 
 Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
-Parameters:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Database for storing a table.                                                                                                                                                                               |                     |
-| `table`                            | Table name.                                                                                                                                                                                                 |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.                                             |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
+<SystemLogParameters/>
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -3183,22 +3056,7 @@ It is set by default to `/var/lib/clickhouse/caches/`:
 
 Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
 
-Parameters:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Database for storing a table.                                                                                                                                                                               |                     |
-| `table`                            | Table name.                                                                                                                                                                                                 |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined.                                             |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
+<SystemLogParameters/>
 
 **Example**
 
@@ -3222,22 +3080,7 @@ Parameters:
 
 Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
 
-The following parameters can be used to configure the table:
-
-| Parameter                          | Description                                                                                                                                                     |
-|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `database`                         | Database for storing the table.                                                                                                                                  |
-| `table`                            | Table name.                                                                                                                                                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.       |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                 |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` or `order_by` defined. |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                              |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                     |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                           |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                        |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                          |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).             |
+<SystemLogParameters/>
 
 The default settings are:
 
@@ -3503,23 +3346,7 @@ You can find this setting in server-configuration file `config.xml`.
 
 Settings for the `s3queue_log` system table.
 
-The following parameters can be used to configure the table:
-
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `database`                         | Name of the database.                                                                                                                                                                                       |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                     |                     |
-| `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.                                                   |                     |
-| `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` defined.                                                             |                     |
-| `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
-| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
-| `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs                                                                                                                                                             | `8192`              |
-| `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
-| `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
-| `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional)                                                          |                     |
-
+<SystemLogParameters/>
 
 The default settings are:
 
