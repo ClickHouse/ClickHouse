@@ -24,17 +24,21 @@ node2 = cluster.add_instance(
 )
 
 
-def setup_nodes(nodes, shard):
+def fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
             """
                 DROP DATABASE IF EXISTS test SYNC;
-                DROP USER IF EXISTS test_user_xnhds SYNC;
                 CREATE DATABASE test;
-                SET database_replicated_allow_replicated_engine_arguments=2;  
+
+                DROP USER IF EXISTS test_user_xnhds;
+                -- create user without any permissions
+                CREATE USER test_user_xnhds;
+                REVOKE ALL ON *.* FROM test_user_xnhds;
+                
                 CREATE TABLE test.test_table(date Date, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/replicated/test_table', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date);
-            """.format(
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/replicated/test_table', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date)
+                SETTINGS database_replicated_allow_replicated_engine_arguments=2;""".format(
                 shard=shard, replica=node.name
             )
         )
@@ -44,7 +48,6 @@ def setup_nodes(nodes, shard):
 def start_cluster():
     try:
         cluster.start()
-        setup_nodes([node1, node2], 1)
         yield cluster
     finally:
         cluster.shutdown()
@@ -56,6 +59,7 @@ def check_exists(zk, path):
 
 
 def test_drop_permissions(start_cluster):
+    fill_nodes([node1, node2], 1)
     node1.query(
         "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
     )
@@ -69,10 +73,6 @@ def test_drop_permissions(start_cluster):
         zk, "/clickhouse/tables/test/1/replicated/test_table/replicas/node2"
     )
     assert exists_before != None
-
-    # create user without any permissions
-    node1.query("CREATE USER test_user_xnhds;")
-    node1.query("REVOKE ALL ON *.* FROM test_user_xnhds;")
 
     # we won't be able to drop an active replica
     assert (
@@ -104,5 +104,4 @@ def test_drop_permissions(start_cluster):
     )
     assert exists_after == None
 
-    node1.query("DROP USER test_user_xnhds;")
-    node1.query("DROP DATABASE test;")
+    node2.start_clickhouse()
