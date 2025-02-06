@@ -269,8 +269,8 @@ protected:
             return;
 
         /// We should check other arguments first because we don't need to do any replacement in case of
-        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
-        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
+        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
+        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
         size_t count = function->arguments->size();
         if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
         {
@@ -278,7 +278,7 @@ protected:
             if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
             {
                 if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
-                    return; /// The argument after 'url' is a format: s3('url', 'format', ...)
+                    return;
             }
         }
 
@@ -487,6 +487,10 @@ protected:
         {
             findURLSecretArguments();
         }
+        else if (engine_name == "AzureBlobStorage")
+        {
+            findAzureBlobStorageTableEngineSecretArguments();
+        }
     }
 
     void findExternalDistributedTableEngineSecretArguments()
@@ -538,6 +542,41 @@ protected:
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
         if (2 < count)
             markSecretArgument(2);
+    }
+
+    void findAzureBlobStorageTableEngineSecretArguments()
+    {
+       /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
+        size_t url_arg_idx = 0;
+
+        if (isNamedCollectionName(url_arg_idx))
+        {
+            /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+            if (maskAzureConnectionString(-1, true, 1))
+                return;
+            findSecretNamedArgument("account_key", 1);
+            return;
+        }
+
+        if (maskAzureConnectionString(url_arg_idx))
+            return;
+
+        /// We should check other arguments first because we don't need to do any replacement in case of
+        /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
+        size_t count = function->arguments->size();
+        if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
+        {
+            String fourth_arg;
+            if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+            {
+                if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
+                    return;
+            }
+        }
+
+        /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
+        if (url_arg_idx + 4 < count)
+            markSecretArgument(url_arg_idx + 4);
     }
 
     void findDatabaseEngineSecretArguments()
@@ -593,6 +632,10 @@ protected:
         {
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
+        }
+        else if (engine_name == "AzureBlobStorage")
+        {
+            findAzureBlobStorageTableEngineSecretArguments();
         }
     }
 

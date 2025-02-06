@@ -1318,6 +1318,11 @@ def test_format_detection(cluster):
     storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    account_key_pattern = re.compile("AccountKey=.*?(;|$)")
+    masked_azure_conn_string = re.sub(
+        account_key_pattern, "AccountKey=[HIDDEN]\\1", connection_string
+    )
+
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection0', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt64, y String') select number as x, 'str_' || toString(number) from numbers(0) SETTINGS azure_truncate_on_insert=1",
@@ -1392,7 +1397,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1405,7 +1410,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1418,7 +1423,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{masked_azure_conn_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
 
     azure_query(
@@ -1431,7 +1436,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1444,7 +1449,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\')\n"
     )
 
     azure_query(
@@ -1457,7 +1462,7 @@ def test_format_detection(cluster):
     )
     assert (
         result
-        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\', \\'none\\')\n"
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'[HIDDEN]\\', \\'JSON\\', \\'none\\')\n"
     )
 
 
