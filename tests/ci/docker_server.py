@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from build_download_helper import read_build_urls
+from ci_utils import Utils
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
@@ -303,7 +304,6 @@ def test_docker_library(test_results: TestResults) -> None:
         if (
             tr.name.startswith("clickhouse/clickhouse-server")
             and "alpine" not in tr.name
-            and tr.name.endswith("amd64")
         )
     ]
     if not check_images:
@@ -324,14 +324,17 @@ def test_docker_library(test_results: TestResults) -> None:
             f"{repo_path/'test/config.sh'}"
         )
         run_sh = (repo_path / "test/run.sh").absolute()
-        cmd = f"{run_sh} {check_images[0]}"
-        log_file = temp_path / "docker-library-test.log"
-        with TeePopen(cmd, log_file) as process:
-            retcode = process.wait()
-        status = OK if retcode == 0 else FAIL
-        test_results.append(
-            TestResult(test_name, status, stopwatch.duration_seconds, [log_file])
-        )
+        for image in check_images:
+            cmd = f"{run_sh} {image}"
+            log_file = (
+                temp_path / f"docker-library-test-{Utils.normalize_string(image)}.log"
+            )
+            with TeePopen(cmd, log_file) as process:
+                retcode = process.wait()
+            status = OK if retcode == 0 else FAIL
+            test_results.append(
+                TestResult(test_name, status, stopwatch.duration_seconds, [log_file])
+            )
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
         test_results.append(
