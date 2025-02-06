@@ -83,7 +83,7 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     const StorageSnapshotPtr & storage_snapshot_,
     const LazilyReadInfoPtr & lazily_read_info_,
     const ContextPtr & context_,
-    const AliasToNamePtr & alias_index_)
+    const AliasToName & alias_index_)
     : storage(storage_)
     , data_parts_info(lazily_read_info_->data_parts_info)
     , storage_snapshot(storage_snapshot_)
@@ -94,13 +94,17 @@ MergeTreeLazilyReader::MergeTreeLazilyReader(
     for (const auto & column_name : lazily_read_info_->lazily_read_columns)
         columns_name_set.insert(column_name.name);
 
-    for (const auto & it : header_)
+    for (const auto & column : header_)
     {
-        const auto & requested_column_name = (*alias_index_)[it.name];
+        const auto it = alias_index_.find(column.name);
+        if (it == alias_index_.end())
+            continue; // TODO: check if it's what we want
+
+        const auto & requested_column_name = it->second;
         if (columns_name_set.contains(requested_column_name))
         {
             requested_column_names.emplace_back(requested_column_name);
-            lazy_columns.emplace_back(header_.getByName(it.name));
+            lazy_columns.emplace_back(header_.getByName(column.name));
         }
     }
 }

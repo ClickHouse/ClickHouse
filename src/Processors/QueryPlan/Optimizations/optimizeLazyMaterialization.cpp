@@ -34,7 +34,7 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 static void removeUsedColumnNames(
     const ActionsDAG & actions,
     NameSet & lazily_read_column_name_set,
-    AliasToNamePtr & alias_index)
+    AliasToName & alias_index)
 {
     const auto & actions_outputs = actions.getOutputs();
 
@@ -66,8 +66,8 @@ static void removeUsedColumnNames(
 
                 if (current_node->type == ActionsDAG::ActionType::INPUT)
                 {
-                    const auto it = alias_index->find(current_node->result_name);
-                    if (it != alias_index->end())
+                    const auto it = alias_index.find(current_node->result_name);
+                    if (it != alias_index.end())
                         lazily_read_column_name_set.erase(it->second);
                 }
 
@@ -95,12 +95,12 @@ static void removeUsedColumnNames(
         }
         if (node && node != output_node && node->type == ActionsDAG::ActionType::INPUT)
         {
-            const auto it = alias_index->find(node->result_name);
-            if (it != alias_index->end())
+            const auto it = alias_index.find(node->result_name);
+            if (it != alias_index.end())
             {
                 const auto real_column_name = it->second;
-                alias_index->emplace(output_node->result_name, real_column_name);
-                alias_index->erase(node->result_name);
+                alias_index.emplace(output_node->result_name, real_column_name);
+                alias_index.erase(node->result_name);
             }
         }
     }
@@ -109,7 +109,7 @@ static void removeUsedColumnNames(
 static void collectLazilyReadColumnNames(
     const StepStack & steps,
     ColumnsWithTypeAndName & lazily_read_columns,
-    AliasToNamePtr & alias_index)
+    AliasToName & alias_index)
 {
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(steps.back());
     const Names & all_column_names = read_from_merge_tree->getAllColumnNames();
@@ -127,7 +127,7 @@ static void collectLazilyReadColumnNames(
     }
 
     for (const auto & column_name : lazily_read_column_name_set)
-        alias_index->emplace(column_name, column_name);
+        alias_index.emplace(column_name, column_name);
 
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
@@ -161,8 +161,8 @@ static void collectLazilyReadColumnNames(
             const auto & sort_description = sorting_step->getSortDescription();
             for (const auto & sort_column_description : sort_description)
             {
-                const auto it = alias_index->find(sort_column_description.column_name);
-                if (it == alias_index->end())
+                const auto it = alias_index.find(sort_column_description.column_name);
+                if (it == alias_index.end())
                     continue;
                 lazily_read_column_name_set.erase(it->second);
             }
@@ -248,7 +248,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
         return;
 
     LazilyReadInfoPtr lazily_read_info = std::make_shared<LazilyReadInfo>();
-    AliasToNamePtr alias_index = std::make_shared<AliasToName>();
+    AliasToName alias_index;
     collectLazilyReadColumnNames(steps_to_update, lazily_read_info->lazily_read_columns, alias_index);
 
     if (lazily_read_info->lazily_read_columns.empty())

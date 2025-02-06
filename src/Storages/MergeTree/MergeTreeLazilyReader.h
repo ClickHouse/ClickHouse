@@ -7,7 +7,6 @@ namespace DB
 class ColumnLazy;
 
 using AliasToName = std::unordered_map<std::string, std::string>;
-using AliasToNamePtr = std::shared_ptr<AliasToName>;
 
 struct RowOffsetWithIdx
 {
@@ -30,7 +29,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const LazilyReadInfoPtr & lazily_read_info_,
         const ContextPtr & context_,
-        const AliasToNamePtr & alias_index_);
+        const AliasToName & alias_index_);
 
     void transformLazyColumns(
         const ColumnLazy & column_lazy,
