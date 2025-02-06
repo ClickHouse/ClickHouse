@@ -298,7 +298,7 @@ private:
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
     void refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
-    void generateSubquery(RandomGenerator & rg, Select * sel);
+    void generateSubquery(RandomGenerator & rg, ExplainQuery * eq);
     void generateColRef(RandomGenerator & rg, Expr * expr);
     void generateLiteralValue(RandomGenerator & rg, Expr * expr);
     void generatePredicate(RandomGenerator & rg, Expr * expr);
@@ -307,6 +307,7 @@ private:
     void generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
     void generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
     void generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call);
+    void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
 
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, OrderByStatement * ob);
 

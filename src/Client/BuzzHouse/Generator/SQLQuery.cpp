@@ -4,6 +4,98 @@
 namespace BuzzHouse
 {
 
+void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq)
+{
+    std::unordered_map<uint32_t, QueryLevel> levels_backup;
+    std::vector<uint32_t> ids_backup;
+    std::vector<ColumnPathChain> entries_backup;
+    std::vector<ColumnPathChain> table_entries_backup;
+    std::vector<ColumnPathChain> remote_entries_backup;
+    const bool prev_in_transaction = this->in_transaction;
+    const bool prev_inside_projection = this->inside_projection;
+    const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+    const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+    const bool prev_allow_subqueries = this->allow_subqueries;
+    const bool prev_enforce_final = this->enforce_final;
+    const bool prev_allow_engine_udf = this->allow_engine_udf;
+
+    /// Backup everything
+    for (const auto & entry : this->levels)
+    {
+        levels_backup[entry.first] = entry.second;
+    }
+    this->levels.clear();
+    ids_backup.reserve(this->ids.size());
+    for (const auto & entry : this->ids)
+    {
+        ids_backup.emplace_back(entry);
+    }
+    this->ids.clear();
+    entries_backup.reserve(this->entries.size());
+    for (const auto & entry : this->entries)
+    {
+        entries_backup.emplace_back(entry);
+    }
+    this->entries.clear();
+    table_entries_backup.reserve(this->table_entries.size());
+    for (const auto & entry : this->table_entries)
+    {
+        table_entries_backup.emplace_back(entry);
+    }
+    this->table_entries.clear();
+    remote_entries_backup.reserve(this->remote_entries.size());
+    for (const auto & entry : this->remote_entries)
+    {
+        remote_entries_backup.emplace_back(entry);
+    }
+    this->remote_entries.clear();
+
+    generateNextExplain(rg, eq);
+
+    this->levels.clear();
+    for (const auto & entry : levels_backup)
+    {
+        this->levels[entry.first] = entry.second;
+    }
+    this->ids.clear();
+    this->ids.reserve(ids_backup.size());
+    for (const auto & entry : ids_backup)
+    {
+        this->ids.emplace_back(entry);
+    }
+    this->entries.clear();
+    this->entries.reserve(entries_backup.size());
+    for (const auto & entry : entries_backup)
+    {
+        this->entries.emplace_back(entry);
+    }
+    this->table_entries.clear();
+    this->table_entries.reserve(table_entries_backup.size());
+    for (const auto & entry : table_entries_backup)
+    {
+        this->table_entries.emplace_back(entry);
+    }
+    this->remote_entries.clear();
+    this->remote_entries.reserve(remote_entries_backup.size());
+    for (const auto & entry : remote_entries_backup)
+    {
+        this->remote_entries.emplace_back(entry);
+    }
+    this->in_transaction = prev_in_transaction;
+    this->inside_projection = prev_inside_projection;
+    this->allow_not_deterministic = prev_allow_not_deterministic;
+    this->allow_in_expression_alias = prev_allow_in_expression_alias;
+    this->allow_subqueries = prev_allow_subqueries;
+    this->enforce_final = prev_enforce_final;
+    this->allow_engine_udf = prev_allow_engine_udf;
+
+    /// Don't let superfluous entries stay
+    this->staged_databases.clear();
+    this->staged_tables.clear();
+    this->staged_views.clear();
+    this->staged_functions.clear();
+}
+
 void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 {
     SQLRelation rel("");
@@ -237,9 +329,9 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         ExplainQuery * eq = jdq->mutable_select();
         const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
 
-        if (ncols == 1 && rg.nextMediumNumber() < 11)
+        if (ncols == 1 && rg.nextMediumNumber() < 6)
         {
-            generateNextExplain(rg, eq);
+            prepareNextExplain(rg, eq);
             rel.cols.emplace_back(SQLRelationCol(rel.name, {"explain"}));
         }
         else
@@ -1178,9 +1270,9 @@ void StatementGenerator::generateSelect(
 
         this->depth++;
         this->current_level++;
-        if (ncols == 1 && rg.nextMediumNumber() < 11)
+        if (ncols == 1 && rg.nextMediumNumber() < 6)
         {
-            generateNextExplain(rg, eq1);
+            prepareNextExplain(rg, eq1);
         }
         else
         {
@@ -1188,9 +1280,9 @@ void StatementGenerator::generateSelect(
             generateSelect(rg, false, false, ncols, allowed_clauses, eq1->mutable_inner_query()->mutable_select()->mutable_sel());
         }
         this->width++;
-        if (ncols == 1 && rg.nextMediumNumber() < 11)
+        if (ncols == 1 && rg.nextMediumNumber() < 6)
         {
-            generateNextExplain(rg, eq2);
+            prepareNextExplain(rg, eq2);
         }
         else
         {

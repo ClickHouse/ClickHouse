@@ -337,21 +337,31 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
     }
 }
 
-void StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
+void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * eq)
 {
-    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
-    const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
-    const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+    if (rg.nextMediumNumber() < 6)
+    {
+        prepareNextExplain(rg, eq);
+    }
+    else
+    {
+        const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
+        const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+        const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-    this->levels[this->current_level].inside_aggregate = false;
-    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
-    this->current_level++;
-    this->levels[this->current_level] = QueryLevel(this->current_level);
-    this->generateSelect(rg, true, false, 1, std::numeric_limits<uint32_t>::max(), sel);
-    this->current_level--;
-    this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
-    this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-    this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+        this->levels[this->current_level].inside_aggregate = false;
+        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
+
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        this->generateSelect(
+            rg, true, false, 1, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select()->mutable_sel());
+        this->current_level--;
+
+        this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
+        this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
+        this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+    }
 }
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
@@ -429,16 +439,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             }
             if (rg.nextBool())
             {
-                ExplainQuery * eq = ein->mutable_sel();
-
-                if (rg.nextMediumNumber() < 11)
-                {
-                    generateNextExplain(rg, eq);
-                }
-                else
-                {
-                    generateSubquery(rg, eq->mutable_inner_query()->mutable_select()->mutable_sel());
-                }
+                generateSubquery(rg, ein->mutable_sel());
             }
             else
             {
@@ -455,21 +456,13 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprAny * eany = cexpr->mutable_expr_any();
-            ExplainQuery * eq = eany->mutable_sel();
 
             eany->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
             eany->set_anyall(rg.nextBool());
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
             this->width++;
-            if (rg.nextMediumNumber() < 11)
-            {
-                generateNextExplain(rg, eq);
-            }
-            else
-            {
-                generateSubquery(rg, eq->mutable_inner_query()->mutable_select()->mutable_sel());
-            }
+            generateSubquery(rg, eany->mutable_sel());
             this->width--;
             this->depth--;
         }
@@ -487,18 +480,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprExists * exists = cexpr->mutable_expr_exists();
-            ExplainQuery * eq = exists->mutable_select();
 
             exists->set_not_(rg.nextBool());
             this->depth++;
-            if (rg.nextMediumNumber() < 11)
-            {
-                generateNextExplain(rg, eq);
-            }
-            else
-            {
-                generateSubquery(rg, eq->mutable_inner_query()->mutable_select()->mutable_sel());
-            }
+            generateSubquery(rg, exists->mutable_select());
             this->depth--;
         }
         else if (this->fc.max_width > this->width + 1 && noption < 901)
@@ -916,17 +901,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else if (this->allow_subqueries && noption < 651)
     {
-        ExplainQuery * eq = expr->mutable_comp_expr()->mutable_subquery();
-
         this->depth++;
-        if (rg.nextMediumNumber() < 11)
-        {
-            generateNextExplain(rg, eq);
-        }
-        else
-        {
-            generateSubquery(rg, eq->mutable_inner_query()->mutable_select()->mutable_sel());
-        }
+        generateSubquery(rg, expr->mutable_comp_expr()->mutable_subquery());
         this->depth--;
     }
     else if (this->fc.max_width > this->width + 1 && noption < 701)
