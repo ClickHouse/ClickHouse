@@ -1215,11 +1215,11 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
     }
 }
 
-void StatementGenerator::generateOffset(RandomGenerator & rg, OffsetStatement * off)
+void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_order_by, OffsetStatement * off)
 {
     generateLimitExpr(rg, off->mutable_row_count());
     off->set_rows(rg.nextBool());
-    if (!this->allow_not_deterministic || rg.nextBool())
+    if (has_order_by && (!this->allow_not_deterministic || rg.nextBool()))
     {
         FetchStatement * fst = off->mutable_fetch();
 
@@ -1388,7 +1388,7 @@ void StatementGenerator::generateSelect(
             }
             else
             {
-                generateOffset(rg, ssc->mutable_offset());
+                generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
             }
         }
     }
