@@ -4590,6 +4590,10 @@ void StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & par
         throw;
     }
 #endif
+    catch (...)
+    {
+        throw;
+    }
 }
 
 void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & zookeeper_retries_info)
