@@ -1,5 +1,6 @@
 #include <Common/Macros.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Storages/System/StorageSystemKeywords.h>
 
 #include <Parsers/CommonParsers.h>

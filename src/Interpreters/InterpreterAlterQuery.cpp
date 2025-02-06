@@ -33,8 +33,6 @@
 
 #include <boost/range/algorithm_ext/push_back.hpp>
 
-#include <algorithm>
-
 
 namespace DB
 {

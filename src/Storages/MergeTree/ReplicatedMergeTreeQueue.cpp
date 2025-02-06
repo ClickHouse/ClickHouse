@@ -15,6 +15,7 @@
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>

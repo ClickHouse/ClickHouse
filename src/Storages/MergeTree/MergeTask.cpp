@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include "config.h"

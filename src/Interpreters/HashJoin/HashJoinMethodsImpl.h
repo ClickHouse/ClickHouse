@@ -1,8 +1,9 @@
 #pragma once
 #include <type_traits>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include "Columns/IColumn.h"
-#include "Interpreters/HashJoin/ScatteredBlock.h"
+#include <Columns/IColumn.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
