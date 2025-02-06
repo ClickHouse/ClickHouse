@@ -321,7 +321,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
                 result = std::move(frame.results.front());
             }
         }
-        else if (auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(frame.node->step.get()))
+        else if (typeid_cast<DelayedCreatingSetsStep *>(frame.node->step.get()))
         {
             result = std::move(frame.results.front());
         }
