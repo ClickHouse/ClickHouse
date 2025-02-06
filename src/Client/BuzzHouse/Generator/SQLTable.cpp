@@ -128,14 +128,11 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->table_entries.clear();
     if (allow_internal_cols && rg.nextSmallNumber() < 3)
     {
-        if (t.isMergeTreeFamily())
+        if (t.isMergeTreeFamily() && this->allow_not_deterministic)
         {
-            if (this->allow_not_deterministic)
-            {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
-            }
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
