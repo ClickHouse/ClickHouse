@@ -379,6 +379,13 @@ public:
     Ephemerals committed_ephemerals;
     size_t committed_ephemeral_nodes{0};
 
+    /// All active sessions with timeout
+    SessionAndTimeout session_and_timeout;
+
+    /// Currently active watches (node_path -> subscribed sessions)
+    Watches watches;
+    Watches list_watches; /// Watches for 'list' request (watches on children).
+
     static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
     void finalize();
@@ -422,8 +429,6 @@ protected:
 
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
-    /// All active sessions with timeout
-    SessionAndTimeout session_and_timeout;
 
     struct TransactionInfo
     {
@@ -440,10 +445,6 @@ protected:
     /// Mapping session_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
     size_t total_watches_count = 0;
-
-    /// Currently active watches (node_path -> subscribed sessions)
-    Watches watches;
-    Watches list_watches; /// Watches for 'list' request (watches on children).
 
     void clearDeadWatches(int64_t session_id);
     int64_t getNextZXIDLocked() const TSA_REQUIRES(transaction_mutex);
