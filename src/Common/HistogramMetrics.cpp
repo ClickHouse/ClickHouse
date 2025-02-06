@@ -1,4 +1,4 @@
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/Labels.h>
 

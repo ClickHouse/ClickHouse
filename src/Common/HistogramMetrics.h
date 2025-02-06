@@ -40,7 +40,7 @@ namespace HistogramMetrics
     APPLY_TO_METRICS(M)
     #undef M
 
-    template <Metric m> 
+    template <Metric m>
     struct MetricTraits;
 
     #define M(NAME, DOCUMENTATION, BUCKETS, LABEL_NAME) \
@@ -68,13 +68,14 @@ namespace HistogramMetrics
     };
 
     template <Metric m, auto label>
-    void observe(Value value) {
+    void observe(Value value)
+    {
         const auto & buckets = MetricTraits<m>::buckets;
         const size_t bucket_idx = std::distance(
             buckets.begin(),
             std::lower_bound(buckets.begin(), buckets.end(), value)
         );
-        
+
         MetricDataHolder<m, label>::counters[bucket_idx].fetch_add(1);
         MetricDataHolder<m, label>::sum.fetch_add(value);
     }
