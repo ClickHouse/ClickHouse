@@ -165,5 +165,22 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
   */
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
 
+/** Does a node or its children have a dependency on column
+  * NOT from a specific table expression.
+  */
+bool hasUnknownColumn(
+    const QueryTreeNodePtr & node,
+    QueryTreeNodePtr table_expression);
+
+/** Suppose we have a table x with columns a, c, d and
+  * a an expression like x.a > 2 AND y.b > 3 AND x.c + 1 == x.d
+  * This method will remove the part y.b > 3 from it since it depends
+  * on unknown columns from a different table.
+  */
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & replacement_table_expression,
+    const ContextPtr & context);
+
 
 }

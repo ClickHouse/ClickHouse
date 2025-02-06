@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
@@ -32,6 +33,13 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event ObjectStorageQueueCommitRequests;
+    extern const Event ObjectStorageQueueRemovedObjects;
+    extern const Event ObjectStorageQueueInsertIterations;
+}
 
 namespace DB
 {
@@ -549,6 +557,10 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
+        /// FIXME:
+        /// it is possible that MV is dropped just before we start the insert,
+        /// but in this case we would not throw any exception, so
+        /// data will not be inserted anywhere.
         InterpreterInsertQuery interpreter(
             insert,
             queue_context,
@@ -593,6 +605,8 @@ bool StorageObjectStorageQueue::streamToViews()
         std::atomic_size_t rows = 0;
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
+
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
@@ -600,12 +614,12 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            commit(/* insert_succeeded */false, sources, getCurrentExceptionMessage(true));
+            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true));
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        commit(/* insert_succeeded */true, sources);
+        commit(/* insert_succeeded */true, rows, sources);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
@@ -616,6 +630,7 @@ bool StorageObjectStorageQueue::streamToViews()
 
 void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
+    size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     const std::string & exception_message) const
 {
@@ -636,7 +651,10 @@ void StorageObjectStorageQueue::commit(
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
         object_storage->removeObjectsIfExist(successful_objects);
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects);
     }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests);
 
     auto zk_client = getZooKeeper();
     Coordination::Responses responses;
@@ -649,8 +667,8 @@ void StorageObjectStorageQueue::commit(
         source->finalizeCommit(insert_succeeded, exception_message);
 
     LOG_TRACE(
-        log, "Successfully committed {} requests for {} sources",
-        requests.size(), sources.size());
+        log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
+        requests.size(), sources.size(), inserted_rows, successful_objects.size());
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
