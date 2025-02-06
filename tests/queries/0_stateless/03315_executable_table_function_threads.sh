@@ -38,4 +38,4 @@ from executable(
   )
   , settings command_read_timeout=600000,command_write_timeout=600000
 )
-settings max_threads=4, max_execution_time = 30;" -- --user_scripts_path=$SCRIPTS_DIR 
+settings max_threads=4, max_execution_time = 60;" -- --user_scripts_path=$SCRIPTS_DIR 
