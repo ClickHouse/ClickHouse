@@ -29,6 +29,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
