@@ -23,15 +23,15 @@ node2 = cluster.add_instance(
     stay_alive=True,
 )
 
+nodes = [node1, node2]
+
 
 def fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
             """
-                DROP DATABASE IF EXISTS test SYNC;
                 CREATE DATABASE test;
-
-                DROP USER IF EXISTS test_user_xnhds;
+                
                 -- create user without any permissions
                 CREATE USER test_user_xnhds;
                 REVOKE ALL ON *.* FROM test_user_xnhds;
@@ -41,6 +41,16 @@ def fill_nodes(nodes, shard):
                 SETTINGS database_replicated_allow_replicated_engine_arguments=2;""".format(
                 shard=shard, replica=node.name
             )
+        )
+
+
+def clean_up(nodes):
+    for node in nodes:
+        node.query(
+            """
+                DROP DATABASE IF EXISTS test SYNC;
+                DROP USER IF EXISTS test_user_xnhds;
+            """
         )
 
 
@@ -59,49 +69,54 @@ def check_exists(zk, path):
 
 
 def test_drop_permissions(start_cluster):
-    fill_nodes([node1, node2], 1)
-    node1.query(
-        "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
-    )
+    try:
+        fill_nodes(nodes, 1)
 
-    # check metadata for replica node2 in keeper
-    # this the node replica that we are going to drop later on
-    zk = cluster.get_kazoo_client("zoo1")
-    # check that the path from zk exists for the replica node2
+        node1.query(
+            "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
+        )
 
-    exists_before = check_exists(
-        zk, "/clickhouse/tables/test/1/replicated/test_table/replicas/node2"
-    )
-    assert exists_before != None
+        # check metadata for replica node2 in keeper
+        # this the node replica that we are going to drop later on
+        zk = cluster.get_kazoo_client("zoo1")
+        # check that the path from zk exists for the replica node2
 
-    # we won't be able to drop an active replica
-    assert (
-        "DB::Exception: Can't drop replica: node2, because it's active."
-        in node1.query_and_get_error("SYSTEM DROP REPLICA 'node2'")
-    )
+        exists_before = check_exists(
+            zk, "/clickhouse/tables/test/1/replicated/test_table/replicas/node2"
+        )
+        assert exists_before != None
 
-    # stop the server on replica node2 and assume it's gone forever
-    # this will allow us to drop this replica
-    node2.stop_clickhouse()
+        # we won't be able to drop an active replica
+        assert (
+            "DB::Exception: Can't drop replica: node2, because it's active."
+            in node1.query_and_get_error("SYSTEM DROP REPLICA 'node2'")
+        )
 
-    # drop replica node2 from replica node1 using user without privileges
-    got_error = node1.query_and_get_error(
-        "SYSTEM DROP REPLICA 'node2'", user="test_user_xnhds"
-    )
-    # this operation should not fail silently
-    assert (
-        "DB::Exception: Access denied for SYSTEM DROP REPLICA. Not enough permissions to drop these databases:"
-        in got_error
-    )
+        # stop the server on replica node2 and assume it's gone forever
+        # this will allow us to drop this replica
+        node2.stop_clickhouse()
 
-    # drop replica node2 from replica node1 but using user with privileges
-    # this will remove all replicated table metadata belonging to node2 from keeper
-    node1.query("SYSTEM DROP REPLICA 'node2'")
+        # drop replica node2 from replica node1 using user without privileges
+        got_error = node1.query_and_get_error(
+            "SYSTEM DROP REPLICA 'node2'", user="test_user_xnhds"
+        )
+        # this operation should not fail silently
+        assert (
+            "DB::Exception: Access denied for SYSTEM DROP REPLICA. Not enough permissions to drop these databases:"
+            in got_error
+        )
 
-    # check that the metadata for replica node2 was removed from keeper
-    exists_after = check_exists(
-        zk, " /clickhouse/tables/test/1/replicated/test_table/replicas/node2"
-    )
-    assert exists_after == None
+        # drop replica node2 from replica node1 but using user with privileges
+        # this will remove all replicated table metadata belonging to node2 from keeper
+        node1.query("SYSTEM DROP REPLICA 'node2'")
 
-    node2.start_clickhouse()
+        # check that the metadata for replica node2 was removed from keeper
+        exists_after = check_exists(
+            zk, " /clickhouse/tables/test/1/replicated/test_table/replicas/node2"
+        )
+        assert exists_after == None
+
+        node2.start_clickhouse()
+
+    finally:
+        clean_up(nodes)
