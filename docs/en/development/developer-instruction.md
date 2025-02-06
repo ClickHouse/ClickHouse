@@ -112,7 +112,7 @@ A few things to know when using CLion to develop ClickHouse:
 
 [KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse.
 While KDevelop is a great IDE, it is sometimes unstable.
-If KDevelop crashes when opening a project, you should click the "Stop All" button as soon as it has opened the list of project’s files.
+If KDevelop crashes when opening a project, you should click the "Stop All" button as soon as it has opened the list of project's files.
 After doing so, KDevelop should be fine to work with.
 
 Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux).
@@ -120,7 +120,7 @@ If you are using VS Code, we recommend using the [clangd extension](https://mark
 
 ## Create A Pull Request
 
-Navigate to your fork repository in GitHub’s UI.
+Navigate to your fork repository in GitHub's UI.
 If you have been developing in a branch, you need to select that branch.
 There will be a "Pull request" button located on the screen.
 In essence, this means "create a request for accepting my changes into the main repository".

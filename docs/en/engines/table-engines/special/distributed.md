@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 #### cluster
 
-`cluster` - the cluster name in the server’s config file
+`cluster` - the cluster name in the server's config file
 
 #### database
 
@@ -237,9 +237,9 @@ If `internal_replication` is set to `false` (the default), data is written to al
 
 To select the shard that a row of data is sent to, the sharding expression is analyzed, and its remainder is taken from dividing it by the total weight of the shards. The row is sent to the shard that corresponds to the half-interval of the remainders from `prev_weights` to `prev_weights + weight`, where `prev_weights` is the total weight of the shards with the smallest number, and `weight` is the weight of this shard. For example, if there are two shards, and the first has a weight of 9 while the second has a weight of 10, the row will be sent to the first shard for the remainders from the range \[0, 9), and to the second for the remainders from the range \[9, 19).
 
-The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression `rand()` for random distribution of data, or `UserID` for distribution by the remainder from dividing the user’s ID (then the data of a single user will reside on a single shard, which simplifies running `IN` and `JOIN` by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function e.g. `intHash64(UserID)`.
+The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression `rand()` for random distribution of data, or `UserID` for distribution by the remainder from dividing the user's ID (then the data of a single user will reside on a single shard, which simplifies running `IN` and `JOIN` by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function e.g. `intHash64(UserID)`.
 
-A simple remainder from the division is a limited solution for sharding and isn’t always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area rather than using entries in `Distributed` tables.
+A simple remainder from the division is a limited solution for sharding and isn't always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area rather than using entries in `Distributed` tables.
 
 You should be concerned about the sharding scheme in the following cases:
 

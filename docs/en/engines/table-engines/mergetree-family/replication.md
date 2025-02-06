@@ -51,7 +51,7 @@ ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/index.md) for sto
 To use replication, set parameters in the [zookeeper](/docs/en/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
 
 :::note
-Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
 :::
 
 Example of setting the addresses of the ClickHouse Keeper cluster:
@@ -111,7 +111,7 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
-If ZooKeeper is not set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
+If ZooKeeper is not set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
 
 ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/en/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/en/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
 
@@ -224,7 +224,7 @@ Be careful with table renames when using these built-in substitutions. The path 
 
 The replica name identifies different replicas of the same table. You can use the server name for this, as in the example. The name only needs to be unique within each shard.
 
-You can define the parameters explicitly instead of using substitutions. This might be convenient for testing and for configuring small clusters. However, you can’t use distributed DDL queries (`ON CLUSTER`) in this case.
+You can define the parameters explicitly instead of using substitutions. This might be convenient for testing and for configuring small clusters. However, you can't use distributed DDL queries (`ON CLUSTER`) in this case.
 
 When working with large clusters, we recommend using substitutions because they reduce the probability of error.
 
@@ -334,7 +334,7 @@ Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data
 
 Use [ATTACH TABLE ... AS NOT REPLICATED](/docs/en/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
 
-Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
+Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table's data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 

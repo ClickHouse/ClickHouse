@@ -56,7 +56,7 @@ If the number of rows is greater than or equal to `10,000`, the message "Showed 
 This format is only appropriate for outputting a query result, but not for parsing data.
 :::
 
-The Pretty format supports outputting total values (when using `WITH TOTALS`) and extremes (when 'extremes’ is set to 1). 
+The Pretty format supports outputting total values (when using `WITH TOTALS`) and extremes (when 'extremes' is set to 1). 
 In these cases, total values and extreme values are output after the main data, in separate tables. 
 This is shown in the following example which uses the [`PrettyCompact`](./PrettyCompact.md) format:
 

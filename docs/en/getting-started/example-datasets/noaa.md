@@ -117,7 +117,7 @@ FROM file('*.csv.gz', CSV, 'station_id String, date String, measurement String, 
 2679264563
 ```
 
-With over 2.6 billion rows, this isn’t a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
+With over 2.6 billion rows, this isn't a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
 
 
 ### Pivot data

@@ -82,7 +82,7 @@ All of the parameters except `sign` and `version` have the same meaning as in `M
 
 Consider a situation where you need to save continually changing data for some object. It is reasonable to have one row for an object and update the row whenever there are changes. However, the update operation is expensive and slow for a DBMS because it requires rewriting the data in the storage. Update is not acceptable if you need to write data quickly, but you can write the changes to an object sequentially as follows.
 
-Use the `Sign` column when writing the row. If `Sign = 1` it means that the row is a state of an object (let’s call it the "state" row). If `Sign = -1` it indicates the cancellation of the state of an object with the same attributes (let’s call it the "cancel" row). Also use the `Version` column, which should identify each state of an object with a separate number.
+Use the `Sign` column when writing the row. If `Sign = 1` it means that the row is a state of an object (let's call it the "state" row). If `Sign = -1` it indicates the cancellation of the state of an object with the same attributes (let's call it the "cancel" row). Also use the `Version` column, which should identify each state of an object with a separate number.
 
 For example, we want to calculate how many pages users visited on some site and how long they were there. At some point in time we write the following row with the state of user activity:
 
@@ -136,7 +136,7 @@ ClickHouse does not guarantee that all of the rows with the same primary key wil
 
 To finalize collapsing, write a query with a `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and add `HAVING sum(Sign) > 0`.
 
-The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregate `uniq` can be calculated if an object has at least one non-collapsed state. The aggregates `min` and `max` can’t be calculated because `VersionedCollapsingMergeTree` does not save the history of values of collapsed states.
+The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregate `uniq` can be calculated if an object has at least one non-collapsed state. The aggregates `min` and `max` can't be calculated because `VersionedCollapsingMergeTree` does not save the history of values of collapsed states.
 
 If you need to extract the data with "collapsing" but without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with large tables.
 
@@ -230,4 +230,4 @@ SELECT * FROM UAct FINAL
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-This is a very inefficient way to select data. Don’t use it for large tables.
+This is a very inefficient way to select data. Don't use it for large tables.

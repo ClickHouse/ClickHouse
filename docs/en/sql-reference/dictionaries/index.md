@@ -682,7 +682,7 @@ When searching for a dictionary, the cache is searched first. For each block of 
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
-For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
 
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](../../operations/system-tables/dictionaries.md) table.
 
@@ -1136,7 +1136,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 ### Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -1295,7 +1295,7 @@ Setting fields:
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
 :::
 
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
 
 If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
 
@@ -1307,7 +1307,7 @@ When connecting to the database through the ODBC driver connection parameter `Se
 
 **Example of insecure use**
 
-Let’s configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
 ``` text
 [gregtest]
@@ -2474,8 +2474,8 @@ ClickHouse contains a built-in feature for working with a geobase.
 
 This allows you to:
 
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
+- Use a region's ID to get its name in the desired language.
+- Use a region's ID to get the ID of a city, area, federal district, country, or continent.
 - Check whether a region is part of another region.
 - Get a chain of parent regions.
 
@@ -2502,9 +2502,9 @@ You can also create these files yourself. The file format is as follows:
 `regions_names_*.txt`: TabSeparated (no header), columns:
 
 - region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+- region name (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
-A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
+A flat array is used for storing in RAM. For this reason, IDs shouldn't be more than a million.
 
 Dictionaries can be updated without restarting the server. However, the set of available dictionaries is not updated.
 For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
@@ -2513,4 +2513,4 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
+There are also functions for working with OS identifiers and search engines, but they shouldn't be used.

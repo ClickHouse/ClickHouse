@@ -7,7 +7,7 @@ sidebar_label: Embedded Dictionaries
 # Functions for Working with Embedded Dictionaries
 
 :::note
-In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
+In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can't be loaded, an exception is thrown.
 
 As such, the examples shown in this section will throw an exception in [ClickHouse Fiddle](https://fiddle.clickhouse.com/) and in quick release and production deployments by default, unless first configured.
 :::
@@ -18,7 +18,7 @@ For information about creating reference lists, see the section ["Dictionaries"]
 
 ClickHouse supports working with multiple alternative geobases (regional hierarchies) simultaneously, in order to support various perspectives on which countries certain regions belong to.
 
-The 'clickhouse-server’ config specifies the file with the regional hierarchy:
+The 'clickhouse-server' config specifies the file with the regional hierarchy:
 
 ```<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>```
 
@@ -126,7 +126,7 @@ Result:
 
 ### regionToArea
 
-Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as ['regionToCity’](#regiontocity).
+Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as ['regionToCity'](#regiontocity).
 
 **Syntax**
 
@@ -178,7 +178,7 @@ Result:
 
 ### regionToDistrict
 
-Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as 'regionToCity’.
+Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
 **Syntax**
 
@@ -230,7 +230,7 @@ Result:
 
 ### regionToCountry
 
-Converts a region to a country (type 3 in the geobase). In every other way, this function is the same as 'regionToCity’.
+Converts a region to a country (type 3 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
 **Syntax**
 
@@ -278,7 +278,7 @@ Result:
 
 ### regionToContinent
 
-Converts a region to a continent (type 1 in the geobase). In every other way, this function is the same as 'regionToCity’.
+Converts a region to a continent (type 1 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
 **Syntax**
 

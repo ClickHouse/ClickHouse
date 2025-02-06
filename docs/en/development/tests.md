@@ -212,7 +212,7 @@ Unit tests (and other test programs) are located in `tests` subdirectories acros
 To run unit tests, type `ninja test`.
 Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
 
-It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+It's not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
 
 You can run individual gtest checks by calling the executable directly, for example:
 
@@ -468,7 +468,7 @@ To check for some common style violations, you can use `utils/check-style` scrip
 To force proper style of your code, you can use `clang-format`.
 File `.clang-format` is located at the sources root.
 It mostly corresponding with our actual code style.
-But it’s not recommended to apply `clang-format` to existing files because it makes formatting worse.
+But it's not recommended to apply `clang-format` to existing files because it makes formatting worse.
 You can use `clang-format-diff` tool that you can find in clang source repository.
 
 Alternatively you can try `uncrustify` tool to reformat your code.

@@ -72,7 +72,7 @@ Result:
 
 ## hex
 
-Returns a string containing the argument’s hexadecimal representation.
+Returns a string containing the argument's hexadecimal representation.
 
 Alias: `HEX`.
 
@@ -183,7 +183,7 @@ unhex(arg)
 
 - `arg` — A string containing any number of hexadecimal digits. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
 
-Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
+Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
@@ -219,7 +219,7 @@ Result:
 
 ## bin
 
-Returns a string containing the argument’s binary representation.
+Returns a string containing the argument's binary representation.
 
 **Syntax**
 
@@ -326,7 +326,7 @@ For a numeric argument `unbin()` does not return the inverse of `bin()`. If you 
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
 :::
 
-Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown).
+Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn't thrown).
 
 **Arguments**
 

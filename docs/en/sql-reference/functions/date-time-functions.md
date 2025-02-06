@@ -2890,7 +2890,7 @@ Result:
 
 ## today {#today}
 
-Returns the current date at moment of query analysis. It is the same as 'toDate(now())’ and has aliases: `curdate`, `current_date`.
+Returns the current date at moment of query analysis. It is the same as 'toDate(now())' and has aliases: `curdate`, `current_date`.
 
 **Syntax**
 
@@ -2928,8 +2928,8 @@ Running the query above on the 3rd of March 2024 would have returned the followi
 
 ## yesterday {#yesterday}
 
-Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
-The same as 'today() - 1’.
+Accepts zero arguments and returns yesterday's date at one of the moments of query analysis.
+The same as 'today() - 1'.
 
 ## timeSlot
 
@@ -4298,9 +4298,9 @@ Result:
 
 ## timeSlots
 
-For a time interval starting at 'StartTime’ and continuing for 'Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the 'Size’ in seconds. 'Size’ is an optional parameter set to 1800 (30 minutes) by default.
+For a time interval starting at 'StartTime' and continuing for 'Duration' seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the 'Size' in seconds. 'Size' is an optional parameter set to 1800 (30 minutes) by default.
 This is necessary, for example, when searching for pageviews in the corresponding session.
-Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
+Accepts DateTime and DateTime64 as 'StartTime' argument. For DateTime, 'Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
 Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
 
 **Syntax**

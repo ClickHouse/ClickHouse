@@ -310,7 +310,7 @@ ENGINE = CollapsingMergeTree(Sign)
 ORDER BY UserID
 ```
 
-Let’s test the approach by inserting data into our table. 
+Let's test the approach by inserting data into our table. 
 
 For examples or small tables, it is, however, acceptable:
 

@@ -277,7 +277,7 @@ tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
-For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+For production environments, it's recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 
 ### From Docker Image {#from-docker-image}
 
@@ -296,7 +296,7 @@ Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
-You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
+You'll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
 ```
 /var/lib/clickhouse/data/default/

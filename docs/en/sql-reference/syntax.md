@@ -417,7 +417,7 @@ SELECT (1 AS n) + 2, n`.
 SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 ```
 
-- Be careful with aliases that are the same as column or table names. Let’s consider the following example:
+- Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
 ``` sql
 CREATE TABLE t
