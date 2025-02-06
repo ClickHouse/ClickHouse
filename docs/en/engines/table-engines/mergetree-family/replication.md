@@ -273,7 +273,7 @@ Note that ClickHouse does not perform any destructive actions such as automatica
 
 When the server starts (or establishes a new session with ClickHouse Keeper), it only checks the quantity and sizes of all files. If the file sizes match but bytes have been changed somewhere in the middle, this is not detected immediately, but only when attempting to read the data for a `SELECT` query. The query throws an exception about a non-matching checksum or size of a compressed block. In this case, data parts are added to the verification queue and copied from the replicas if necessary.
 
-If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by “pushing a button”.
+If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by "pushing a button".
 
 To start recovery, create the node `/path_to_table/replica_name/flags/force_restore_data` in ClickHouse Keeper with any content, or run the command to restore all replicated tables:
 
@@ -294,7 +294,7 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 Then start the server (restart, if it is already running). Data will be downloaded from replicas.
 
-An alternative recovery option is to delete information about the lost replica from ClickHouse Keeper (`/path_to_table/replica_name`), then create the replica again as described in “[Creating replicated tables](#creating-replicated-tables)”.
+An alternative recovery option is to delete information about the lost replica from ClickHouse Keeper (`/path_to_table/replica_name`), then create the replica again as described in "[Creating replicated tables](#creating-replicated-tables)".
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 

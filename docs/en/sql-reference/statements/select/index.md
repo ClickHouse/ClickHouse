@@ -141,7 +141,7 @@ In addition to results, you can also get minimum and maximum values for the resu
 
 An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in `XML`, `JSON*`, `TabSeparated*`, `CSV*`, `Vertical`, `Template` and `Pretty*` [formats](../../../interfaces/formats.md), separate from the other rows. They are not output for other formats.
 
-In `JSON*` and `XML` formats, the extreme values are output in a separate ‘extremes’ field. In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, and after ‘totals’ if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after `totals` if present. In `Template` format the extreme values are output according to specified template.
+In `JSON*` and `XML` formats, the extreme values are output in a separate 'extremes’ field. In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, and after 'totals’ if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after `totals` if present. In `Template` format the extreme values are output according to specified template.
 
 Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
 
@@ -169,7 +169,7 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 - `max_bytes_before_external_group_by`
 - `max_bytes_ratio_before_external_group_by`
 
-For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
+For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
 ## SELECT modifiers
 

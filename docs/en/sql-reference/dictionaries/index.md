@@ -24,7 +24,7 @@ ClickHouse supports:
 If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
 :::
 
-You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](#dictionary-sources)”.
+You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Dictionary Sources](#dictionary-sources)".
 
 ClickHouse:
 
@@ -1186,7 +1186,7 @@ Example of settings:
 Setting fields:
 
 - `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` — The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+- `format` — The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 - `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
 - `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
 - `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
@@ -1239,7 +1239,7 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 - `credentials` – Basic HTTP authentication. Optional parameter.
 - `user` – Username required for the authentication.
 - `password` – Password required for the authentication.
@@ -2479,7 +2479,7 @@ This allows you to:
 - Check whether a region is part of another region.
 - Get a chain of parent regions.
 
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
+All the functions support "translocality," the ability to simultaneously use different perspectives on region ownership. For more information, see the section "Functions for working with web analytics dictionaries".
 
 The internal dictionaries are disabled in the default package.
 To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.

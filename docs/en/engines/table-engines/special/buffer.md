@@ -66,7 +66,7 @@ Example:
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the ‘merge.hits’ table. A single buffer is created and the data is flushed if either:
+Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the 'merge.hits’ table. A single buffer is created and the data is flushed if either:
 - 100 seconds have passed since the last flush (`max_time`) or
 - 1 million rows have been written (`max_rows`) or
 - 100 MB of data have been written (`max_bytes`) or
@@ -98,7 +98,7 @@ When adding data to a Buffer table, one of the buffers is locked. This causes de
 
 Data that is inserted into a Buffer table may end up in the subordinate table in a different order and in different blocks. Because of this, a Buffer table is difficult to use for writing to a CollapsingMergeTree correctly. To avoid problems, you can set `num_layers` to 1.
 
-If the destination table is replicated, some expected characteristics of replicated tables are lost when writing to a Buffer table. The random changes to the order of rows and sizes of data parts cause data deduplication to quit working, which means it is not possible to have a reliable ‘exactly once’ write to replicated tables.
+If the destination table is replicated, some expected characteristics of replicated tables are lost when writing to a Buffer table. The random changes to the order of rows and sizes of data parts cause data deduplication to quit working, which means it is not possible to have a reliable 'exactly once’ write to replicated tables.
 
 Due to these disadvantages, we can only recommend using a Buffer table in rare cases.
 

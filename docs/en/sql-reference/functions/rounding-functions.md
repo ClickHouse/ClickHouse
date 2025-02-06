@@ -74,7 +74,7 @@ Alias: `ceil`
 
 ## truncate
 
-Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`‘s.
+Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`'s.
 
 **Syntax**
 

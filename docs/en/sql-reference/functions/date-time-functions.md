@@ -998,7 +998,7 @@ Result:
 ```
 
 :::note
-The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception, or do “natural” overflow.
+The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception, or do "natural" overflow.
 :::
 
 ## toLastDayOfMonth
@@ -2063,13 +2063,13 @@ The following table describes how the mode argument works.
 | 8    | Sunday            | 1-53  | contains January 1            |
 | 9    | Monday            | 1-53  | contains January 1            |
 
-For mode values with a meaning of “with 4 or more days this year,” weeks are numbered according to ISO 8601:1988:
+For mode values with a meaning of "with 4 or more days this year," weeks are numbered according to ISO 8601:1988:
 
 - If the week containing January 1 has 4 or more days in the new year, it is week 1.
 
 - Otherwise, it is the last week of the previous year, and the next week is week 1.
 
-For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1.
+For mode values with a meaning of "contains January 1", the week contains January 1 is week 1.
 It does not matter how many days in the new year the week contained, even if it contained only one day.
 I.e. if the last week of December contains January 1 of the next year, it will be week 1 of the next year.
 
@@ -2890,7 +2890,7 @@ Result:
 
 ## today {#today}
 
-Returns the current date at moment of query analysis. It is the same as ‘toDate(now())’ and has aliases: `curdate`, `current_date`.
+Returns the current date at moment of query analysis. It is the same as 'toDate(now())’ and has aliases: `curdate`, `current_date`.
 
 **Syntax**
 
@@ -2929,7 +2929,7 @@ Running the query above on the 3rd of March 2024 would have returned the followi
 ## yesterday {#yesterday}
 
 Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
-The same as ‘today() - 1’.
+The same as 'today() - 1’.
 
 ## timeSlot
 
@@ -4298,7 +4298,7 @@ Result:
 
 ## timeSlots
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
+For a time interval starting at 'StartTime’ and continuing for 'Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the 'Size’ in seconds. 'Size’ is an optional parameter set to 1800 (30 minutes) by default.
 This is necessary, for example, when searching for pageviews in the corresponding session.
 Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
 Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
@@ -4353,7 +4353,7 @@ Returns time and date values according to the determined format.
 
 **Replacement fields**
 
-Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
+Using replacement fields, you can define a pattern for the resulting string. "Example" column shows formatting result for `2018-01-02 22:33:44`.
 
 | Placeholder | Description                                                                                                                                                                                         | Example   |
 |----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
@@ -4377,7 +4377,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %l       | hour in 12h format (01-12), see 'Note 4' below                                                                                                                                                      | 09        |
 | %m       | month as an integer number (01-12)                                                                                                                                                                  | 01        |
 | %M       | full month name (January-December), see 'Note 3' below                                                                                                                                              | January   |
-| %n       | new-line character (‘’)                                                                                                                                                                             |           |
+| %n       | new-line character ('’)                                                                                                                                                                             |           |
 | %p       | AM or PM designation                                                                                                                                                                                | PM        |
 | %Q       | Quarter (1-4)                                                                                                                                                                                       | 1         |
 | %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p                                                                                                                                                    | 10:30 PM  |

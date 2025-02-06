@@ -11,7 +11,7 @@ The HTTP interface lets you use ClickHouse on any platform from any programming 
 By default, `clickhouse-server` listens for HTTP on port 8123 (this can be changed in the config).
 HTTPS can be enabled as well with port 8443 by default.
 
-If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#http_server_default_response) default value “Ok.” (with a line feed at the end)
+If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#http_server_default_response) default value "Ok." (with a line feed at the end)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -31,7 +31,7 @@ Web UI is designed for professionals like you.
 
 ![Web UI](../images/play.png)
 
-In health-check scripts use `GET /ping` request. This handler always returns “Ok.” (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
+In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
 ``` bash
 $ curl 'http://localhost:8123/ping'
@@ -40,12 +40,12 @@ $ curl 'http://localhost:8123/replicas_status'
 Ok.
 ```
 
-Send the request as a URL ‘query’ parameter, or as a POST. Or send the beginning of the query in the ‘query’ parameter, and the rest in the POST (we’ll explain later why this is necessary). The size of the URL is limited to 1 MiB by default, this can be changed with the `http_max_uri_size` setting.
+Send the request as a URL 'query’ parameter, or as a POST. Or send the beginning of the query in the 'query’ parameter, and the rest in the POST (we’ll explain later why this is necessary). The size of the URL is limited to 1 MiB by default, this can be changed with the `http_max_uri_size` setting.
 
 If successful, you receive the 200 response code and the result in the response body.
 If an error occurs, you receive the 500 response code and an error description text in the response body.
 
-When using the GET method, ‘readonly’ is set. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body or in the URL parameter.
+When using the GET method, 'readonly’ is set. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body or in the URL parameter.
 
 Examples:
 
@@ -96,7 +96,7 @@ By default, data is returned in [TabSeparated](formats.md#tabseparated) format.
 
 You use the FORMAT clause of the query to request any other format.
 
-Also, you can use the ‘default_format’ URL parameter or the ‘X-ClickHouse-Format’ header to specify a default format other than TabSeparated.
+Also, you can use the 'default_format’ URL parameter or the 'X-ClickHouse-Format’ header to specify a default format other than TabSeparated.
 
 ``` bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -129,7 +129,7 @@ Data can be sent separately from the query:
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-You can specify any data format. The ‘Values’ format is the same as what is used when writing INSERT INTO t VALUES:
+You can specify any data format. The 'Values’ format is the same as what is used when writing INSERT INTO t VALUES:
 
 ``` bash
 $ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
@@ -223,7 +223,7 @@ $ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 
 ## Default Database {#default-database}
 
-You can use the ‘database’ URL parameter or the ‘X-ClickHouse-Database’ header to specify the default database.
+You can use the 'database’ URL parameter or the 'X-ClickHouse-Database’ header to specify the default database.
 
 ``` bash
 $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
@@ -239,7 +239,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 9
 ```
 
-By default, the database that is registered in the server settings is used as the default database. By default, this is the database called ‘default’. Alternatively, you can always specify the database using a dot before the table name.
+By default, the database that is registered in the server settings is used as the default database. By default, this is the database called 'default’. Alternatively, you can always specify the database using a dot before the table name.
 
 The username and password can be indicated in one of three ways:
 
@@ -251,7 +251,7 @@ The username and password can be indicated in one of three ways:
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-2.  In the ‘user’ and ‘password’ URL parameters (*We do not recommend using this method as the parameter might be logged by web proxy and cached in the browser*). Example:
+2.  In the 'user’ and 'password’ URL parameters (*We do not recommend using this method as the parameter might be logged by web proxy and cached in the browser*). Example:
 
 <!-- -->
 
@@ -259,7 +259,7 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-3.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+3.  Using 'X-ClickHouse-User’ and 'X-ClickHouse-Key’ headers. Example:
 
 <!-- -->
 
@@ -286,7 +286,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 9
 ```
 
-For information about other parameters, see the section “SET”.
+For information about other parameters, see the section "SET".
 
 ## Using ClickHouse sessions in the HTTP protocol 
 
@@ -309,11 +309,11 @@ Possible header fields:
 - `written_bytes` — Volume of data written in bytes.
 
 Running requests do not stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server-side, and using the network might be ineffective.
-The optional ‘query_id’ parameter can be passed as the query ID (any string). For more information, see the section “Settings, replace_running_query”.
+The optional 'query_id’ parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
 
-The optional ‘quota_key’ parameter can be passed as the quota key (any string). For more information, see the section “Quotas”.
+The optional 'quota_key’ parameter can be passed as the quota key (any string). For more information, see the section "Quotas".
 
-The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section “External data for query processing”.
+The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
 ## Response Buffering {#response-buffering}
 
@@ -528,7 +528,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
 
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
+    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://’ or 'config://’, find the content from the file or configuration sends to client.
 
 Next are the configuration methods for different `type`.
 

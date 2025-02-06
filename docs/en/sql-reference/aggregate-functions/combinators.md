@@ -18,13 +18,13 @@ With conditional aggregate functions, you can calculate aggregates for several c
 
 ## -Array
 
-The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the ‘Array(T)’ type (arrays) instead of ‘T’ type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
+The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)’ type (arrays) instead of 'T’ type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
-Example 1: `sumArray(arr)` - Totals all the elements of all ‘arr’ arrays. In this example, it could have been written more simply: `sum(arraySum(arr))`.
+Example 1: `sumArray(arr)` - Totals all the elements of all 'arr’ arrays. In this example, it could have been written more simply: `sum(arraySum(arr))`.
 
-Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘arr’ arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it’s not always possible to add ‘arrayJoin’ to a query.
+Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr’ arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it’s not always possible to add 'arrayJoin’ to a query.
 
--If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
+-If and -Array can be combined. However, 'Array’ must come first, then 'If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond’ argument won’t be an array.
 
 ## -Map
 

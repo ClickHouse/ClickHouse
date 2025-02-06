@@ -252,7 +252,7 @@ Downloads a partition from another server. This query only works for the replica
 
 The query does the following:
 
-1.  Downloads the partition|part from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
+1.  Downloads the partition|part from the specified shard. In 'path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
 2.  Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#attach-partitionpart) query to add the data to the table.
 
 For example:

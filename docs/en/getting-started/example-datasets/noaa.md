@@ -99,7 +99,7 @@ Summarizing the format documentation and the columns in order:
     - WSFG - Peak gust wind speed (tenths of meters per second)
     - WT** = Weather Type where ** defines the weather type. Full list of weather types here.
 - DATA VALUE = 5 character data value for ELEMENT i.e. the value of the measurement.
-- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to “P” - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
+- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to "P" - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
 - Q-FLAG is the measurement quality flag with 14 possible values. We are only interested in data with an empty value i.e. it did not fail any quality assurance checks.
 - S-FLAG is the source flag for the observation. Not useful for our analysis and ignored.
 - OBS-TIME = 4-character time of observation in hour-minute format (i.e. 0700 =7:00 am). Typically not present in older data. We ignore this for our purposes.

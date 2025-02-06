@@ -264,13 +264,13 @@ The example is borrowed from the resource http://home.tamk.fi/~jaalto/course/cod
 
 **7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
 
-**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered “documentation”.
+**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered "documentation".
 
 Note: You can use Doxygen to generate documentation from these comments. But Doxygen is not generally used because it is more convenient to navigate the code in the IDE.
 
 **9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
 
-**10.** For commenting out code, use basic comments, not “documenting” comments.
+**10.** For commenting out code, use basic comments, not "documenting" comments.
 
 **11.** Delete the commented out parts of the code before committing.
 

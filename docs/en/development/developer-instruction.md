@@ -112,7 +112,7 @@ A few things to know when using CLion to develop ClickHouse:
 
 [KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse.
 While KDevelop is a great IDE, it is sometimes unstable.
-If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files.
+If KDevelop crashes when opening a project, you should click the "Stop All" button as soon as it has opened the list of project’s files.
 After doing so, KDevelop should be fine to work with.
 
 Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux).
@@ -122,21 +122,21 @@ If you are using VS Code, we recommend using the [clangd extension](https://mark
 
 Navigate to your fork repository in GitHub’s UI.
 If you have been developing in a branch, you need to select that branch.
-There will be a “Pull request” button located on the screen.
-In essence, this means “create a request for accepting my changes into the main repository”.
+There will be a "Pull request" button located on the screen.
+In essence, this means "create a request for accepting my changes into the main repository".
 
 A pull request can be created even if the work is not completed yet.
-In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later.
+In this case please put the word "WIP" (work in progress) at the beginning of the title, it can be changed later.
 This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests.
 It is important that you provide a brief description of your changes, it will later be used for generating release changelog.
 
-Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”.
+Testing will commence as soon as ClickHouse employees label your PR with a tag "can be tested".
 The results of some first checks (e.g. code style) will come in within several minutes.
 Build check results will arrive within half an hour.
 The main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually.
-To retrieve these builds click the “Details” link next to “Builds” entry in the list of checks.
+To retrieve these builds click the "Details" link next to "Builds" entry in the list of checks.
 There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
 ## Write Documentation

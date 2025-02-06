@@ -375,7 +375,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section [“Configuration Files”](/docs/en/operations/configuration-files.md).
+For more information, see the section ["Configuration Files"](/docs/en/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -386,7 +386,7 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section [“Command-line client”](/docs/en/interfaces/cli.md).
+For more information, see the section ["Command-line client"](/docs/en/interfaces/cli.md).
 
 Example:
 

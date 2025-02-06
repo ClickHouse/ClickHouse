@@ -372,7 +372,7 @@ ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/L
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
 LibFuzzer is used for isolated fuzz testing of library code.
-Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
+Fuzzers are implemented as part of test code and have "_fuzzer" name postfixes.
 Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`.
 LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
@@ -498,4 +498,4 @@ We run tests with [GitHub Actions](https://github.com/features/actions).
 Build jobs and tests are run in Sandbox on per commit basis.
 Resulting packages and test results are published in GitHub and can be downloaded by direct links.
 Artifacts are stored for several months.
-When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+When you send a pull request on GitHub, we tag it as "can be tested" and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
