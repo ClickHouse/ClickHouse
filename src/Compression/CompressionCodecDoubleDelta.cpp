@@ -512,7 +512,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
         break;
     }
 
-    return 1 + 1 + compressed_size;
+    return 1 + 1 + compressed_size + UInt32(bytes_to_skip);
 }
 
 void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
