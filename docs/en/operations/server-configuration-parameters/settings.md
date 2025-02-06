@@ -43,7 +43,7 @@ If the setting is not enabled by default on your environment, depending on how C
 
 To manually turn on asynchronous metric logs history collection [`system.asynchronous_metric_log`](../../operations/system-tables/asynchronous_metric_log.md), create `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
      <asynchronous_metric_log>
         <database>system</database>
@@ -62,7 +62,7 @@ To manually turn on asynchronous metric logs history collection [`system.asynchr
 
 To disable `asynchronous_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_asynchronous_metric_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
 <asynchronous_metric_log remove="1" />
 </clickhouse>
@@ -607,7 +607,7 @@ This limitation does not restrict drop table and truncate table, see [max_table_
 
 **Example**
 
-``` xml
+```xml
 <max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
@@ -724,7 +724,7 @@ If the number of attached databases exceeds the specified value, clickhouse serv
 
 **Example**
 
-``` xml
+```xml
 <max_database_num_to_warn>50</max_database_num_to_warn>
 ```
 
@@ -738,7 +738,7 @@ If the number of attached tables exceeds the specified value, clickhouse server 
 
 **Example**
 
-``` xml
+```xml
 <max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
@@ -750,7 +750,7 @@ If the number of attached views exceeds the specified value, clickhouse server w
 
 **Example**
 
-``` xml
+```xml
 <max_view_num_to_warn>400</max_view_num_to_warn>
 ```
 
@@ -764,7 +764,7 @@ If the number of attached dictionaries exceeds the specified value, clickhouse s
 
 **Example**
 
-``` xml
+```xml
 <max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
 ```
 
@@ -778,7 +778,7 @@ If the number of active parts exceeds the specified value, clickhouse server wil
 
 **Example**
 
-``` xml
+```xml
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
@@ -925,7 +925,7 @@ If the number of **idle** threads in the Global Thread pool is greater than [`ma
 
 **Example**
 
-``` xml
+```xml
 <max_thread_pool_free_size>1200</max_thread_pool_free_size>
 ```
 
@@ -939,7 +939,7 @@ ClickHouse uses threads from the Global Thread pool to process queries. If there
 
 **Example**
 
-``` xml
+```xml
 <max_thread_pool_size>12000</max_thread_pool_size>
 ```
 
@@ -1061,7 +1061,7 @@ A value of `0` means unlimited.
 
 **Example**
 
-``` xml
+```xml
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
@@ -1161,7 +1161,7 @@ ClickHouse reloads built-in dictionaries every x seconds. This makes it possible
 
 **Example**
 
-``` xml
+```xml
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
@@ -1179,7 +1179,7 @@ We recommend not to change this if you have just started using ClickHouse.
 
 **Configuration template**:
 
-``` xml
+```xml
 <compression>
     <case>
       <min_part_size>...</min_part_size>
@@ -1213,7 +1213,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 
 **Example**
 
-``` xml
+```xml
 <compression incl="clickhouse_compression">
     <case>
         <min_part_size>10000000000</min_part_size>
@@ -1313,7 +1313,7 @@ It is disabled by default.
 
 To manually turn on error history collection [`system.error_log`](../../operations/system-tables/error_log.md), create `/etc/clickhouse-server/config.d/error_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
     <error_log>
         <database>system</database>
@@ -1332,7 +1332,7 @@ To manually turn on error history collection [`system.error_log`](../../operatio
 
 To disable `error_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_error_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
 <error_log remove="1" />
 </clickhouse>
@@ -1442,7 +1442,7 @@ Default settings profile. Settings profiles are located in the file specified in
 
 **Example**
 
-``` xml
+```xml
 <default_profile>default</default_profile>
 ```
 
@@ -1452,7 +1452,7 @@ The path to the table in ZooKeeper.
 
 **Example**
 
-``` xml
+```xml
 <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
 ```
 
@@ -1462,7 +1462,7 @@ The replica name in ZooKeeper.
 
 **Example**
 
-``` xml
+```xml
 <default_replica_name>{replica}</default_replica_name>
 ```
 
@@ -1480,7 +1480,7 @@ See also:
 
 **Example**
 
-``` xml
+```xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
@@ -1498,7 +1498,7 @@ See also:
 
 **Example**
 
-``` xml
+```xml
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
@@ -1516,7 +1516,7 @@ The server will wait at startup until all the dictionaries finish their loading 
 
 **Example**
 
-``` xml
+```xml
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
@@ -1526,7 +1526,7 @@ The path to the directory with the schemes for the input data, such as schemas f
 
 **Example**
 
-``` xml
+```xml
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
@@ -1551,7 +1551,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 **Example**
 
-``` xml
+```xml
 <graphite>
     <host>localhost</host>
     <port>42000</port>
@@ -1573,7 +1573,7 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 
 **Example**
 
-``` xml
+```xml
 <graphite_rollup_example>
     <default>
         <function>max</function>
@@ -1678,7 +1678,7 @@ The port for connecting to the server over HTTP(s).
 
 **Example**
 
-``` xml
+```xml
 <https_port>9999</https_port>
 ```
 
@@ -1691,7 +1691,7 @@ The default value is “Ok.” (with a line feed at the end)
 
 Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 
-``` xml
+```xml
 <http_server_default_response>
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
@@ -1752,7 +1752,7 @@ Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capabilit
 
 **Example**
 
-``` xml
+```xml
 <mlock_executable>false</mlock_executable>
 ```
 
@@ -1764,7 +1764,7 @@ For more information, see the section “[Configuration files](../../operations/
 
 **Example**
 
-``` xml
+```xml
 <include_from>/etc/metrica.xml</include_from>
 ```
 
@@ -1779,7 +1779,7 @@ By default, the value is equal to the [`listen_host`](#listen_host) setting.
 
 **Example**
 
-``` xml
+```xml
 <interserver_listen_host>::ffff:a00:1</interserver_listen_host>
 <interserver_listen_host>10.0.0.1</interserver_listen_host>
 ```
@@ -1794,7 +1794,7 @@ Port for exchanging data between ClickHouse servers.
 
 **Example**
 
-``` xml
+```xml
 <interserver_http_port>9009</interserver_http_port>
 ```
 
@@ -1808,7 +1808,7 @@ Useful for breaking away from a specific network interface.
 
 **Example**
 
-``` xml
+```xml
 <interserver_http_host>example.clickhouse.com</interserver_http_host>
 ```
 
@@ -1818,7 +1818,7 @@ Port for exchanging data between ClickHouse servers over `HTTPS`.
 
 **Example**
 
-``` xml
+```xml
 <interserver_https_port>9010</interserver_https_port>
 ```
 
@@ -1828,7 +1828,7 @@ Similar to [`interserver_http_host`](#interserver_http_host), except that this h
 
 **Example**
 
-``` xml
+```xml
 <interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 
@@ -1856,7 +1856,7 @@ ClickHouse supports dynamic interserver credentials rotation without stopping al
 
 To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
 
-``` xml
+```xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>111</password>
@@ -1868,7 +1868,7 @@ After configuring all replicas set `allow_empty` to `false` or remove this setti
 
 To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials.
 
-``` xml
+```xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
@@ -1891,7 +1891,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 
 **Example**
 
-``` xml
+```xml
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
@@ -1901,7 +1901,7 @@ Maximal number of requests through a single keep-alive connection until it will 
 
 **Example**
 
-``` xml
+```xml
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
@@ -1977,7 +1977,7 @@ Restriction on hosts that requests can come from. If you want the server to answ
 
 Examples:
 
-``` xml
+```xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
 ```
@@ -1988,7 +1988,7 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
 
 **Example**
 
-``` xml
+```xml
 <listen_try>0</listen_try>
 ```
 
@@ -1998,7 +1998,7 @@ Allow multiple servers to listen on the same address:port. Requests will be rout
 
 **Example**
 
-``` xml
+```xml
 <listen_reuse_port>0</listen_reuse_port>
 ```
 
@@ -2020,7 +2020,7 @@ So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this cou
 
 **Example**
 
-``` xml
+```xml
 <listen_backlog>4096</listen_backlog>
 ```
 
@@ -2094,7 +2094,7 @@ Column “Example” shows the output at `2023-07-06 18:32:07`.
 
 **Example**
 
-``` xml
+```xml
 <logger>
     <level>trace</level>
     <log>/var/log/clickhouse-server/clickhouse-server-%F-%T.log</log>
@@ -2107,7 +2107,7 @@ Column “Example” shows the output at `2023-07-06 18:32:07`.
 
 To print log messages only in the console:
 
-``` xml
+```xml
 <logger>
     <level>information</level>
     <console>true</console>
@@ -2158,7 +2158,7 @@ The messages logged can be filtered using regular expressions using `message_reg
 
 To write log messages additionally to syslog:
 
-``` xml
+```xml
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
@@ -2254,7 +2254,7 @@ Keys:
 
 **Recommended usage**
 
-``` xml
+```xml
 <send_crash_reports>
     <enabled>true</enabled>
 </send_crash_reports>
@@ -2368,7 +2368,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 **Example**
 
-``` xml
+```xml
 <macros incl="macros" optional="true" />
 ```
 
@@ -2383,7 +2383,7 @@ Empty by default.
 
 **Example**
 
-``` xml
+```xml
 <replica_group_name>backups</replica_group_name>
 ```
 
@@ -2413,7 +2413,7 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 
 **Example**
 
-``` xml
+```xml
 <max_open_files>262144</max_open_files>
 ```
 
@@ -2442,7 +2442,7 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
 
 **Example**
 
-``` xml
+```xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
@@ -2512,7 +2512,7 @@ Asynchronous loading of databases and tables.
 
 **Example**
 
-``` xml
+```xml
 <async_load_databases>true</async_load_databases>
 ```
 
@@ -2527,7 +2527,7 @@ Asynchronous loading of system tables. Helpful if there is a high amount of log 
 
 **Example**
 
-``` xml
+```xml
 <async_load_system_database>true</async_load_system_database>
 ```
 
@@ -2561,7 +2561,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 **Example**
 
-``` xml
+```xml
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
@@ -2575,7 +2575,7 @@ It is disabled by default.
 
 To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
     <metric_log>
         <database>system</database>
@@ -2594,7 +2594,7 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
 
 To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
 <metric_log remove="1" />
 </clickhouse>
@@ -2610,7 +2610,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 **Example**
 
-``` xml
+```xml
 <replicated_merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </replicated_merge_tree>
@@ -2673,7 +2673,7 @@ Keys for server/client settings:
 
 **Example of settings:**
 
-``` xml
+```xml
 <openSSL>
     <server>
         <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
@@ -2711,7 +2711,7 @@ Queries are logged in the [system.part_log](../../operations/system-tables/part_
 
 **Example**
 
-``` xml
+```xml
 <part_log>
     <database>system</database>
     <table>part_log</table>
@@ -2734,7 +2734,7 @@ The trailing slash is mandatory.
 
 **Example**
 
-``` xml
+```xml
 <path>/var/lib/clickhouse/</path>
 ```
 ## processors_profile_log
@@ -2773,7 +2773,7 @@ Settings:
 
 **Example**
 
-``` xml
+```xml
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -2808,7 +2808,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 **Example**
 
-``` xml
+```xml
 <query_log>
     <database>system</database>
     <table>query_log</table>
@@ -2829,7 +2829,7 @@ It is disabled by default.
 
 To manually turn on metrics history collection [`system.query_metric_log`](../../operations/system-tables/query_metric_log.md), create `/etc/clickhouse-server/config.d/query_metric_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
     <query_metric_log>
         <database>system</database>
@@ -2848,7 +2848,7 @@ To manually turn on metrics history collection [`system.query_metric_log`](../..
 
 To disable `query_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_query_metric_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
     <query_metric_log remove="1" />
 </clickhouse>
@@ -2897,7 +2897,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 **Example**
 
-``` xml
+```xml
 <query_thread_log>
     <database>system</database>
     <table>query_thread_log</table>
@@ -2922,7 +2922,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 **Example**
 
-``` xml
+```xml
 <query_views_log>
     <database>system</database>
     <table>query_views_log</table>
@@ -2974,7 +2974,7 @@ Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_
 
 The default server configuration file `config.xml` contains the following settings section:
 
-``` xml
+```xml
 <trace_log>
     <database>system</database>
     <table>trace_log</table>
@@ -3020,7 +3020,7 @@ Settings for the [crash_log](../../operations/system-tables/crash-log.md) system
 
 The default server configuration file `config.xml` contains the following settings section:
 
-``` xml
+```xml
 <crash_log>
     <database>system</database>
     <table>crash_log</table>
@@ -3102,7 +3102,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 
 **Example**
 
-``` xml
+```xml
 <query_masking_rules>
     <rule>
         <name>hide SSN</name>
@@ -3137,7 +3137,7 @@ Configuration of clusters used by the [Distributed](../../engines/table-engines/
 
 **Example**
 
-``` xml
+```xml
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
@@ -3159,7 +3159,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 **Example**
 
-``` xml
+```xml
 <timezone>Asia/Istanbul</timezone>
 ```
 
@@ -3173,7 +3173,7 @@ Port for communicating with clients over the TCP protocol.
 
 **Example**
 
-``` xml
+```xml
 <tcp_port>9000</tcp_port>
 ```
 
@@ -3183,7 +3183,7 @@ TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) 
 
 **Default value**
 
-``` xml
+```xml
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
@@ -3198,7 +3198,7 @@ Port for communicating with clients over MySQL protocol.
 
 **Example**
 
-``` xml
+```xml
 <mysql_port>9004</mysql_port>
 ```
 
@@ -3213,7 +3213,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 **Example**
 
-``` xml
+```xml
 <postgresql_port>9005</postgresql_port>
 ```
 
@@ -3258,7 +3258,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 **Example**
 
-``` xml
+```xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
@@ -3268,7 +3268,7 @@ The directory with user scripts files. Used for Executable user defined function
 
 **Example**
 
-``` xml
+```xml
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
@@ -3282,7 +3282,7 @@ The directory with user defined files. Used for SQL user defined functions [SQL 
 
 **Example**
 
-``` xml
+```xml
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
@@ -3297,7 +3297,7 @@ Path to the file that contains:
 
 **Example**
 
-``` xml
+```xml
 <users_config>users.xml</users_config>
 ```
 
@@ -3455,7 +3455,7 @@ until all the dictionaries finish their loading (successfully or not) before rec
 
 **Example**
 
-``` xml
+```xml
 <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
@@ -3491,7 +3491,7 @@ There is also the `zookeeper_load_balancing` parameter (optional) which lets you
 
 **Example configuration**
 
-``` xml
+```xml
 <zookeeper>
     <node>
         <host>example1</host>
@@ -3702,7 +3702,7 @@ To add an LDAP server as a remote user directory of users that are not defined l
 
 **Example**
 
-``` xml
+```xml
 <ldap>
     <server>my_ldap_server</server>
         <roles>
@@ -3798,7 +3798,7 @@ one proxy server for a protocol and the list of proxy servers doesn't change.
 
 **Configuration template**
 
-``` xml
+```xml
 <proxy>
     <http>
         <uri>http://proxy1</uri>
@@ -3839,7 +3839,7 @@ ClickHouse will use it to form the proxy URI using the following template: `{pro
 
 **Configuration template**
 
-``` xml
+```xml
 <proxy>
     <http>
         <resolver>
@@ -3928,7 +3928,7 @@ It supports IP addresses, domains, subdomains and `'*'` wildcard for full bypass
 The below configuration bypasses proxy requests to `clickhouse.cloud` and all of its subdomains (e.g, `auth.clickhouse.cloud`).
 The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` and `about.gitlab.com` would bypass the proxy.
 
-``` xml
+```xml
 <proxy>
     <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
     <http>
@@ -3999,7 +3999,7 @@ The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` 
 
 **Example**
 
-``` xml
+```xml
 <workload_path>/var/lib/clickhouse/workload/</workload_path>
 ```
 
@@ -4013,7 +4013,7 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 
 **Example**
 
-``` xml
+```xml
 <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
 ```
 
