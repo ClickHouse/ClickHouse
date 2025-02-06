@@ -221,7 +221,7 @@ Default: `0`
 
 ## bcrypt_workfactor
 
-Work factor for bcrypt_password authentication type. 
+Work factor for the bcrypt_password authentication type.
 
 Default: `12`
 
@@ -1600,34 +1600,34 @@ By default, it is configured as:
 ## http_handlers
 
 Allows using custom http handlers. 
-To add a new http handler simple add a new `<rule>`. 
+To add a new http handler simply add a new `<rule>`. 
 Rules are checked from top to bottom as defined,
 and the first match will run the handler.
 
 Rules have the following parameters:
 
-| Parameter            | Definition                                                                                                                                       |
-|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                          |
-| `empty_query_string` | Check that there is no query string in the URL                                                                                                   |
-| `methods`            | To match request method, you can use commas to separate multiple method matches (optional)                                                       |
+| Parameter            | Definition                                                                                                                                        |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                           |
+| `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
+| `methods`            | To match request methods, you can use commas to separate multiple method matches (optional)                                                       |
 | `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
-| `handler`            | The request handler                                                                                                                              |
+| `handler`            | The request handler                                                                                                                               |
 
 `handler` contains the following parameters:
 
 | Parameter          | Definition                                                                                                                                                            |
 |--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `type`             | supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
-| `query`            | use with predefined_query_handler type, executes query when the handler is called                                                                                     |
-| `query_param_name` | use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params                             |
-| `status`           | use with static type, response status code                                                                                                                            |
-| `content_type`     | use with static type, response content-type                                                                                                                           |
-| `response_content` | use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
-| `url`              | a location for redirect                                                                                                                                               |
+| `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
+| `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
+| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params                             |
+| `status`           | Use with static type, response status code                                                                                                                            |
+| `content_type`     | Use with static type, response content-type                                                                                                                           |
+| `response_content` | Use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
+| `url`              | A location for redirect                                                                                                                                               |
 
 
-Along with a list of rules, you can specify <defaults/> which specifies to enable all the default handlers.
+Along with a list of rules, you can specify `<defaults/>` which specifies to enable all the default handlers.
 
 You will find the following example, commented out, in config.xml:
 
@@ -1693,7 +1693,8 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 
 ## http_options_response
 
-Used to add headers to the response in an `OPTIONS` HTTTP request. The `OPTIONS` method is used when making CORS preflight requests.
+Used to add headers to the response in an `OPTIONS` HTTP request. 
+The `OPTIONS` method is used when making CORS preflight requests.
 
 For more information, see [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
 
@@ -1900,7 +1901,7 @@ Maximal number of requests through a single keep-alive connection until it will 
 
 ## ldap_servers
 
-List LDAP servers with their connection parameters here to later 
+List LDAP servers with their connection parameters here to later:
 - use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
 - use them as remote user directories.
 
@@ -1922,7 +1923,7 @@ The following parameters are accepted:
 | `tls_ca_cert_dir`              | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tls_cipher_suite`             | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
 
-Parameter `user_dn_detection` has sub-parameters:
+Parameter `user_dn_detection` accepts parameters:
 
 | Parameter       | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -2255,19 +2256,101 @@ Keys:
 
 ## ssh_server
 
-Configuration for writing the public part of the host key to the known_hosts file
-on the SSH client side on the first connect.
+Configuration for writing the public part of a host key to a known_hosts file on the SSH client side on the first connect.
 
-Host Key Configurations are inactive by default. Uncomment the host key configurations,
-and provide the path to the respective ssh key to active them:
+Host Key Configurations are inactive by default. 
+Uncomment the host key configurations, and provide the path to the respective ssh key to active them:
+
+Example:
 
 ```xml
 <ssh_server>
-    <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
-    <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
-    <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
+    <host_rsa_key>path_to_the_ssh_key</host_rsa_key>
+    <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key>
+    <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key>
 </ssh_server>
 ```
+
+## storage_configuration
+
+Allows for multi-disk configuration of storage. It can be specified in `config.xml` or in a separate file in directory `config.d`.
+
+Storage configuration follows the structure:
+
+```xml
+<storage_configuration>
+    <disks>
+        <!-- configuration -->
+    </disks>
+    <policies>
+        <!-- configuration -->
+    </policies>
+</storage_configuration>
+```
+
+### Configuration of disks
+
+Configuration of `disks` follows the structure given below:
+
+```xml
+<storage_configuration>
+    <disks>
+        <disk_name_1>
+            <path>/mnt/fast_ssd/clickhouse/</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
+        ...
+    </disks>
+</storage_configuration>
+```
+
+The tags above define the following parameters for `disks`:
+
+| Parameter               | Description                                                                                           |
+|-------------------------|-------------------------------------------------------------------------------------------------------|
+| `<disk_name_N>`         | The name of the disk, which should be unique.                                                         |
+| `path`                  | The path to which server data will be stored (`data` and `shadow` catalogues). It should end with `/` |
+| `keep_free_space_bytes` | Size of the reserved free space on disk.                                                              |
+
+:::note
+The order of the disks does not matter.
+:::
+
+For example:
+
+```xml
+
+```
+
+### Configuration of policies
+
+The tags above define the following parameters for `policies`:
+
+| Parameter                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `policy_name_N`              | Name of the policy. Policy names must be unique.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `volume_name_N`              | The volume name. Volume names must be unique.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `disk`                       | The disk located inside the volume.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `max_data_part_size_bytes`   | The maximum size of a chunk of data that can reside on any of the disks in this volume. If the merge results in a chunk size expected to be larger than max_data_part_size_bytes, the chunk will be written to the next volume. Basically this feature allows you to store new / small chunks on a hot (SSD) volume and move them to a cold (HDD) volume when they reach a large size. Do not use this option if the policy has only one volume.                                                                 |
+| `move_factor`                | The share of available free space on the volume. If the space becomes less, the data will start transferring to the next volume, if there is one. For transfer, chunks are sorted by size from larger to smaller (descending) and chunks whose total size is sufficient to meet the `move_factor` condition are selected, if the total size of all chunks is insufficient, all chunks will be moved.                                                                                                             |
+| `perform_ttl_move_on_insert` | Disables moving data with expired TTL on insertion. By default (if enabled), if we insert a piece of data that has already expired according to the move on life rule, it is immediately moved to the volume / disk specified in the move rule. This can significantly slow down insertion in case the target volume / disk is slow (e.g. S3). If disabled, the expired portion of the data is written to the default volume and then immediately moved to the volume specified in the rule for the expired TTL. |
+| `load_balancing`             | Disk balancing policy, `round_robin` or `least_used`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `least_used_ttl_ms`          | Sets the timeout (in milliseconds) to update the available space on all disks (`0` - always update, `-1` - never update, default value is `60000`). Note, if the disk is only used by ClickHouse and will not be subject to file system resizing on the fly, you can use the `-1` value. In all other cases this is not recommended, as it will eventually lead to incorrect space allocation.                                                                                                                   |
+| `prefer_not_to_merge`        | Disables merging parts of the data on this volume. Note: this is potentially harmful and can cause slowdown. When this setting is enabled (don't do this), merging data on this volume is prohibited (which is bad). This allows control of how ClickHouse interacts with slow disks. We recommend not to use this at all.                                                                                                                                                                                       |
+| `volume_priority`            | Defines the priority (order) in which volumes are filled. The smaller the value, the higher the priority. The parameter values must be natural numbers and cover the range from 1 to N (N is the largest parameter value specified) with no gaps.                                                                                                                                                                                                                                                                |
+
+For the `volume_priority`:
+- If all volumes have this parameter, they are prioritized in the specified order.
+- If only _some_ volumes have it, volumes that do not have it have the lowest priority. Those that do have it are prioritized according to the tag value, the priority of the rest is determined by the order of description in the configuration file relative to each other.
+- If _no_ volumes are given this parameter, their order is determined by the order of the description in the configuration file.
+- The priority of volumes may not be identical.
 
 ## macros
 
@@ -2304,7 +2387,11 @@ Default: ""
 
 ## remap_executable
 
-Reallocate memory for machine code ("text") using huge pages. Highly experimental.
+Setting to reallocate memory for machine code ("text") using huge pages.
+
+:::note
+This feature is highly experimental, and therefore set `false` by default.
+:::
 
 ```xml
 <remap_executable>false</remap_executable>
@@ -3076,11 +3163,14 @@ The default server configuration file `config.xml` contains the following settin
 ## custom_cached_disks_base_directory
 
 This setting specifies the cache path for custom (created from SQL) cached disks.
-`custom_cached_disks_base_directory` has higher priority for custom disks over `filesystem_caches_path` (found in `filesystem_caches_path.xml`), which is used if the former one is absent.
-The filesystem cache setting path must lie inside that directory, otherwise an exception will be thrown preventing the disk from being created.
+`custom_cached_disks_base_directory` has higher priority for custom disks over `filesystem_caches_path` (found in `filesystem_caches_path.xml`), 
+which is used if the former one is absent.
+The filesystem cache setting path must lie inside that directory,
+otherwise an exception will be thrown preventing the disk from being created.
 
 :::note
-This will not affect disks created on an older version for which the server was upgraded. In this case, the exception will not be thrown, to allow the server to successfully start.
+This will not affect disks created on an older version for which the server was upgraded. 
+In this case, an exception will not be thrown, to allow the server to successfully start.
 :::
 
 It is set by default to `/var/lib/clickhouse/caches/`:
