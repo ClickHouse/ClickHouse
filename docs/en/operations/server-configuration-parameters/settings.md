@@ -2850,7 +2850,7 @@ To disable `query_metric_log` setting, you should create the following file `/et
 
 ``` xml
 <clickhouse>
-<query_metric_log remove="1" />
+    <query_metric_log remove="1" />
 </clickhouse>
 ```
 
@@ -3667,7 +3667,7 @@ The `user_directories` section can contain any number of items, the order of the
 
 **Examples**
 
-``` xml
+```xml
 <user_directories>
     <users_xml>
         <path>/etc/clickhouse-server/users.xml</path>
@@ -3680,7 +3680,7 @@ The `user_directories` section can contain any number of items, the order of the
 
 Users, roles, row policies, quotas, and profiles can be also stored in ZooKeeper:
 
-``` xml
+```xml
 <user_directories>
     <users_xml>
         <path>/etc/clickhouse-server/users.xml</path>
@@ -3955,7 +3955,7 @@ Default: `0`.
 
 If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.
 
-Type: Bool
+Type: `Bool`
 
 Default: `0`
 
@@ -3967,7 +3967,7 @@ If true, ClickHouse doesn't write defaults for empty SQL security statement in `
 This setting is only necessary for the migration period and will become obsolete in 24.4
 :::
 
-Type: Bool
+Type: `Bool`
 
 Default: `1`
 
@@ -3975,7 +3975,7 @@ Default: `1`
 
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
 
-Type: String
+Type: `String`
 
 Default: `default`
 
@@ -3989,7 +3989,7 @@ Used to regulate how resources are utilized and shared between mutations and oth
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
 
-Type: String
+Type: `String`
 
 Default: `default`
 
@@ -4025,7 +4025,7 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 
 Use the legacy MongoDB integration implementation. Deprecated.
 
-Type: Bool
+Type: `Bool`
 
 Default: `true`.
 
@@ -4039,7 +4039,7 @@ Non authentication create/alter queries will succeed.
 A value of `0` means unlimited. 
 :::
 
-Type: UInt64
+Type: `UInt64`
 
 Default: `100`
 
@@ -4057,6 +4057,6 @@ This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `BET
 A value of `0` means that all settings can be changed.
 :::
 
-Type: UInt32
+Type: `UInt32`
 
 Default: `0`
