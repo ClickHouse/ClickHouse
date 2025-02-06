@@ -318,7 +318,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res = True
         except Exception as e:
             res = False
-            info = f"Exception while cache lookup [{e}]"
+            traceback.print_exc()
+            info = traceback.format_exc()
         results.append(
             Result(
                 name="Cache Lookup",
@@ -352,6 +353,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
+    stop_watch = Utils.Stopwatch()
 
     print("Check Actions statuses")
     print(env.get_needs_statuses())
@@ -415,21 +417,26 @@ def _finish_workflow(workflow, job_name):
         else:
             ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
 
-    if not GH.post_commit_status(
-        name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",
-        status=ready_for_merge_status,
-        description=ready_for_merge_description,
-        url="",
-    ):
-        print(f"ERROR: failed to set status [{Settings.READY_FOR_MERGE_STATUS_NAME}]")
-        env.add_info(ResultInfo.GH_STATUS_ERROR)
+    if workflow.enable_merge_ready_status:
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        from praktika.gh_auth_deprecated import GHAuth
+
+        GHAuth.auth(app_key=pem, app_id=app_id)
+        if not GH.post_commit_status(
+            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+            or f"Ready For Merge [{workflow.name}]",
+            status=ready_for_merge_status,
+            description=ready_for_merge_description,
+            url="",
+        ):
+            print(f"ERROR: failed to set ReadyForMerge status")
+            env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
-    return (
-        Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_results(results)
-    )
+    return Result.create_from(results=results, stopwatch=stop_watch)
 
 
 if __name__ == "__main__":

@@ -607,8 +607,6 @@ void logQueryFinish(
         }
 
         logProcessorProfile(context, query_pipeline.getProcessors());
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -1443,6 +1441,7 @@ static BlockIO executeQueryImpl(
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
                 {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                    create_interpreter->setInternal(internal);
                 }
 
                 {
