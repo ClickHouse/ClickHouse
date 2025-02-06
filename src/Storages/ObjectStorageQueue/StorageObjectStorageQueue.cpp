@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -41,6 +42,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueInsertIterations;
 }
 
+
 namespace DB
 {
 namespace Setting
@@ -49,6 +51,11 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_commit[];
 }
 
 namespace ServerSetting
@@ -88,6 +95,7 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace
@@ -658,6 +666,10 @@ void StorageObjectStorageQueue::commit(
 
     auto zk_client = getZooKeeper();
     Coordination::Responses responses;
+
+    fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to commit processed files");
+    });
 
     auto code = zk_client->tryMulti(requests, responses);
     if (code != Coordination::Error::ZOK)
