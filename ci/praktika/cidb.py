@@ -5,10 +5,9 @@ import urllib
 from typing import Optional
 
 import requests
+from praktika.info import Info
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
-
-from praktika.info import Info
 
 from ._environment import _Environment
 from .result import Result
