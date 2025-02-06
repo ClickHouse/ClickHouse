@@ -185,8 +185,6 @@ function stop_server()
     # sequential tables shutdown), since flush_on_detach=0 will not help if the
     # send is already in progress.
     #
-    # Also we need to retry it due to cannot_allocate_thread_fault_injection_probability.
-    #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
     for i in {1..30}; do
         if clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS"; then
