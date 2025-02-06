@@ -3085,7 +3085,7 @@ def test_failed_commit(started_cluster):
     for _ in range(100):
         if check_failpoint():
             break
-        time.sleep(50)
+        time.sleep(1)
 
     assert check_failpoint()
 
