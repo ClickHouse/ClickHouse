@@ -1406,6 +1406,7 @@ def main() -> int:
             assert False, "BUG! Not supported scenario"
 
     ### RUN action for migration to praktika: start
+    # temporary mode for migration to new ci workflow
     elif args.run_from_praktika:
         check_name = os.environ["JOB_NAME"]
         check_name = BUILD_NAMES_MAPPING.get(check_name, check_name)
@@ -1432,10 +1433,11 @@ def main() -> int:
             gh = GitHub(get_best_robot_token(), per_page=100)
             commit = get_commit(gh, pr_info.sha)
             if not job_report.dummy:
-                if job_report.status not in (SUCCESS, SKIPPED) and not CI.is_build_job(
-                    check_name
-                ):
-                    # create and post statuses only for not success jobs
+                if (
+                    job_report.status not in (SUCCESS, SKIPPED)
+                    and not CI.is_build_job(check_name)
+                ) or "style" in check_name.lower():
+                    # create and post statuses only for not success jobs or for style check as it required for sync
                     check_url = upload_result_helper.upload_results(
                         s3,
                         pr_info.number,

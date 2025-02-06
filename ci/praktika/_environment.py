@@ -94,7 +94,7 @@ class _Environment(MetaClasses.Serializable):
         RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
-        USER_LOGIN = os.getenv("GITHUB_ACTOR")
+        USER_LOGIN = ""
         FORK_NAME = ""
         PR_BODY = ""
         PR_TITLE = ""
@@ -115,6 +115,7 @@ class _Environment(MetaClasses.Serializable):
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
+                USER_LOGIN = github_event["pull_request"]["user"]["login"]
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
