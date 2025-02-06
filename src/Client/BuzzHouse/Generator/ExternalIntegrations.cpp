@@ -1335,6 +1335,14 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     String buf;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
+    if (std::remove(out_path.generic_string().c_str()) && errno != ENOENT)
+    {
+        char buffer[1024];
+
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        return false;
+    }
     if (clickhouse->performQueryOnServerOrRemote(pt, "SYSTEM FLUSH LOGS;")
         && clickhouse->performQueryOnServerOrRemote(
             pt,
