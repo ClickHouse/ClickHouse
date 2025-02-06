@@ -64,6 +64,7 @@ namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -443,7 +444,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
     if (!storage)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage with id {} not found", resolved_id);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
     const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get());
