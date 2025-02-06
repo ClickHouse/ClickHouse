@@ -532,7 +532,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCacheUsage query_cache_usage,
+    QueryCache::Usage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -667,7 +667,7 @@ void logQueryException(
     }
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
-    elem.query_cache_usage = QueryCacheUsage::None;
+    elem.query_cache_usage = QueryCache::Usage::None;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         setExceptionStackTrace(elem);
@@ -1311,6 +1311,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         LOG_TRACE(getLogger("QueryCache"), "Can use query cache {}", can_use_query_cache);
         context->setCanUseQueryCache(can_use_query_cache);
         LOG_TRACE(getLogger("QueryCache"), "Can use query cache context {}", context->getCanUseQueryCache());
+        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
         /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
@@ -1351,7 +1352,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        context->setQueryCacheUsage(QueryCacheUsage::Read);
+                        query_cache_usage = QueryCache::Usage::Read;
                         return true;
                     }
                 }
@@ -1499,7 +1500,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                                  settings[Setting::query_cache_max_size_in_bytes],
                                                  settings[Setting::query_cache_max_entries]));
                                 res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                                context->setQueryCacheUsage(QueryCacheUsage::Write);
+                                query_cache_usage = QueryCache::Usage::Write;
                                 LOG_TRACE(getLogger("QueryCache"), "Will use query cache for writing");
                             }
                         }
@@ -1552,7 +1553,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    query_cache_usage = context->getQueryCacheUsage(),
+                                    query_cache_usage,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,

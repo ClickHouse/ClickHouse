@@ -3630,16 +3630,6 @@ bool Context::getCanUseQueryCache() const
     return can_use_query_cache;
 }
 
-QueryCacheUsage Context::getQueryCacheUsage() const
-{
-    return query_cache_usage;
-}
-
-void Context::setQueryCacheUsage(QueryCacheUsage query_cache_usage_)
-{
-    query_cache_usage = query_cache_usage_;
-}
-
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
 {
     std::lock_guard lock(shared->mutex);
