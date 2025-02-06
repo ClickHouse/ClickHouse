@@ -816,20 +816,6 @@ const auto DefaultCodecsToTest = ::testing::Values(
 // test cases
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-INSTANTIATE_TEST_SUITE_P(TempBreakZSTDDoubleDelta,
-    CodecTest,
-    ::testing::Combine(
-        ::testing::Values(
-            Codec("DoubleDelta"),
-            Codec("ZSTD, DoubleDelta")
-        ),
-        ::testing::Values(
-            makeSeq<Float64>(0, 1),
-            makeSeq<Float64>(1, 0)
-        )
-    )
-);
-
 INSTANTIATE_TEST_SUITE_P(Simple,
     CodecTest,
     ::testing::Combine(
@@ -1131,6 +1117,22 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
         )
     )
 );
+
+/// Size of data after ZSTD is not a multiple of 8,
+/// and may break DoubleDelta.
+INSTANTIATE_TEST_SUITE_P(TempBreakZSTDDoubleDelta,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ZSTD, DoubleDelta")
+        ),
+        ::testing::Values(
+            makeSeq<Float64>(0, 1),
+            makeSeq<Float64>(1, 0)
+        )
+    )
+);
+
 
 template <typename ValueType>
 auto DDCompatibilityTestSequence()
