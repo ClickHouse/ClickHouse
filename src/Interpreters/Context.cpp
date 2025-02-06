@@ -2702,8 +2702,11 @@ void Context::setCurrentQueryId(const String & query_id)
 
     client_info.current_query_id = query_id_to_set;
 
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && (getApplicationType() != ApplicationType::SERVER || client_info.initial_query_id.empty()))
+    {
         client_info.initial_query_id = client_info.current_query_id;
+    }
 }
 
 void Context::setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType background_operation)
