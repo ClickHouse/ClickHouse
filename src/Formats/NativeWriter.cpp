@@ -14,7 +14,6 @@
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/IColumnLazyHelper.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>

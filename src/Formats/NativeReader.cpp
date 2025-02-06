@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/IColumnLazyHelper.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>

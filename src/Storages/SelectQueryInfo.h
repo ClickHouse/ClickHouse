@@ -2,7 +2,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
-#include <Columns/IColumnLazyHelper.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/AggregateDescription.h>
@@ -94,7 +93,6 @@ struct LazilyReadInfo
     ColumnsWithTypeAndName lazily_read_columns;
     bool remove_part_offset_column;
     DataPartsInfoPtr data_parts_info;
-    ColumnLazyHelperPtr column_lazy_helper;
 
     LazilyReadInfo() = default;
 };

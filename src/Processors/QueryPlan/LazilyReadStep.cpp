@@ -1,8 +1,10 @@
 #include <Processors/QueryPlan/LazilyReadStep.h>
 
-#include <Common/JSONBuilder.h>
+#include <IO/Operators.h>
 #include <Processors/Transforms/ColumnLazyTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -23,20 +25,18 @@ static ITransformingStep::Traits getTraits()
 }
 
 LazilyReadStep::LazilyReadStep(
-    const Header & input_header_,
-    const LazilyReadInfoPtr & lazily_read_info_)
-    : ITransformingStep(
-    input_header_,
-    ColumnLazyTransform::transformHeader(input_header_),
-    getTraits())
+    const Header & input_header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_)
+    : ITransformingStep(input_header_, ColumnLazyTransform::transformHeader(input_header_), getTraits())
     , lazily_read_info(lazily_read_info_)
-{}
+    , lazy_column_reader(std::move(lazy_column_reader_))
+{
+}
 
 void LazilyReadStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<ColumnLazyTransform>(header, lazily_read_info);
+        return std::make_shared<ColumnLazyTransform>(header, lazily_read_info, std::move(lazy_column_reader));
     });
 }
 

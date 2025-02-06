@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/IColumnLazyHelper.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>

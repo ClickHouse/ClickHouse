@@ -1,9 +1,10 @@
 #pragma once
-#include <Columns/IColumnLazyHelper.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
+
+class ColumnLazy;
 
 using AliasToName = std::unordered_map<std::string, std::string>;
 using AliasToNamePtr = std::shared_ptr<AliasToName>;
@@ -20,7 +21,7 @@ struct RowOffsetWithIdx
 using RowOffsetsWithIdx = std::vector<RowOffsetWithIdx>;
 using PartIndexToRowOffsets = std::map<size_t, RowOffsetsWithIdx>;
 
-class MergeTreeLazilyReader : public IColumnLazyHelper
+class MergeTreeLazilyReader
 {
 public:
     MergeTreeLazilyReader(
@@ -33,7 +34,7 @@ public:
 
     void transformLazyColumns(
         const ColumnLazy & column_lazy,
-        ColumnsWithTypeAndName & res_columns) override;
+        ColumnsWithTypeAndName & res_columns);
 
 private:
     void readLazyColumns(

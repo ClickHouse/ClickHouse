@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
-#include "Common/Exception.h"
 
 namespace DB
 {

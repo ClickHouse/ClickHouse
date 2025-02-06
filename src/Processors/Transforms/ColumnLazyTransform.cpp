@@ -1,5 +1,7 @@
 #include <Processors/Transforms/ColumnLazyTransform.h>
+
 #include <Columns/ColumnLazy.h>
+#include <Storages/MergeTree/MergeTreeLazilyReader.h>
 
 namespace DB
 {
@@ -17,14 +19,12 @@ Block ColumnLazyTransform::transformHeader(Block header)
 }
 
 ColumnLazyTransform::ColumnLazyTransform(
-    const Block & header_,
-    const LazilyReadInfoPtr & lazily_read_info_)
-    : ISimpleTransform(
-    header_,
-    transformHeader(header_),
-    true)
+    const Block & header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_)
+    : ISimpleTransform(header_, transformHeader(header_), true)
     , lazily_read_info(lazily_read_info_)
-{}
+    , lazy_column_reader(std::move(lazy_column_reader_))
+{
+}
 
 void ColumnLazyTransform::transform(Chunk & chunk)
 {
@@ -41,7 +41,7 @@ void ColumnLazyTransform::transform(Chunk & chunk)
             if (column_lazy->getColumns().empty())
                 continue;
 
-            lazily_read_info->column_lazy_helper->transformLazyColumns(*column_lazy, res_columns);
+            lazy_column_reader->transformLazyColumns(*column_lazy, res_columns);
         }
     }
 
@@ -53,5 +53,4 @@ void ColumnLazyTransform::transform(Chunk & chunk)
 
     chunk.setColumns(block.getColumns(), rows_size);
 }
-
 }
