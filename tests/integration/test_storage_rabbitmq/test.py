@@ -94,7 +94,6 @@ def kill_rabbitmq(rabbitmq_id, rabbitmq_cookie):
             return p.returncode == 0
         except Exception as e:
             print("Exception stopping rabbit MQ forcefully", e)
-            revive_rabbitmq(rabbitmq_id, rabbitmq_cookie)
 
 
 def revive_rabbitmq(rabbitmq_id, cookie):
@@ -2283,7 +2282,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
-    time.sleep(8)
+    time.sleep(4)
     revive_rabbitmq(
         rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
     )
