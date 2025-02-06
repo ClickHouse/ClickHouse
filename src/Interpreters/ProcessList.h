@@ -43,17 +43,6 @@ class ThreadStatus;
 class ProcessListEntry;
 
 
-enum CancelReason
-{
-    UNDEFINED,
-    TIMEOUT,
-    CANCELLED_BY_USER,
-
-    /// CANCELLED_BY_ERROR means that there were parallel processes/threads and some of them failed,
-    /// so we cancel other processes/threads with this cancel reason.
-    CANCELLED_BY_ERROR,
-};
-
 /** Information of process list element.
   * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
   */
@@ -71,7 +60,6 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
-    CancelReason cancel_reason;
     bool is_all_data_sent;
 
     /// Optional fields, filled by query
@@ -121,9 +109,8 @@ protected:
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
-    mutable std::mutex cancel_mutex;
-    CancelReason cancel_reason { CancelReason::UNDEFINED };
-    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
+    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancellation_exception_mutex);
+    mutable std::mutex cancellation_exception_mutex;
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
@@ -143,7 +130,7 @@ protected:
     /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
     void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
 
-    [[noreturn]] void throwQueryWasCancelled() const TSA_REQUIRES(cancel_mutex);
+    [[noreturn]] void throwQueryWasCancelled() const;
 
     mutable std::mutex executors_mutex;
 
@@ -243,11 +230,9 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
-
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
-    CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
+    CancellationCode cancelQuery(bool kill, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
 
@@ -511,8 +496,8 @@ public:
     void decrementWaiters();
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
-    CancellationCode sendCancelToQuery(QueryStatusPtr elem);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
 
     void killAllQueries();
 };

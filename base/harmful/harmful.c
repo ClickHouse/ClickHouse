@@ -65,6 +65,7 @@ TRAP(gethostbyaddr)
 TRAP(gethostbyname)
 TRAP(gethostbyname2)
 TRAP(gethostent)
+TRAP(getlogin)
 TRAP(getnetbyaddr)
 TRAP(getnetbyname)
 TRAP(getnetent)
@@ -290,7 +291,6 @@ TRAP(putenv)
 TRAP(setlogmask)
 TRAP(rand)
 TRAP(getmntent)
-TRAP(getlogin)
 #endif
 
 #endif

@@ -263,7 +263,7 @@ FunctionDocumentation parseReadableSize_documentation {
 └────────────────┴─────────┘)"
         },
     },
-    .category = {"Other"},
+    .categories = {"OtherFunctions"},
 };
 
 FunctionDocumentation parseReadableSizeOrNull_documentation {
@@ -285,7 +285,7 @@ FunctionDocumentation parseReadableSizeOrNull_documentation {
 └────────────────┴─────────┘)"
         },
     },
-    .category = {"Other"},
+    .categories = {"OtherFunctions"},
 };
 
 FunctionDocumentation parseReadableSizeOrZero_documentation {
@@ -307,7 +307,7 @@ FunctionDocumentation parseReadableSizeOrZero_documentation {
 └────────────────┴─────────┘)",
         },
     },
-    .category = {"Other"},
+    .categories = {"OtherFunctions"},
 };
 
 REGISTER_FUNCTION(ParseReadableSize)

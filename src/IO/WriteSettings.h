@@ -34,7 +34,4 @@ struct WriteSettings
     bool operator==(const WriteSettings & other) const = default;
 };
 
-WriteSettings getWriteSettings();
-
-WriteSettings getWriteSettingsForMetadata();
 }

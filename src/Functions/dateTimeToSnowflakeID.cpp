@@ -140,9 +140,9 @@ REGISTER_FUNCTION(DateTimeToSnowflakeID)
         };
         FunctionDocumentation::ReturnedValue returned_value = "Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.";
         FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))", "6832626392367104000"}};
-        FunctionDocumentation::Category category = {"UUIDs"};
+        FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
-        factory.registerFunction<FunctionDateTimeToSnowflakeID>({description, syntax, arguments, returned_value, examples, category});
+        factory.registerFunction<FunctionDateTimeToSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});
     }
 
     {
@@ -154,9 +154,9 @@ REGISTER_FUNCTION(DateTimeToSnowflakeID)
         };
         FunctionDocumentation::ReturnedValue returned_value = "Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.";
         FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shanghai'))", "6832626394434895872"}};
-        FunctionDocumentation::Category category = {"UUIDs"};
+        FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
-        factory.registerFunction<FunctionDateTime64ToSnowflakeID>({description, syntax, arguments, returned_value, examples, category});
+        factory.registerFunction<FunctionDateTime64ToSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});
     }
 }
 

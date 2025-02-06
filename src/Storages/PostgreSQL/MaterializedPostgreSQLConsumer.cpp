@@ -526,8 +526,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            String relation_namespace;
-            String relation_name;
+            String relation_namespace, relation_name;
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 
@@ -944,7 +943,7 @@ bool MaterializedPostgreSQLConsumer::consume()
         /// https://github.com/postgres/postgres/blob/master/src/backend/replication/pgoutput/pgoutput.c#L1128
         /// So at some point will get out of limit and then they will be cleaned.
         std::string error_message = e.what();
-        if (!error_message.contains("out of relcache_callback_list slots"))
+        if (error_message.find("out of relcache_callback_list slots") == std::string::npos)
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
         connection->tryUpdateConnection();

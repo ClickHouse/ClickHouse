@@ -1,11 +1,7 @@
 #pragma once
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <IO/WriteBufferFromString.h>
-#include <base/defines.h>
-
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
