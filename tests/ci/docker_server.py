@@ -15,12 +15,13 @@ from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
+    GITHUB_SERVER_URL,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
 )
-from git_helper import Git
+from git_helper import GIT_PREFIX, Git, git_runner
 from pr_info import PRInfo
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
@@ -294,6 +295,50 @@ def build_and_push_image(
     return result
 
 
+def test_docker_library(test_results: TestResults) -> None:
+    """we test our images vs the official docker library repository to track integrity"""
+    check_images = [
+        tr.name
+        for tr in test_results
+        if (
+            tr.name.startswith("clickhouse/clickhouse-server")
+            and "alpine" not in tr.name
+            and tr.name.endswith("amd64")
+        )
+    ]
+    if not check_images:
+        return
+    test_name = "docker library image test"
+    temp_path = Path(TEMP_PATH)
+    try:
+        stopwatch = Stopwatch()
+        repo = "docker-library/official-images"
+        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
+        repo_path = temp_path / repo
+        git_runner(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
+        logging.info(
+            "Patching tests config to run clickhouse tests for clickhouse/clickhouse-server"
+        )
+        git_runner(
+            "sed -i '/testAlias+=(/ a[clickhouse/clickhouse-server]=clickhouse' "
+            f"{repo_path/'test/config.sh'}"
+        )
+        run_sh = (repo_path / "test/run.sh").absolute()
+        cmd = f"{run_sh} {check_images[0]}"
+        log_file = temp_path / "docker-library-test.log"
+        with TeePopen(cmd, log_file) as process:
+            retcode = process.wait()
+        status = OK if retcode == 0 else FAIL
+        test_results.append(
+            TestResult(test_name, status, stopwatch.duration_seconds, [log_file])
+        )
+    except Exception as e:
+        logging.error("Failed while testing the docker library image: %s", e)
+        test_results.append(
+            TestResult(test_name, FAIL, stopwatch.duration_seconds, raw_logs=str(e))
+        )
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
@@ -384,6 +429,8 @@ def main():
             )
             if test_results[-1].status != OK:
                 status = FAILURE
+
+    test_docker_library(test_results)
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(
