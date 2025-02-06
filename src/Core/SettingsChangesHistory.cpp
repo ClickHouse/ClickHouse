@@ -66,6 +66,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
+            {"postgresql_fault_injection_probability", 0., 0., "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -106,8 +108,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
+            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",
@@ -119,8 +124,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
-            {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},

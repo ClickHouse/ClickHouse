@@ -4574,6 +4574,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog() const
 }
 
 
+std::shared_ptr<LatencyLog> Context::getLatencyLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->latency_log;
+}
+
+
 std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5380,7 +5391,7 @@ void Context::setClientVersion(UInt64 client_version_major, UInt64 client_versio
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 }
 
-void Context::setScriptLineNumbers(uint32_t query_number, uint32_t line_number)
+void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
 {
     client_info.script_query_number = query_number;
     client_info.script_line_number = line_number;

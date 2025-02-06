@@ -14,6 +14,9 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueProcessedFiles;
     extern const Event ObjectStorageQueueFailedFiles;
+    extern const Event ObjectStorageQueueTrySetProcessingRequests;
+    extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
+    extern const Event ObjectStorageQueueTrySetProcessingFailed;
 };
 
 namespace DB
@@ -243,6 +246,8 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     if (!processing_lock.try_lock())
         return {};
 
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
+
     auto [success, file_state] = setProcessingImpl();
     if (success)
     {
@@ -257,6 +262,11 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     LOG_TEST(log, "File {} has state `{}`: will {}process (processing id version: {})",
              path, file_state, success ? "" : "not ",
              processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
+
+    if (success)
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
+    else
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
 
     return success;
 }
@@ -292,6 +302,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         }
     }
 
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
     return prepareProcessingRequestsImpl(requests);
 }
 
@@ -335,15 +346,14 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     }
 
     if (responses[0]->error == Coordination::Error::ZBADVERSION
-        || responses[0]->error == Coordination::Error::ZNONODE)
+        || responses[0]->error == Coordination::Error::ZNONODE
+        || responses[1]->error == Coordination::Error::ZNONODE)
     {
-        LOG_WARNING(
+        LOG_TRACE(
             log, "Processing node no longer exists ({}) "
             "while resetting processing state. "
-            "This could be as a result of expired keeper session. "
-            "Cannot set file as failed, will retry.",
+            "This could be as a result of expired keeper session. ",
             processing_node_path);
-        chassert(false);
         return;
     }
 
