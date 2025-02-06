@@ -36,6 +36,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
 #include <Core/Settings.h>
+#include <Core/callOnTypeIndex.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -1201,7 +1202,7 @@ public:
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
-            /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
+            /// You can compare the date, datetime, or datetime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))

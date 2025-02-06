@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/SortDescription.h>
-
+#include <Columns/IColumn.h>
 
 namespace DB
 {
+
+class Block;
+class SortDescription;
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);

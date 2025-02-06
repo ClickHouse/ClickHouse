@@ -17,7 +17,7 @@ class _Settings:
     CI_CONFIG_JOB_NAME = "Config Workflow"
     DOCKER_BUILD_JOB_NAME = "Docker Builds"
     FINISH_WORKFLOW_JOB_NAME = "Finish Workflow"
-    READY_FOR_MERGE_STATUS_NAME = "Ready for Merge"
+    READY_FOR_MERGE_CUSTOM_STATUS_NAME = ""
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
@@ -120,7 +120,7 @@ _USER_DEFINED_SETTINGS = [
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
-    "READY_FOR_MERGE_STATUS_NAME",
+    "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
     "SECRET_CI_DB_PASSWORD",
