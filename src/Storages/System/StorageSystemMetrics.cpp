@@ -2,7 +2,7 @@
 #include <atomic>
 #include <Storages/ColumnsDescription.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentHistogramMetrics.h>
+#include <Common/HistogramMetrics.h>
 #include "DataTypes/DataTypeMap.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -42,7 +42,7 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
         res_columns[3]->insertDefault();
     }
 
-    const auto & descriptors = CurrentHistogramMetrics::collect();
+    const auto & descriptors = HistogramMetrics::collect();
     for (const auto & metric_descriptor : descriptors)
     {
         const auto & counters = metric_descriptor.counters;
