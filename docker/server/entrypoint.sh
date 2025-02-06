@@ -102,10 +102,31 @@ function manage_clickhouse_directories() {
 }
 
 function manage_clickhouse_user() {
+    # Check if the `defaul` user is changed through any mounted file. It will mean that user took care of it already
+    # First, extract the users_xml.path and check it's relative or absolute
+    local USERS_XML USERS_CONFIG
+    USERS_XML=$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='user_directories.users_xml.path')
+    case $USERS_XML in
+        /* ) # absolute path
+            cp "$USERS_XML" /tmp
+            USERS_CONFIG="/tmp/$(basename $USERS_XML)"
+            ;;
+        * ) # relative path to the $CLICKHOUSE_CONFIG
+            cp "$(dirname "$CLICKHOUSE_CONFIG")/${USERS_XML}" /tmp
+            USERS_CONFIG="/tmp/$(basename $USERS_XML)"
+            ;;
+    esac
+
+    # Compare original `users.default` to the processed one
+    local ORIGINAL_DEFAULT PROCESSED_DEFAULT CLICKHOUSE_DEFAULT_CHANGED
+    ORIGINAL_DEFAULT=$(clickhouse extract-from-config --config-file "$USERS_CONFIG" --key='users.default' | sha256sum)
+    PROCESSED_DEFAULT=$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --users --key='users.default' --try | sha256sum)
+    [ "$ORIGINAL_DEFAULT" == "$PROCESSED_DEFAULT" ] && CLICKHOUSE_DEFAULT_CHANGED=0 || CLICKHOUSE_DEFAULT_CHANGED=1
+
     if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
         echo "$0: explicitly skip changing user 'default'"
-        # if clickhouse user is defined - create it (user "default" already exists out of box)
     elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
+        # if clickhouse user is defined - create it (user "default" already exists out of box)
         echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
         cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
@@ -127,6 +148,9 @@ function manage_clickhouse_user() {
   </users>
 </clickhouse>
 EOT
+    elif [ "$CLICKHOUSE_DEFAULT_CHANGED" == "1" ]; then
+        # Leave users as is, do nothing
+        :
     else
         echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
         cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
