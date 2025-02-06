@@ -249,7 +249,7 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = temp_path / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
+        log_file = temp_path / Utils.normalize_string(f"{image.repo}:{tag}-{arch}.log")
         if retry_popen(cmd, log_file) != 0:
             result.append(
                 TestResult(
@@ -326,6 +326,7 @@ def test_docker_library(test_results: TestResults) -> None:
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
             cmd = f"{run_sh} {image}"
+            tag = image.rsplit(":", 1)[-1]
             log_file = (
                 temp_path / f"docker-library-test-{Utils.normalize_string(image)}.log"
             )
@@ -333,7 +334,12 @@ def test_docker_library(test_results: TestResults) -> None:
                 retcode = process.wait()
             status = OK if retcode == 0 else FAIL
             test_results.append(
-                TestResult(test_name, status, stopwatch.duration_seconds, [log_file])
+                TestResult(
+                    f"{test_name} ({tag})",
+                    status,
+                    stopwatch.duration_seconds,
+                    [log_file],
+                )
             )
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
