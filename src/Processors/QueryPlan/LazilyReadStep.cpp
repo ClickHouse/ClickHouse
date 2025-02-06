@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Processors/Transforms/ColumnLazyTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeLazilyReader.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/JSONBuilder.h>
 

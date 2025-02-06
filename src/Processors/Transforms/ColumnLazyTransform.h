@@ -8,7 +8,7 @@ struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class MergeTreeLazilyReader;
-using MergeTreeLazilyReaderPtr = std::shared_ptr<MergeTreeLazilyReader>;
+using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
 
 class ColumnLazyTransform : public ISimpleTransform
 {

@@ -1,13 +1,13 @@
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <memory>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LazilyReadStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
-#include <memory>
-#include "Storages/SelectQueryInfo.h"
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -255,7 +255,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
         return;
 
     lazily_read_info->data_parts_info = std::make_shared<DataPartsInfo>();
-    auto lazy_column_reader = std::make_shared<MergeTreeLazilyReader>(
+    auto lazy_column_reader = std::make_unique<MergeTreeLazilyReader>(
         sorting->getOutputHeader(),
         reading_step->getMergeTreeData(),
         reading_step->getStorageSnapshot(),
@@ -282,7 +282,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
 
     updateStepsDataStreams(steps_to_update);
 
-    auto lazily_read_step = std::make_unique<LazilyReadStep>(sorting->getOutputHeader(), lazily_read_info, lazy_column_reader);
+    auto lazily_read_step = std::make_unique<LazilyReadStep>(sorting->getOutputHeader(), lazily_read_info, std::move(lazy_column_reader));
     lazily_read_step->setStepDescription("Lazily Read");
     replace_node.step = std::move(lazily_read_step);
 }

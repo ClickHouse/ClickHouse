@@ -50,4 +50,6 @@ private:
     ColumnsWithTypeAndName lazy_columns;
 };
 
+using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
+
 }
