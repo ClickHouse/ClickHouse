@@ -28,9 +28,8 @@ def setup_nodes(nodes, shard):
     for node in nodes:
         node.query(
             """
-                DROP TABLE IF EXISTS test.test_table;
-                DROP DATABASE IF EXISTS test;
-                DROP USER IF EXISTS test_user_xnhds;
+                DROP DATABASE IF EXISTS test SYNC;
+                DROP USER IF EXISTS test_user_xnhds SYNC;
                 CREATE DATABASE test;
                 SET database_replicated_allow_replicated_engine_arguments=2;  
                 CREATE TABLE test.test_table(date Date, id UInt32)
@@ -51,6 +50,11 @@ def start_cluster():
         cluster.shutdown()
 
 
+def check_exists(zk, path):
+    zk.sync(path)
+    return zk.exists(path)
+
+
 def test_drop_permissions(start_cluster):
     node1.query(
         "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
@@ -60,10 +64,11 @@ def test_drop_permissions(start_cluster):
     # this the node replica that we are going to drop later on
     zk = cluster.get_kazoo_client("zoo1")
     # check that the path from zk exists for the replica node2
-    assert (
-        zk.exists("/clickhouse/tables/test/1/replicated/test_table/replicas/node2")
-        is not None
+
+    exists_before = check_exists(
+        zk, "/clickhouse/tables/test/1/replicated/test_table/replicas/node2"
     )
+    assert exists_before != None
 
     # create user without any permissions
     node1.query("CREATE USER test_user_xnhds;")
@@ -94,11 +99,10 @@ def test_drop_permissions(start_cluster):
     node1.query("SYSTEM DROP REPLICA 'node2'")
 
     # check that the metadata for replica node2 was removed from keeper
-    assert (
-        zk.exists(" /clickhouse/tables/test/1/replicated/test_table/replicas/node2")
-        is None
+    exists_after = check_exists(
+        zk, " /clickhouse/tables/test/1/replicated/test_table/replicas/node2"
     )
+    assert exists_after == None
 
     node1.query("DROP USER test_user_xnhds;")
-    node1.query("DROP TABLE test.test_table;")
     node1.query("DROP DATABASE test;")
