@@ -13,7 +13,7 @@ import TabItem from '@theme/TabItem';
 
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/en/operations/configuration-files).
 
-Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section. 
+Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory
@@ -121,7 +121,7 @@ Default: `16`
 
 ## background_merges_mutations_concurrency_ratio
 
-Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. 
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently.
 
 For example, if the ratio equals to 2 and [`background_pool_size`](#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
 
@@ -430,11 +430,11 @@ Default: `1000`
 
 ## max_concurrent_queries
 
-Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered. 
+Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
-See also: 
+See also:
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](#max_concurrent_select_queries) 
+- [`max_concurrent_select_queries`](#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_all_users`](/docs/en/operations/settings/settings/#max_concurrent_queries_for_all_users)
 
 :::note
@@ -465,7 +465,7 @@ Default: `0`
 
 ## max_concurrent_select_queries
 
-Limit on total number of concurrently select queries. 
+Limit on total number of concurrently select queries.
 
 :::note
 
@@ -481,12 +481,12 @@ Default: `0`
 ## max_waiting_queries
 
 Limit on total number of concurrently waiting queries.
-Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](#async_load_databases). 
+Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](#async_load_databases).
 
 :::note
 Waiting queries are not counted when limits controlled by the following settings are checked:
 
-- [`max_concurrent_queries`](#max_concurrent_queries) 
+- [`max_concurrent_queries`](#max_concurrent_queries)
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_user`](/docs/en/operations/settings/settings#max_concurrent_select_queries)
@@ -646,7 +646,7 @@ Interval in seconds during which the server's maximum allowed memory consumption
 
 To disable the cgroup observer, set this value to `0`.
 
-see settings: 
+see settings:
 - [`cgroup_memory_watcher_hard_limit_ratio`](#cgroup_memory_watcher_hard_limit_ratio)
 - [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio).
 
@@ -750,7 +750,7 @@ Default: `100000`
 
 ## max_table_num_to_throw
 
-If number of tables is greater than this value, server will throw an exception. 
+If number of tables is greater than this value, server will throw an exception.
 
 The following tables are not counted:
 - view
@@ -779,7 +779,7 @@ Default: `0`
 
 ## max_replicated_table_num_to_throw
 
-If the number of replicated tables is greater than this value, the server will throw an exception. 
+If the number of replicated tables is greater than this value, the server will throw an exception.
 
 Only counts tables for database engines:
 - Atomic
@@ -911,7 +911,7 @@ Default: `10000`
 
 ## mmap_cache_size
 
-Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). 
+Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files).
 
 The amount of data in mapped files can be monitored in the following system tables with the following metrics:
 
@@ -1388,7 +1388,7 @@ Default: `16`
 ## database_catalog_unused_dir_cleanup_period_sec
 
 Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task. 
+Sets scheduling period of the task.
 
 :::note
 A value of `0` means "never". The default value corresponds to 1 day.
@@ -1597,7 +1597,7 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 
 ## mlock_executable
 
-Perform `mlockall` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. 
+Perform `mlockall` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
 
 :::note
 Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
@@ -1828,11 +1828,9 @@ The location and format of log messages.
 | `stream_compress`         | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
 | `console`                 | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
 | `console_log_level`       | Log level for console output. Defaults to `level`.                                                                                                                                  |
-| `formatting`              | Log format for console output. Currently, only `json` is supported                                                                                                                  | 
+| `formatting`              | Log format for console output. Currently, only `json` is supported                                                                                                                  |
 | `use_syslog`              | Also forward log output to syslog.                                                                                                                                                  |
 | `syslog_level`            | Log level for logging to syslog.                                                                                                                                                    |
-| `message_regexp`          | Only log messages that match this regular expression. Defaults to `""`, indicating no filtering.                                                                                    |
-| `message_regexp_negative` | Only log messages that don't match this regular expression. Defaults to `""`, indicating no filtering.                                                                              |
 
 **Log format specifiers**
 
@@ -1921,27 +1919,6 @@ The log level of individual log names can be overridden. For example, to mute al
 </logger>
 ```
 
-**Regular Expression Filtering**
-
-The messages logged can be filtered using regular expressions using `message_regexp` and `message_regexp_negative`. This can be done on a per-level basis or globally. If both a global and logger-specific pattern is specified, the global pattern is overridden (ignored) and only the logger-specific pattern applies. The positive and negative patterns are considered independently for this situation. Note: Using this feature may cause a slight slowdown in performance.
-
-```xml
-    <logger>
-        <level>trace</level>
-        <!-- Global: Don't log Trace messages -->
-        <message_regexp_negative>.*Trace.*</message_regexp_negative>
-
-        <message_regexps>
-            <logger>
-                <!-- For the executeQuery logger, only log if message has "Read", but not "from" -->
-                <name>executeQuery</name>
-                <message_regexp>.*Read.*</message_regexp>
-                <message_regexp_negative>.*from.*</message_regexp_negative>
-            </logger>
-        </message_regexps>
-    </logger>
-```
-
 **syslog**
 
 To write log messages additionally to syslog:
@@ -1969,7 +1946,7 @@ Keys for `<syslog>`:
 
 **Log formats**
 
-You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. 
+You can specify the log format that will be outputted in the console log. Currently, only JSON is supported.
 
 **Example**
 
@@ -2117,12 +2094,12 @@ Default: 50 GB.
 
 ## background_pool_size
 
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. 
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
 :::note
-- This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. 
-- You can only increase the number of threads at runtime. 
-- To lower the number of threads you have to restart the server. 
+- This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start.
+- You can only increase the number of threads at runtime.
+- To lower the number of threads you have to restart the server.
 - By adjusting this setting, you manage CPU and disk load.
 :::
 
@@ -2267,6 +2244,39 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 </clickhouse>
 ```
 
+## latency_log
+
+It is disabled by default.
+
+**Enabling**
+
+To manually turn on latency history collection [`system.latency_log`](../../operations/system-tables/latency_log.md), create `/etc/clickhouse-server/config.d/latency_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </latency_log>
+</clickhouse>
+```
+
+**Disabling**
+
+To disable `latency_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_latency_log.xml` with the following content:
+
+``` xml
+<clickhouse>
+<latency_log remove="1" />
+</clickhouse>
+```
+
 ## replicated_merge_tree
 
 Fine-tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md). This setting has a higher priority.
@@ -2359,10 +2369,10 @@ Use the following parameters to configure logging:
 | `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
 | `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
 | `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              | 
+| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
 | `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
 | `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     | 
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
 | `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
 
 **Example**
@@ -2545,7 +2555,7 @@ Use the following parameters to configure logging:
 | Parameter                          | Description                                                                                                                                                                                                     | Default Value       |
 |------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
 | `database`                         | Name of the database.                                                                                                                                                                                           |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                         |                     | 
+| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                         |                     |
 | `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.                                                                                                                        |                     |
 | `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.                                                                                                                             |                     |
 | `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` are defined. |                     |
@@ -2554,7 +2564,7 @@ Use the following parameters to configure logging:
 | `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                                | `8192`              |
 | `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                           | `max_size_rows / 2` |
 | `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash                                                                                                                                         | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                          |                     |                                                                                                                                         
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                          |                     |
 | `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                             |                     |
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -3077,7 +3087,7 @@ Storage method for data part headers in ZooKeeper. This setting only applies to 
 
 ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
-**For each table** 
+**For each table**
 
 When creating a table, specify the corresponding [engine setting](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
 
@@ -3261,7 +3271,7 @@ Default: `0`
 
 Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
 
-There are three ways to define proxy servers: 
+There are three ways to define proxy servers:
 - environment variables
 - proxy lists
 - remote proxy resolvers.
@@ -3524,7 +3534,7 @@ Changing this setting does not affect existing users. Create/alter authenticatio
 Non authentication create/alter queries will succeed.
 
 :::note
-A value of `0` means unlimited. 
+A value of `0` means unlimited.
 :::
 
 Type: UInt64
