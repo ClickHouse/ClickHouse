@@ -239,7 +239,8 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
     DB::Strings next_cols;
 
     if (processServerQuery(fmt::format(
-            "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' INTO OUTFILE "
+            "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
+            "c.database = 'system' INTO OUTFILE "
             "'{}' TRUNCATE FORMAT TabSeparated;",
             fuzz_out.generic_string())))
     {
