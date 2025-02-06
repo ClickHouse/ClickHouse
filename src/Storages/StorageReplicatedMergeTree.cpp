@@ -4421,7 +4421,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     auto zookeeper = getZooKeeper();
 
     DataPartPtr broken_part;
-    bool cancel_fetch_for_broken = false;
     auto outdate_broken_part = [this, &broken_part]()
     {
         if (!broken_part)
@@ -4462,8 +4461,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             prefix = "covered-by-broken";
         }
 
-        if (MakeClonePartInDetachedResult::NoFetchPart == makeClonePartInDetached(part, prefix))
-            cancel_fetch_for_broken = true;
+        makeClonePartInDetached(part, prefix);
 
         detached_parts.push_back(part->name);
     }
@@ -4538,13 +4536,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_predicate->getVersion()));
         }
 
-        if (cancel_fetch_for_broken)
-        {
-            outdate_broken_part();
-            LOG_TRACE(log, "Cancel fetch for broken part {}", part_name);
-            return;
-        }
-
         LogEntryPtr log_entry = std::make_shared<LogEntry>();
         log_entry->type = LogEntry::GET_PART;
         log_entry->create_time = part_create_time;
@@ -4577,9 +4568,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     }
 }
 
-auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const -> MakeClonePartInDetachedResult
+void StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const
 {
-    MakeClonePartInDetachedResult result = MakeClonePartInDetachedResult::FetchPart;
     const bool copy_instead_of_hardlink = part->isReplicatedZeroCopy();
     try
     {
@@ -4595,16 +4585,11 @@ auto StorageReplicatedMergeTree::makeClonePartInDetached(const DataPartPtr & par
                 log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
             part->makeCloneInDetached(prefix, getInMemoryMetadataPtr(), /*disk_transaction*/ {}, false);
             LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
-            return MakeClonePartInDetachedResult::NoFetchPart;
+            return;
         }
         throw;
     }
 #endif
-    catch (...)
-    {
-        throw;
-    }
-    return result;
 }
 
 void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & zookeeper_retries_info)

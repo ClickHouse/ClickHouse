@@ -666,9 +666,7 @@ private:
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
 
-    enum class MakeClonePartInDetachedResult : uint8_t { FetchPart, NoFetchPart };
-
-    MakeClonePartInDetachedResult makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const;
+    void makeClonePartInDetached(const DataPartPtr & part, const String & prefix) const;
 
     /// Running jobs from the queue.
 

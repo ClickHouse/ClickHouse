@@ -74,16 +74,10 @@ def check_replica_before_broke(node, table_name):
 
 
 def check_replica_after_broke_s3(node, table_name):
-    CANCEL_FETCH_MSG_LOG = "Cancel fetch for broken part"
-
     error = node.query_and_get_error(f"SELECT * FROM {table_name}").strip()
     assert (
         "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
-    )
-
-    assert replica1.wait_for_log_line(
-        regexp=CANCEL_FETCH_MSG_LOG, timeout=60, look_behind_lines=2000
     )
 
     detached_parts_name_after_drop = node.query(
@@ -169,8 +163,15 @@ def test_corrupted_blob(start_cluster):
         assert cluster.minio_client.stat_object(cluster.minio_bucket, path).size > 0
         cluster.minio_client.remove_object(cluster.minio_bucket, path)
 
+    # for test stability
+    replica1.query("SYSTEM STOP FETCHES")
+    replica2.query("SYSTEM STOP FETCHES")
+
     check_replica_after_broke_s3(replica1, table_name)
     check_replica_after_broke_s3(replica2, table_name)
+
+    replica1.query("SYSTEM START FETCHES")
+    replica2.query("SYSTEM START FETCHES")
 
     replica1.query(f"INSERT INTO {table_name} VALUES (2)")
 
