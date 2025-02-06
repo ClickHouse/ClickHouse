@@ -56,7 +56,9 @@ static std::optional<ServerCredentials> loadServerCredentials(
         ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
 }
 
-FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path) : cb(c), log(getLogger("BuzzHouse"))
+FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
+    : cb(c)
+    , log(getLogger("BuzzHouse"))
 {
     JSONParserImpl parser;
     JSONObjectType object;
@@ -318,26 +320,29 @@ void FuzzConfig::comparePerformanceResults(
     const uint64_t query_duration_ms2,
     const uint64_t memory_usage2) const
 {
-    if (this->query_time_minimum < query_duration_ms1
-        && query_duration_ms1
-            > static_cast<uint64_t>(query_duration_ms2 * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
+    if (this->measure_performance)
     {
-        throw DB::Exception(
-            DB::ErrorCodes::BUZZHOUSE,
-            "{}: ClickHouse peer server query was faster than the target server: {} vs {}",
-            oracle_name,
-            formatReadableTime(static_cast<double>(query_duration_ms1 * 1000000)),
-            formatReadableTime(static_cast<double>(query_duration_ms2 * 1000000)));
-    }
-    if (this->query_memory_minimum < memory_usage1
-        && memory_usage1 > static_cast<uint64_t>(memory_usage2 * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::BUZZHOUSE,
-            "{}: ClickHouse peer server query used less memory than the target server: {} vs {}",
-            oracle_name,
-            formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage1)),
-            formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage2)));
+        if (this->query_time_minimum < query_duration_ms1
+            && query_duration_ms1
+                > static_cast<uint64_t>(query_duration_ms2 * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BUZZHOUSE,
+                "{}: ClickHouse peer server query was faster than the target server: {} vs {}",
+                oracle_name,
+                formatReadableTime(static_cast<double>(query_duration_ms1 * 1000000)),
+                formatReadableTime(static_cast<double>(query_duration_ms2 * 1000000)));
+        }
+        if (this->query_memory_minimum < memory_usage1
+            && memory_usage1 > static_cast<uint64_t>(memory_usage2 * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BUZZHOUSE,
+                "{}: ClickHouse peer server query used less memory than the target server: {} vs {}",
+                oracle_name,
+                formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage1)),
+                formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage2)));
+        }
     }
 }
 
