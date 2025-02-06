@@ -192,7 +192,9 @@ function stop_server()
       # Add a special status just in case, so it will be possible to find in the CI DB
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
       kill -TERM "$(pidof gdb)" ||:
-      sleep 5
+
+      # If gdb run was fast we could have a false detection of hung check so to remove noise we add sleep just in case
+      kill -s 0 "$pid" && sleep 60 
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
       kill -s 0 "$pid" || return
