@@ -49,6 +49,9 @@ public:
     /// Passed values are deltas, that must be summarized.
     virtual void onProgress(const Progress & progress);
 
+    /// Set initial progress values on initialization of the format, before it starts writing the data.
+    void setProgress(Progress progress);
+
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
@@ -65,12 +68,14 @@ public:
 
     void setTotals(const Block & totals)
     {
+        std::lock_guard lock(writing_mutex);
         writeSuffixIfNeeded();
         consumeTotals(Chunk(totals.getColumns(), totals.rows()));
         are_totals_written = true;
     }
     void setExtremes(const Block & extremes)
     {
+        std::lock_guard lock(writing_mutex);
         writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
@@ -107,6 +112,11 @@ public:
             writePrefix();
             need_write_prefix = false;
         }
+    }
+
+    void setProgressWriteFrequencyMicroseconds(size_t value)
+    {
+        progress_write_frequency_us = value;
     }
 
 protected:
@@ -209,6 +219,9 @@ protected:
     Statistics statistics;
     std::atomic_bool has_progress_update_to_write = false;
 
+    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
+    std::mutex writing_mutex;
+
 private:
     size_t rows_read_before = 0;
     bool are_totals_written = false;
@@ -217,8 +230,8 @@ private:
     size_t result_rows = 0;
     size_t result_bytes = 0;
 
-    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
-    std::mutex writing_mutex;
+    UInt64 progress_write_frequency_us = 0;
+    std::atomic<UInt64> prev_progress_write_ns = 0;
 };
 
 }

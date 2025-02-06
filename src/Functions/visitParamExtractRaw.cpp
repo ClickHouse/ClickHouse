@@ -89,7 +89,7 @@ SELECT simpleJSONExtractRaw(json, 'foo') FROM jsons ORDER BY json;)",
 -3.4
 5
 {"def":[1,2,3]})"}},
-        .categories{"JSON"}});
+        .category{"JSON"}});
     factory.registerAlias("visitParamExtractRaw", "simpleJSONExtractRaw");
 }
 

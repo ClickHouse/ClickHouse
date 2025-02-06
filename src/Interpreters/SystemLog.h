@@ -14,6 +14,7 @@
     M(CrashLog,              crash_log,            "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.") \
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
     M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
+    M(LatencyLog,            latency_log,          "Contains history of all latency buckets, periodically flushed to disk.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
@@ -97,6 +98,7 @@ struct SystemLogSettings
     SystemLogQueueSettings queue_settings;
 
     String engine;
+    bool symbolize_traces = false;
 };
 
 template <typename LogElement>

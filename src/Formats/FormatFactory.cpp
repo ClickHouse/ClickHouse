@@ -46,10 +46,12 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_chunk_bytes_for_parallel_parsing;
+    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace ErrorCodes
@@ -181,6 +183,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.ignore_unnecessary_fields = settings[Setting::input_format_json_ignore_unnecessary_fields];
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -200,6 +203,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
+    format_settings.parquet.output_compression_level = settings[Setting::output_format_compression_level];
     format_settings.parquet.output_compliant_nested_types = settings[Setting::output_format_parquet_compliant_nested_types];
     format_settings.parquet.use_custom_encoder = settings[Setting::output_format_parquet_use_custom_encoder];
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
@@ -215,14 +219,23 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.max_column_pad_width = settings[Setting::output_format_pretty_max_column_pad_width];
     format_settings.pretty.max_rows = settings[Setting::output_format_pretty_max_rows];
+    format_settings.pretty.max_column_name_width_cut_to = settings[Setting::output_format_pretty_max_column_name_width_cut_to];
+    format_settings.pretty.max_column_name_width_min_chars_to_cut = settings[Setting::output_format_pretty_max_column_name_width_min_chars_to_cut];
     format_settings.pretty.max_value_width = settings[Setting::output_format_pretty_max_value_width];
     format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
     format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
+    format_settings.pretty.row_numbers = settings[Setting::output_format_pretty_row_numbers];
+    format_settings.pretty.single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
+    format_settings.pretty.display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
+    format_settings.pretty.display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
+    format_settings.pretty.squash_consecutive_ms = settings[Setting::output_format_pretty_squash_consecutive_ms];
+    format_settings.pretty.squash_max_wait_ms = settings[Setting::output_format_pretty_squash_max_wait_ms];
     format_settings.pretty.highlight_trailing_spaces = settings[Setting::output_format_pretty_highlight_trailing_spaces];
-    format_settings.pretty.output_format_pretty_row_numbers = settings[Setting::output_format_pretty_row_numbers];
-    format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
-    format_settings.pretty.output_format_pretty_display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
-    format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
+    format_settings.pretty.multiline_fields = settings[Setting::output_format_pretty_multiline_fields];
+    format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
+    format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
+    format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
+    format_settings.pretty.fallback_to_vertical_min_columns = settings[Setting::output_format_pretty_fallback_to_vertical_min_columns];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
@@ -523,7 +536,8 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, const Cont
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
-        format->onProgress(read_progress);
+        if (!read_progress.empty())
+            format->setProgress(std::move(read_progress));
 
         /// Update the start of the statistics to use the start of the query, and not the creation of the format class
         format->setStartTime(element_id->getQueryCPUStartTime(), true);
@@ -593,6 +607,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
         mysql->setContext(context);
 
     addExistingProgressToOutputFormat(format, context);
+
+    format->setProgressWriteFrequencyMicroseconds(context->getSettingsRef()[Setting::interactive_delay]);
 
     return format;
 }

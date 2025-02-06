@@ -849,6 +849,11 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_pretty_print, true, R"(
+When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
+
+Enabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
@@ -892,11 +897,27 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 24, R"(
+If the column name is too long, cut it to this length.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_min_chars_to_cut, 4, R"(
+Minimum characters to cut if the column name is too long.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width, 10000, R"(
 Maximum width of value to display in Pretty formats. If greater - it will be cut.
+The value 0 means - never cut.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
+)", 0) \
+DECLARE(UInt64, output_format_pretty_squash_consecutive_ms, 50, R"(
+Wait for the next block for up to specified number of milliseconds and squash it to the previous before writing.
+This avoids frequent output of too small blocks, but still allows to display data in a streaming fashion.
+)", 0) \
+DECLARE(UInt64, output_format_pretty_squash_max_wait_ms, 1000, R"(
+Output the pending block in pretty formats if more than the specified number of milliseconds has passed since the previous output.
 )", 0) \
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
@@ -1116,6 +1137,23 @@ Print a readable number tip on the right side of the table if the block consists
     DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
+If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
+If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
+)", 0) \
+    DECLARE(Bool, output_format_pretty_fallback_to_vertical, true, R"(
+If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
+See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 10, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
 
@@ -1255,9 +1293,9 @@ Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date3
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. The result is random.
-- `throw` — Throw an exception in case of conversion overflow.
-- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+- `ignore` — Silently ignore overflows. Result are undefined.
+- `throw` — Throw an exception in case of overflow.
+- `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
 )", 0) \

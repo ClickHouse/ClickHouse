@@ -18,7 +18,7 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Planner/Utils.h>
 
 namespace DB
 {
@@ -26,6 +26,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+}
+
+SettingsChanges ExplainPlanOptions::toSettingsChanges() const
+{
+    SettingsChanges changes;
+    changes.emplace_back("header", int(header));
+    changes.emplace_back("description", int(description));
+    changes.emplace_back("actions", int(actions));
+    changes.emplace_back("indexes", int(indexes));
+    changes.emplace_back("sorting", int(sorting));
+    changes.emplace_back("distributed", int(distributed));
+
+    return changes;
 }
 
 QueryPlan::QueryPlan() = default;
@@ -204,7 +218,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
+static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
@@ -300,9 +314,9 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 }
 
 static void explainStep(
-    const IQueryPlanStep & step,
+    IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const QueryPlan::ExplainPlanOptions & options)
+    const ExplainPlanOptions & options)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
@@ -355,13 +369,16 @@ static void explainStep(
 
     if (options.indexes)
         step.describeIndexes(settings);
+
+    if (options.distributed)
+        step.describeDistributedPlan(settings, options);
 }
 
-std::string debugExplainStep(const IQueryPlanStep & step)
+std::string debugExplainStep(IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
-    QueryPlan::ExplainPlanOptions options{.actions = true};
     explainStep(step, settings, options);
     return out.str();
 }
@@ -461,16 +478,25 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// optimization need to be applied before "mergeExpressions" optimization
-    /// it removes redundant sorting steps, but keep underlying expressions,
-    /// so "mergeExpressions" optimization handles them afterwards
-    if (optimization_settings.remove_redundant_sorting)
-        QueryPlanOptimizations::tryRemoveRedundantSorting(root);
+    try
+    {
+        /// optimization need to be applied before "mergeExpressions" optimization
+        /// it removes redundant sorting steps, but keep underlying expressions,
+        /// so "mergeExpressions" optimization handles them afterwards
+        if (optimization_settings.remove_redundant_sorting)
+            QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
-    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-    if (optimization_settings.build_sets)
-        QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
+        QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+        QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+        if (optimization_settings.build_sets)
+            QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK || e.code() == ErrorCodes::LOGICAL_ERROR)
+            e.addMessage("while optimizing query plan:\n{}", dumpQueryPlan(*this));
+        throw;
+    }
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const

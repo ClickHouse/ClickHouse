@@ -12,6 +12,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 
+#include <Core/callOnTypeIndex.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
@@ -179,7 +181,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes), true);
+        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context, CompileExpressions::yes), true);
         actions->execute(evaluate_block);
     }
 

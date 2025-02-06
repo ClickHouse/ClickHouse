@@ -428,16 +428,18 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
 
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
+    bool replaced = false;
     for (auto & output_node : outputs)
     {
         if (output_node->result_name == node.result_name)
         {
             output_node = &node;
-            return;
+            replaced = true;
         }
     }
 
-    outputs.push_back(&node);
+    if (!replaced)
+        outputs.push_back(&node);
 }
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
@@ -3388,7 +3390,7 @@ static MutableColumnPtr deserializeConstant(
             std::make_shared<LambdaCapture>(std::move(capture)),
             std::make_shared<ExpressionActions>(
                 std::move(capture_dag),
-                ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+                ExpressionActionsSettings(context, CompileExpressions::yes)));
 
         return ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
     }
@@ -3567,7 +3569,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
                         std::move(capture_dag),
-                        ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)),
+                        ExpressionActionsSettings(context, CompileExpressions::yes)),
                     std::make_shared<LambdaCapture>(std::move(capture)),
                     node.result_type,
                     function_name);
