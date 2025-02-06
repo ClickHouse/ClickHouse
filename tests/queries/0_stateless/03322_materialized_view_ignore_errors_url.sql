@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS mv;
 
 CREATE TABLE src (x int) ORDER BY ();
 
-CREATE TABLE dst (x int) AS url('https://127.0.0.1/', JSONEachRow, 'x int');
+CREATE TABLE dst (x int) AS url('http://127.0.0.1/', JSONEachRow, 'x int');
 
 CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM src;
 
