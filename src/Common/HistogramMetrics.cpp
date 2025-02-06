@@ -39,4 +39,3 @@ namespace HistogramMetrics
 }
 
 #undef APPLY_TO_METRICS
-#undef BB

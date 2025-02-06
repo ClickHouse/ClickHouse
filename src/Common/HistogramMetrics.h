@@ -31,7 +31,6 @@ namespace HistogramMetrics
     }
 
     /// Supports exactly one label per metric.
-    /// We have to do it here because ...
     /// TODO(mstetsyuk): support any arbitrary number of labels per metric.
     #define APPLY_TO_METRICS(M) \
         M(KeeperResponseTime, "The response time of ClickHouse Keeper, in milliseconds", impl::make_buckets(1, 2, 5, 10, 20, 50), KeeperOperation) \
