@@ -14,7 +14,6 @@
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
 #include <Core/ColumnNumbers.h>
-#include <Common/ColumnsHashingImpl.h>
 #include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
@@ -25,7 +24,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 

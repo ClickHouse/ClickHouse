@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
