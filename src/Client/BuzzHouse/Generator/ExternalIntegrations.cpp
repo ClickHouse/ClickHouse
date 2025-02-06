@@ -1348,7 +1348,7 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
             pt,
             fmt::format(
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
-                "system.query_log ORDER BY event_time_microseconds DESC LIMIT 1;",
+                "system.query_log WHERE used_privileges = [] ORDER BY event_time_microseconds DESC LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
