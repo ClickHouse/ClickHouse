@@ -310,8 +310,8 @@ def test_docker_library(test_results: TestResults) -> None:
         return
     test_name = "docker library image test"
     temp_path = Path(TEMP_PATH)
+    stopwatch = Stopwatch()
     try:
-        stopwatch = Stopwatch()
         repo = "docker-library/official-images"
         logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = temp_path / repo
@@ -325,6 +325,7 @@ def test_docker_library(test_results: TestResults) -> None:
         )
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
+            test_sw = Stopwatch()
             cmd = f"{run_sh} {image}"
             tag = image.rsplit(":", 1)[-1]
             log_file = (
@@ -337,7 +338,7 @@ def test_docker_library(test_results: TestResults) -> None:
                 TestResult(
                     f"{test_name} ({tag})",
                     status,
-                    stopwatch.duration_seconds,
+                    test_sw.duration_seconds,
                     [log_file],
                 )
             )
