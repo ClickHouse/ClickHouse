@@ -2,6 +2,7 @@
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -31,6 +32,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/IStorage.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>

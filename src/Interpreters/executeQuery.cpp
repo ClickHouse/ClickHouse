@@ -1355,7 +1355,7 @@ static BlockIO executeQueryImpl(
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryCache::Reader reader = query_cache->createReader(key);
+                    QueryCacheReader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
@@ -1499,7 +1499,7 @@ static BlockIO executeQueryImpl(
                             }
                             else
                             {
-                                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
                                                  key,
                                                  std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                                  settings[Setting::query_cache_squash_partial_results],
