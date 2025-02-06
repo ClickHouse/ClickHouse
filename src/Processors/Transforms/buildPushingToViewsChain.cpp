@@ -547,7 +547,7 @@ Chain buildPushingToViewsChain(
                 context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
             }
         }
-        catch (const Exception & e)
+        catch (const Poco::Exception & e)
         {
             LOG_ERROR(&Poco::Logger::get("PushingToViews"), "Failed to push block to view {}, {}", view_id, e.message());
             if (!context->getSettingsRef()[Setting::materialized_views_ignore_errors])
@@ -622,23 +622,13 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        try
-        {
-            auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
-            metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
-            sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
+        metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
+        sink->setRuntimeData(thread_status, elapsed_counter_ms);
 
-            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
+        result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
 
-            result_chain.addSource(std::move(sink));
-        }
-        catch (const Poco::Exception &)
-        {
-            tryLogCurrentException(&Poco::Logger::get("PushingToViews"), fmt::format("Failed to push block to storage {}", storage->getStorageID()));
-            if (!context->getSettingsRef()[Setting::materialized_views_ignore_errors])
-                throw;
-            result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(storage_header));
-        }
+        result_chain.addSource(std::move(sink));
     }
     else
     {
