@@ -440,7 +440,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     if (filter_actions_dag)
         pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
 
-    const StorageID resolved_id = context->resolveStorageID(main_table);
+    const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
     const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
     if (!storage)
     {
