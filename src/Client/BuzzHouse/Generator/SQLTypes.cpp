@@ -893,7 +893,7 @@ SQLType * ArrayType::typeDeepCopy() const
     return new ArrayType(subtype->typeDeepCopy());
 }
 
-String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const uint32_t limit) const
+String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint32_t limit)
 {
     /// This is a hot loop, so fmt::format may not be desirable
     String ret = "[";
@@ -903,7 +903,7 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
         {
             ret += ", ";
         }
-        ret += subtype->appendRandomRawValue(rg, gen);
+        ret += tp->appendRandomRawValue(rg, gen);
     }
     ret += "]";
     return ret;
@@ -913,7 +913,7 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
 {
     std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, gen.fc.max_nested_rows);
 
-    return appendRandomRawValue(rg, gen, rows_dist(rg.generator));
+    return appendRandomRawValue(rg, gen, subtype, rows_dist(rg.generator));
 }
 
 String MapType::typeName(const bool escape) const
@@ -989,7 +989,7 @@ String TupleType::typeName(const bool escape) const
             ret += std::to_string(sub.cname.value());
             ret += " ";
         }
-        sub.subtype->typeName(escape);
+        ret += sub.subtype->typeName(escape);
     }
     ret += ")";
     return ret;
@@ -1167,7 +1167,6 @@ NestedType::~NestedType()
 {
     for (const auto & entry : subtypes)
     {
-        delete entry.array_subtype;
         delete entry.subtype;
     }
 }
