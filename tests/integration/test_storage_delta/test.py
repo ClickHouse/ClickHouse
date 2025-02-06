@@ -518,4 +518,3 @@ def test_restart_broken_table_function(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-

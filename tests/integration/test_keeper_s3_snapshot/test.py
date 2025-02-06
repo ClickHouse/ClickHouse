@@ -89,7 +89,6 @@ def delete_keeper_snapshots_logs(nodex):
 
 
 def test_s3_upload(started_cluster):
-
     node1_zk = get_fake_zk(node1.name)
 
     # we defined in configs snapshot_distance as 50
