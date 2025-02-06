@@ -794,6 +794,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
 /// needs to be able to fit into the stack. Note we may have to split it even more in the future.
 static std::unordered_map<String, CHSetting> serverSettings3
     = {{"partial_result_on_first_cancel", CHSetting(trueOrFalse, {}, false)},
+       {"postgresql_fault_injection_probability", CHSetting(probRange, {}, false)},
        {"precise_float_parsing", CHSetting(trueOrFalse, {}, false)},
        {"prefer_external_sort_block_bytes",
         CHSetting(
