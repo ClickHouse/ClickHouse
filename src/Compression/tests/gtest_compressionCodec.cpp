@@ -1321,28 +1321,44 @@ TEST(LZ4Test, DecompressMalformedInput)
 
 TEST(DoubleDeltaTest, TranscodeRawInput)
 {
-    for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+        std::make_shared<DataTypeFloat32>(),
+        std::make_shared<DataTypeFloat64>(),
+    };
+
+    for (const auto & type : types)
     {
-        DB::Memory<> source_memory;
-        source_memory.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+        for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(ICompressionCodec::getHeaderSize() + buffer_size);
 
-        for (size_t i = 0; i < buffer_size; ++i)
-            source_memory.data()[i] = i;
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = i;
 
-        DB::Memory<> memory_for_compression;
-        memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+            DB::Memory<> memory_for_compression;
+            memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
 
-        auto codec = makeCodec("DoubleDelta", nullptr);
+            auto codec = makeCodec("DoubleDelta", type);
 
-        auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
 
-        DB::Memory<> memory_for_decompression;
-        memory_for_decompression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
-        auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
 
-        ASSERT_EQ(decompressed, source_memory.size());
-        for (size_t i = 0; i < decompressed; ++i)
-            ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << " with buffer size " << buffer_size << " at position " << i;
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
     }
 }
 
