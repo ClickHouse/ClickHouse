@@ -1196,7 +1196,7 @@ void StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_orde
         generateLimitExpr(rg, ls->mutable_offset());
     }
     ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
-    if (ncols && rg.nextSmallNumber() < 4)
+    if (ncols && !ls->with_ties() rg.nextSmallNumber() < 4)
     {
         Expr * expr = ls->mutable_limit_by();
 
