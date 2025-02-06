@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>

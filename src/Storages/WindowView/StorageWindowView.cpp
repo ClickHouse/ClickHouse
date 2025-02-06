@@ -60,6 +60,7 @@
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Poco/String.h>
 
 namespace DB
 {

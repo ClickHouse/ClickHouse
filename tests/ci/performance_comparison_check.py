@@ -82,7 +82,7 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    required_build = CI.JOB_CONFIGS[check_name].get_required_build()
+    required_build = CI.get_job_config(check_name).get_required_build()
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
