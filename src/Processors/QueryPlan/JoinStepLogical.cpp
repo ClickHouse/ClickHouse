@@ -543,7 +543,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
                 && join_expression.disjunctive_conditions.empty();
 
             if (!can_convert_to_cross)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "No equality condition found in JOIN ON expression {}",
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
                     formatJoinCondition(join_expression.condition));
             join_info.kind = JoinKind::Cross;
         }

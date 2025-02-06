@@ -1,7 +1,6 @@
-#include "config.h"
-
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -25,6 +24,11 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event ObjectStorageQueueLockLocalFileStatusesMicroseconds;
+};
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageQueueRegisteredServers;
 };
 
 namespace DB
@@ -850,6 +854,8 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
 
     std::unique_lock lock(active_servers_mutex);
     active_servers = registered_set;
+
+    CurrentMetrics::set(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
 
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.

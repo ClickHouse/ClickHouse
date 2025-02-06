@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
