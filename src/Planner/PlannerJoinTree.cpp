@@ -393,7 +393,11 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     const auto & settings = query_context->getSettingsRef();
 
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-    auto columns_names = table_expression_data.getColumnNames();
+
+    /// The `table_expression_data.getColumnName()` contain only physical columns,
+    /// but there could be the case when ALIAS column is constant.
+    /// In that case we should not add additional column to read.
+    auto columns_names = std::ranges::to<Names>(std::views::transform(table_expression_data.getColumnNameToColumn(), [](const auto & e) { return e.first; }));
 
     auto * table_node = table_expression->as<TableNode>();
     auto * table_function_node = table_expression->as<TableFunctionNode>();
