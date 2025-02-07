@@ -309,7 +309,7 @@
         /* Will be displayed when user specified custom format. */
         #data-unparsed
         {
-            width: 100%;
+            width: fit-content;
             background-color: var(--element-background-color);
             margin-top: 0rem;
             padding: 0.25rem 0.5rem;
@@ -644,7 +644,7 @@ if (pass_from_url) {
 
 async function ping(url) {
     try {
-        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS' });
+        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
         return response.ok;
     } catch (e) {
         return false;
@@ -678,7 +678,7 @@ async function getServerStatus(server_address, user, password) {
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t" });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -772,9 +772,9 @@ async function postImpl(posted_request_num, query)
     try {
         controller = new AbortController();
         response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
-            /*headers: { 'Authorization': 'never' }*/ });
+            headers: { 'Authorization': 'never' } });
 
-        format = response.headers.get('X-ClickHouse-Format');
+        format = response.headers.get('X-ClickHouse-Format') ?? default_format;
 
         if (!response.ok) {
             is_error = true;

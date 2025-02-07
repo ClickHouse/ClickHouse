@@ -2,6 +2,8 @@ import glob
 from itertools import chain
 from pathlib import Path
 
+from praktika import Job
+
 from . import Workflow
 from .mangle import _get_workflows
 from .settings import GHRunners, Settings
@@ -20,9 +22,35 @@ class Validator:
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        workflows = _get_workflows()
+        if Settings.USE_CUSTOM_GH_AUTH:
+            cls.evaluate_check_simple(
+                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
+                f"Setting SECRET_GH_APP_ID and SECRET_GH_APP_PEM_KEY must be provided with USE_CUSTOM_GH_AUTH == True",
+            )
+
+        workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
+            if Settings.USE_CUSTOM_GH_AUTH:
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_ID}] must be configured for workflow",
+                    workflow.name,
+                )
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
+                    workflow.name,
+                )
+
+            for job in workflow.jobs:
+                cls.evaluate_check(
+                    isinstance(job, Job.Config),
+                    f"Invalid job type [{job}]",
+                    workflow.name,
+                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
@@ -135,18 +163,31 @@ class Validator:
                     ), f"GitHub Runners must not be used for workflow with enabled: workflow.enable_cache, workflow.enable_html or workflow.enable_merge_ready_status as s3 access is required, workflow [{workflow.name}], job [{job.name}]"
 
             if workflow.enable_cidb:
-                assert (
-                    Settings.SECRET_CI_DB_URL
-                ), f"Settings.CI_DB_URL_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.SECRET_CI_DB_PASSWORD
-                ), f"Settings.CI_DB_PASSWORD_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.CI_DB_DB_NAME
-                ), f"Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.CI_DB_TABLE_NAME
-                ), f"Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_URL,
+                    "Settings.SECRET_CI_DB_URL must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_USER,
+                    "Settings.SECRET_CI_DB_USER must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_PASSWORD,
+                    "Settings.SECRET_CI_DB_PASSWORD must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.CI_DB_DB_NAME,
+                    "Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.CI_DB_TABLE_NAME,
+                    "Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
 
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
