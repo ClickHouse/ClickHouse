@@ -15,6 +15,8 @@
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
+            --pending-bar-color: #fae8c6;
+            --skipped-bar-color: #ccc;
         }
 
         body {
@@ -34,6 +36,28 @@
             --text-color: #dedede;
             --tile-background: #1F1F1C;
             --header-background-color: #1F1F1C;
+            --pending-bar-color: #595801;
+            --skipped-bar-color: #575757;
+            --table-border-color: #444;
+        }
+
+        /* Default (Day Theme) - No Change */
+        a {
+            color: blue;
+            text-decoration: none;
+        }
+
+        a:hover {
+            color: darkblue;
+        }
+
+        /* Dark Theme - Only Changes Link Colors */
+        body.night-theme a {
+            color: #ffea00; /* Yellow for better contrast */
+        }
+
+        body.night-theme a:hover {
+            color: #ffaa00; /* Slightly darker yellow */
         }
 
         #info-container {
@@ -172,7 +196,7 @@
 
         #footer .right::before, #footer .settings::before {
             content: "|"; /* Add separator before right and settings sections */
-            margin-left: 10px;
+            margin-left: 0px;
             margin-right: 10px;
             color: #e0e0e0;
         }
@@ -241,7 +265,7 @@
 
         th, td {
             padding: 8px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--table-border-color, #ccc);
             text-align: left;
         }
 
@@ -270,7 +294,7 @@
         }
 
         .status-run {
-            color: blue;
+            color: #0080ff;
             font-weight: bold;
         }
 
@@ -293,20 +317,18 @@
 <footer id="footer">
     <div class="left"></div>
     <div class="right"></div>
-<!--    TODO: fix night theme and enable-->
-<!--    <div class="settings">-->
-<!--        <span id="theme-toggle">☀️</span>-->
-<!--    </div>-->
+    <div class="settings">
+        <span id="theme-toggle">🔆️</span>
+    </div>
 </footer>
 
 <script>
     function toggleTheme() {
         document.body.classList.toggle('night-theme');
-        const toggleIcon = document.getElementById('theme-toggle');
         if (document.body.classList.contains('night-theme')) {
-            toggleIcon.textContent = '☾'; // Moon for night mode
+            localStorage.setItem('theme', 'night');
         } else {
-            toggleIcon.textContent = '☀️'; // Sun for day mode
+            localStorage.setItem('theme', 'day');
         }
     }
 
@@ -316,9 +338,7 @@
         window.location.href = url.toString();
     }
 
-    // Attach the toggle function to the click event of the icon
-    // TODO: fix night theme and enable
-    // document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
@@ -547,10 +567,14 @@
                 if (task.start_time === null) {
                     x = 0;
                     width = canvas.width;
+                    function getCssVariable(name) {
+                        return getComputedStyle(document.body).getPropertyValue(name).trim();
+                    }
+
                     if (task.status === "pending") {
-                        color = "#fae8c6";
+                        color = getCssVariable('--pending-bar-color');
                     } else {
-                        color = "#ccc";
+                        color = getCssVariable('--skipped-bar-color');
                     }
                 } else if (task.duration === null) {
                     x = (task.start_time - minStartTime) * scaleX;
@@ -1070,7 +1094,13 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'night') {
+            document.body.classList.add('night-theme');
+        }
+        init();
+    });
 </script>
 </body>
 </html>

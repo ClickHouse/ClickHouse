@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <Processors/Chunk.h>
+
 #include <boost/core/noncopyable.hpp>
 
 

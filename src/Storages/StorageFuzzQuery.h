@@ -4,11 +4,13 @@
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 #include <Common/QueryFuzzer.h>
-
-#include "config.h"
+#include <Processors/ISource.h>
 
 namespace DB
 {
+
+class Pipe;
+class Chunk;
 
 class NamedCollection;
 
