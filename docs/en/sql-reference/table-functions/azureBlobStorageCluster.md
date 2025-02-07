@@ -47,3 +47,7 @@ SELECT count(*) from azureBlobStorageCluster(
 
 - [AzureBlobStorage engine](../../engines/table-engines/integrations/azureBlobStorage.md)
 - [azureBlobStorage table function](../../sql-reference/table-functions/azureBlobStorage.md)
+
+## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
+
+See [azureBlobStorage](/docs/en/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.

@@ -1,5 +1,4 @@
 #include <Access/AccessControl.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -30,7 +29,7 @@ namespace DB
 // clang-format off
 
 #define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(UInt64, bg_reconnect_mysql_dict_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
+    DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
     DECLARE(UInt64, shutdown_wait_unfinished, 5, R"(Delay in seconds to wait for unfinished queries)", 0) \
@@ -234,20 +233,20 @@ namespace DB
     DECLARE(UInt64, aggregate_function_group_array_max_element_size, 0xFFFFFF, R"(Max array element size in bytes for groupArray function. This limit is checked at serialization and help to avoid large state size.)", 0) \
     DECLARE(GroupArrayActionWhenLimitReached, aggregate_function_group_array_action_when_limit_is_reached, GroupArrayActionWhenLimitReached::THROW, R"(Action to execute when max array element size is exceeded in groupArray: `throw` exception, or `discard` extra values)", 0) \
     DECLARE(UInt64, max_server_memory_usage, 0, R"(
-    Limit on total memory usage.
-    The default [`max_server_memory_usage`](#max_server_memory_usage) value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
+    The maximum amount of memory the server is allowed to use, expressed in bytes.
 
     :::note
-    A value of `0` (default) means unlimited.
+    The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage_to_ram_ratio`.
     :::
+
+    As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
     )", 0) \
     DECLARE(Double, max_server_memory_usage_to_ram_ratio, 0.9, R"(
-    Same as [`max_server_memory_usage`](#max_server_memory_usage) but in a ratio to physical RAM. Allows lowering the memory usage on low-memory systems.
-
-    On hosts with low RAM and swap, you possibly need setting [`max_server_memory_usage_to_ram_ratio`](#max_server_memory_usage_to_ram_ratio) larger than 1.
+    The maximum amount of memory the server is allowed to use, expressed as a ratio to all available memory.
+    For example, a value of `0.9` (default) means that the server may consume 90% of the available memory.
 
     :::note
-    A value of `0` means unlimited.
+    The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
     :::
     )", 0) \
     DECLARE(UInt64, merges_mutations_memory_usage_soft_limit, 0, R"(
@@ -352,7 +351,7 @@ namespace DB
     A value of `0` means "never". The default value corresponds to 1 day.
     :::
     )", 0) \
-    DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case if drop table failed, ClickHouse will wait for this timeout before retrying the operation.)", 0) \
+    DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     \
     \
@@ -747,7 +746,7 @@ namespace DB
     A value of `0` means all available CPUs will be used.
     :::
     )", 0) \
-    DECLARE(Bool, async_load_databases, false, R"(
+    DECLARE(Bool, async_load_databases, true, R"(
     Asynchronous loading of databases and tables.
 
     - If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
@@ -827,7 +826,7 @@ namespace DB
     )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
-    DECLARE(Bool, format_alter_operations_with_parentheses, false, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
+    DECLARE(Bool, format_alter_operations_with_parentheses, true, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 
@@ -901,7 +900,7 @@ namespace DB
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
-    DECLARE(Bool, send_settings_to_client, true, R"(
+    DECLARE(Bool, send_settings_to_client, false, R"(
     Send user settings from server configuration to clients (in the server Hello message).
     )", 0) \
     \
