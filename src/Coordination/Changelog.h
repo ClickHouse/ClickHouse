@@ -77,6 +77,8 @@ struct ChangelogFileDescription
     DiskPtr disk;
     std::string path;
 
+    bool broken_at_end = false;
+
     std::mutex file_mutex;
 
     bool deleted = false;
