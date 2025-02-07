@@ -3,7 +3,6 @@
 
 SET max_memory_usage = 150000000;
 SET max_bytes_before_external_sort = 10000000;
-SET max_bytes_ratio_before_external_sort = 0;
 
 DROP TABLE IF EXISTS numbers10m;
 CREATE VIEW numbers10m AS SELECT number FROM system.numbers LIMIT 5000000;

@@ -10,7 +10,6 @@
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 
-#include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/BufferWithOwnMemory.h>
 
@@ -702,7 +701,7 @@ struct MonotonicGenerator // NOLINT
     explicit MonotonicGenerator(T stride_ = 1, T max_step = 10) // NOLINT
         : prev_value(0),
           stride(stride_),
-          random_engine(0), /// NOLINT
+          random_engine(0),
           distribution(0, max_step)
     {}
 

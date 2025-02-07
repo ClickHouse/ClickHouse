@@ -7,6 +7,8 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
 
+#include <Analyzer/IQueryTreeNode.h>
+
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
 

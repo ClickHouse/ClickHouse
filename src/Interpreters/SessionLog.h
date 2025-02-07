@@ -5,7 +5,7 @@
 #include <Access/Common/AuthenticationType.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB

@@ -41,7 +41,6 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 
 
@@ -469,7 +468,7 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            ExpressionActionsSettings actions_settings(local_context);
+            auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
 
             if (query_info.prewhere_info->row_level_filter)
             {

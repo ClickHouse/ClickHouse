@@ -25,7 +25,7 @@ public:
 
     void setContext(ContextPtr context_);
 
-    void flushImpl() override;
+    void flush() override;
 
 private:
     void consume(Chunk) override;

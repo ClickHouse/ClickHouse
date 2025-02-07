@@ -2,7 +2,6 @@
 
 #if USE_ULID
 
-#include <Common/intExp10.h>
 #include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -181,7 +180,7 @@ An optional second argument can be passed to specify a timezone for the timestam
             .examples{
                 {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
                 {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
-            .category{"ULID"}
+            .categories{"ULID"}
         });
 }
 

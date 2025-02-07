@@ -218,7 +218,7 @@ def test_combination2(started_cluster):
         node_4_sleep_in_send_tables_status=1000,
     )
     check_query()
-    check_changing_replica_events(3)
+    check_changing_replica_events(4)
 
 
 def test_query_with_no_data_to_sample(started_cluster):

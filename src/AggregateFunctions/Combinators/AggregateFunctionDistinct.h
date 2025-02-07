@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+#include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/AggregationCommon.h>

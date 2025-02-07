@@ -39,7 +39,7 @@ void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
     ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
 
     ostr << "CREATE " << (unique ? "UNIQUE " : "") << "INDEX " << (if_not_exists ? "IF NOT EXISTS " : "");
-    index_name->format(ostr, settings, state, frame);
+    index_name->formatImpl(ostr, settings, state, frame);
     ostr << " ON ";
 
     ostr << (settings.hilite ? hilite_none : "");
@@ -48,19 +48,19 @@ void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
     {
         if (database)
         {
-            database->format(ostr, settings, state, frame);
+            database->formatImpl(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(ostr, settings, state, frame);
     }
 
     formatOnCluster(ostr, settings);
 
     ostr << " ";
 
-    index_decl->format(ostr, settings, state, frame);
+    index_decl->formatImpl(ostr, settings, state, frame);
 }
 
 ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const

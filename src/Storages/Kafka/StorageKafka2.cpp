@@ -2,7 +2,6 @@
 
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>

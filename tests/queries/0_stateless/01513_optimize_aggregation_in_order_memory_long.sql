@@ -13,7 +13,6 @@ set max_memory_usage='500M';
 set max_threads=1;
 set max_block_size=500;
 set max_bytes_before_external_group_by=0;
-set max_bytes_ratio_before_external_group_by=0;
 
 select key, groupArray(repeat('a', 200)), count() from data_01513 group by key format Null settings optimize_aggregation_in_order=0; -- { serverError MEMORY_LIMIT_EXCEEDED }
 select key, groupArray(repeat('a', 200)), count() from data_01513 group by key format Null settings optimize_aggregation_in_order=1;

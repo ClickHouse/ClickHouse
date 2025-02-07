@@ -1,14 +1,19 @@
 #pragma once
 
 #include <cassert>
-
+#include <stdexcept> // for std::logic_error
 #include <string>
+#include <type_traits>
 #include <vector>
+#include <functional>
+#include <iosfwd>
 
 #include <base/defines.h>
-#include <base/simd.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/simd.h>
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 #include <city.h>
 
@@ -35,10 +40,6 @@
 #if defined(__s390x__)
     #include <base/crc32c_s390x.h>
     #define CRC_INT s390x_crc32c
-#endif
-
-#if !defined(CRC_INT)
-#include <stdexcept> // for std::logic_error
 #endif
 
 /**
@@ -390,3 +391,5 @@ namespace PackedZeroTraits
 
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
+
+template<> struct fmt::formatter<StringRef> : fmt::ostream_formatter {};

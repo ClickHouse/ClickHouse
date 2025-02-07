@@ -221,8 +221,6 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual void implementPartitionPruning(const ActionsDAG &) { }
-
     virtual bool hasExternalDynamicMetadata() { return false; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }

@@ -9,8 +9,6 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperStorage_fwd.h>
-#include <Coordination/KeeperStorage.h>
 
 
 namespace DB
@@ -33,8 +31,7 @@ int64_t getZxidFromName(const std::string & filename)
 
 void deserializeSnapshotMagic(ReadBuffer & in)
 {
-    int32_t magic_header;
-    int32_t version;
+    int32_t magic_header, version;
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
@@ -230,8 +227,7 @@ void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::stri
 
 void deserializeLogMagic(ReadBuffer & in)
 {
-    int32_t magic_header;
-    int32_t version;
+    int32_t magic_header, version;
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
