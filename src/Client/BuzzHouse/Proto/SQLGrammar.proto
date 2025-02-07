@@ -2935,6 +2935,7 @@ enum TableEngineValues {
     DeltaLake = 25;
     IcebergS3 = 26;
     Merge = 27;
+    Distributed = 28;
 }
 
 enum TableEngineOption {

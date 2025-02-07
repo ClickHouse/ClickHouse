@@ -204,13 +204,17 @@ bool FuzzConfig::processServerQuery(const String & input) const
     }
 }
 
-void FuzzConfig::loadServerSettings(DB::Strings & out, const String & table, const String & col) const
+void FuzzConfig::loadServerSettings(DB::Strings & out, const bool distinct, const String & table, const String & col) const
 {
     String buf;
     uint64_t found = 0;
 
     if (processServerQuery(fmt::format(
-            R"(SELECT "{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", col, table, fuzz_out.generic_string())))
+            R"(SELECT {}"{}" FROM "system"."{}" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+            distinct ? "DISTINCT " : "",
+            col,
+            table,
+            fuzz_out.generic_string())))
     {
         std::ifstream infile(fuzz_out);
         out.clear();
@@ -226,10 +230,11 @@ void FuzzConfig::loadServerSettings(DB::Strings & out, const String & table, con
 
 void FuzzConfig::loadServerConfigurations()
 {
-    loadServerSettings(this->collations, "collations", "name");
-    loadServerSettings(this->storage_policies, "storage_policies", "policy_name");
-    loadServerSettings(this->disks, "disks", "name");
-    loadServerSettings(this->timezones, "time_zones", "time_zone");
+    loadServerSettings(this->collations, false, "collations", "name");
+    loadServerSettings(this->storage_policies, false, "storage_policies", "policy_name");
+    loadServerSettings(this->disks, false, "disks", "name");
+    loadServerSettings(this->timezones, false, "time_zones", "time_zone");
+    loadServerSettings(this->clusters, true, "clusters", "cluster");
 }
 
 void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const

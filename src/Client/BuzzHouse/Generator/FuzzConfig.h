@@ -95,7 +95,7 @@ private:
 
 public:
     LoggerPtr log;
-    DB::Strings collations, storage_policies, timezones, disks;
+    DB::Strings collations, storage_policies, timezones, disks, clusters;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
@@ -119,7 +119,7 @@ public:
     bool processServerQuery(const String & input) const;
 
 private:
-    void loadServerSettings(DB::Strings & out, const String & table, const String & col) const;
+    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col) const;
 
 public:
     void loadServerConfigurations();

@@ -156,6 +156,10 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
         }
+        else if (t.isDistributedEngine())
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}));
+        }
     }
     if (rel_name.empty())
     {
@@ -881,6 +885,28 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         te->add_params()->set_regexp(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd'));
         te->add_params()->set_svalue(setMergeTableParameter<SQLTable>(rg, 't'));
     }
+    else if (te->has_engine() && b.isDistributedEngine())
+    {
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
+            [](const SQLTable & tt)
+            { return tt.db && tt.db->attached == DetachStatus::ATTACHED && tt.attached == DetachStatus::ATTACHED; }));
+
+        te->add_params()->set_svalue(rg.pickRandomlyFromVector(fc.clusters));
+        te->add_params()->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
+        te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
+        if (rg.nextBool())
+        {
+            /// Optional sharding key
+            std::shuffle(entries.begin(), entries.end(), rg.generator);
+            columnPathRef(entries[0], te->add_params()->mutable_cols());
+
+            if (!fc.storage_policies.empty() && rg.nextBool())
+            {
+                /// Optional policy name
+                te->add_params()->set_svalue(rg.pickRandomlyFromVector(fc.storage_policies));
+            }
+        }
+    }
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
         columnPathRef(rg.pickRandomlyFromVector(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
@@ -1270,6 +1296,8 @@ PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator &
 TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
 {
     const uint32_t noption = rg.nextSmallNumber();
+    const bool has_tables = collectionHas<SQLTable>(
+        [](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; });
 
     if (noption < 4)
     {
@@ -1297,12 +1325,15 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
     this->ids.emplace_back(TinyLog);
     this->ids.emplace_back(EmbeddedRocksDB);
     this->ids.emplace_back(Merge);
-    if (collectionHas<SQLTable>([](const SQLTable & t)
-                                { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; })
+    if (has_tables
         || collectionHas<SQLView>([](const SQLView & v)
                                   { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; }))
     {
         this->ids.emplace_back(Buffer);
+    }
+    if (has_tables && !fc.clusters.empty())
+    {
+        this->ids.emplace_back(Distributed);
     }
     if (use_external_integrations)
     {
@@ -1355,7 +1386,8 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
        TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::Merge};
+       TableEngineValues::Merge,
+       TableEngineValues::Distributed};
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {

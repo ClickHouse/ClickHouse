@@ -240,7 +240,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
-         {Merge, {}}});
+         {Merge, {}},
+         {Distributed, distributedTableSettings}});
 }
 
 }
