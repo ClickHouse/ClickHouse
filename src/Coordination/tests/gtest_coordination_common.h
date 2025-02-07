@@ -8,7 +8,7 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
-#include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/KeeperCommon.h>
 
 #include <Disks/DiskLocal.h>
@@ -53,11 +53,11 @@ struct CompressionParam
     std::string extension;
 };
 
-template <typename Storage_, bool enable_compression_>
+template <typename TStorage, bool enable_compression_param>
 struct TestParam
 {
-    using Storage = Storage_;
-    static constexpr bool enable_compression = enable_compression_;
+    using Storage = TStorage;
+    static constexpr bool enable_compression = enable_compression_param;
 };
 
 template<typename TestType>

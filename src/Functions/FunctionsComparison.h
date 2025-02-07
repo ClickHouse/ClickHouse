@@ -41,7 +41,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <limits>
 #include <type_traits>
 
 namespace DB

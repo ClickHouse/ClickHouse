@@ -78,6 +78,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
 #include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
