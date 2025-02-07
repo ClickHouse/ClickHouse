@@ -13,6 +13,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 
+#include <Core/callOnTypeIndex.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>

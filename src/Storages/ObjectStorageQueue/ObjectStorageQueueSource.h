@@ -195,6 +195,7 @@ private:
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
+    const ObjectStorageQueueMode mode;
 
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;

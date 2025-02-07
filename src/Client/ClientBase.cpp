@@ -328,10 +328,19 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     if (is_interactive || ignore_error)
     {
         String message;
-        if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-        else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        try
+        {
+            if (dialect == Dialect::kusto)
+                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            else
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        }
+        catch (const Exception & e)
+        {
+            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+            client_exception.reset(e.clone());
+            return nullptr;
+        }
 
         if (!res)
         {
@@ -1695,26 +1704,35 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         {},
         [&](const Progress & progress) { onProgress(progress); });
 
-    if (send_external_tables)
-        sendExternalTables(parsed_query);
-
-    startKeystrokeInterceptorIfExists();
-    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
-
-    /// Receive description of table structure.
-    Block sample;
-    ColumnsDescription columns_description;
-    if (receiveSampleBlock(sample, columns_description, parsed_query))
+    try
     {
-        /// If structure was received (thus, server has not thrown an exception),
-        /// send our data with that structure.
-        if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
-        {
-            setInsertionTable(parsed_insert_query);
-        }
+        if (send_external_tables)
+            sendExternalTables(parsed_query);
 
-        sendData(sample, columns_description, parsed_query);
+        startKeystrokeInterceptorIfExists();
+        SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
+
+        /// Receive description of table structure.
+        Block sample;
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        {
+            /// If structure was received (thus, server has not thrown an exception),
+            /// send our data with that structure.
+            if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+            {
+                setInsertionTable(parsed_insert_query);
+            }
+
+            sendData(sample, columns_description, parsed_query);
+            receiveEndOfQuery();
+        }
+    }
+    catch (...)
+    {
+        connection->sendCancel();
         receiveEndOfQuery();
+        throw;
     }
 }
 
@@ -1892,7 +1910,6 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 }
 
 void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
-try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -1939,12 +1956,6 @@ try
 
     if (!have_more_data)
         connection->sendData({}, "", false);
-}
-catch (...)
-{
-    connection->sendCancel();
-    receiveEndOfQuery();
-    throw;
 }
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
@@ -2125,8 +2136,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 }
             }
             client_context->setSettings(old_settings);
+            connection->setFormatSettings(getFormatSettings(client_context));
         });
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
+        connection->setFormatSettings(getFormatSettings(client_context));
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
