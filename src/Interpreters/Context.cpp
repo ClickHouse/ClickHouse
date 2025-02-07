@@ -803,6 +803,18 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         {
+            std::lock_guard lock(clusters_mutex);
+            if (cluster_discovery)
+            {
+                LOG_TRACE(log, "Shutting down ClusterDiscovery");
+                /// Reset cluster_discovery if any.
+                /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
+                /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
+                cluster_discovery.reset();
+            }
+        }
+
+        {
             // Disk selector might not be initialized if there was some error during
             // its initialization. Don't try to initialize it again on shutdown.
             if (merge_tree_disk_selector)

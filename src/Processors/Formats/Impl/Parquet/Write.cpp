@@ -4,6 +4,7 @@
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
 #include <lz4.h>
+#include <xxhash.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -14,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
+#include <Common/HashTable/HashSet.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -59,11 +61,15 @@ struct StatisticsNumeric
     parq::Statistics get(const WriteOptions &)
     {
         parq::Statistics s;
+        if (min > max) // empty
+            return s;
         s.__isset.min_value = s.__isset.max_value = true;
         s.min_value.resize(sizeof(T));
         s.max_value.resize(sizeof(T));
         memcpy(s.min_value.data(), &min, sizeof(T));
         memcpy(s.max_value.data(), &max, sizeof(T));
+        s.__set_is_min_value_exact(true);
+        s.__set_is_max_value_exact(true);
 
         if constexpr (std::is_signed_v<T>)
         {
@@ -106,6 +112,8 @@ struct StatisticsFixedStringRef
             return s;
         s.__set_min_value(std::string(reinterpret_cast<const char *>(min), fixed_string_size));
         s.__set_max_value(std::string(reinterpret_cast<const char *>(max), fixed_string_size));
+        s.__set_is_min_value_exact(true);
+        s.__set_is_max_value_exact(true);
         return s;
     }
 
@@ -153,6 +161,8 @@ struct StatisticsFixedStringCopy
             return s;
         s.__set_min_value(std::string(reinterpret_cast<const char *>(min.data()), S));
         s.__set_max_value(std::string(reinterpret_cast<const char *>(max.data()), S));
+        s.__set_is_min_value_exact(true);
+        s.__set_is_max_value_exact(true);
         return s;
     }
 
@@ -195,9 +205,15 @@ struct StatisticsStringRef
         if (min.ptr == nullptr)
             return s;
         if (static_cast<size_t>(min.len) <= options.max_statistics_size)
+        {
             s.__set_min_value(std::string(reinterpret_cast<const char *>(min.ptr), static_cast<size_t>(min.len)));
+            s.__set_is_min_value_exact(true);
+        }
         if (static_cast<size_t>(max.len) <= options.max_statistics_size)
+        {
             s.__set_max_value(std::string(reinterpret_cast<const char *>(max.ptr), static_cast<size_t>(max.len)));
+            s.__set_is_max_value_exact(true);
+        }
         return s;
     }
 
@@ -511,10 +527,11 @@ void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
         s.column_chunk.meta_data.encodings.push_back(e);
 }
 
-void writePage(const parq::PageHeader & header, const PODArray<char> & compressed, ColumnChunkWriteState & s, WriteBuffer & out)
+void writePage(const parq::PageHeader & header, const PODArray<char> & compressed, ColumnChunkWriteState & s, bool add_to_offset_index, size_t first_row_index, WriteBuffer & out)
 {
     size_t header_size = serializeThriftStruct(header, out);
     out.write(compressed.data(), compressed.size());
+    size_t compressed_page_size = header.compressed_page_size + header_size;
 
     /// Remember first data page and first dictionary page.
     if (header.__isset.data_page_header && s.column_chunk.meta_data.data_page_offset == -1)
@@ -522,8 +539,71 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     if (header.__isset.dictionary_page_header && !s.column_chunk.meta_data.__isset.dictionary_page_offset)
         s.column_chunk.meta_data.__set_dictionary_page_offset(s.column_chunk.meta_data.total_compressed_size);
 
+    if (add_to_offset_index)
+    {
+        parquet::format::PageLocation location;
+        /// Offset relative to column chunk. finalizeColumnChunkAndWriteFooter later adjusts it to global offset.
+        location.__set_offset(s.column_chunk.meta_data.total_compressed_size);
+        location.__set_compressed_page_size(static_cast<int32_t>(compressed_page_size));
+        location.__set_first_row_index(first_row_index);
+        s.indexes.offset_index.page_locations.emplace_back(location);
+    }
+
     s.column_chunk.meta_data.total_uncompressed_size += header.uncompressed_page_size + header_size;
-    s.column_chunk.meta_data.total_compressed_size += header.compressed_page_size + header_size;
+    s.column_chunk.meta_data.total_compressed_size += compressed_page_size;
+}
+
+void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
+{
+    /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+
+    if (hashes.empty())
+        return;
+
+    static constexpr UInt32 salt[8] = {
+        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+
+    /// There appear to be undocumented requirements:
+    ///  * number of blocks must be a power of two,
+    ///  * bloom filter size must be at most 128 MiB.
+    /// At least parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters) requires this.
+    double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
+    size_t num_blocks = 1;
+    while (num_blocks < requested_num_blocks)
+    {
+        if (num_blocks >= 4 * 1024 * 1024)
+            return;
+        num_blocks *= 2;
+    }
+    PODArray<UInt32> & data = indexes.bloom_filter_data;
+    data.reserve_exact(num_blocks * 8);
+    data.resize_fill(num_blocks * 8);
+    for (const auto & cell : hashes)
+    {
+        size_t h = cell.key;
+        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+        chassert(block_idx < num_blocks);
+        UInt32 x = UInt32(h); // overflow to take the lower 32 bits
+        for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+        {
+            UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
+            size_t bit_idx = y >> 27;
+            data[block_idx * 8 + word_idx] |= 1u << bit_idx;
+        }
+    }
+
+    /// Fill out the paperwork.
+    auto & header = indexes.bloom_filter_header;
+    header.__set_numBytes(Int32(data.size() * sizeof(data[0])));
+    parq::BloomFilterAlgorithm alg;
+    alg.__set_BLOCK(parq::SplitBlockAlgorithm());
+    header.__set_algorithm(alg);
+    parq::BloomFilterHash hash;
+    hash.__set_XXHASH(parq::XxHash());
+    header.__set_hash(hash);
+    parq::BloomFilterCompression comp;
+    comp.__set_UNCOMPRESSED(parq::Uncompressed());
+    header.__set_compression(comp);
 }
 
 template <typename ParquetDType, typename Converter>
@@ -537,6 +617,14 @@ void writeColumnImpl(
     typename Converter::Statistics total_statistics;
 
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
+
+    /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
+    /// so let's be nice to them and avoid that. This matches arrow's logic.
+    /// If we ever use DataPageV2, enable this flag in that case too:
+    /// bool pages_change_on_record_boundaries = options.write_page_index || options.data_page_v2;
+    bool pages_change_on_record_boundaries = options.write_page_index;
+    /// If there are no arrays, record boundaries are everywhere.
+    pages_change_on_record_boundaries &= s.max_rep > 0;
 
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
@@ -571,6 +659,13 @@ void writeColumnImpl(
     /// Reused across pages to reduce number of allocations and improve locality.
     PODArray<char> encoded;
     PODArray<char> compressed_maybe;
+
+    /// Hash set to deduplicate the values before calculating bloom filter size.
+    /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
+    /// from the dictionary instead.
+    std::optional<HashSet<UInt64, TrivialHash>> hashes_for_bloom_filter;
+    if (options.write_bloom_filter)
+        hashes_for_bloom_filter.emplace(); // allocates memory for initial size
 
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
@@ -615,35 +710,26 @@ void writeColumnImpl(
         /// We could also put checksum in `header.crc`, but apparently no one uses it:
         /// https://issues.apache.org/jira/browse/PARQUET-594
 
+        parq::Statistics page_stats = page_statistics.get(options);
+        bool has_null_count = s.max_def == 1 && s.max_rep == 0;
+        if (has_null_count)
+            page_stats.__set_null_count(static_cast<Int64>(def_count - data_count));
+
         if (options.write_page_statistics)
+            d.__set_statistics(page_stats);
+
+        if (options.write_page_index)
         {
-            d.__set_statistics(page_statistics.get(options));
             bool all_null_page = data_count == 0;
-            if (all_null_page)
-            {
-                s.column_index.min_values.push_back("");
-                s.column_index.max_values.push_back("");
-            }
-            else
-            {
-                s.column_index.min_values.push_back(d.statistics.min_value);
-                s.column_index.max_values.push_back(d.statistics.max_value);
-            }
-            bool has_null_count = s.max_def == 1 && s.max_rep == 0;
-            if (has_null_count)
-                d.statistics.__set_null_count(static_cast<Int64>(def_count - data_count));
-            s.column_index.__isset.null_counts = has_null_count;
+            s.indexes.column_index.min_values.push_back(page_stats.min_value);
+            s.indexes.column_index.max_values.push_back(page_stats.max_value);
             if (has_null_count)
             {
-                s.column_index.__isset.null_counts = true;
-                s.column_index.null_counts.emplace_back(d.statistics.null_count);
+                /// Note: has_null_count is always equal across all pages of the same column.
+                s.indexes.column_index.__isset.null_counts = true;
+                s.indexes.column_index.null_counts.emplace_back(page_stats.null_count);
             }
-            else
-            {
-                if (s.column_index.__isset.null_counts)
-                    s.column_index.null_counts.emplace_back(0);
-            }
-            s.column_index.null_pages.push_back(all_null_page);
+            s.indexes.column_index.null_pages.push_back(all_null_page);
         }
 
         total_statistics.merge(page_statistics);
@@ -656,12 +742,7 @@ void writeColumnImpl(
         }
         else
         {
-            parquet::format::PageLocation location;
-            location.offset = out.count();
-            writePage(header, compressed, s, out);
-            location.compressed_page_size = static_cast<int32_t>(out.count() - location.offset);
-            location.first_row_index = def_offset;
-            s.offset_index.page_locations.emplace_back(location);
+            writePage(header, compressed, s, options.write_page_index, def_offset, out);
         }
         def_offset += def_count;
         data_offset += data_count;
@@ -688,17 +769,10 @@ void writeColumnImpl(
         header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
         header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
 
-        writePage(header, compressed, s, out);
+        writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
 
         for (auto & p : dict_encoded_pages)
-        {
-            parquet::format::PageLocation location;
-            location.offset = out.count();
-            writePage(p.header, p.data, s, out);
-            location.compressed_page_size = static_cast<int32_t>(out.count() - location.offset);
-            location.first_row_index = p.first_row_index;
-            s.offset_index.page_locations.emplace_back(location);
-        }
+            writePage(p.header, p.data, s, options.write_page_index, p.first_row_index, out);
 
         dict_encoded_pages.clear();
         encoder.reset();
@@ -722,11 +796,21 @@ void writeColumnImpl(
             /// Bite off a batch of defs and corresponding data values.
             size_t def_count = std::min(options.write_batch_size, num_values - next_def_offset);
             size_t data_count = 0;
-            if (s.max_def == 0)
+            if (s.max_def == 0) // no arrays or nullables
                 data_count = def_count;
             else
                 for (size_t i = 0; i < def_count; ++i)
                     data_count += s.def[next_def_offset + i] == s.max_def;
+
+            if (pages_change_on_record_boundaries)
+            {
+                /// Each record (table row) starts with a value with rep = 0.
+                while (next_def_offset + def_count < num_values && s.rep[next_def_offset + def_count] != 0)
+                {
+                    data_count += s.def[next_def_offset + def_count] == s.max_def;
+                    ++def_count;
+                }
+            }
 
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
@@ -738,6 +822,25 @@ void writeColumnImpl(
 #endif
                 for (size_t i = 0; i < data_count; ++i)
                     page_statistics.add(converted[i]);
+
+            if (hashes_for_bloom_filter.has_value())
+            {
+                for (size_t i = 0; i < data_count; ++i)
+                {
+                    UInt64 h;
+                    constexpr UInt64 seed = 0;
+                    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+                        h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
+                    else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                        h = XXH64(converted[i].ptr, converted[i].len, seed);
+                    else
+                    {
+                        static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
+                        h = XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                    }
+                    hashes_for_bloom_filter->insert(h);
+                }
+            }
 
             encoder->Put(converted, static_cast<int>(data_count));
 
@@ -753,16 +856,16 @@ void writeColumnImpl(
                 /// data, then uses non-dictionary encoding for later pages.
                 /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
                 /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
-                /// trade because encoding speed is much less important than decoding (as evidenced
+                /// trade because encoding speed is less important than decoding (as evidenced
                 /// by arrow not supporting parallel encoding, even though it's easy to support).
 
                 def_offset = 0;
                 data_offset = 0;
                 dict_encoded_pages.clear();
-
-                //clear column_index
-                s.column_index = parquet::format::ColumnIndex();
                 use_dictionary = false;
+
+                s.indexes = {};
+                /// (no need to clear hashes_for_bloom_filter)
 
 #ifndef NDEBUG
                 /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
@@ -810,6 +913,9 @@ void writeColumnImpl(
     {
         addToEncodingsUsed(s, encoding);
     }
+
+    if (hashes_for_bloom_filter.has_value())
+        makeBloomFilter(*hashes_for_bloom_filter, s.indexes, options);
 }
 
 }
@@ -933,97 +1039,138 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
     s.rep = {};
 }
 
-void writeFileHeader(WriteBuffer & out)
+void writeFileHeader(FileWriteState & file, WriteBuffer & out)
 {
+    chassert(file.offset == 0);
     /// Write the magic bytes. We're a wizard now.
     out.write("PAR1", 4);
+    file.offset = 4;
 }
 
-parq::ColumnChunk finalizeColumnChunkAndWriteFooter(
-    size_t offset_in_file, ColumnChunkWriteState s, const WriteOptions &, WriteBuffer & out)
+void finalizeColumnChunkAndWriteFooter(ColumnChunkWriteState s, FileWriteState & file, WriteBuffer & out)
 {
+    for (auto & location : s.indexes.offset_index.page_locations)
+        location.offset += file.offset;
+
     if (s.column_chunk.meta_data.data_page_offset != -1)
-        s.column_chunk.meta_data.data_page_offset += offset_in_file;
+        s.column_chunk.meta_data.data_page_offset += file.offset;
     if (s.column_chunk.meta_data.__isset.dictionary_page_offset)
-        s.column_chunk.meta_data.dictionary_page_offset += offset_in_file;
-    s.column_chunk.file_offset = offset_in_file + s.column_chunk.meta_data.total_compressed_size;
+        s.column_chunk.meta_data.dictionary_page_offset += file.offset;
 
-    serializeThriftStruct(s.column_chunk, out);
+    file.offset += s.column_chunk.meta_data.total_compressed_size;
+    s.column_chunk.file_offset = file.offset;
 
-    return s.column_chunk;
+    size_t footer_size = serializeThriftStruct(s.column_chunk, out);
+    file.offset += footer_size;
+
+    file.unflushed_bloom_filter_bytes += s.indexes.bloom_filter_data.size() * sizeof(s.indexes.bloom_filter_data[0]);
+    file.current_row_group.column_indexes.push_back(std::move(s.indexes));
+    file.current_row_group.row_group.columns.push_back(std::move(s.column_chunk));
 }
 
-parq::RowGroup makeRowGroup(std::vector<parq::ColumnChunk> column_chunks, size_t num_rows)
+static void flushBloomFilters(FileWriteState & file, WriteBuffer & out)
 {
-    parq::RowGroup r;
+    while (file.row_groups_with_flushed_bloom_filter < file.completed_row_groups.size())
+    {
+        auto & rg = file.completed_row_groups[file.row_groups_with_flushed_bloom_filter];
+        chassert(rg.column_indexes.size() == rg.row_group.columns.size());
+        for (size_t col_idx = 0; col_idx < rg.column_indexes.size(); ++col_idx)
+        {
+            auto & indexes = rg.column_indexes[col_idx];
+            if (indexes.bloom_filter_data.empty())
+                continue;
+            auto & column = rg.row_group.columns[col_idx];
+            column.meta_data.__set_bloom_filter_offset(file.offset);
+
+            size_t header_size = serializeThriftStruct(indexes.bloom_filter_header, out);
+            size_t data_size = indexes.bloom_filter_data.size() * sizeof(indexes.bloom_filter_data[0]);
+            out.write(indexes.bloom_filter_data.raw_data(), data_size);
+
+            column.meta_data.__set_bloom_filter_length(Int32(header_size + data_size));
+            file.offset += column.meta_data.bloom_filter_length;
+
+            indexes.bloom_filter_data = {}; // free the memory
+        }
+        file.row_groups_with_flushed_bloom_filter += 1;
+    }
+    file.unflushed_bloom_filter_bytes = 0;
+}
+
+void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out)
+{
+    auto & r = file.current_row_group.row_group;
+    if (!file.completed_row_groups.empty())
+        chassert(r.columns.size() == file.completed_row_groups[0].row_group.columns.size());
     r.__set_num_rows(num_rows);
-    r.__set_columns(column_chunks);
     r.__set_total_compressed_size(0);
     for (auto & c : r.columns)
     {
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-    if (!r.columns.empty())
+    chassert(!r.columns.empty());
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);
     }
-    return r;
+
+    file.completed_row_groups.push_back(std::move(file.current_row_group));
+    file.current_row_group = {};
+
+    if (options.write_bloom_filter && file.unflushed_bloom_filter_bytes >= options.bloom_filter_flush_threshold_bytes)
+        flushBloomFilters(file, out);
 }
 
-void writePageIndex(
-    const std::vector<std::vector<parquet::format::ColumnIndex>> & column_indexes,
-    const std::vector<std::vector<parquet::format::OffsetIndex>> & offset_indexes,
-    std::vector<parq::RowGroup> & row_groups,
-    WriteBuffer & out,
-    size_t base_offset)
+static void writePageIndex(FileWriteState & file, WriteBuffer & out)
 {
-    chassert(row_groups.size() == column_indexes.size() && row_groups.size() == offset_indexes.size());
-    auto num_row_groups = row_groups.size();
     // write column index
-    for (size_t i = 0; i < num_row_groups; ++i)
+    for (auto & rg : file.completed_row_groups)
     {
-        const auto & current_group_column_index = column_indexes.at(i);
-        chassert(row_groups.at(i).columns.size() == current_group_column_index.size());
-        auto & row_group = row_groups.at(i);
-        for (size_t j = 0; j < row_groups.at(i).columns.size(); ++j)
+        chassert(rg.column_indexes.size() == rg.row_group.columns.size());
+        for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
-            auto & column = row_group.columns.at(j);
-            int64_t column_index_offset = static_cast<int64_t>(out.count() - base_offset);
-            int32_t column_index_length = static_cast<int32_t>(serializeThriftStruct(current_group_column_index.at(j), out));
-            column.__isset.column_index_offset = true;
-            column.column_index_offset = column_index_offset;
-            column.__isset.column_index_length = true;
-            column.column_index_length = column_index_length;
+            auto & column = rg.row_group.columns.at(j);
+            column.__set_column_index_offset(file.offset);
+            size_t length = serializeThriftStruct(rg.column_indexes.at(j).column_index, out);
+            column.__set_column_index_length(static_cast<int32_t>(length));
+            file.offset += length;
         }
     }
 
     // write offset index
-    for (size_t i = 0; i < num_row_groups; ++i)
+    for (auto & rg : file.completed_row_groups)
     {
-        const auto & current_group_offset_index = offset_indexes.at(i);
-        chassert(row_groups.at(i).columns.size() == current_group_offset_index.size());
-        for (size_t j = 0; j < row_groups.at(i).columns.size(); ++j)
+        for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
-            int64_t offset_index_offset = out.count() - base_offset;
-            int32_t offset_index_length = static_cast<int32_t>(serializeThriftStruct(current_group_offset_index.at(j), out));
-            row_groups.at(i).columns.at(j).__isset.offset_index_offset = true;
-            row_groups.at(i).columns.at(j).offset_index_offset = offset_index_offset;
-            row_groups.at(i).columns.at(j).__isset.offset_index_length = true;
-            row_groups.at(i).columns.at(j).offset_index_length = offset_index_length;
+            auto & column = rg.row_group.columns.at(j);
+            column.__set_offset_index_offset(file.offset);
+            size_t length = serializeThriftStruct(rg.column_indexes.at(j).offset_index, out);
+            column.__set_offset_index_length(static_cast<int32_t>(length));
+            file.offset += length;
         }
     }
 }
 
-void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements schema, const WriteOptions & options, WriteBuffer & out)
+void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out)
 {
+    chassert(file.offset != 0);
+    chassert(file.current_row_group.row_group.columns.empty());
+
+    if (options.write_bloom_filter)
+        flushBloomFilters(file, out);
+
+    if (options.write_page_index)
+        writePageIndex(file, out);
+
     parq::FileMetaData meta;
     meta.version = 2;
     meta.schema = std::move(schema);
-    meta.row_groups = std::move(row_groups);
-    for (auto & r : meta.row_groups)
-        meta.num_rows += r.num_rows;
+    meta.row_groups.reserve(file.completed_row_groups.size());
+    for (auto & rg : file.completed_row_groups)
+    {
+        meta.num_rows += rg.row_group.num_rows;
+        meta.row_groups.push_back(std::move(rg.row_group));
+    }
     meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
@@ -1043,6 +1190,7 @@ void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements sche
 
     writeIntBinary(static_cast<int>(footer_size), out);
     out.write("PAR1", 4);
+    file.offset += footer_size + 8;
 }
 
 size_t ColumnChunkWriteState::allocatedBytes() const
