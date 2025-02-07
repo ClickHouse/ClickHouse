@@ -106,6 +106,8 @@ private:
 
     void assertInitialized() const;
 
+    void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
+
     LoggerPtr log;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
@@ -157,6 +159,8 @@ private:
     MaterializedStorages materialized_storages;
 
     bool replication_handler_initialized = false;
+
+    float fault_injection_probability = 0.;
 };
 
 }

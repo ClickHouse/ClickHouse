@@ -741,6 +741,24 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
     M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data", ValueType::Microseconds) \
     M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses", ValueType::Microseconds) \
+    M(ObjectStorageQueueFailedToBatchSetProcessing, "Number of times batched set processing request failed", ValueType::Number)\
+    M(ObjectStorageQueueTrySetProcessingRequests, "The number of times we tried to make set processing request", ValueType::Number)\
+    M(ObjectStorageQueueTrySetProcessingSucceeded, "The number of times we successfully set file as processing", ValueType::Number)\
+    M(ObjectStorageQueueTrySetProcessingFailed, "The number of times we unsuccessfully set file as processing", ValueType::Number)\
+    M(ObjectStorageQueueListedFiles, "Number of listed files in StorageS3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueFilteredFiles, "Number of filtered files in StorageS3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueReadFiles, "Number of read files (not equal to the number of actually inserted files)", ValueType::Number)\
+    M(ObjectStorageQueueReadRows, "Number of read rows (not equal to the number of actually inserted rows)", ValueType::Number)\
+    M(ObjectStorageQueueReadBytes, "Number of read bytes (not equal to the number of actually inserted bytes)", ValueType::Number)\
+    M(ObjectStorageQueueExceptionsDuringRead, "Number of exceptions during read in S3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueExceptionsDuringInsert, "Number of exceptions during insert in S3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number)\
+    M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number)\
+    M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number)\
+    M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number)\
+    M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number)\
+    M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueProcessedRows, "Number of processed rows in StorageS3(Azure)Queue", ValueType::Number)\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \
