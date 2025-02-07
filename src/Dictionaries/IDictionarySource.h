@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <vector>
