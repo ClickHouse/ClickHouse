@@ -448,18 +448,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
-    const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get());
-    if (!replicated_storage)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", storage->getName());
-    }
-
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, replicated_storage,
+            my_stage = stage, my_storage = storage,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
             pushed_down_filters]() mutable
@@ -495,9 +489,6 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 max_remote_delay = std::max(try_result.delay, max_remote_delay);
         }
 
-        const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
-        const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
-
         bool use_delayed_remote_source = false;
         fiu_do_on(FailPoints::use_delayed_remote_source,
         {
@@ -506,6 +497,10 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
         if (!use_delayed_remote_source)
         {
+            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+            const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
+
             if (try_results.empty() && local_delay >= max_allowed_delay)
             {
                 throw Exception(
