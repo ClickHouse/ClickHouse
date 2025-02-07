@@ -85,6 +85,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
             {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
