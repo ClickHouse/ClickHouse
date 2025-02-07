@@ -125,6 +125,8 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+using String = std::string;
+
 namespace
 {
 /* Recursive directory listing with matched paths as a result.
