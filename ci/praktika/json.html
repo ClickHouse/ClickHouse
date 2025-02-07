@@ -60,14 +60,6 @@
             color: #ffaa00; /* Slightly darker yellow */
         }
 
-        #info-container {
-            margin-left: calc(var(--status-width) + 20px);
-            margin-bottom: 50px;
-            background-color: var(--tile-background);
-            padding: 10px;
-            text-align: left;
-        }
-
         #status-container {
             position: fixed;
             top: 0;
@@ -80,7 +72,7 @@
             font-size: 18px;
             margin: 0;
             overflow-y: auto;
-            margin-bottom: 40px;
+            margin-bottom: 50px;
         }
 
         #status-container a {
@@ -141,16 +133,25 @@
 
         #result-container {
             background-color: var(--tile-background);
-            margin-left: calc(var(--status-width) + 20px);
+            position: fixed;
+            top: 0;
+            bottom: 50px;
+            left: calc(var(--status-width) + 20px); /* Align with status container */
+            right: 0; /* Stretch to the right edge */
+
             padding: 0;
             box-sizing: border-box;
-            text-align: center;
             font-size: 18px;
             font-weight: normal;
-            flex-grow: 1;
-            margin-bottom: 50px;
-            overflow-x: auto;
+
+            overflow: auto;
             white-space: nowrap;
+        }
+
+        #info-content {
+            text-align: left;
+            padding: 10px;
+            margin-bottom: 20px;
         }
 
         #footer {
@@ -310,7 +311,6 @@
     </style>
 </head>
 <body>
-<div id="info-container"></div>
 <div id="status-container"></div>
 <div id="result-container"></div>
 
@@ -970,13 +970,18 @@
             }
             i++;
         }
-        // Result table
+
         const resultsDiv = document.getElementById('result-container');
+        const textDiv = document.createElement('div');
+        textDiv.id = 'info-content';
+        textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+        resultsDiv.appendChild(textDiv);
+
         const resultsData = result.results;
         if (Array.isArray(resultsData) && resultsData.length > 0) {
             const table = createResultsTable(resultsData, i);
             if (table) {
-                resultsDiv.appendChild(table);
+                resultsDiv.appendChild(table); // Appends table correctly
             }
         }
         // Status and info
@@ -992,8 +997,6 @@
         } else {
             addTimeTraceWidget(result.results)
         }
-        const infoElement = document.getElementById('info-container');
-        infoElement.innerHTML = (result.info || '').replace(/\n/g, '<br>');
     }
 
     async function fetchData(PR, REF, sha, nameParams) {
@@ -1056,7 +1059,6 @@
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
-            document.getElementById('info-container').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
