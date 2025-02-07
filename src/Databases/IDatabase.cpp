@@ -83,7 +83,6 @@ void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query,
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
 
-<<<<<<< HEAD
 void IDatabase::loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
@@ -217,44 +216,6 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
     if (throw_on_error)
         throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
     return nullptr;
-=======
-void IDatabase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
-{
-    if (!command.comment)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't get comment of database");
-
-    setDatabaseComment(command.comment.value());
-    ASTPtr ast = getCreateDatabaseQuery();
-    if (!ast)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", getDatabaseName());
-
-    auto * ast_create_query = ast->as<ASTCreateQuery>();
-    if (!ast_create_query->is_dictionary)
-        ast_create_query->attach = true;
-
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*ast_create_query, statement_buf, false);
-    writeChar('\n', statement_buf);
-    String statement = statement_buf.str();
-
-    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql.tmp");
-    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
-    auto db_disk = query_context->getDatabaseDisk();
-
-    writeMetadataFile(
-        db_disk, /*file_path=*/database_metadata_tmp_path, /*content=*/statement, query_context->getSettingsRef()[Setting::fsync_metadata]);
-
-    try
-    {
-        /// rename atomically replaces the old file with the new one.
-        db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
-    }
-    catch (...)
-    {
-        db_disk->removeFileIfExists(database_metadata_tmp_path);
-        throw;
-    }
->>>>>>> a0d81867486 (Implement feature allow altering database comment)
 }
 
 
