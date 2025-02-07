@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/SettingsConstraints.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace DB
 {

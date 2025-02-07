@@ -713,7 +713,7 @@ Given the database name, the table name, and the column name as constant strings
 **Syntax**
 
 ```sql
-hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
+hasColumnInTable(\['hostname’\[, 'username’\[, 'password’\]\],\] 'database’, 'table’, 'column’)
 ```
 
 **Parameters**
@@ -830,9 +830,9 @@ There are two variations of this function:
 
 `array_from` – Constant array of values to convert.
 
-`array_to` – Constant array of values to convert the values in ‘from’ to.
+`array_to` – Constant array of values to convert the values in 'from’ to.
 
-`default` – Which value to use if ‘x’ is not equal to any of the values in ‘from’.
+`default` – Which value to use if 'x’ is not equal to any of the values in 'from’.
 
 `array_from` and `array_to` must have equally many elements.
 
@@ -868,7 +868,7 @@ ORDER BY c DESC
 
 ### transform(x, array_from, array_to)
 
-Similar to the other variation but has no ‘default’ argument. In case no match can be found, `x` is returned.
+Similar to the other variation but has no 'default’ argument. In case no match can be found, `x` is returned.
 
 Example:
 
@@ -3279,6 +3279,40 @@ Query:
 CREATE TABLE tmp (str String) ENGINE = Log;
 INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Result:
+
+```text
+┌─count()─┐
+│ 1       │
+└─────────┘
+```
+
+## initialQueryStartTime
+
+Returns the start time of the initial current query.
+
+`initialQueryStartTime` returns the same results on different shards (see example).
+
+**Syntax**
+
+```sql
+initialQueryStartTime()
+```
+
+**Returned value**
+
+- The start time of the initial current query. [DateTime](../data-types/datetime.md)
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
 ```
 
 Result:
