@@ -19,7 +19,7 @@ class VersionType:
     TESTING = "altinitytest"
     ANTALYA = "altinityantalya"
 
-    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS, ANTALYA
+    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS, ANTALYA,
             # NOTE (vnemkov): we don't use those directly, but it is used in unit-tests
             "stable",
             "prestable",
