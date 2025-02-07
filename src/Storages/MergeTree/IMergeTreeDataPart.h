@@ -422,14 +422,6 @@ public:
     DataPartStoragePtr makeCloneInDetached(
         const String & prefix, const StorageMetadataPtr & metadata_snapshot, const DiskTransactionPtr & disk_transaction) const;
 
-    DataPartStoragePtr makeCloneInDetached(
-        const String & prefix,
-        const StorageMetadataPtr & metadata_snapshot,
-        const DiskTransactionPtr & disk_transaction,
-        bool copy_instead_of_hardlink) const;
-
-    bool isReplicatedZeroCopy() const;
-
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(
         const DiskPtr & disk,
