@@ -14,7 +14,6 @@ from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.GithubException import GithubException
 from github.GithubObject import NotSet
-from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI
@@ -158,7 +157,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
-    repo = get_repo(gh)
+    # repo = get_repo(gh)
     statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
     statuses = [
         status
@@ -188,27 +187,28 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
 
     # We update the report in generate_status_comment function, so do it each
     # run, even in the release PRs and normal pushes
-    comment_body = generate_status_comment(pr_info, statuses)
-    # We post the comment only to normal and backport PRs
-    if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
-        return
-
-    comment_service_header = comment_body.split("\n", 1)[0]
-    comment = None  # type: Optional[IssueComment]
-    pr = repo.get_pull(pr_info.number)
-    for ic in pr.get_issue_comments():
-        if ic.body.startswith(comment_service_header):
-            comment = ic
-            break
-
-    if comment is None:
-        pr.create_issue_comment(comment_body)
-        return
-
-    if comment.body == comment_body:
-        logging.info("The status comment is already updated, no needs to change it")
-        return
-    comment.edit(comment_body)
+    # TODO: uncomment if needed
+    # comment_body = generate_status_comment(pr_info, statuses)
+    # # We post the comment only to normal and backport PRs
+    # if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
+    #     return
+    #
+    # comment_service_header = comment_body.split("\n", 1)[0]
+    # comment = None  # type: Optional[IssueComment]
+    # pr = repo.get_pull(pr_info.number)
+    # for ic in pr.get_issue_comments():
+    #     if ic.body.startswith(comment_service_header):
+    #         comment = ic
+    #         break
+    #
+    # if comment is None:
+    #     pr.create_issue_comment(comment_body)
+    #     return
+    #
+    # if comment.body == comment_body:
+    #     logging.info("The status comment is already updated, no needs to change it")
+    #     return
+    # comment.edit(comment_body)
 
 
 def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
@@ -309,6 +309,8 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     test_results = []  # type: TestResults
     for status in statuses:
         log_urls = []
+        if status.context == "PR":
+            continue
         if status.target_url is not None:
             log_urls.append(status.target_url)
         raw_logs = status.description or None

@@ -230,7 +230,6 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
 DataTypesMatching
 DatabaseCatalog

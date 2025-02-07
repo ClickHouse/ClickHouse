@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
