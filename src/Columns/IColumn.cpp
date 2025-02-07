@@ -94,22 +94,6 @@ size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & 
     return equal_range.size();
 }
 
-void IColumn::forEachSubcolumn(ColumnCallback callback) const
-{
-    const_cast<IColumn*>(this)->forEachSubcolumn([&callback](WrappedPtr & subcolumn)
-    {
-        callback(std::as_const(subcolumn));
-    });
-}
-
-void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
-{
-    const_cast<IColumn*>(this)->forEachSubcolumnRecursively([&callback](IColumn & subcolumn)
-    {
-        callback(std::as_const(subcolumn));
-    });
-}
-
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);
