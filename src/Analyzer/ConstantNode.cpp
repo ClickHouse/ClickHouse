@@ -66,6 +66,7 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
             need_to_add_cast_function = !constant_value_type.isString();
             break;
         }
+        case Field::Types::Bool:
         case Field::Types::UInt64:
         case Field::Types::Int64:
         case Field::Types::Float64:
@@ -87,7 +88,6 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
         case Field::Types::Tuple:
         case Field::Types::Map:
         case Field::Types::UUID:
-        case Field::Types::Bool:
         case Field::Types::Object:
         case Field::Types::IPv4:
         case Field::Types::IPv6:

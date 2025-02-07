@@ -712,9 +712,9 @@ void executeQueryWithParallelReplicas(
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
 
-    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
     auto header
-        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze());
+        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+    auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
         query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
