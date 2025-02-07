@@ -66,6 +66,15 @@ endif()
 file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/${PLATFORM_DIRECTORY}/include/ DESTINATION ${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY})
 file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/ DESTINATION ${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY})
 
+if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
+    SET(SSLNAME "ssld")
+    SET(CRYPTONAME "cryptod")
+else()
+    SET(SSLNAME "ssl")
+    SET(CRYPTONAME "crypto")
+endif()
+
+
 ExternalProject_Add(
   _delta_kernel_rs_target
   CONFIGURE_COMMAND ""
@@ -75,8 +84,8 @@ ExternalProject_Add(
   UPDATE_COMMAND ""
   BUILD_IN_SOURCE 1
   BUILD_COMMAND
-      ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH} OPENSSL_STATIC=1 OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/ OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY}
-      cargo build -j 1 --verbose
+      ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH} OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME} OPENSSL_STATIC=1 OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/ OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY}
+      cargo build --verbose
       --package delta_kernel_ffi
       --workspace
       --all-features
