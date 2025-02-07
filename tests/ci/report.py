@@ -490,11 +490,12 @@ class JobReport:
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
-        assert self.status in (
+        assert self.status.lower() in (
             SUCCESS,
             ERROR,
             FAILURE,
             PENDING,
+            SKIPPED.lower(),
         ), f"Invalid status [{self.status}]"
 
     @classmethod
