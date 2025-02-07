@@ -991,7 +991,24 @@ Target page size in bytes, before compression.
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
-Add a possibility to write page index into parquet files.
+Write column index and offset index (i.e. statistics about each data page, which may be used for filter pushdown on read) into parquet files.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_bloom_filter, true, R"(
+Write bloom filters in parquet files. Requires output_format_parquet_use_custom_encoder = true.
+)", 0) \
+    DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
+Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
+  *  6   bits - 10%
+  * 10.5 bits -  1%
+  * 16.9 bits -  0.1%
+  * 26.4 bits -  0.01%
+  * 41   bits -  0.001%
+)", 0) \
+    DECLARE(UInt64, output_format_parquet_bloom_filter_flush_threshold_bytes, 128 * 1024 * 1024, R"(
+Where in the parquet file to place the bloom filters. Bloom filters will be written in groups of approximately this size. In particular:
+  * if 0, each row group's bloom filters are written immediately after the row group,
+  * if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
+  * otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
 )", 0) \
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).

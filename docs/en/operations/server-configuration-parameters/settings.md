@@ -13,7 +13,7 @@ import TabItem from '@theme/TabItem';
 
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/en/operations/configuration-files).
 
-Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
+Other settings are described in the "[Settings](../../operations/settings/index.md#session-settings-intro)" section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory
@@ -558,7 +558,7 @@ Default: `0`
 
 Restriction on dropping partitions.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 :::note
@@ -1119,7 +1119,7 @@ Default: `0.5`
 
 The interval in seconds before reloading built-in dictionaries.
 
-ClickHouse reloads built-in dictionaries every x seconds. This makes it possible to edit dictionaries “on the fly” without restarting the server.
+ClickHouse reloads built-in dictionaries every x seconds. This makes it possible to edit dictionaries "on the fly" without restarting the server.
 
 **Example**
 
@@ -1436,7 +1436,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
+- "[Dictionaries](../../sql-reference/dictionaries/index.md)".
 
 **Example**
 
@@ -1454,7 +1454,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
+- "[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).".
 
 **Example**
 
@@ -1569,7 +1569,7 @@ The port for connecting to the server over HTTP(s).
 ## http_server_default_response
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
-The default value is “Ok.” (with a line feed at the end)
+The default value is "Ok." (with a line feed at the end)
 
 **Example**
 
@@ -1614,7 +1614,7 @@ Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capabilit
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
-For more information, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
+For more information, see the section "[Configuration files](../../operations/configuration-files.md#configuration_files)".
 
 **Example**
 
@@ -1836,7 +1836,7 @@ The location and format of log messages.
 
 File names in `log` and `errorLog` paths support below format specifiers for the resulting file name (the directory part does not support them).
 
-Column “Example” shows the output at `2023-07-06 18:32:07`.
+Column "Example" shows the output at `2023-07-06 18:32:07`.
 
 | Specifier    | Description                                                                                                         | Example                  |
 |--------------|---------------------------------------------------------------------------------------------------------------------|--------------------------|
@@ -1941,7 +1941,7 @@ Keys for `<syslog>`:
 |------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `address`  | The address of syslog in format `host\[:port\]`. If omitted, the local daemon is used.                                                                                                                                                                         |
 | `hostname` | The name of the host from which logs are send (optional).                                                                                                                                                                                                      |
-| `facility` | The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a “LOG_” prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.                                           |
+| `facility` | The syslog [facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility). Must be specified uppercase with a "LOG_" prefix, e.g. `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Default: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.                                           |
 | `format`   | Log message format. Possible values: `bsd` and `syslog.`                                                                                                                                                                                                       |
 
 **Log formats**
@@ -2076,7 +2076,7 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
+If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
 
 :::note
 A value of `0` means that you can delete all tables without any restrictions.
@@ -2304,7 +2304,7 @@ Keys for server/client settings:
 | `privateKeyFile`              | Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.                                                                                                                                                                                                                                                                                                                                              |                                            |
 | `certificateFile`             | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
 | `caConfig`                    | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                            |
-| `verificationMode`            | The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                         | `relaxed`                                  |
+| `verificationMode`            | The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                         | `relaxed`                                  |
 | `verificationDepth`           | The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.                                                                                                                                                                                                                                                                                                                                            | `9`                                        |
 | `loadDefaultCAFile`           | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
 | `cipherList`                  | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
@@ -2316,7 +2316,7 @@ Keys for server/client settings:
 | `requireTLSv1`                | Require a TLSv1 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                        | `false`                                    |
 | `requireTLSv1_1`              | Require a TLSv1.1 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                    |
 | `requireTLSv1_2`              | Require a TLSv1.2 connection. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                      | `false`                                    |
-| `fips`                        | Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
+| `fips`                        | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
 | `privateKeyPassphraseHandler` | Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                | `KeyConsoleHandler`                        |
 | `invalidCertificateHandler`   | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
 | `disableProtocols`            | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
@@ -2410,7 +2410,7 @@ Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:
 
-- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
+- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from '/'.
 - `port` – Port for `endpoint`.
 - `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
 - `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
@@ -2860,7 +2860,7 @@ Configuration of clusters used by the [Distributed](../../engines/table-engines/
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
-For the value of the `incl` attribute, see the section “[Configuration files](../../operations/configuration-files.md#configuration_files)”.
+For the value of the `incl` attribute, see the section "[Configuration files](../../operations/configuration-files.md#configuration_files)".
 
 **See Also**
 
@@ -2870,11 +2870,11 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 ## timezone
 
-The server’s time zone.
+The server's time zone.
 
 Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
 
-The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn’t receive the time zone in the input parameters.
+The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
 **Example**
 
@@ -3045,7 +3045,7 @@ There is also the `zookeeper_load_balancing` parameter (optional) which lets you
 |----------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
 | `random`                         | randomly selects one of ZooKeeper nodes.                                                                                       |
 | `in_order`                       | selects the first ZooKeeper node, if it's not available then the second, and so on.                                            |
-| `nearest_hostname`               | selects a ZooKeeper node with a hostname that is most similar to the server’s hostname, hostname is compared with name prefix. |
+| `nearest_hostname`               | selects a ZooKeeper node with a hostname that is most similar to the server's hostname, hostname is compared with name prefix. |
 | `hostname_levenshtein_distance`  | just like nearest_hostname, but it compares hostname in a levenshtein distance manner.                                         |
 | `first_or_random`                | selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.                |
 | `round_robin`                    | selects the first ZooKeeper node, if reconnection happens selects the next.                                                    |
@@ -3076,7 +3076,7 @@ There is also the `zookeeper_load_balancing` parameter (optional) which lets you
 **See Also**
 
 - [Replication](../../engines/table-engines/mergetree-family/replication.md)
-- [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 - [Optional secured communication between ClickHouse and Zookeeper](../ssl-zookeeper.md#secured-communication-with-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper
@@ -3099,7 +3099,7 @@ When creating a table, specify the corresponding [engine setting](../../engines/
 If [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper), then [replicated](../../engines/table-engines/mergetree-family/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 
 :::note
-After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
 
 Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 :::
