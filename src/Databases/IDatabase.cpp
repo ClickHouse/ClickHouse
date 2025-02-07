@@ -38,8 +38,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
