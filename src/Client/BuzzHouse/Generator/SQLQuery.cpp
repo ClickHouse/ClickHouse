@@ -315,7 +315,8 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     const uint32_t engineudf = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t tudf = 5;
     const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
-    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table;
+    const uint32_t mudf = 3;
+    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table + mudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     const String name
@@ -507,6 +508,25 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         {
             rel.cols.emplace_back(SQLRelationCol(name, {entry}));
         }
+        this->levels[this->current_level].rels.emplace_back(rel);
+    }
+    else if (mudf && nopt < (derived_table + cte + table + view + engineudf + tudf + system_table + mudf + 1))
+    {
+        SQLRelation rel(name);
+        JoinedTableFunction * jtf = tos->mutable_joined_table_function();
+        TableFunction * tf = jtf->mutable_tfunc();
+        MergeFunc * mdf = tf->mutable_merge();
+
+        if (rg.nextBool())
+        {
+            mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd'));
+        }
+        mdf->set_mtable(setMergeTableParameter<SQLTable>(rg, 't'));
+        for (uint32_t i = 0; i < 6; i++)
+        {
+            rel.cols.emplace_back(SQLRelationCol(name, {"c" + std::to_string(i)}));
+        }
+        jtf->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.emplace_back(rel);
     }
     else

@@ -1543,12 +1543,13 @@ enum SQLTableFunc {
     TFfile = 1;
     TFformat = 2;
     TFgenerateSeries = 3;
-    TFmysql = 4;
-    TFpostgresql = 5;
-    TFremote = 6;
-    TFremoteSecure = 7;
-    TFS3 = 8;
-    TFsqlite = 9;
+    TFmerge = 4;
+    TFmysql = 5;
+    TFpostgresql = 6;
+    TFremote = 7;
+    TFremoteSecure = 8;
+    TFS3 = 9;
+    TFsqlite = 10;
 }
 
 message Database {
@@ -2443,6 +2444,11 @@ message SQLTableFuncCall {
     repeated SQLFuncArg args = 2;
 }
 
+message MergeFunc {
+    optional string mdatabase = 1;
+    required string mtable = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2454,6 +2460,7 @@ message TableFunction {
         SQLiteFunc sqite = 7;
         S3Func s3 = 8;
         SQLTableFuncCall func = 9;
+        MergeFunc merge = 10;
     }
 }
 

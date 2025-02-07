@@ -1930,6 +1930,20 @@ CONV_FN(SQLTableFuncCall, sfc)
     ret += ')';
 }
 
+CONV_FN(MergeFunc, mfunc)
+{
+    ret += "merge(";
+    if (mfunc.has_mdatabase())
+    {
+        ret += "REGEXP('";
+        ret += mfunc.mdatabase();
+        ret += "'), ";
+    }
+    ret += "'";
+    ret += mfunc.mtable();
+    ret += "')";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -1961,6 +1975,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());
+            break;
+        case TableFunctionType::kMerge:
+            MergeFuncToString(ret, tf.merge());
             break;
         default:
             ret += "numbers(10)";
