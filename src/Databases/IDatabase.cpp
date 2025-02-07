@@ -2,6 +2,7 @@
 #include <memory>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -37,6 +38,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
@@ -107,16 +110,10 @@ void IDatabase::alterDatabaseComment(const AlterCommand & command, ContextPtr qu
 
     auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql.tmp");
     auto database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
-
     auto db_disk = query_context->getDatabaseDisk();
-    auto out = db_disk->writeFile(database_metadata_tmp_path, statement.size());
-    writeString(statement, *out);
 
-    out->next();
-    if (query_context->getSettingsRef()[Setting::fsync_metadata])
-        out->sync();
-    out->finalize();
-    out.reset();
+    writeMetadataFile(
+        db_disk, /*file_path=*/database_metadata_tmp_path, /*content=*/statement, query_context->getSettingsRef()[Setting::fsync_metadata]);
 
     try
     {
