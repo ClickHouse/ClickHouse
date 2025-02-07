@@ -11,8 +11,8 @@ SET(VERSION_GITHASH a6d2b2e35b221d8bd94f31542e54468a138a2144)
 # This is the 'base' tweak of the version, build scripts will
 # increment this by number of commits since previous tag.
 SET(VERSION_TWEAK 20000)
-SET(VERSION_FLAVOUR altinitystable)
+SET(VERSION_FLAVOUR altinityedge)
 
-SET(VERSION_DESCRIBE v24.12.2.20000.altinitystable)
-SET(VERSION_STRING 24.12.2.20000.altinitystable)
+SET(VERSION_DESCRIBE v24.12.2.20000.altinityedge)
+SET(VERSION_STRING 24.12.2.20000.altinityedge)
 # end of autochange
