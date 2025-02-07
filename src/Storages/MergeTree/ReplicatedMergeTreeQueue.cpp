@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
@@ -20,6 +21,12 @@
 #include <cassert>
 #include <ranges>
 #include <Poco/Timestamp.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ActiveDataMutations;
+    extern const Metric ActiveMetadataMutations;
+}
 
 namespace DB
 {
@@ -54,6 +61,10 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     log = getLogger(logger_name);
 }
 
+ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
+{
+    clear();
+}
 
 void ReplicatedMergeTreeQueue::clear()
 {
@@ -66,6 +77,12 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
+
+    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
+    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
+
+    num_data_mutations_to_apply = 0;
+    num_metadata_mutations_to_apply = 0;
 }
 
 void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch)
@@ -1087,9 +1104,12 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
             alter_sequence.finishDataAlter(entry->alter_version, state_lock);
         }
 
-        mutations_by_znode.erase(it);
-        /// decrementMutationsCounters() will be called in updateMutations()
+        if (mutation_was_active)
+        {
+            decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
+        }
 
+        mutations_by_znode.erase(it);
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 

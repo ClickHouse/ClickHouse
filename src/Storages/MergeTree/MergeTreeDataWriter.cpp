@@ -681,7 +681,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
-        if (column.column->isSparse() && infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
             column.column = recursiveRemoveSparse(column.column);
     }
 
@@ -951,8 +951,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     size_t block_num)
 {
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
-    return writeProjectionPartImpl(
-        part_name, true /* is_temp */, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
+    auto new_part = writeProjectionPartImpl(
+        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
+
+    new_part.part->temp_projection_block_number = block_num;
+    return new_part;
 }
 
 }

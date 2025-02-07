@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import datetime
 import json
@@ -7,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .cache import Cache
+from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
@@ -50,6 +52,7 @@ class Result(MetaClasses.Serializable):
     files: List[str] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     def create_from(
@@ -59,19 +62,27 @@ class Result(MetaClasses.Serializable):
         status="",
         files=None,
         info: Union[List[str], str] = "",
-        with_info_from_results=True,
+        with_info_from_results=False,
     ):
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
-            Utils.raise_with_error(
-                f"Either .results ({results}) or .status ({status}) must be provided"
-            )
+            status = Result.Status.ERROR
         if not name:
             name = _Environment.get().JOB_NAME
             if not name:
                 print("ERROR: Failed to guess the .name")
                 raise
+        if not stopwatch:
+            start_time = Result.from_fs(name=name).start_time
+            duration = (
+                datetime.datetime.now().timestamp()
+                - Result.from_fs(name=name).start_time
+            )
+        else:
+            start_time = stopwatch.start_time
+            duration = stopwatch.duration
+
         result_status = status or Result.Status.SUCCESS
         infos = []
         if info:
@@ -87,22 +98,22 @@ class Result(MetaClasses.Serializable):
                     Result.Status.ERROR,
                 ):
                     Utils.raise_with_error(
-                        f"Unexpected result status [{result.status}] for Result.create_from call"
+                        f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
                 if result.status != Result.Status.SUCCESS:
                     result_status = Result.Status.FAILED
                 if result.status == Result.Status.ERROR:
                     result_status = Result.Status.ERROR
                     break
-        if results:
+        if results and with_info_from_results:
             for result in results:
-                if result.info and with_info_from_results:
+                if result.info:
                     infos.append(f"{result.name}: {result.info}")
         return Result(
             name=name,
             status=result_status,
-            start_time=stopwatch.start_time if stopwatch else None,
-            duration=stopwatch.duration if stopwatch else None,
+            start_time=start_time,
+            duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
             files=files or [],
@@ -200,11 +211,16 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
-    def update_sub_result(self, result: "Result"):
+    def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                self.results[i] = result
+                if drop_nested_results:
+                    res_ = copy.deepcopy(result)
+                    res_.results = []
+                    self.results[i] = res_
+                else:
+                    self.results[i] = result
         self._update_status()
         return self
 
@@ -261,8 +277,15 @@ class Result(MetaClasses.Serializable):
             duration=None,
             results=results or [],
             files=[],
-            links=[],
-            info=f"from cache: sha [{cache_record.sha}], pr/branch [{cache_record.pr_number or cache_record.branch}]",
+            links=[
+                Info().get_specific_report_url(
+                    pr_number=cache_record.pr_number,
+                    branch=cache_record.branch,
+                    sha=cache_record.sha,
+                    job_name=name,
+                )
+            ],
+            info=f"from cache",
         )
 
     @classmethod
@@ -414,16 +437,13 @@ class ResultInfo:
 class _ResultS3:
 
     @classmethod
-    def copy_result_to_s3(cls, result, unlock=False):
+    def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        s3_path_full = f"{s3_path}/{Path(result.file_name()).name}"
+        if clean:
+            S3.delete(s3_path)
         url = S3.copy_file_to_s3(s3_path=s3_path, local_path=result.file_name())
-        # if unlock:
-        #     if not cls.unlock(s3_path_full):
-        #         print(f"ERROR: File [{s3_path_full}] unlock failure")
-        #         assert False  # TODO: investigate
         return url
 
     @classmethod
@@ -466,12 +486,10 @@ class _ResultS3:
         filename = Path(result.file_name()).name
         file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
-        s3_path_versioned = (
-            f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name_versioned}"
-        )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        s3_path_versioned = f"{s3_path}{file_name_versioned}"
         if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path)
+            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
             s3_path=s3_path_versioned,
             local_path=result.file_name(),
@@ -543,16 +561,22 @@ class _ResultS3:
     #     return True
 
     @classmethod
-    def upload_result_files_to_s3(cls, result: Result, s3_subprefix=""):
+    def upload_result_files_to_s3(
+        cls, result: Result, s3_subprefix="", _uploaded_file_link=None
+    ):
         s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
-        if result.results:
-            for result_ in result.results:
-                cls.upload_result_files_to_s3(result_, s3_subprefix=s3_subprefix)
+
+        if not _uploaded_file_link:
+            _uploaded_file_link = {}
+
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
                 result.set_info(f"WARNING: File [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
+            elif file in _uploaded_file_link:
+                # in case different sub results have the same file for upload
+                file_link = _uploaded_file_link[file]
             else:
                 is_text = False
                 for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
@@ -568,9 +592,18 @@ class _ResultS3:
                     text=is_text,
                     s3_subprefix=s3_subprefix,
                 )
+                _uploaded_file_link[file] = file_link
             result.links.append(file_link)
         result.files = []
-        result.dump()
+
+        if result.results:
+            for result_ in result.results:
+                cls.upload_result_files_to_s3(
+                    result_,
+                    s3_subprefix=s3_subprefix,
+                    _uploaded_file_link=_uploaded_file_link,
+                )
+        return result
 
     @classmethod
     def update_workflow_results(cls, workflow_name, new_info="", new_sub_results=None):
@@ -580,7 +613,7 @@ class _ResultS3:
         prev_status = ""
         new_status = ""
         done = False
-        while attempt < 10:
+        while attempt < 20:
             version = cls.copy_result_from_s3_with_version(
                 Result.file_name_static(workflow_name)
             )
@@ -592,7 +625,7 @@ class _ResultS3:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
                 for result_ in new_sub_results:
-                    workflow_result.update_sub_result(result_)
+                    workflow_result.update_sub_result(result_, drop_nested_results=True)
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True
