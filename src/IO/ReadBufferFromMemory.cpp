@@ -76,6 +76,8 @@ ReadBufferFromMemoryFileBase::ReadBufferFromMemoryFileBase(ReadBufferFromMemoryF
 
     if (memory_ownership_strategy == ReadBufferFromMemoryFileMemoryOwnershipStrategy::OwnsMemory)
         std::memcpy(internal_buffer.begin(), data.data(), data.size());
+
+    working_buffer = internal_buffer;
 }
 
 }
