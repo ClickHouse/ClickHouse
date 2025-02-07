@@ -31,7 +31,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
 - If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
@@ -415,7 +415,7 @@ dictGetAll('dict_name', attr_names, id_expr[, limit])
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the attribute’s data type as defined in the dictionary, returns an array of dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
+- If ClickHouse parses the attribute successfully in the attribute's data type as defined in the dictionary, returns an array of dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
 
 - If there is no key corresponding to `id_expr` in the dictionary, then an empty array is returned.
 
@@ -504,7 +504,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
-- If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
 - If there is no requested `id_expr` in the dictionary then:
 

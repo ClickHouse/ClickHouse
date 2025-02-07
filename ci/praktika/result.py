@@ -52,6 +52,7 @@ class Result(MetaClasses.Serializable):
     files: List[str] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     def create_from(
@@ -612,7 +613,7 @@ class _ResultS3:
         prev_status = ""
         new_status = ""
         done = False
-        while attempt < 10:
+        while attempt < 20:
             version = cls.copy_result_from_s3_with_version(
                 Result.file_name_static(workflow_name)
             )
