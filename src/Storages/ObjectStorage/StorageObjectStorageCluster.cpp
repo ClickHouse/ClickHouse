@@ -59,6 +59,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
+    , cluster_name_in_settings(false)
 {
     ColumnsDescription columns{columns_};
     std::string sample_path;
@@ -105,10 +106,17 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
-    ASTPtr cluster_name_arg = args.front();
-    args.erase(args.begin());
-    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-    args.insert(args.begin(), cluster_name_arg);
+    if (cluster_name_in_settings)
+    {
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+    }
+    else
+    {
+        ASTPtr cluster_name_arg = args.front();
+        args.erase(args.begin());
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        args.insert(args.begin(), cluster_name_arg);
+    }
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
@@ -116,7 +124,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
+        local_context, predicate, getVirtualsList(), nullptr, local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {

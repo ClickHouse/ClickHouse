@@ -25,6 +25,9 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'releases/24.12**'
+      - 'project-antalya-24.12.2'
+    tags:
+      - '*'
   workflow_dispatch:
 
 jobs:
