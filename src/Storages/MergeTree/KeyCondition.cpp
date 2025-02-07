@@ -17,6 +17,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
@@ -597,12 +598,15 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+                column_const && column_const->getDataType() != TypeIndex::Function)
+            {
                 /// Re-generate column name for constant.
-                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-                /// DAG from PK does not use it. This breaks matching by column name sometimes.
+                /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from the PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare names, but DAG subtrees instead.
-                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+                name = ASTLiteral(column_const->getField()).getColumnName();
+            }
             else
                 name = node.result_name;
 
@@ -726,6 +730,32 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"mortonEncode", SpaceFillingCurveType::Morton},
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
+
+static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
+                           const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
+{
+    chassert(condition_bloom_filter_data.hashes_per_column.size() == condition_bloom_filter_data.key_columns.size());
+
+    for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
+    {
+        // In case bloom filter is missing for parts of the data
+        // (e.g. for some Parquet row groups: https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237).
+        if (!column_index_to_column_bf.contains(condition_bloom_filter_data.key_columns[column_index]))
+        {
+            continue;
+        }
+
+        const auto & column_bf = column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]);
+        const auto & hashes = condition_bloom_filter_data.hashes_per_column[column_index];
+
+        if (!column_bf->findAnyHash(hashes))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
@@ -902,7 +932,7 @@ static Field applyFunctionForField(
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
     };
 
-    auto col = func->execute(columns, func->getResultType(), 1);
+    auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
     return (*col)[0];
 }
 
@@ -936,11 +966,13 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
+        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
 }
+
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
@@ -973,14 +1005,14 @@ bool applyFunctionChainToColumn(
     }
 
     // And cast it to the argument type of the first function in the chain
-    auto in_argument_type = functions[0]->getArgumentTypes()[0];
-    if (canBeSafelyCasted(result_type, in_argument_type))
+    auto in_argument_type = getArgumentTypeOfMonotonicFunction(*functions[0]);
+    if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    // If column cannot be casted accurate, casting with OrNull, and in case all
-    // values has been casted (no nulls), unpacking nested column from nullable.
+    // If column cannot be cast accurate, casting with OrNull, and in case all
+    // values has been cast (no nulls), unpacking nested column from nullable.
     // In case any further functions require Nullable input, they'll be able
     // to cast it.
     else
@@ -1002,12 +1034,12 @@ bool applyFunctionChainToColumn(
         if (func->getArgumentTypes().empty())
             return false;
 
-        auto argument_type = func->getArgumentTypes()[0];
-        if (!canBeSafelyCasted(result_type, argument_type))
+        auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
+        if (!canBeSafelyCast(result_type, argument_type))
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size());
+        result_column = func->execute({{result_column, argument_type, ""}}, func->getResultType(), result_column->size(), /* dry_run = */ false);
         result_type = func->getResultType();
 
         // Transforming nullable columns to the nested ones, in case no nulls found
@@ -1158,6 +1190,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const RPNBuilderFunctionTreeNode & func,
     RPNElement & out,
     size_t & out_key_column_num,
+    bool & allow_constant_transformation,
     bool & is_constant_transformed)
 {
     const auto & left_arg = func.getArgumentAt(0);
@@ -1184,7 +1217,9 @@ bool KeyCondition::tryPrepareSetIndex(
             set_transforming_chains.push_back(set_transforming_chain);
         }
         // For partition index, checking if set can be transformed to prune any partitions
-        else if (single_point && canSetValuesBeWrappedByFunctions(node, index_mapping.key_index, data_type, set_transforming_chain))
+        else if (
+            single_point && allow_constant_transformation
+            && canSetValuesBeWrappedByFunctions(node, index_mapping.key_index, data_type, set_transforming_chain))
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
@@ -1300,7 +1335,7 @@ bool KeyCondition::tryPrepareSetIndex(
             is_constant_transformed = true;
         }
 
-        if (canBeSafelyCasted(set_element_type, key_column_type))
+        if (canBeSafelyCast(set_element_type, key_column_type))
         {
             transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
             continue;
@@ -1482,6 +1517,18 @@ private:
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
 };
+
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
+{
+    const auto & arg_types = func.getArgumentTypes();
+    if (const auto * func_ptr = typeid_cast<const FunctionWithOptionalConstArg *>(&func))
+    {
+        if (func_ptr->getKind() == FunctionWithOptionalConstArg::Kind::LEFT_CONST)
+            return arg_types.at(1);
+    }
+
+    return arg_types.at(0);
+}
 
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
@@ -1954,7 +2001,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
             if (functionIsInOrGlobalInOperator(func_name))
             {
-                if (tryPrepareSetIndex(func, out, key_column_num, is_constant_transformed))
+                if (tryPrepareSetIndex(func, out, key_column_num, allow_constant_transformation, is_constant_transformed))
                 {
                     key_arg_pos = 0;
                     is_set_const = true;
@@ -2079,7 +2126,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             else
                 key_expr_type_not_null = key_expr_type;
 
-            bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
+            bool cast_not_needed = is_set_const /// Set args are already cast inside Set::createFromAST
                 || ((isNativeInteger(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
                     && (isNativeInteger(const_type) || isDateTime(const_type))); /// Native integers and DateTime are accurately compared without cast.
 
@@ -2982,7 +3029,8 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
-    const DataTypes & data_types) const
+    const DataTypes & data_types,
+    const ColumnIndexToBloomFilter & column_index_to_column_bf) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3007,7 +3055,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+                 || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
             if (element.key_column >= hyperrectangle.size())
             {
@@ -3042,6 +3090,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool contains = element.range.containsRange(*key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
+
+            // we don't create bloom_filter_data if monotonic_functions_chain is present
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
+            {
+                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -3215,6 +3270,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
 
             rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+
+            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
+            {
+                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
+            }
+
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -3258,6 +3319,85 @@ BoolMask KeyCondition::checkInHyperrectangle(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
     return rpn_stack[0];
+}
+
+void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
+                                          std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+{
+    for (auto & rpn_element : rpn)
+    {
+        // this would be a problem for `where negate(x) = -58`.
+        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
+        if (!rpn_element.monotonic_functions_chain.empty())
+        {
+            continue;
+        }
+
+        KeyCondition::BloomFilterData::HashesForColumns hashes;
+
+        if (rpn_element.function == RPNElement::FUNCTION_IN_RANGE
+            || rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+        {
+            // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
+            if (rpn_element.range.left != rpn_element.range.right)
+            {
+                continue;
+            }
+
+            auto hashed_value = hash_one(rpn_element.key_column, rpn_element.range.left);
+
+            if (!hashed_value)
+            {
+                continue;
+            }
+
+            hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
+
+            std::vector<std::size_t> key_columns_for_element;
+            key_columns_for_element.emplace_back(rpn_element.key_column);
+
+            rpn_element.bloom_filter_data = KeyCondition::BloomFilterData {std::move(hashes), std::move(key_columns_for_element)};
+        }
+        else if (rpn_element.function == RPNElement::FUNCTION_IN_SET
+                 || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            const auto & set_index = rpn_element.set_index;
+            const auto & ordered_set = set_index->getOrderedSet();
+            const auto & indexes_mapping = set_index->getIndexesMapping();
+
+            std::vector<std::size_t> key_columns_for_element;
+
+            for (auto i = 0u; i < ordered_set.size(); i++)
+            {
+                const auto & set_column = ordered_set[i];
+
+                auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
+
+                if (!hashes_for_column_opt)
+                {
+                    continue;
+                }
+
+                auto & hashes_for_column = *hashes_for_column_opt;
+
+                if (hashes_for_column.empty())
+                {
+                    continue;
+                }
+
+                hashes.emplace_back(hashes_for_column);
+
+                key_columns_for_element.push_back(indexes_mapping[i].key_index);
+            }
+
+            if (hashes.empty())
+            {
+                continue;
+            }
+
+            rpn_element.bloom_filter_data = {std::move(hashes), std::move(key_columns_for_element)};
+        }
+    }
 }
 
 bool KeyCondition::mayBeTrueInRange(

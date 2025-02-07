@@ -202,17 +202,18 @@ def test_drop_table(cluster):
         node.query("drop table test_drop_table")
 
         # It should not be possible to create a replica with the same path until the previous one is completely dropped
-        for i in range(0, 100):
+        for i in range(0, 50):
             node.query_and_get_answer_with_error(
                 "create table if not exists test_drop_table (n int) "
                 "engine=ReplicatedMergeTree('/test/drop_table', '1') "
                 "order by n partition by n % 99 settings storage_policy='s3'"
+                "settings keeper_max_retries=3, keeper_retry_max_backoff_ms=500"
             )
             time.sleep(0.2)
 
     # Wait for drop to actually finish
     node.wait_for_log_line(
-        "Removing metadata /var/lib/clickhouse/metadata_dropped/default.test_drop_table",
+        "Removing metadata metadata_dropped/default.test_drop_table",
         timeout=60,
         look_behind_lines=1000000,
     )

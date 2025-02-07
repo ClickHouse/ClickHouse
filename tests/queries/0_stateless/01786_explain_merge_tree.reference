@@ -29,6 +29,7 @@
         Granules: 2/3
 -----------------
               "Node Type": "ReadFromMergeTree",
+              "Node Id": "ReadFromMergeTree_0",
               "Description": "default.test_index",
               "Indexes": [
                 {
@@ -86,11 +87,17 @@
         ReadType: InOrder
         Parts: 1
         Granules: 3
+        Virtual row conversions
+        Actions: INPUT :: 0 -> x UInt32 : 0
+        Positions: 0
 -----------------
         ReadFromMergeTree (default.test_index)
         ReadType: InReverseOrder
         Parts: 1
         Granules: 3
+        Virtual row conversions
+        Actions: INPUT :: 0 -> x UInt32 : 0
+        Positions: 0
     ReadFromMergeTree (default.idx)
     Indexes:
       PrimaryKey
@@ -126,6 +133,7 @@
         Granules: 3/6
 -----------------
               "Node Type": "ReadFromMergeTree",
+              "Node Id": "ReadFromMergeTree_0",
               "Description": "default.test_index",
               "Indexes": [
                 {
@@ -174,11 +182,19 @@
         ReadType: InOrder
         Parts: 1
         Granules: 3
+        Virtual row conversions
+        Actions: INPUT : 0 -> x UInt32 : 0
+                 ALIAS x :: 0 -> __table1.x UInt32 : 1
+        Positions: 1
 -----------------
         ReadFromMergeTree (default.test_index)
         ReadType: InReverseOrder
         Parts: 1
         Granules: 3
+        Virtual row conversions
+        Actions: INPUT : 0 -> x UInt32 : 0
+                 ALIAS x :: 0 -> __table1.x UInt32 : 1
+        Positions: 1
     ReadFromMergeTree (default.idx)
     Indexes:
       PrimaryKey

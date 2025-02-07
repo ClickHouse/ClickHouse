@@ -140,7 +140,8 @@ private:
         const ProjectionName & sort_expression_projection_name,
         const ProjectionName & fill_from_expression_projection_name,
         const ProjectionName & fill_to_expression_projection_name,
-        const ProjectionName & fill_step_expression_projection_name);
+        const ProjectionName & fill_step_expression_projection_name,
+        const ProjectionName & fill_staleness_expression_projection_name);
 
     QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
@@ -156,7 +157,7 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope);
+    static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
@@ -219,7 +220,11 @@ private:
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
+    void validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const;
+
     void resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope);
+
+    void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 
     void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
 
@@ -234,6 +239,8 @@ private:
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
     void resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
+
+    void resolveCrossJoin(QueryTreeNodePtr & cross_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
     void resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 

@@ -1,9 +1,8 @@
 #include <Storages/NATS/NATSProducer.h>
 
 #include <atomic>
-#include <chrono>
-#include <thread>
 #include <Columns/ColumnString.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 
@@ -43,6 +42,17 @@ void NATSProducer::finishImpl()
     connection.disconnect();
 }
 
+void NATSProducer::cancel() noexcept
+{
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void NATSProducer::produce(const String & message, size_t, const Columns &, size_t)
 {

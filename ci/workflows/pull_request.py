@@ -1,94 +1,55 @@
-from typing import List
+from praktika import Workflow
 
-from praktika import Artifact, Job, Workflow
-from praktika.settings import Settings
-
-from ci.settings.definitions import (
-    BASE_BRANCH,
-    DOCKERS,
-    SECRETS,
-    JobNames,
-    RunnerLabels,
-)
-
-
-class ArtifactNames:
-    ch_debug_binary = "clickhouse_debug_binary"
-
-
-style_check_job = Job.Config(
-    name=JobNames.STYLE_CHECK,
-    runs_on=[RunnerLabels.CI_SERVICES],
-    command="python3 ./ci/jobs/check_style.py",
-    run_in_docker="clickhouse/style-test",
-)
-
-fast_test_job = Job.Config(
-    name=JobNames.FAST_TEST,
-    runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci/jobs/fast_test.py",
-    run_in_docker="clickhouse/fasttest",
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./ci/jobs/fast_test.py",
-            "./tests/queries/0_stateless/",
-            "./src",
-        ],
-    ),
-)
-
-job_build_amd_debug = Job.Config(
-    name=JobNames.BUILD_AMD_DEBUG,
-    runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci/jobs/build_clickhouse.py amd_debug",
-    run_in_docker="clickhouse/fasttest",
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./src",
-            "./contrib/",
-            "./CMakeLists.txt",
-            "./PreLoad.cmake",
-            "./cmake",
-            "./base",
-            "./programs",
-            "./docker/packager/packager",
-            "./rust",
-            "./tests/ci/version_helper.py",
-        ],
-    ),
-    provides=[ArtifactNames.ch_debug_binary],
-)
+from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
+from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, SECRETS
+from ci.workflows.job_configs import JobConfigs
 
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        style_check_job,
-        fast_test_job,
-        job_build_amd_debug,
+        JobConfigs.docker_build_arm,
+        JobConfigs.docker_build_amd,
+        JobConfigs.style_check,
+        JobConfigs.docs_job,
+        JobConfigs.fast_test,
+        *JobConfigs.build_jobs,
+        *JobConfigs.unittest_jobs,
+        JobConfigs.docker_sever,
+        JobConfigs.docker_keeper,
+        *JobConfigs.install_check_jobs,
+        *JobConfigs.compatibility_test_jobs,
+        *JobConfigs.functional_tests_jobs,
+        JobConfigs.bugfix_validation_job,
+        *JobConfigs.stateless_tests_flaky_pr_jobs,
+        *JobConfigs.integration_test_jobs,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
+        *JobConfigs.stress_test_jobs,
+        *JobConfigs.upgrade_test_jobs,
+        *JobConfigs.clickbench_jobs,
+        *JobConfigs.ast_fuzzer_jobs,
+        *JobConfigs.buzz_fuzzer_jobs,
+        *JobConfigs.performance_comparison_jobs,
     ],
-    artifacts=[
-        Artifact.Config(
-            name=ArtifactNames.ch_debug_binary,
-            type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
-        )
-    ],
-    dockers=DOCKERS,
+    artifacts=ARTIFACTS,
+    # dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
+    enable_cidb=True,
     enable_merge_ready_status=True,
+    pre_hooks=[
+        "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
+        can_be_trusted,
+        "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+    ],
+    post_hooks=[
+        "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
+    ],
 )
 
 WORKFLOWS = [
     workflow,
-]  # type: List[Workflow.Config]
-
-
-if __name__ == "__main__":
-    # local job test inside praktika environment
-    from praktika.runner import Runner
-
-    Runner().run(workflow, fast_test_job, docker="fasttest", dummy_env=True)
+]

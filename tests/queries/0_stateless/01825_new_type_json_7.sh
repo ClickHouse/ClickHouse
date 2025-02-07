@@ -25,6 +25,6 @@ cat <<EOF | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_7 FORMAT JSONAsObject"
 EOF
 
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(data)) as path FROM t_json_7 order by path;"
-$CLICKHOUSE_CLIENT -q "SELECT data.key, data.categories FROM t_json_7 ORDER BY data.key"
+$CLICKHOUSE_CLIENT -q "SELECT data.key, data.categories FROM t_json_7 ORDER BY data.key" --allow_suspicious_types_in_order_by 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_json_7;"

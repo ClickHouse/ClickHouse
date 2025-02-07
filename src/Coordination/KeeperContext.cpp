@@ -13,7 +13,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
 
@@ -514,7 +514,13 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
                 feature_flags.disableFeatureFlag(feature_flag.value());
         }
 
+        if (feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ))
+            feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+        else
+            system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
+
         system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+
     }
 
     feature_flags.logFlags(getLogger("KeeperContext"));
@@ -567,6 +573,25 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
 const CoordinationSettings & KeeperContext::getCoordinationSettings() const
 {
     return *coordination_settings;
+}
+
+bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
+{
+    switch (operation)
+    {
+        case Coordination::OpNum::FilteredList:
+            return feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST);
+        case Coordination::OpNum::MultiRead:
+            return feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ);
+        case Coordination::OpNum::CreateIfNotExists:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+        case Coordination::OpNum::CheckNotExists:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+        case Coordination::OpNum::RemoveRecursive:
+            return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
+        default:
+            return true;
+    }
 }
 
 uint64_t KeeperContext::lastCommittedIndex() const

@@ -201,11 +201,11 @@ public:
 
     size_t getMarkRows(size_t part_idx, size_t mark) const
     {
-        return parts[part_idx].data_part->index_granularity.getMarkRows(mark);
+        return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
 private:
     const RangesInDataParts & parts;
-    std::vector<IMergeTreeDataPart::Index> indices;
+    std::vector<IMergeTreeDataPart::IndexPtr> indices;
     size_t loaded_columns = std::numeric_limits<size_t>::max();
 };
 
@@ -444,7 +444,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
             parts_ranges.push_back(
                 {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
 
-            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
                 continue;
 
@@ -667,7 +667,7 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
             PartRangeIndex parts_range_start_index(parts_range_start);
             parts_ranges_queue.push({std::move(parts_range_start), std::move(parts_range_start_index)});
 
-            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
                 continue;
 
@@ -897,9 +897,22 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     RangesInDataParts intersecting_parts_ranges = std::move(parts);
 
+    auto create_merging_pipe = [&](const auto & ranges)
+    {
+        auto pipe = in_order_reading_step_getter(ranges);
+
+        pipe.addSimpleTransform([sorting_expr](const Block & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, sorting_expr);
+        });
+
+        return pipe;
+    };
+
     if (!isSafePrimaryKey(primary_key))
     {
-        result.merging_pipes.emplace_back(in_order_reading_step_getter(intersecting_parts_ranges));
+        if (!intersecting_parts_ranges.empty())
+            result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
         return result;
     }
 
@@ -912,7 +925,8 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     if (!split_intersecting_parts_ranges_into_layers)
     {
-        result.merging_pipes.emplace_back(in_order_reading_step_getter(intersecting_parts_ranges));
+        if (!intersecting_parts_ranges.empty())
+            result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
         return result;
     }
 
@@ -925,9 +939,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     for (size_t i = 0; i < layers.size(); ++i)
     {
-        result.merging_pipes[i] = in_order_reading_step_getter(std::move(layers[i]));
-        result.merging_pipes[i].addSimpleTransform([sorting_expr](const Block & header)
-                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
+        result.merging_pipes[i] = create_merging_pipe(layers[i]);
 
         auto & filter_function = filters[i];
         if (!filter_function)

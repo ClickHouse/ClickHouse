@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/COW.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -286,6 +285,9 @@ public:
             SUFFIX, /// Write statistics in suffix.
         };
         ObjectAndDynamicStatisticsMode object_and_dynamic_write_statistics = ObjectAndDynamicStatisticsMode::NONE;
+
+        /// Use old V1 serialization of JSON and Dynamic types. Needed for compatibility.
+        bool use_v1_object_and_dynamic_serialization = false;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -462,6 +464,9 @@ public:
 
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
+
+    static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
+    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>

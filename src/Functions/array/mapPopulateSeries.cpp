@@ -1,6 +1,7 @@
 #include <base/sort.h>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -452,23 +453,29 @@ private:
             using ValueType = typename Types::RightType;
 
             static constexpr bool key_and_value_are_numbers = IsDataTypeNumber<KeyType> && IsDataTypeNumber<ValueType>;
-            static constexpr bool key_is_float = std::is_same_v<KeyType, DataTypeFloat32> || std::is_same_v<KeyType, DataTypeFloat64>;
 
-            if constexpr (key_and_value_are_numbers && !key_is_float)
+            if constexpr (key_and_value_are_numbers)
             {
-                using KeyFieldType = typename KeyType::FieldType;
-                using ValueFieldType = typename ValueType::FieldType;
+                if constexpr (is_floating_point<typename KeyType::FieldType>)
+                {
+                    return false;
+                }
+                else
+                {
+                    using KeyFieldType = typename KeyType::FieldType;
+                    using ValueFieldType = typename ValueType::FieldType;
 
-                executeImplTyped<KeyFieldType, ValueFieldType>(
-                    input.key_column,
-                    input.value_column,
-                    input.offsets_column,
-                    input.max_key_column,
-                    std::move(result_columns.result_key_column),
-                    std::move(result_columns.result_value_column),
-                    std::move(result_columns.result_offset_column));
+                    executeImplTyped<KeyFieldType, ValueFieldType>(
+                        input.key_column,
+                        input.value_column,
+                        input.offsets_column,
+                        input.max_key_column,
+                        std::move(result_columns.result_key_column),
+                        std::move(result_columns.result_value_column),
+                        std::move(result_columns.result_offset_column));
 
-                return true;
+                    return true;
+                }
             }
 
             return false;

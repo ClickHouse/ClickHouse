@@ -33,8 +33,6 @@ RUN apt-get update \
 COPY requirements.txt /
 RUN pip3 install --no-cache-dir -r /requirements.txt
 
-ENV FUZZER_ARGS="-max_total_time=60"
-
 SHELL ["/bin/bash", "-c"]
 
 # docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/libfuzzer

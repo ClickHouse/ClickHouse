@@ -18,6 +18,7 @@ namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
@@ -35,6 +36,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 HedgedConnections::HedgedConnections(
@@ -52,7 +54,9 @@ HedgedConnections::HedgedConnections(
           timeouts_,
           context_->getSettingsRef()[Setting::connections_with_failover_max_tries].value,
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
-          context_->getSettingsRef()[Setting::max_parallel_replicas].value,
+          context_->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value > 0
+            ? context_->getSettingsRef()[Setting::max_parallel_replicas].value
+            : 1,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
           table_to_check_,
           priority_func)
@@ -161,7 +165,8 @@ void HedgedConnections::sendQuery(
     const String & query_id,
     UInt64 stage,
     ClientInfo & client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    const std::vector<String> & external_roles)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -188,7 +193,7 @@ void HedgedConnections::sendQuery(
         hedged_connections_factory.skipReplicasWithTwoLevelAggregationIncompatibility();
     }
 
-    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaState & replica)
+    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data, external_roles](ReplicaState & replica)
     {
         Settings modified_settings = settings;
 
@@ -218,7 +223,8 @@ void HedgedConnections::sendQuery(
         modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
 
         replica.connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
+
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
         replica.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };
@@ -337,6 +343,11 @@ Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
     return receivePacketUnlocked({});
+}
+
+UInt64 HedgedConnections::receivePacketTypeUnlocked(AsyncCallback)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'receivePacketTypeUnlocked()' not implemented for HedgedConnections");
 }
 
 Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)

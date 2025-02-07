@@ -9,7 +9,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
+
+#include <Core/callOnTypeIndex.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -178,13 +181,13 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes), true);
+        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context, CompileExpressions::yes), true);
         actions->execute(evaluate_block);
     }
 
     std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
-    for (const ColumnWithTypeAndName & column_def : evaluate_block)
+    for (auto & column_def : evaluate_block)
     {
         const String & column_name = column_def.name;
 
@@ -199,6 +202,9 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
         if (!defaults_mask.empty())
         {
+            column_read.column = recursiveRemoveSparse(column_read.column);
+            column_def.column = recursiveRemoveSparse(column_def.column);
+
             /// TODO: FixedString
             if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))
             {

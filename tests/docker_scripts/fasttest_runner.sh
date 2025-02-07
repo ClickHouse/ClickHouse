@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-18}
+export LLVM_VERSION=${LLVM_VERSION:-19}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -152,12 +152,12 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
-            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
             contrib/incbin
             contrib/yaml-cpp
+            contrib/corrosion
         )
 
         git submodule sync
@@ -250,7 +250,7 @@ function configure
 
     mkdir -p "$FASTTEST_DATA"{,/client-config}
     cp -a "$FASTTEST_SOURCE/programs/server/"{config,users}.xml "$FASTTEST_DATA"
-    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config"
+    "$FASTTEST_SOURCE/tests/config/install.sh" "$FASTTEST_DATA" "$FASTTEST_DATA/client-config" --fast-test
     cp -a "$FASTTEST_SOURCE/programs/server/config.d/log_to_console.xml" "$FASTTEST_DATA/config.d"
     # doesn't support SSL
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
@@ -289,6 +289,7 @@ function run_tests
         --order random
         --print-time
         --report-logs-stats
+        --no-stateful
         --jobs "${NPROC}"
         --timeout 45 # We don't want slow test being introduced again in this check
     )
@@ -326,7 +327,7 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests ||:
-    /repo/tests/docker_scripts/process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
+    "${FASTTEST_SOURCE}/tests/docker_scripts/process_functional_tests_result.py" --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;

@@ -31,7 +31,7 @@ ClickHouse创建此表时 [trace_log](../../operations/server-configuration-para
 
 -   `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) 系统表.
+-   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/docs/zh/operations/system-tables/query_log) 系统表.
 
 -   `trace` ([数组(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 

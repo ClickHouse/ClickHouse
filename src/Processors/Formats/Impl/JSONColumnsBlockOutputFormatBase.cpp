@@ -1,6 +1,6 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferValidUTF8.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/JSONUtils.h>
 
 
@@ -13,6 +13,12 @@ JSONColumnsBlockOutputFormatBase::JSONColumnsBlockOutputFormatBase(
     , format_settings(format_settings_)
     , serializations(header_.getSerializations())
 {
+    ostr = OutputFormatWithUTF8ValidationAdaptor::getWriteBufferPtr();
+}
+
+void JSONColumnsBlockOutputFormatBase::resetFormatterImpl()
+{
+    OutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
     ostr = OutputFormatWithUTF8ValidationAdaptor::getWriteBufferPtr();
 }
 

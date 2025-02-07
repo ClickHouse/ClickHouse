@@ -921,10 +921,11 @@ def test_workload_entity_keeper_storage():
             "select name, create_query from system.resources order by all",
             "select resource, path, type, weight, priority, max_requests, max_cost, max_speed, max_burst from system.scheduler where resource not in ['network_read', 'network_write'] order by all",
         ]
-        attempts = 10
+        attempts = 30
         value1 = ""
         value2 = ""
         error_query = ""
+        retry_period = 0.1
         for attempt in range(attempts):
             for query in checks:
                 value1 = node.query(query)
@@ -934,7 +935,8 @@ def test_workload_entity_keeper_storage():
                     break  # error
             else:
                 break  # success
-            time.sleep(0.5)
+            time.sleep(retry_period)
+            retry_period = min(3, retry_period * 1.5)
         else:
             raise Exception(
                 f"query '{error_query}' gives different results after {attempts} attempts:\n=== leader node ===\n{value1}\n=== follower node ===\n{value2}"

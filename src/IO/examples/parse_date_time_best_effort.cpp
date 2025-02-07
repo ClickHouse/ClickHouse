@@ -1,3 +1,4 @@
+#include <iostream>
 #include <string>
 
 #include <IO/parseDateTimeBestEffort.h>
@@ -22,6 +23,8 @@ try
     parseDateTimeBestEffort(res, in, local_time_zone, utc_time_zone);
     writeDateTimeText(res, out);
     writeChar('\n', out);
+
+    out.finalize();
 
     return 0;
 }

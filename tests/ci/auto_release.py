@@ -44,7 +44,7 @@ def parse_args():
     return parser.parse_args(), parser
 
 
-MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 5
+MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8
 AUTORELEASE_INFO_FILE = "/tmp/autorelease_info.json"
 AUTORELEASE_MATRIX_PARAMS = "/tmp/autorelease_params.json"
 
@@ -58,6 +58,7 @@ class ReleaseParams:
     commit_sha: str
     commits_to_branch_head: int
     latest: bool
+    description: str = ""
 
     def to_dict(self):
         return dataclasses.asdict(self)
@@ -96,6 +97,16 @@ def _prepare(token):
     os.environ["GH_TOKEN"] = token
     Shell.check("gh auth status")
 
+    # Check all previous version bump prs were merged
+    open_version_change_prs = Shell.get_output(
+        'gh pr list  --state open --search "Update version_date.tsv" --json number,title'
+    )
+    if open_version_change_prs != "[]":
+        CIBuddy(dry_run=False).post_critical(
+            "Found not merged version bump PRs", body=open_version_change_prs
+        )
+        raise RuntimeError()
+
     gh = GitHub(token)
     prs = gh.get_release_pulls(GITHUB_REPOSITORY)
     prs.sort(key=lambda x: x.head.ref)
@@ -131,6 +142,7 @@ def _prepare(token):
         commit_ci_status = ""
         commits_to_branch_head = 0
 
+        description = ""
         for idx, commit in enumerate(
             commits_to_check[:MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE]
         ):
@@ -145,34 +157,14 @@ def _prepare(token):
                 commits_to_branch_head += 1
                 continue
 
-            # TODO: switch to check if CI is entirely green
-            statuses = [
-                CI.GH.get_commit_status_by_name(
-                    token=token,
-                    commit_sha=commit,
-                    # handle old name for old releases
-                    status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
-                ),
-                CI.GH.get_commit_status_by_name(
-                    token=token,
-                    commit_sha=commit,
-                    # handle old name for old releases
-                    status_name=CI.JobNames.STATELESS_TEST_RELEASE,
-                ),
-                CI.GH.get_commit_status_by_name(
-                    token=token,
-                    commit_sha=commit,
-                    # handle old name for old releases
-                    status_name=CI.JobNames.STATEFUL_TEST_RELEASE,
-                ),
-            ]
             commit_sha = commit
-            if any(status == SUCCESS for status in statuses):
+            failed_jobs = CI.GH.get_failed_statuses(token=token, commit_sha=commit_sha)
+            if not failed_jobs:
                 commit_ci_status = SUCCESS
-                break
-
-            print(f"CI status [{statuses}] - skip")
-            commits_to_branch_head += 1
+            else:
+                # add failed jobs from most recent ready commit to the release info description to post it in alert
+                description = f"Failed jobs: {failed_jobs}"
+            break
 
         ready = False
         if commit_ci_status == SUCCESS and commit_sha:
@@ -192,6 +184,7 @@ def _prepare(token):
                 num_patches=commit_num,
                 commits_to_branch_head=commits_to_branch_head,
                 latest=False,
+                description=description if not ready else "",
             )
         )
 

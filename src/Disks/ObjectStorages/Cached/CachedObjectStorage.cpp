@@ -46,6 +46,11 @@ CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string &
     return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
 }
 
+bool CachedObjectStorage::areObjectKeysRandom() const
+{
+    return object_storage->areObjectKeysRandom();
+}
+
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     return object_storage->patchSettings(read_settings);
@@ -146,20 +151,6 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
     /// Add try catch?
     if (cache->isInitialized())
         cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
-}
-
-void CachedObjectStorage::removeObject(const StoredObject & object)
-{
-    removeCacheIfExists(object.remote_path);
-    object_storage->removeObject(object);
-}
-
-void CachedObjectStorage::removeObjects(const StoredObjects & objects)
-{
-    for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
-
-    object_storage->removeObjects(objects);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)

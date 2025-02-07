@@ -6,7 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -54,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 ParallelReadingExtension::ParallelReadingExtension(
@@ -91,7 +92,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps, reader_settings_.force_short_circuit_execution))
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
@@ -110,13 +111,15 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
     }
 
-    if (!prewhere_actions.steps.empty())
-        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
+    bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
+    if (has_prewhere_actions_steps)
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
 
-    if (prewhere_info)
-        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
-            prewhere_info->prewhere_actions.dumpDAG(),
-            (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
+    if (prewhere_info || has_prewhere_actions_steps)
+        LOG_TEST(log, "PREWHERE conditions: {}, Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+            has_prewhere_actions_steps ? prewhere_actions.dumpConditions() : std::string("<nullptr>"),
+            prewhere_info ? prewhere_info->prewhere_actions.dumpDAG() : std::string("<nullptr>"),
+            has_prewhere_actions_steps ? prewhere_actions.dump() : std::string("<nullptr>"));
 }
 
 String MergeTreeSelectProcessor::getName() const
@@ -124,9 +127,9 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
-bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere);
+bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere, bool force_short_circuit_execution);
 
-PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps)
+PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps, bool force_short_circuit_execution)
 {
     PrewhereExprInfo prewhere_actions;
     if (prewhere_info)
@@ -147,7 +150,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
         }
 
         if (!enable_multiple_prewhere_read_steps ||
-            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions))
+            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution))
         {
             PrewhereExprStep prewhere_step
             {
@@ -180,7 +183,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 break;
             throw;
         }
@@ -203,7 +206,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             auto chunk = Chunk(ordered_columns, res.row_count);
             if (add_part_level)
-                chunk.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level));
+                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(task->getInfo().data_part->info.level));
 
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
@@ -224,15 +227,36 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
         all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
+    for (const auto & step : task->getInfo().mutation_steps)
+        all_prewhere_actions.steps.push_back(step);
+
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeRangeReaders(all_prewhere_actions);
+    task->initializeRangeReaders(all_prewhere_actions, read_steps_performance_counters);
 }
 
 Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)
 {
     return SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
+}
+
+static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
+{
+    WriteBufferFromOwnString out;
+    const auto & all_counters = counters.getCounters();
+    for (size_t i = 0; i < all_counters.size(); ++i)
+    {
+        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read);
+        if (i + 1 < all_counters.size())
+            out << ", ";
+    }
+    return out.str();
+}
+
+void MergeTreeSelectProcessor::onFinish() const
+{
+    LOG_TRACE(log, "Read steps statistics: {}", dumpStatistics(read_steps_performance_counters));
 }
 
 }

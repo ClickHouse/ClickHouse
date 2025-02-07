@@ -377,7 +377,7 @@ String DNSResolver::getHostName()
     return *impl->host_name;
 }
 
-static const String & cacheElemToString(const String & str) { return str; }
+static String cacheElemToString(String str) { return str; }
 static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr.toString(); }
 
 template <typename UpdateF, typename ElemsT>

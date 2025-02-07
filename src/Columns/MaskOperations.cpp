@@ -24,7 +24,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
 
     ssize_t from = data.size() - 1;
     ssize_t index = mask.size() - 1;
-    data.resize(mask.size());
+    data.resize_exact(mask.size());
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
@@ -63,6 +63,7 @@ INSTANTIATE(Int32)
 INSTANTIATE(Int64)
 INSTANTIATE(Int128)
 INSTANTIATE(Int256)
+INSTANTIATE(BFloat16)
 INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 INSTANTIATE(Decimal32)
@@ -200,6 +201,7 @@ static MaskInfo extractMaskImpl(
           || extractMaskNumeric<inverted, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, BFloat16>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
           || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column {} to mask.", column->getName());

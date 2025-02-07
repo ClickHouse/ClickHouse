@@ -1,23 +1,47 @@
 #pragma once
 
-#include <Common/OvercommitTracker.h>
 #include <base/defines.h>
+#include <Common/Exception.h>
+#include <Common/OvercommitTracker.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+};
+
 /** LockGuard provides RAII-style locking mechanism for a mutex.
- ** It's intended to be used like std::unique_ptr but with TSA annotations
+ ** It's intended to be used like std::unique_lock but with TSA annotations
   */
 template <typename Mutex>
 class TSA_SCOPED_LOCKABLE LockGuard
 {
 public:
-    explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : mutex(mutex_) { mutex.lock(); }
-    ~LockGuard() TSA_RELEASE() { mutex.unlock(); }
+    explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : mutex(mutex_) { lock(); }
+    ~LockGuard() TSA_RELEASE() { if (locked) unlock(); }
+
+    void lock() TSA_ACQUIRE()
+    {
+        /// Don't allow recursive_mutex for now.
+        if (locked)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't lock twice the same mutex");
+        mutex.lock();
+        locked = true;
+    }
+
+    void unlock() TSA_RELEASE()
+    {
+        if (!locked)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unlock the mutex without locking it first");
+        mutex.unlock();
+        locked = false;
+    }
 
 private:
     Mutex & mutex;
+    bool locked = false;
 };
 
 template <template<typename> typename TLockGuard, typename Mutex>

@@ -326,13 +326,7 @@ public:
 
     struct WatchInfoHash
     {
-        auto operator()(WatchInfo info) const
-        {
-            SipHash hash;
-            hash.update(info.path);
-            hash.update(info.is_list_watch);
-            return hash.get64();
-        }
+        UInt64 operator()(WatchInfo info) const;
     };
 
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<WatchInfo, WatchInfoHash>>;
@@ -562,7 +556,6 @@ public:
 
         std::unordered_set<int64_t> closed_sessions;
 
-        using ZxidToNodes = std::map<int64_t, std::unordered_set<std::string_view>>;
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
@@ -572,24 +565,31 @@ public:
             void materializeACL(const ACLMap & current_acl_map);
         };
 
-        struct PathCmp
-        {
-            auto operator()(const std::string_view a,
-                            const std::string_view b) const
-            {
-                size_t level_a = std::count(a.begin(), a.end(), '/');
-                size_t level_b = std::count(b.begin(), b.end(), '/');
-                return level_a < level_b || (level_a == level_b && a < b);
-            }
+        /// zxid_to_nodes stores iterators of nodes map
+        /// so we should be careful when removing nodes from it
+        mutable std::unordered_map<
+            std::string,
+            UncommittedNode,
+            StringHashForHeterogeneousLookup,
+            StringHashForHeterogeneousLookup::transparent_key_equal>
+            nodes;
 
-            using is_transparent = void; // required to make find() work with different type than key_type
+        using NodesIterator = decltype(nodes)::iterator;
+        struct NodesIteratorHash
+        {
+            auto operator()(NodesIterator it) const
+            {
+                return std::hash<std::string_view>{}(it->first);
+            }
         };
 
         Ephemerals ephemerals;
 
+        /// for each session, store list of uncommitted auths with their ZXID
         std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
 
-        mutable std::map<std::string, UncommittedNode, PathCmp> nodes;
+        /// mapping of uncommitted transaction to all it's modified nodes for a faster cleanup
+        using ZxidToNodes = std::map<int64_t, std::unordered_set<NodesIterator, NodesIteratorHash>>;
         mutable ZxidToNodes zxid_to_nodes;
 
         mutable std::mutex deltas_mutex;

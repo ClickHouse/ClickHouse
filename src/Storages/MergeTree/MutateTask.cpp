@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <DataTypes/ObjectUtils.h>
+#include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
@@ -56,6 +57,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsUInt64 min_insert_block_size_bytes;
@@ -74,6 +76,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 namespace ErrorCodes
@@ -81,6 +84,13 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
+
+enum class ExecuteTTLType : uint8_t
+{
+    NONE = 0,
+    NORMAL = 1,
+    RECALCULATE= 2,
+};
 
 namespace MutationHelpers
 {
@@ -236,9 +246,9 @@ static void splitAndModifyMutationCommands(
         /// from disk we just don't read dropped columns
         for (const auto & column : part_columns)
         {
-            if (!mutated_columns.contains(column.name) && !ignored_columns.contains(column.name))
+            if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -984,9 +994,18 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setIndex(*source_part->getIndex());
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
+
+    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
+    {
+        if (auto new_index_granularity = new_data_part->index_granularity->optimize())
+            new_data_part->index_granularity = std::move(new_index_granularity);
+    }
+
+    /// It's important to set index after index granularity.
+    if (!new_data_part->storage.getPrimaryIndexCache())
+        new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
     bool noop;
@@ -1217,7 +1236,6 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     do
     {
         Block cur_block;
-        Block projection_header;
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {
@@ -1387,12 +1405,19 @@ public:
         return false;
     }
 
+    void cancel() noexcept override
+    {
+        if (ctx->out)
+        {
+            ctx->out->cancel();
+        }
+    }
+
 private:
 
     void prepare()
     {
-        if (ctx->new_data_part->isStoredOnDisk())
-            ctx->new_data_part->getDataPartStorage().createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -1597,7 +1622,6 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
-        MergeTreeIndexGranularity computed_granularity;
         bool has_delete = false;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
@@ -1610,9 +1634,21 @@ private:
             }
         }
 
+        MergeTreeIndexGranularityPtr index_granularity_ptr;
         /// Reuse source part granularity if mutation does not change number of rows
         if (!has_delete && ctx->execute_ttl_type == ExecuteTTLType::NONE)
-            computed_granularity = ctx->source_part->index_granularity;
+        {
+            index_granularity_ptr = ctx->source_part->index_granularity;
+        }
+        else
+        {
+            index_granularity_ptr = createMergeTreeIndexGranularity(
+                ctx->source_part->rows_count,
+                ctx->source_part->getBytesUncompressedOnDisk(),
+                *ctx->data->getSettings(),
+                ctx->new_data_part->index_granularity_info,
+                /*blocks_are_granules=*/ false);
+        }
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -1621,12 +1657,12 @@ private:
             skip_indices,
             stats_to_rewrite,
             ctx->compression_codec,
+            std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
+            ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
-            /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings(),
-            computed_granularity);
+            ctx->context->getWriteSettings());
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1709,6 +1745,14 @@ public:
             }
         }
         return false;
+    }
+
+    void cancel() noexcept override
+    {
+        if (ctx->out)
+        {
+            ctx->out->cancel();
+        }
     }
 
 private:
@@ -1848,14 +1892,11 @@ private:
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
-                ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
-                nullptr,
-                /*save_marks_in_cache=*/ false,
+                ctx->compression_codec,
                 ctx->source_part->index_granularity,
-                &ctx->source_part->index_granularity_info
-            );
+                ctx->source_part->getBytesUncompressedOnDisk());
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -1883,6 +1924,8 @@ private:
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
+
+            ctx->out.reset();
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
@@ -1960,6 +2003,11 @@ public:
             }
         }
         return false;
+    }
+
+    void cancel() noexcept override
+    {
+        executable_task->cancel();
     }
 
 private:
@@ -2069,6 +2117,12 @@ bool MutateTask::execute()
     return false;
 }
 
+void MutateTask::cancel() noexcept
+{
+    if (task)
+        task->cancel();
+}
+
 void MutateTask::updateProfileEvents() const
 {
     UInt64 total_elapsed_ms = (*ctx->mutate_entry)->watch.elapsedMilliseconds();
@@ -2172,8 +2226,7 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
 
-    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    if (!isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2289,7 +2342,7 @@ bool MutateTask::prepare()
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
-    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name);
+    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);
     builder.withPartInfo(ctx->future_part->part_info);
 
@@ -2338,7 +2391,9 @@ bool MutateTask::prepare()
     /// TODO We can materialize compact part without copying data
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part) || !isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
+    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        || !isWidePart(ctx->source_part)
+        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         /// In case of replicated merge tree with zero copy replication

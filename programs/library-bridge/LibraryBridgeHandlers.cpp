@@ -579,34 +579,13 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             processError(response, "Unknown library method '" + method + "'");
             LOG_ERROR(log, "Unknown library method: '{}'", method);
         }
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(true);
-        LOG_ERROR(log, "Failed to process request. Error: {}", message);
 
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, message); // can't call process_error, because of too soon response sending
-        try
-        {
-            writeStringBinary(message, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            out.cancel();
-        }
-
-        return;
-    }
-
-    try
-    {
         out.finalize();
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(log, "Failed to process request");
+        out.cancelWithException(request, getCurrentExceptionCode(), getCurrentExceptionMessage(true), nullptr);
     }
 }
 

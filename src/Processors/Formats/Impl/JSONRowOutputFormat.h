@@ -26,8 +26,6 @@ public:
 
     String getName() const override { return "JSONRowOutputFormat"; }
 
-    void onProgress(const Progress & value) override;
-
     String getContentType() const override { return "application/json; charset=UTF-8"; }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override

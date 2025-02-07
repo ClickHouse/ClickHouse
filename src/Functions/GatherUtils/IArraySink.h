@@ -25,7 +25,7 @@ struct IArraySink
 };
 
 template <typename Derived>
-class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};
+class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
 }
 

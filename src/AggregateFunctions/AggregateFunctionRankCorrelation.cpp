@@ -47,7 +47,7 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
     }
 };
 
-class AggregateFunctionRankCorrelation :
+class AggregateFunctionRankCorrelation final :
     public IAggregateFunctionDataHelper<RankCorrelationData, AggregateFunctionRankCorrelation>
 {
 public:

@@ -69,7 +69,7 @@ MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Valu
 
 bool MarkType::isMarkFileExtension(std::string_view extension)
 {
-    return extension.find("mrk") != std::string_view::npos;
+    return extension.contains("mrk");
 }
 
 std::string MarkType::getFileExtension() const

@@ -13,6 +13,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
@@ -89,11 +90,40 @@ struct HasSystemTablesMatcher
         {
             database_table = identifier->name();
         }
-        /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
-        else if (const auto * literal = node->as<ASTLiteral>())
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
+        /// This SQL syntax is quite common but we need to be careful. A naive attempt to cast 'node' to an ASTLiteral will be too general
+        /// and introduce false positives in queries like
+        ///     'SELECT * FROM users WHERE name = 'system.metrics' SETTINGS use_query_cache = true;'
+        /// Therefore, make sure we are really in `clusterAllReplicas`. EXPLAIN AST for
+        ///     'SELECT * FROM clusterAllReplicas('default', system.one) SETTINGS use_query_cache = 1'
+        /// returns:
+        ///     [...]
+        ///     Function clusterAllReplicas (children 1)
+        ///       ExpressionList (children 2)
+        ///         Literal 'test_shard_localhost'
+        ///         Literal 'system.one'
+        ///     [...]
+        else if (const auto * function = node->as<ASTFunction>())
         {
-            const auto & value = literal->value;
-            database_table = toString(value);
+            if (function->name == "clusterAllReplicas")
+            {
+                const ASTs & function_children = function->children;
+                if (!function_children.empty())
+                {
+                    if (const auto * expression_list = function_children[0]->as<ASTExpressionList>())
+                    {
+                        const ASTs & expression_list_children = expression_list->children;
+                        if (expression_list_children.size() >= 2)
+                        {
+                            if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
+                            {
+                                const auto & value = literal->value;
+                                database_table = toString(value);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
@@ -233,6 +263,7 @@ QueryCache::Key::Key(
     const String & current_database,
     const Settings & settings,
     Block header_,
+    const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
@@ -246,6 +277,7 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
+    , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
 {
 }
@@ -254,10 +286,11 @@ QueryCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
     const Settings & settings,
+    const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
-    /// ^^ dummy values for everything != AST, current database, user name/roles
+    : QueryCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
 
@@ -440,7 +473,7 @@ void QueryCache::Writer::finalizeWrite()
             Columns compressed_columns;
             for (const auto & column : columns)
             {
-                auto compressed_column = column->compress();
+                auto compressed_column = column->compress(/*force_compression=*/false);
                 compressed_columns.push_back(compressed_column);
             }
             Chunk compressed_chunk(compressed_columns, chunk.getNumRows());

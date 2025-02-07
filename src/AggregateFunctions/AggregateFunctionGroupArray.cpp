@@ -26,7 +26,7 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
 
 
 namespace DB
@@ -79,7 +79,7 @@ template <typename T>
 struct GroupArraySamplerData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -95,7 +95,7 @@ struct GroupArraySamplerData
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(pcg32_fast::max()))
-            return rng() % lim;
+            return rng() % lim;  /// NOLINT(clang-analyzer-core.DivideZero)
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
@@ -120,7 +120,7 @@ template <typename T>
 struct GroupArrayNumericData<T, false>
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -494,7 +494,7 @@ class GroupArrayGeneralImpl final
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>;
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;

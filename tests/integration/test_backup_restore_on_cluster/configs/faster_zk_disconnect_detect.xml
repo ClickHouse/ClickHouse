@@ -1,0 +1,12 @@
+<clickhouse>
+    <zookeeper replace="replace">
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <connection_timeout_ms>500</connection_timeout_ms>
+        <num_connection_retries>0</num_connection_retries>
+        <operation_timeout_ms>1000</operation_timeout_ms>
+        <session_timeout_ms>5000</session_timeout_ms>
+    </zookeeper>
+</clickhouse>

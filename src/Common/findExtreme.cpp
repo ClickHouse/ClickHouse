@@ -47,7 +47,7 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
 
         /// Unroll the loop manually for floating point, since the compiler doesn't do it without fastmath
         /// as it might change the return value
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
             constexpr size_t unroll_block = 512 / sizeof(T); /// Chosen via benchmarks with AVX2 so YMMV
             size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);

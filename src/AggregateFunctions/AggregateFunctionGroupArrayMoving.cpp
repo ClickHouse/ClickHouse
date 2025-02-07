@@ -19,7 +19,7 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE = 0xFFFFFF;
 
 
 namespace DB
@@ -38,7 +38,7 @@ template <typename T>
 struct MovingData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     using Accumulator = T;
 

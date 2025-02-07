@@ -29,4 +29,4 @@ A table with the specified structure for reading data in the specified Hudi tabl
 **See Also**
 
 - [Hudi engine](/docs/en/engines/table-engines/integrations/hudi.md)
-
+- [Hudi cluster table function](/docs/en/sql-reference/table-functions/hudiCluster.md)

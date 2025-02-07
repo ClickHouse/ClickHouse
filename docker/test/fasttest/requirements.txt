@@ -27,7 +27,6 @@ pandas==1.5.3
 pip==24.1.1
 pipdeptree==2.23.0
 pyparsing==2.4.7
-python-apt==2.4.0+ubuntu3
 python-dateutil==2.9.0.post0
 pytz==2024.1
 requests==2.32.3
