@@ -3,8 +3,6 @@
 namespace BuzzHouse
 {
 
-static DB::Strings settings_timezones;
-
 const std::function<String(RandomGenerator &)> probRange
     = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
@@ -19,7 +17,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_changing_replica_until_first_data_packet", CHSetting(trueOrFalse, {}, false)},
     {"allow_create_index_without_type", CHSetting(trueOrFalse, {}, false)},
-    {"allow_experimental_parallel_reading_from_replicas", CHSetting(zeroOneTwo, {"0", "1"}, false)},
     {"allow_introspection_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_prefetched_read_pool_for_remote_filesystem", CHSetting(trueOrFalse, {}, false)},
     {"allow_reorder_prewhere_conditions", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -50,7 +47,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"check_referential_table_dependencies", CHSetting(trueOrFalse, {}, false)},
     {"check_table_dependencies", CHSetting(trueOrFalse, {}, false)},
     {"checksum_on_read", CHSetting(trueOrFalse, {}, false)},
-    {"cloud_mode", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"cloud_mode", CHSetting(zeroOneTwo, {}, false)},
+    {"cloud_mode_database_engine", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
+    {"cloud_mode_engine", CHSetting(trueOrFalse, {}, false)},
     {"collect_hash_table_stats_during_aggregation", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"collect_hash_table_stats_during_joins", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"compatibility_ignore_auto_increment_in_create_table", CHSetting(trueOrFalse, {}, false)},
@@ -138,7 +137,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_named_columns_in_function_tuple", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_optimize_predicate_expression", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_optimize_predicate_expression_to_final_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"enable_parallel_replicas", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_parsing_to_custom_serialization", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_reads_from_query_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_s3_requests_logging", CHSetting(trueOrFalse, {}, false)},
@@ -485,14 +483,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); },
          {"0", "1", "100", "1000"},
          false)},
-    {"max_parallel_replicas", CHSetting([](RandomGenerator & rg) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
+    {"max_parallel_replicas",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, 5)); }, {}, false)},
     {"max_parsing_threads",
      CHSetting(
-         [](RandomGenerator & rg)
-         {
-             const DB::Strings & choices = {"0", "1", "10"};
-             return rg.pickRandomlyFromVector(choices);
-         },
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {"0", "1", std::to_string(std::thread::hardware_concurrency())},
          false)},
     {"max_parts_to_move",
@@ -993,10 +988,17 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 
     if (!fc.timezones.empty())
     {
-        settings_timezones.insert(settings_timezones.end(), fc.timezones.begin(), fc.timezones.end());
         serverSettings.insert(
             {{"session_timezone",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(settings_timezones) + "'"; }, {}, false)}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(fc.timezones) + "'"; }, {}, false)}});
+    }
+    if (!fc.clusters.empty())
+    {
+        serverSettings.insert(
+            {{"allow_experimental_parallel_reading_from_replicas", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
+             {"cluster_for_parallel_replicas",
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(fc.clusters) + "'"; }, {}, false)},
+             {"enable_parallel_replicas", CHSetting(trueOrFalse, {"0", "1"}, false)}});
     }
 }
 
