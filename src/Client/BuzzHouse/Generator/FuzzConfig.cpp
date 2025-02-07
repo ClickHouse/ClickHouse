@@ -1,5 +1,6 @@
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 
+#include <ranges>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
 
