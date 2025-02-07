@@ -1032,6 +1032,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_indices.insert(index.name);
     }
 
+    NameSet read_columns_set(read_columns.begin(), read_columns.end());
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
@@ -1056,6 +1057,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             projection_cols.begin(),
             projection_cols.end(),
             [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+
+        /// Check if primary key columns were modified.
+        const auto & primary_key_columns = projection.metadata->getPrimaryKeyColumns();
+        changed |= std::any_of(
+            primary_key_columns.begin(),
+            primary_key_columns.end(),
+            [&](const auto & col) { return read_columns_set.contains(col); });
 
         if (changed)
             materialized_projections.insert(projection.name);
