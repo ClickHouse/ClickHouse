@@ -17,13 +17,14 @@ class VersionType:
     PRESTABLE = "altinityedge"
     STABLE = "altinitystable"
     TESTING = "altinitytest"
+    ANTALYA = "altinityantalya"
 
-    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS,
+    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS, ANTALYA
             # NOTE (vnemkov): we don't use those directly, but it is used in unit-tests
-             "stable",
-             "prestable",
-             "testing",
-            )
+            "stable",
+            "prestable",
+            "testing",
+    )
 
 # ^ and $ match subline in `multiple\nlines`
 # \A and \Z match only start and end of the whole string
