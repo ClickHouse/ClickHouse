@@ -18,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB

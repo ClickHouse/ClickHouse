@@ -755,6 +755,10 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number)\
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number)\
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number)\
+    M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number)\
+    M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number)\
+    M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueProcessedRows, "Number of processed rows in StorageS3(Azure)Queue", ValueType::Number)\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \

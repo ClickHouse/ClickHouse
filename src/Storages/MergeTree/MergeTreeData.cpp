@@ -77,6 +77,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>

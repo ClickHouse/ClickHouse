@@ -11,7 +11,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>

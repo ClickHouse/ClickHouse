@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/ColumnsHashing.h>
+#include <Common/ColumnsHashing/HashMethod.h>
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
