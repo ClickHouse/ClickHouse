@@ -1,7 +1,7 @@
 #!/usr/bin/env -S ${HOME}/clickhouse-client --queries-file
 
 DROP TABLE IF EXISTS tab;
-CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = Memory;
+CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES (1, 1, 1, 'a'), (2, 2, 2, 'b');
 
 DROP TABLE IF EXISTS mem;

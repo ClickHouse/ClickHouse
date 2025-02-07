@@ -101,6 +101,11 @@ void HDFSBuilderWrapper::loadFromConfig(
 #if USE_KRB5
 void HDFSBuilderWrapper::runKinit()
 {
+    if (!need_kinit)
+    {
+        return;
+    }
+
     LOG_DEBUG(getLogger("HDFSClient"), "Running KerberosInit");
     try
     {
@@ -162,10 +167,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     }
 
     #if USE_KRB5
-    if (builder.need_kinit)
-    {
-        builder.runKinit();
-    }
+    builder.runKinit();
     #endif // USE_KRB5
 
     return builder;

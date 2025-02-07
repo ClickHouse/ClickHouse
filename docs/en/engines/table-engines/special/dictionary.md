@@ -67,7 +67,7 @@ WHERE name = 'products'
 
 You can use the [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) function to get the dictionary data in this format.
 
-This view isn’t helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
+This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
 Syntax:
 
@@ -83,7 +83,7 @@ create table products (product_id UInt64, title String) Engine = Dictionary(prod
 
       Ok
 
-Take a look at what’s in the table.
+Take a look at what's in the table.
 
 ``` sql
 select * from products limit 1;
