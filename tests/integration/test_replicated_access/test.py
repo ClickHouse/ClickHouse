@@ -24,7 +24,7 @@ node2 = cluster.add_instance(
 all_nodes = [node1, node2]
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
@@ -33,7 +33,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="function", autouse=True)
 def prepare_test():
     node1.query("DROP USER IF EXISTS test")
     node1.query("CREATE USER test")
