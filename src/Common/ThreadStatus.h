@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/MemorySpillScheduler.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -78,6 +79,7 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
+    MemorySpillScheduler memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 

@@ -50,8 +50,6 @@ class Job:
 
         parameter: Any = None
 
-        no_download_requires: bool = False
-
         def parametrize(
             self,
             parameter: Optional[List[Any]] = None,
