@@ -49,6 +49,8 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
     processing_start_time = now();
+    processing_end_time = {};
+    processed_rows = 0;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()

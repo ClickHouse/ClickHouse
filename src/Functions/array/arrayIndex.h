@@ -17,8 +17,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include "Common/FieldVisitors.h"
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
