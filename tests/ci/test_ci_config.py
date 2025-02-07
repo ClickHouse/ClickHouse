@@ -571,7 +571,7 @@ class TestCIConfig(unittest.TestCase):
             jobs_to_do_prev + jobs_to_skip_prev,
         )
 
-        # set batch 3, 4, 5, 6, 7, 8 as SUCCESSFUL in ci cache
+        # set batch 3, 4, 5, 6 as SUCCESSFUL in ci cache
         jobs_to_do_prev = list(ci_cache.jobs_to_do)
         jobs_to_skip_prev = list(ci_cache.jobs_to_skip)
         jobs_to_wait_prev = list(ci_cache.jobs_to_wait)
@@ -582,10 +582,6 @@ class TestCIConfig(unittest.TestCase):
         _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 4)
         self.assertTrue(ci_cache.jobs_to_do)
         _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 5)
-        self.assertTrue(ci_cache.jobs_to_do)
-        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 6)
-        self.assertTrue(ci_cache.jobs_to_do)
-        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 7)
         self.assertTrue(
             not ci_cache.jobs_to_do
         )  # by this moment there must be no jobs left as batch 5 is currently the maximum
