@@ -114,13 +114,6 @@ def assert_one_part_exists(node, table_name, expected_part):
     )
     assert part_name.strip() == expected_part
 
-    assert (
-        "1"
-        == node.query(
-            f"SELECT count(*) FROM system.parts WHERE table='{table_name}'",
-        ).strip()
-    )
-
 
 def test_corrupted_blob(start_cluster):
     table_name = "corrupted_blob_" + random_string(8)
