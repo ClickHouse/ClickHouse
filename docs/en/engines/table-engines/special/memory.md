@@ -20,7 +20,7 @@ Maximal productivity (over 10 GB/sec) is reached on simple queries, because ther
 When restarting a server, data disappears from the table and the table becomes empty.
 Normally, using this table engine is not justified. However, it can be used for tests, and for tasks where maximum speed is required on a relatively small number of rows (up to approximately 100,000,000).
 
-The Memory engine is used by the system for temporary tables with external query data (see the section “External data for processing a query”), and for implementing `GLOBAL IN` (see the section “IN operators”).
+The Memory engine is used by the system for temporary tables with external query data (see the section "External data for processing a query"), and for implementing `GLOBAL IN` (see the section "IN operators").
 
 Upper and lower bounds can be specified to limit Memory engine table size, effectively allowing it to act as a circular buffer (see [Engine Parameters](#engine-parameters)).
 
