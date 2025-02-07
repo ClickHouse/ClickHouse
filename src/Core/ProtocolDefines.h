@@ -102,9 +102,6 @@ static constexpr auto DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION =
 
 static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_SETTINGS = 54474;
 
-/// (This value was accidentally skipped, don't use it.)
-static constexpr auto DBMS_MIN_REVISION_WITH_NOTHING = 54475;
-
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.

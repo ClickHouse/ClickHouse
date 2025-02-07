@@ -5905,7 +5905,11 @@ As each series represents a node in Keeper, it is recommended to have no more th
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md/#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md/#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md/#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md/#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md/#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
-Whether the client should use the user settings from the the server configuration. This only affects operations performed on the client side, in particular parsing the INSERT input data and formatting the query result. Most of query execution happens on the server and is not affected by this setting. Normally this setting should be set in user profile (users.xml or queries like ALTER USER), not through the client (client command line arguments, SET query, or SETTINGS section of SELECT query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has apply_settings_from_server = false).
+Whether the client should accept settings from server.
+
+This only affects operations performed on the client side, in particular parsing the INSERT input data and formatting the query result. Most of query execution happens on the server and is not affected by this setting.
+
+Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
 )", 0) \
     \
     /* ####################################################### */ \
