@@ -43,6 +43,7 @@ public:
 
     Block getSampleBlock();
     std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
+    const Names & getRequiredColumns() const;
 
     static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,

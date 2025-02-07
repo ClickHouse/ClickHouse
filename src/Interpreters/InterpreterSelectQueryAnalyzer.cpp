@@ -237,6 +237,12 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
     return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};
 }
 
+const Names & InterpreterSelectQueryAnalyzer::getRequiredColumns() const
+{
+    auto const & table_expression_data = planner.getPlannerContext()->getTableExpressionDataOrThrow(query_tree);
+    return table_expression_data.getSelectedColumnsNames();
+}
+
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
     auto pipeline_builder = buildQueryPipeline();

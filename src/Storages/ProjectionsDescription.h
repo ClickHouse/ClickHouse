@@ -17,6 +17,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
+class ASTProjectionSelectQuery;
+
 /// Description of projections for Storage
 struct ProjectionDescription
 {
@@ -64,8 +66,10 @@ struct ProjectionDescription
     std::vector<size_t> partition_value_indices;
 
     /// Parse projection from definition AST
-    static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionDescription getProjectionFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        ContextPtr query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
@@ -97,6 +101,14 @@ struct ProjectionDescription
     Block calculate(const Block & block, ContextPtr context) const;
 
     String getDirectoryName() const { return name + ".proj"; }
+
+private:
+    static StorageInMemoryMetadata buildMetadataAndFillProjectionKeys(
+        ProjectionDescription & current,
+        const ContextPtr & context,
+        const ASTProjectionSelectQuery & projection_query,
+        const ColumnsDescription & columns,
+        bool has_aggregation);
 };
 
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
