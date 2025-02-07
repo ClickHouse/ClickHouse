@@ -1343,8 +1343,8 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
         LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
         return false;
     }
-    if (clickhouse->performQueryOnServerOrRemote(pt, "SYSTEM FLUSH LOGS;")
-        && clickhouse->performQueryOnServerOrRemote(
+    std::this_thread::sleep_for(std::chrono::milliseconds(fc.flush_log_wait_time));
+    if (clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
