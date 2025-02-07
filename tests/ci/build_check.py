@@ -162,7 +162,7 @@ def main():
     if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
         print("Unshallow repo")
         Shell.check(
-            f"git fetch --prune --no-recurse-submodules --depth 10000 --filter=tree:0 origin {pr_info.head_ref} master +refs/tags/*:refs/tags/*",
+            "git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0  origin",
             verbose=True,
         )
 
