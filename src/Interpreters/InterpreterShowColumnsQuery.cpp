@@ -86,7 +86,7 @@ WITH map(
                 startsWith(type_, 'LowCardinality'), split[2],
                 startsWith(type_, 'Nullable'), split[2],
                 split[1]) AS inner_type,
-        if (length(split) > 1, splitByString(', ', split[2]), []) AS decimal_scale_and_precision,
+        splitByString(', ', multiIf(length(split) > 3, split[3], length(split) > 1, split[2], '')) AS decimal_scale_and_precision,
         multiIf(inner_type = 'Decimal' AND toInt8(decimal_scale_and_precision[1]) <= 65 AND toInt8(decimal_scale_and_precision[2]) <= 30, concat('DECIMAL(', decimal_scale_and_precision[1], ', ', decimal_scale_and_precision[2], ')'),
                 mapContains(native_to_mysql_mapping, inner_type) = true, native_to_mysql_mapping[inner_type],
                 'TEXT') AS mysql_type

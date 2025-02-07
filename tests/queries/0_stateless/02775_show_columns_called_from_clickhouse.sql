@@ -68,6 +68,7 @@ CREATE TABLE tab
     ip6           IPv6,
     ns            Nullable(String),
     nfs           Nullable(FixedString(3)),
+    ndec32        Nullable(Decimal32(2)),
     ndt64         Nullable(DateTime64(3)),
     ndt64_tz      Nullable(DateTime64(3, 'Asia/Shanghai')),
     ls            LowCardinality(String),
