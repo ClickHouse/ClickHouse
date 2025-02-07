@@ -60,6 +60,13 @@ IMergeTreeReader::IMergeTreeReader(
     {
         columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
+
+        if (column.isSubcolumn())
+        {
+            auto name_in_storage = column.getNameInStorage();
+            auto type_in_storage = column.getTypeInStorage();
+            serializations_of_full_columns.emplace(name_in_storage, getSerializationInPart({name_in_storage, type_in_storage}));
+        }
     }
 }
 

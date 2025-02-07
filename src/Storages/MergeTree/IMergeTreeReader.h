@@ -86,6 +86,7 @@ protected:
     NamesAndTypes columns_to_read;
     /// Actual serialization of columns in part.
     Serializations serializations;
+    SerializationByName serializations_of_full_columns;
 
     UncompressedCache * const uncompressed_cache;
     MarkCache * const mark_cache;

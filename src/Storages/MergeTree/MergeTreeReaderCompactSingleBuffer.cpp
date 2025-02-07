@@ -47,7 +47,7 @@ try
             stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
             stream->seekToMarkAndColumn(from_mark, *column_positions[pos]);
 
-            auto * cache_for_subcolumns = columns_for_offsets[pos] ? &columns_cache_for_subcolumns : nullptr;
+            auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
 
             readPrefix(pos, *stream);
             readData(pos, res_columns[pos], rows_to_read, *stream, cache, cache_for_subcolumns);

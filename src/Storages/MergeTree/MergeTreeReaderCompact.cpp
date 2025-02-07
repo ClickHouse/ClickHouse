@@ -160,7 +160,6 @@ void MergeTreeReaderCompact::readData(
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns)
 {
     const auto & name_and_type = columns_to_read[column_idx];
-    const auto & serialization = serializations[column_idx];
     const auto [name, type] = name_and_type;
 
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
@@ -190,6 +189,7 @@ void MergeTreeReaderCompact::readData(
         {
             const auto & type_in_storage = name_and_type.getTypeInStorage();
             const auto & name_in_storage = name_and_type.getNameInStorage();
+            const auto & serialization = serializations_of_full_columns.at(name_in_storage);
 
             ColumnPtr temp_full_column = getFullColumnFromCache(columns_cache_for_subcolumns, name_in_storage);
 
@@ -199,7 +199,7 @@ void MergeTreeReaderCompact::readData(
                 serialization->deserializeBinaryBulkWithMultipleStreams(temp_full_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], nullptr);
 
                 if (columns_cache_for_subcolumns)
-                    columns_cache_for_subcolumns->emplace(name_in_storage, std::move(temp_full_column));
+                    columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
             }
 
             auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
@@ -212,6 +212,7 @@ void MergeTreeReaderCompact::readData(
         }
         else
         {
+            const auto & serialization = serializations[column_idx];
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
         }
 
@@ -232,8 +233,7 @@ void MergeTreeReaderCompact::readData(
 
 void MergeTreeReaderCompact::readPrefix(size_t column_idx, MergeTreeReaderStream & stream)
 {
-    const auto & column_for_offsets = columns_for_offsets[column_idx];
-    if (column_for_offsets)
+    if (columns_for_offsets[column_idx])
     {
         /// If we read only offsets we have to read prefix anyway
         /// to preserve correctness of serialization.
@@ -243,7 +243,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, MergeTreeReaderStream
         };
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        readPrefix(column_for_offsets->column, column_for_offsets->serialization, state, buffer_getter);
+        readPrefix(columns_for_offsets[column_idx]->column, columns_for_offsets[column_idx]->serialization, state, buffer_getter);
     }
 
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
@@ -254,8 +254,24 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, MergeTreeReaderStream
         return stream.getDataBuffer();
     };
 
-    auto & state = deserialize_binary_bulk_state_map[columns_to_read[column_idx].getNameInStorage()];
-    readPrefix(columns_to_read[column_idx], serializations[column_idx], state, buffer_getter);
+    const auto & column = columns_to_read[column_idx];
+    auto name_in_storage = column.getNameInStorage();
+
+    if (column.isSubcolumn())
+    {
+        if (deserialize_binary_bulk_state_map_for_subcolumns.contains(name_in_storage))
+            return;
+
+        const auto & serialization = serializations_of_full_columns.at(name_in_storage);
+        auto & state = deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage];
+        readPrefix(column, serialization, state, buffer_getter);
+    }
+    else
+    {
+        const auto & serialization = serializations[column_idx];
+        auto & state = deserialize_binary_bulk_state_map[name_in_storage];
+        readPrefix(column, serialization, state, buffer_getter);
+    }
 }
 
 void MergeTreeReaderCompact::readPrefix(
@@ -270,18 +286,7 @@ void MergeTreeReaderCompact::readPrefix(
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.object_and_dynamic_read_statistics = true;
 
-        if (name_and_type.isSubcolumn())
-        {
-            /// For subcolumns of the same column we need to deserialize prefix only once.
-            if (deserialize_binary_bulk_state_map_for_subcolumns.contains(name_and_type.getNameInStorage()))
-                return;
-
-            serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, nullptr);
-        }
-        else
-        {
-            serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, nullptr);
-        }
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state, nullptr);
     }
     catch (Exception & e)
     {
