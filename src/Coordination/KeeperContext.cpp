@@ -208,7 +208,12 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
-    rocksdb_storage = getRocksDBPathFromConfig(config);
+    #if USE_ROCKSDB
+    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
+    {
+        rocksdb_storage = getRocksDBPathFromConfig(config);
+    }
+    #endif
 
     log_storage = getLogsPathFromConfig(config);
 
