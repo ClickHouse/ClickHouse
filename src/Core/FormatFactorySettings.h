@@ -330,6 +330,10 @@ Mode of schema inference. 'default' - assume that all files have the same schema
 Controls making inferred types `Nullable` in schema inference.
 If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 )", 0) \
+    DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
+Controls making inferred JSON types `Nullable` in schema inference.
+If this setting is enabled together with schema_inference_make_columns_nullable, inferred JSON type will be `Nullable`.
+)", 0) \
     DECLARE(Bool, input_format_json_read_bools_as_numbers, true, R"(
 Allow parsing bools as numbers in JSON input formats.
 
