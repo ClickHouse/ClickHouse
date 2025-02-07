@@ -6,6 +6,7 @@
 #    include <Columns/ColumnMap.h>
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnsCommon.h>
 #    include <Columns/ColumnsDateTime.h>
 #    include <Columns/ColumnsNumber.h>
