@@ -1120,7 +1120,7 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
 
 /// Size of data after ZSTD is not a multiple of 8,
 /// and may break DoubleDelta.
-INSTANTIATE_TEST_SUITE_P(TempBreakZSTDDoubleDelta,
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaUnalignedTranscode,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1339,7 +1339,7 @@ TEST(DoubleDeltaTest, TranscodeRawInput)
         for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
         {
             DB::Memory<> source_memory;
-            source_memory.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+            source_memory.resize(buffer_size);
 
             for (size_t i = 0; i < buffer_size; ++i)
                 source_memory.data()[i] = i;
@@ -1352,7 +1352,7 @@ TEST(DoubleDeltaTest, TranscodeRawInput)
             auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
 
             DB::Memory<> memory_for_decompression;
-            memory_for_decompression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+            memory_for_decompression.resize(buffer_size);
             auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
 
             ASSERT_EQ(decompressed, source_memory.size());
