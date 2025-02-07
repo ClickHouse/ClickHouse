@@ -169,6 +169,7 @@ void SelectStreamFactory::createForShardImpl(
             query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
+    // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
     auto emplace_remote_stream = [&](bool lazy = false)
     {
         Block shard_header;
