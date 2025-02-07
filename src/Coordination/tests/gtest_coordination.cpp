@@ -8,6 +8,7 @@
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Coordination/KeeperLogStore.h>
