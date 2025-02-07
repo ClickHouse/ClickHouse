@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
+            {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -132,7 +133,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
-            {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
             /// Release closed. Please use 25.1
         });
         addSettingsChanges(settings_changes_history, "24.11",
