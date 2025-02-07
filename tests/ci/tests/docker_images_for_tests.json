@@ -123,10 +123,6 @@
             "docker/test/sqltest"
          ]
     },
-    "docker/test/integration/kerberized_hadoop": {
-        "name": "clickhouse/kerberized-hadoop",
-        "dependent": []
-    },
     "docker/test/sqlancer": {
         "name": "clickhouse/sqlancer-test",
         "dependent": []

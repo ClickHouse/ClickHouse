@@ -18,8 +18,7 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
 {
     FunctionOverloadResolverPtr func_builder_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(check_decimal_overflow, allow_not_comparable_types));
-
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     FunctionOverloadResolverPtr func_builder_and
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());

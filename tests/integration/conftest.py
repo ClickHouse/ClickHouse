@@ -48,7 +48,6 @@ def pdb_history(request):
 @pytest.fixture(autouse=True, scope="session")
 def tune_local_port_range():
     # Lots of services uses non privileged ports:
-    # - hdfs -- 50020/50070/...
     # - minio
     #
     # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.

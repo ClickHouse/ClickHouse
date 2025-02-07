@@ -1,21 +1,24 @@
 #include <filesystem>
+#include <memory>
 
+#include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -23,17 +26,16 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
-#include <Common/PoolId.h>
-#include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
-#include <Core/Defines.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/PoolId.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -69,8 +71,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
-
-static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
@@ -204,16 +204,12 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
-    {
-        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
-        writeString(statement, *out);
+    writeMetadataFile(
+        db_disk,
+        /*file_path=*/table_metadata_tmp_path,
+        /*content=*/statement,
+        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-        out->next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out->sync();
-        out->finalize();
-        out.reset();
-    }
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 
     LOG_INFO(
@@ -578,15 +574,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
-    String statement;
-
-    {
-        ReadSettings read_settings = getReadSettings();
-        read_settings.local_fs_method = LocalFSReadMethod::read;
-        read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
-        auto in = db_disk->readFile(table_metadata_path, read_settings);
-        readStringUntilEOF(statement, *in);
-    }
+    String statement = readMetadataFile(db_disk, table_metadata_path);
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
@@ -601,16 +589,11 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-    {
-        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
-        writeString(statement, *out);
-
-        out->next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out->sync();
-        out->finalize();
-        out.reset();
-    }
+    writeMetadataFile(
+        db_disk,
+        /*file_path=*/table_metadata_tmp_path,
+        /*content=*/statement,
+        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());

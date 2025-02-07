@@ -7,7 +7,10 @@ import os.path as p
 import re
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from typing import Any, List, Literal, Optional
+
+import __main__
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +113,39 @@ git_runner = Runner(set_cwd_to_git_root=True)
 
 def is_shallow() -> bool:
     return git_runner.run("git rev-parse --is-shallow-repository") == "true"
+
+
+@contextmanager
+def clear_repo():
+    def ref():
+        return git_runner("git branch --show-current") or git_runner(
+            "git rev-parse HEAD"
+        )
+
+    orig_ref = ref()
+    try:
+        yield
+    finally:
+        current_ref = ref()
+        if orig_ref != current_ref:
+            git_runner(f"git checkout -f {orig_ref}")
+
+
+@contextmanager
+def stash():
+    # diff.ignoreSubmodules=all don't show changed submodules
+    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
+    if need_stash:
+        script = (
+            __main__.__file__ if hasattr(__main__, "__file__") else "unknown script"
+        )
+        git_runner(f"git stash push --no-keep-index -m 'running {script}'")
+    try:
+        with clear_repo():
+            yield
+    finally:
+        if need_stash:
+            git_runner("git stash pop")
 
 
 def get_tags() -> List[str]:

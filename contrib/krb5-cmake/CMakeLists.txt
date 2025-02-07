@@ -1,5 +1,5 @@
 set (ENABLE_KRB5_DEFAULT ${ENABLE_LIBRARIES})
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
     set (ENABLE_KRB5_DEFAULT 0)
 endif ()
@@ -572,12 +572,28 @@ endfunction()
 generate_error_tables()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h" "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
-        COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I"${KRB5_SOURCE_DIR}/lib/krb5/ccache" "${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
-    )
-
+    if (NOT CMAKE_CROSSCOMPILING)
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h" "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
+            COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I"${KRB5_SOURCE_DIR}/lib/krb5/ccache" "${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
+        )
+    else ()
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.cin"
+            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
+        )
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.hin"
+            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
+        )
+        file(RENAME 
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.cin"
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
+        )
+        file(RENAME 
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.hin"
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h"
+        )
+    endif()
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c")
 endif()
 

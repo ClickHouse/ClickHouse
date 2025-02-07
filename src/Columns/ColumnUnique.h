@@ -74,6 +74,10 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return getNestedColumn()->getValueNameAndType(n);
+    }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
@@ -118,7 +122,7 @@ public:
         callback(column_holder);
     }
 
-    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -132,10 +136,10 @@ public:
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
         callback(*column_holder);
-        column_holder->forEachSubcolumnRecursively(callback);
+        column_holder->forEachMutableSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);

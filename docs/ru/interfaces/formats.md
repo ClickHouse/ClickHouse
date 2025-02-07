@@ -258,6 +258,7 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 
 `/some/path/resultset.format`:
 
+``` html
     <!DOCTYPE HTML>
     <html> <head> <title>Search phrases</title> </head>
      <body>
@@ -271,14 +272,16 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
       <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
      </body>
     </html>
+```
 
 `/some/path/row.format`:
 
-    <tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
+``` html
+
+<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
 
 Резутьтат:
 
-``` html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>
@@ -314,11 +317,11 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 
 `/some/path/resultset.format`:
 
-    Some header\n${data}\nTotal rows: ${:CSV}\n
+`Some header\n${data}\nTotal rows: ${:CSV}\n`
 
 `/some/path/row.format`:
 
-    Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
+`Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}`
 
 `PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows:` в суффиксе будут проигнорированы.
 Все разделители во входных данных должны строго соответствовать разделителям в форматных строках.
@@ -747,7 +750,7 @@ SELECT * FROM json_square_brackets;
 
 ### Вставка данных {#vstavka-dannykh}
 
-    INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+`INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}`
 
 ClickHouse допускает:
 

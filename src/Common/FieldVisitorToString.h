@@ -29,6 +29,10 @@ public:
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
+    String operator() (const Decimal32 & x, UInt32 scale) const;
+    String operator() (const Decimal64 & x, UInt32 scale) const;
+    String operator() (const Decimal128 & x, UInt32 scale) const;
+    String operator() (const Decimal256 & x, UInt32 scale) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
     String operator() (const bool & x) const;

@@ -59,7 +59,7 @@ insert_values = [
     "(0,'data'),(1,'data')",
     ",".join(
         f"({i},'{''.join(random.choices(string.ascii_lowercase, k=5))}')"
-        for i in range(10)
+        for i in range(3000)
     ),
 ]
 
@@ -92,7 +92,10 @@ def cluster():
         cluster.shutdown()
 
 
-def test_insert_select(cluster):
+@pytest.mark.parametrize(
+    "min_bytes_for_wide_part", [pytest.param(0), pytest.param(1 << 20)]
+)
+def test_insert_select(cluster, min_bytes_for_wide_part):
     node = cluster.instances[NODE_NAME]
 
     for index, value in enumerate(insert_values):
@@ -101,31 +104,35 @@ def test_insert_select(cluster):
             """
             CREATE TABLE test_{} (
                 id Int64,
-                data String
+                data String,
+                empty String
             ) ENGINE=MergeTree()
             ORDER BY id
-            SETTINGS storage_policy='blob_storage_policy'
+            SETTINGS storage_policy='blob_storage_policy',
+            min_bytes_for_wide_part = {}
             """.format(
-                index
+                index, min_bytes_for_wide_part
             ),
         )
 
-        azure_query(node, "INSERT INTO test_{} VALUES {}".format(index, value))
+        azure_query(
+            node, "INSERT INTO test_{} (id, data) VALUES {}".format(index, value)
+        )
         assert (
             azure_query(
-                node, "SELECT * FROM test_{} ORDER BY id FORMAT Values".format(index)
+                node,
+                "SELECT id, data FROM test_{} ORDER BY id FORMAT Values".format(index),
             )
             == value
         )
 
-
-def test_restart_server(cluster):
-    node = cluster.instances[NODE_NAME]
+        azure_query(node, "OPTIMIZE TABLE test_{} FINAL".format(index))
 
     for index, value in enumerate(insert_values):
         assert (
             azure_query(
-                node, "SELECT * FROM test_{} ORDER BY id FORMAT Values".format(index)
+                node,
+                "SELECT id, data FROM test_{} ORDER BY id FORMAT Values".format(index),
             )
             == value
         )
@@ -134,13 +141,14 @@ def test_restart_server(cluster):
     for index, value in enumerate(insert_values):
         assert (
             azure_query(
-                node, "SELECT * FROM test_{} ORDER BY id FORMAT Values".format(index)
+                node,
+                "SELECT id, data FROM test_{} ORDER BY id FORMAT Values".format(index),
             )
             == value
         )
 
+        azure_query(node, "OPTIMIZE TABLE test_{} FINAL".format(index))
 
-def test_failpoint_on_disk_init(cluster):
     other_node = cluster.instances[OTHER_NODE]
     port = cluster.env_variables["AZURITE_PORT"]
 
@@ -168,10 +176,6 @@ def test_failpoint_on_disk_init(cluster):
         other_node,
         "SYSTEM DISABLE FAILPOINT plain_rewritable_object_storage_azure_not_found_on_init",
     )
-
-
-def test_drop_table(cluster):
-    node = cluster.instances[NODE_NAME]
 
     for index, value in enumerate(insert_values):
         node.query("DROP TABLE IF EXISTS test_{} SYNC".format(index))

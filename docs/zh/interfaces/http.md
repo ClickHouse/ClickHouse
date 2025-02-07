@@ -174,7 +174,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 如果在URL中指定了`compress=1`，服务会返回压缩的数据。
 如果在URL中指定了`decompress=1`，服务会解压通过POST方法发送的数据。
 
-您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](#settings-http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
+您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](/docs/en/operations/settings/settings#http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
 
 您可以使用它在传输大量数据时减少网络流量，或者创建立即压缩的转储。
 

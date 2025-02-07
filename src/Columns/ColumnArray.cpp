@@ -1,3 +1,5 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -148,6 +150,27 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
+std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
+{
+    size_t offset = offsetAt(n);
+    size_t size = sizeAt(n);
+
+    String value_name {"["};
+    DataTypes element_types;
+    element_types.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto & [value, type] = getData().getValueNameAndType(offset + i);
+        element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
+    }
+    value_name += "]";
+
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+}
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {

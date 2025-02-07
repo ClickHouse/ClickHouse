@@ -18,6 +18,7 @@
 #include <Common/WeakHash.h>
 
 #include <base/FnTraits.h>
+#include <ranges>
 
 namespace DB
 {
@@ -715,9 +716,9 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Error in columns mapping in JOIN: assertion failed {} + {} + {} != {}; "
-            "Result block [{}], Saved block [{}]",
+            "left_columns_count = {}, result_sample_block.columns = [{}], saved_block_sample.columns = [{}]",
             column_indices_left.size(), column_indices_right.size(), same_result_keys.size(), result_sample_block.columns(),
-            result_sample_block.dumpNames(), saved_block_sample.dumpNames());
+            left_columns_count, result_sample_block.dumpNames(), saved_block_sample.dumpNames());
     }
 }
 

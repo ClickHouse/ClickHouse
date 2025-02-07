@@ -1,3 +1,4 @@
+#include <Access/Credentials.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 
 #include <Core/Types_fwd.h>
@@ -84,6 +85,11 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::RemoteRead;
         res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
         parseCommonConfig(config, res);
+        if (config.has(config_prefix + ".user"))
+        {
+            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
+            res.connection_config.credentials.emplace(credentials);
+        }
         return res;
     }
 

@@ -173,13 +173,7 @@ ColumnPtr readDictPage(
 }
 
 
-template <typename TColumn>
-std::unique_ptr<ParquetDataValuesReader> createPlainReader(
-    const parquet::ColumnDescriptor & col_des,
-    RleValuesReaderPtr def_level_reader,
-    ParquetDataBuffer buffer);
-
-template <is_col_over_big_decimal TColumnDecimal>
+template <is_col_over_big_decimal TColumnDecimal, typename ParquetType>
 std::unique_ptr<ParquetDataValuesReader> createPlainReader(
     const parquet::ColumnDescriptor & col_des,
     RleValuesReaderPtr def_level_reader,
@@ -192,25 +186,62 @@ std::unique_ptr<ParquetDataValuesReader> createPlainReader(
         std::move(buffer));
 }
 
-template <typename TColumn>
+
+template <typename TColumn, typename ParquetType>
 std::unique_ptr<ParquetDataValuesReader> createPlainReader(
     const parquet::ColumnDescriptor & col_des,
     RleValuesReaderPtr def_level_reader,
     ParquetDataBuffer buffer)
 {
-    if (std::is_same_v<TColumn, ColumnDecimal<DateTime64>> && col_des.physical_type() == parquet::Type::INT96)
-        return std::make_unique<ParquetPlainValuesReader<TColumn, ParquetReaderTypes::TimestampInt96>>(
+    if constexpr (std::is_same_v<TColumn, ColumnDecimal<DateTime64>> && std::is_same_v<ParquetType, ParquetInt96TypeStub>)
+        return std::make_unique<ParquetPlainInt96ValuesReader<TColumn>>(
             col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
-    return std::make_unique<ParquetPlainValuesReader<TColumn>>(
+
+    if constexpr (std::is_same_v<ParquetType, ParquetByteArrayTypeStub>)
+    {
+        return std::make_unique<ParquetPlainByteArrayValuesReader<TColumn>>(
+            col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
+    }
+
+    return std::make_unique<ParquetPlainValuesReader<TColumn, ParquetType>>(
         col_des.max_definition_level(), std::move(def_level_reader), std::move(buffer));
+}
+
+template <typename TColumn, typename ParquetType>
+std::unique_ptr<ParquetDataValuesReader> createReader(
+    const parquet::ColumnDescriptor & col_descriptor,
+    RleValuesReaderPtr def_level_reader,
+    const uint8_t * buffer,
+    std::size_t buffer_max_size,
+    const DataTypePtr & base_data_type)
+{
+    if constexpr (std::is_same_v<ParquetType, bool>)
+    {
+        auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer, buffer_max_size);
+        return std::make_unique<ParquetBitPlainReader<TColumn>>(
+            col_descriptor.max_definition_level(), std::move(def_level_reader), std::move(bit_reader));
+    }
+    else
+    {
+        ParquetDataBuffer parquet_buffer = [&]()
+        {
+            if constexpr (!std::is_same_v<ColumnDecimal<DateTime64>, TColumn>)
+                return ParquetDataBuffer(buffer, buffer_max_size);
+
+            auto scale = assert_cast<const DataTypeDateTime64 &>(*base_data_type).getScale();
+            return ParquetDataBuffer(buffer, buffer_max_size, scale);
+        }();
+
+        return createPlainReader<TColumn, ParquetType>(col_descriptor, std::move(def_level_reader), parquet_buffer);
+    }
 }
 
 
 } // anonymous namespace
 
 
-template <typename TColumn>
-ParquetLeafColReader<TColumn>::ParquetLeafColReader(
+template <typename TColumn, typename ParquetType>
+ParquetLeafColReader<TColumn, ParquetType>::ParquetLeafColReader(
     const parquet::ColumnDescriptor & col_descriptor_,
     DataTypePtr base_type_,
     std::unique_ptr<parquet::ColumnChunkMetaData> meta_,
@@ -223,8 +254,8 @@ ParquetLeafColReader<TColumn>::ParquetLeafColReader(
 {
 }
 
-template <typename TColumn>
-ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, const String & name)
+template <typename TColumn, typename ParquetType>
+ColumnWithTypeAndName ParquetLeafColReader<TColumn, ParquetType>::readBatch(UInt64 rows_num, const String & name)
 {
     reading_rows_num = rows_num;
     auto readPageIfEmpty = [&]()
@@ -251,41 +282,42 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, 
     return releaseColumn(name);
 }
 
-template <>
-void ParquetLeafColReader<ColumnString>::resetColumn(UInt64 rows_num)
+template <typename TColumn, typename ParquetType>
+void ParquetLeafColReader<TColumn, ParquetType>::resetColumn(UInt64 rows_num)
 {
-    if (reading_low_cardinality)
+    if constexpr (std::is_same_v<TColumn, ColumnString>)
     {
-        assert(dictionary);
-        visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *)
+        if (reading_low_cardinality)
         {
-            column = TColVec::create();
-        });
+            assert(dictionary);
+            visitColStrIndexType(dictionary->size(), [&]<typename TColVec>(TColVec *)
+                                 {
+                                     column = TColVec::create();
+                                 });
 
-        // only first position is used
-        null_map = std::make_unique<LazyNullMap>(1);
-        column->reserve(rows_num);
+            // only first position is used
+            null_map = std::make_unique<LazyNullMap>(1);
+            column->reserve(rows_num);
+        }
+        else
+        {
+            null_map = std::make_unique<LazyNullMap>(rows_num);
+            column = ColumnString::create();
+            reserveColumnStrRows(column, rows_num);
+        }
     }
     else
     {
+        assert(!reading_low_cardinality);
+
+        column = base_data_type->createColumn();
+        column->reserve(rows_num);
         null_map = std::make_unique<LazyNullMap>(rows_num);
-        column = ColumnString::create();
-        reserveColumnStrRows(column, rows_num);
     }
 }
 
-template <typename TColumn>
-void ParquetLeafColReader<TColumn>::resetColumn(UInt64 rows_num)
-{
-    assert(!reading_low_cardinality);
-
-    column = base_data_type->createColumn();
-    column->reserve(rows_num);
-    null_map = std::make_unique<LazyNullMap>(rows_num);
-}
-
-template <typename TColumn>
-void ParquetLeafColReader<TColumn>::degradeDictionary()
+template <typename TColumn, typename ParquetType>
+void ParquetLeafColReader<TColumn, ParquetType>::degradeDictionary()
 {
     // if last batch read all dictionary indices, then degrade is not needed this time
     if (!column)
@@ -331,8 +363,8 @@ void ParquetLeafColReader<TColumn>::degradeDictionary()
     LOG_DEBUG(log, "degraded dictionary to normal column");
 }
 
-template <typename TColumn>
-ColumnWithTypeAndName ParquetLeafColReader<TColumn>::releaseColumn(const String & name)
+template <typename TColumn, typename ParquetType>
+ColumnWithTypeAndName ParquetLeafColReader<TColumn, ParquetType>::releaseColumn(const String & name)
 {
     DataTypePtr data_type = base_data_type;
     if (reading_low_cardinality)
@@ -365,8 +397,8 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::releaseColumn(const String 
     return res;
 }
 
-template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPage()
+template <typename TColumn, typename ParquetType>
+void ParquetLeafColReader<TColumn, ParquetType>::readPage()
 {
     // refer to: ColumnReaderImplBase::ReadNewPage in column_reader.cc
     // this is where decompression happens
@@ -408,8 +440,8 @@ void ParquetLeafColReader<TColumn>::readPage()
     }
 }
 
-template <typename TColumn>
-void ParquetLeafColReader<TColumn>::initDataReader(
+template <typename TColumn, typename ParquetType>
+void ParquetLeafColReader<TColumn, ParquetType>::initDataReader(
     parquet::Encoding::type enconding_type,
     const uint8_t * buffer,
     std::size_t max_size,
@@ -425,29 +457,8 @@ void ParquetLeafColReader<TColumn>::initDataReader(
                 degradeDictionary();
             }
 
-            if (col_descriptor.physical_type() == parquet::Type::BOOLEAN)
-            {
-                if constexpr (std::is_same_v<TColumn, ColumnUInt8>)
-                {
-                    auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer, max_size);
-                    data_values_reader = std::make_unique<ParquetBitPlainReader<ColumnUInt8>>(col_descriptor.max_definition_level(),
-                                                                                              std::move(def_level_reader),
-                                                                                              std::move(bit_reader));
-                }
-            }
-            else
-            {
-                ParquetDataBuffer parquet_buffer = [&]()
-                {
-                    if constexpr (!std::is_same_v<ColumnDecimal<DateTime64>, TColumn>)
-                        return ParquetDataBuffer(buffer, max_size);
-
-                    auto scale = assert_cast<const DataTypeDateTime64 &>(*base_data_type).getScale();
-                    return ParquetDataBuffer(buffer, max_size, scale);
-                }();
-                data_values_reader = createPlainReader<TColumn>(
-                    col_descriptor, std::move(def_level_reader), std::move(parquet_buffer));
-            }
+            data_values_reader = createReader<TColumn, ParquetType>(
+                col_descriptor, std::move(def_level_reader), buffer, max_size, base_data_type);
             break;
         }
         case parquet::Encoding::RLE_DICTIONARY:
@@ -476,8 +487,8 @@ void ParquetLeafColReader<TColumn>::initDataReader(
     }
 }
 
-template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
+template <typename TColumn, typename ParquetType>
+void ParquetLeafColReader<TColumn, ParquetType>::readPageV1(const parquet::DataPageV1 & page)
 {
     cur_page_values = page.num_values();
 
@@ -562,8 +573,8 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
  * The data buffer is "offset-ed" by rl bytes length and then dl decoder is built using RLE decoder. Since dl bytes length was present in the header,
  * there is no need to read it and apply an offset like in page v1.
  * */
-template <typename TColumn>
-void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
+template <typename TColumn, typename ParquetType>
+void ParquetLeafColReader<TColumn, ParquetType>::readPageV2(const parquet::DataPageV2 & page)
 {
     cur_page_values = page.num_values();
 
@@ -609,26 +620,30 @@ void ParquetLeafColReader<TColumn>::readPageV2(const parquet::DataPageV2 & page)
     initDataReader(page.encoding(), buffer, page.size() - total_levels_length, std::move(def_level_reader));
 }
 
-template <typename TColumn>
-std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDictReader(
+template <typename TColumn, typename ParquetType>
+std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn, ParquetType>::createDictReader(
     std::unique_ptr<RleValuesReader> def_level_reader, std::unique_ptr<RleValuesReader> rle_data_reader)
 {
-    if (reading_low_cardinality && std::same_as<TColumn, ColumnString>)
-    {
-        std::unique_ptr<ParquetDataValuesReader> res;
-        visitColStrIndexType(dictionary->size(), [&]<typename TCol>(TCol *)
-        {
-            res = std::make_unique<ParquetRleLCReader<TCol>>(
-                col_descriptor.max_definition_level(),
-                std::move(def_level_reader),
-                std::move(rle_data_reader));
-        });
-        return res;
-    }
-
-    if (col_descriptor.physical_type() == parquet::Type::type::BOOLEAN)
+    if constexpr (std::is_same_v<TColumn, ColumnUInt8> || std::is_same_v<TColumn, ColumnInt8>
+        || std::is_same_v<TColumn, ColumnUInt16> || std::is_same_v<TColumn, ColumnInt16>)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Dictionary encoding for booleans is not supported");
+    }
+
+    if (reading_low_cardinality)
+    {
+        if constexpr (std::same_as<TColumn, ColumnString>)
+        {
+            std::unique_ptr<ParquetDataValuesReader> res;
+            visitColStrIndexType(dictionary->size(), [&]<typename TCol>(TCol *)
+                                 {
+                                     res = std::make_unique<ParquetRleLCReader<TCol>>(
+                                         col_descriptor.max_definition_level(),
+                                         std::move(def_level_reader),
+                                         std::move(rle_data_reader));
+                                 });
+            return res;
+        }
     }
 
     return std::make_unique<ParquetRleDictReader<TColumn>>(
@@ -639,19 +654,23 @@ std::unique_ptr<ParquetDataValuesReader> ParquetLeafColReader<TColumn>::createDi
 }
 
 
-template class ParquetLeafColReader<ColumnUInt8>;
-template class ParquetLeafColReader<ColumnInt32>;
-template class ParquetLeafColReader<ColumnUInt32>;
-template class ParquetLeafColReader<ColumnInt64>;
-template class ParquetLeafColReader<ColumnUInt64>;
-template class ParquetLeafColReader<ColumnBFloat16>;
-template class ParquetLeafColReader<ColumnFloat32>;
-template class ParquetLeafColReader<ColumnFloat64>;
-template class ParquetLeafColReader<ColumnString>;
-template class ParquetLeafColReader<ColumnDecimal<Decimal32>>;
-template class ParquetLeafColReader<ColumnDecimal<Decimal64>>;
-template class ParquetLeafColReader<ColumnDecimal<Decimal128>>;
-template class ParquetLeafColReader<ColumnDecimal<Decimal256>>;
-template class ParquetLeafColReader<ColumnDecimal<DateTime64>>;
+template class ParquetLeafColReader<ColumnUInt8, bool>;
+template class ParquetLeafColReader<ColumnUInt8, int32_t>;
+template class ParquetLeafColReader<ColumnInt8, int32_t>;
+template class ParquetLeafColReader<ColumnUInt16, int32_t>;
+template class ParquetLeafColReader<ColumnInt16, int32_t>;
+template class ParquetLeafColReader<ColumnUInt32, int32_t>;
+template class ParquetLeafColReader<ColumnInt32, int32_t>;
+template class ParquetLeafColReader<ColumnUInt64, int64_t>;
+template class ParquetLeafColReader<ColumnInt64, int64_t>;
+template class ParquetLeafColReader<ColumnFloat32, float>;
+template class ParquetLeafColReader<ColumnFloat64, double>;
+template class ParquetLeafColReader<ColumnString, ParquetByteArrayTypeStub>;
+template class ParquetLeafColReader<ColumnDecimal<Decimal32>, int32_t>;
+template class ParquetLeafColReader<ColumnDecimal<Decimal64>, int64_t>;
+template class ParquetLeafColReader<ColumnDecimal<Decimal128>, ParquetByteArrayTypeStub>;
+template class ParquetLeafColReader<ColumnDecimal<Decimal256>, ParquetByteArrayTypeStub>;
+template class ParquetLeafColReader<ColumnDecimal<DateTime64>, ParquetInt96TypeStub>;
+template class ParquetLeafColReader<ColumnDecimal<DateTime64>, int64_t>;
 
 }

@@ -94,6 +94,11 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
+{
+    return values->getValueNameAndType(getValueIndex(n));
+}
+
 bool ColumnSparse::getBool(size_t n) const
 {
     return values->getBool(getValueIndex(n));
@@ -795,13 +800,27 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnSparse::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnSparse::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*values);
+    values->forEachMutableSubcolumnRecursively(callback);
+    callback(*offsets);
+    offsets->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(values);
+    callback(offsets);
+}
+
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*values);
     values->forEachSubcolumnRecursively(callback);

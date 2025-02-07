@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>

@@ -3,8 +3,8 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-CREATE TABLE t1 (a UInt16, b UInt16) ENGINE = TinyLog;
-CREATE TABLE t2 (a Int16, b Nullable(Int64)) ENGINE = TinyLog;
+CREATE TABLE t1 (a UInt16, b UInt16) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (a Int16, b Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t1 SELECT number as a, 100 + number as b FROM system.numbers LIMIT 1, 10;
 INSERT INTO t2 SELECT number - 5 as a, 200 + number - 5 as b FROM system.numbers LIMIT 1, 10;

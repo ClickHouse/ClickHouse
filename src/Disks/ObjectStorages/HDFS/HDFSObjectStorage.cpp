@@ -168,21 +168,41 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) co
     return metadata;
 }
 
-void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+HDFSFileInfo HDFSObjectStorage::hdfsListDirectoryWrapper(const std::string & path) const
 {
-    initializeHDFSFS();
-    LOG_TEST(log, "Trying to list files for {}", path);
-
     HDFSFileInfo ls;
+
     ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
+    #if USE_KRB5
+    if (ls.file_info == nullptr && errno == EACCES) // NOLINT
+    {
+        // libhdfs3 wraps GSASL_GSSAPI_INIT_SEC_CONTEXT_ERROR into AccessControlException (EACCES),
+        // which means than sasl context is not active by the reason that krb5 ticket is expired.
+        // runKinit will handle KRB5KRB_AP_ERR_TKT_EXPIRED error and reinitialize ticket again
+        // TODO: it would be good to extract exact gsasl error code from libhdfs3,
+        // but it needs libhdfs3 exceptions refactoring
+        hdfs_builder.runKinit(); // krb5 keytab reinitialization
+        ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
+    }
+    #endif // USE_KRB5
 
     if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
     {
         // ignore file not found exception, keep throw other exception,
         // libhdfs3 doesn't have function to get exception type, so use errno.
         throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
-                        path, String(hdfsGetLastError()));
+                    path, String(hdfsGetLastError()));
     }
+
+    return ls;
+}
+
+void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+{
+    initializeHDFSFS();
+    LOG_TEST(log, "Trying to list files for {}", path);
+
+    HDFSFileInfo ls = hdfsListDirectoryWrapper(path);
 
     if (!ls.file_info && ls.length > 0)
     {

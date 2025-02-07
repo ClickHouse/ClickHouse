@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include "ParquetColumnReader.h"
@@ -17,7 +17,10 @@ class ColumnDescriptor;
 namespace DB
 {
 
-template <typename TColumn>
+struct ParquetByteArrayTypeStub {};
+struct ParquetInt96TypeStub {};
+
+template <typename TColumn, typename ParquetType>
 class ParquetLeafColReader : public ParquetColumnReader
 {
 public:

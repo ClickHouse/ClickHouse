@@ -147,6 +147,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts &) override {}
 

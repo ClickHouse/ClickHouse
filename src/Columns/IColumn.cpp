@@ -1,24 +1,25 @@
 #include <Columns/IColumn.h>
 
-#include <Columns/IColumnDummy.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/IColumnDummy.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
@@ -91,22 +92,6 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
 size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
 {
     return equal_range.size();
-}
-
-void IColumn::forEachSubcolumn(ColumnCallback callback) const
-{
-    const_cast<IColumn*>(this)->forEachSubcolumn([&callback](WrappedPtr & subcolumn)
-    {
-        callback(std::as_const(subcolumn));
-    });
-}
-
-void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
-{
-    const_cast<IColumn*>(this)->forEachSubcolumnRecursively([&callback](IColumn & subcolumn)
-    {
-        callback(std::as_const(subcolumn));
-    });
 }
 
 bool isColumnNullable(const IColumn & column)
@@ -476,4 +461,16 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
+
+void intrusive_ptr_add_ref(const IColumn * c)
+{
+    BOOST_ASSERT(c != nullptr);
+    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
+}
+
+void intrusive_ptr_release(const IColumn * c)
+{
+    BOOST_ASSERT(c != nullptr);
+    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
+}
 }

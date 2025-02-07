@@ -1,5 +1,5 @@
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
-
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Core/ColumnNumbers.h>
 

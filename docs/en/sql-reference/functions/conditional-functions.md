@@ -191,7 +191,7 @@ SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
+The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
 ## least
@@ -232,7 +232,7 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
+The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
 ## clamp

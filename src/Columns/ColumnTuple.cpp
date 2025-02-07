@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -146,6 +147,28 @@ void ColumnTuple::get(size_t n, Field & res) const
 
     for (size_t i = 0; i < tuple_size; ++i)
         res_tuple.push_back((*columns[i])[n]);
+}
+
+std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
+{
+    const size_t tuple_size = columns.size();
+
+    String value_name {tuple_size > 1 ? "(" : "tuple("};
+
+    DataTypes element_types;
+    element_types.reserve(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        const auto & [value, type] = columns[i]->getValueNameAndType(n);
+        element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
+    }
+    value_name += ")";
+
+    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -705,20 +728,36 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnTuple::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnTuple::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     for (auto & column : columns)
+    {
+        callback(*column);
+        column->forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : columns)
+        callback(column);
+}
+
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
 }
+
 
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {

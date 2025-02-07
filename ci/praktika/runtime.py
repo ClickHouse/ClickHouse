@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from .cache import Cache
 from .settings import Settings
@@ -17,6 +17,7 @@ class RunConfig(MetaClasses.Serializable):
     cache_artifacts: Dict[str, Cache.CacheRecord]
     cache_jobs: Dict[str, Cache.CacheRecord]
     sha: str
+    custom_data: Dict[str, Any]
 
     @classmethod
     def from_dict(cls, obj):

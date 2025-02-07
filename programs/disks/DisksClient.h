@@ -12,6 +12,8 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -38,7 +40,8 @@ public:
 
     std::vector<String> listAllFilesByPath(const String & any_path) const;
 
-    std::vector<String> getAllFilesByPattern(const String & pattern) const;
+    /// If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
+    std::vector<String> getAllFilesByPrefix(const String & prefix, bool ignore_exception) const;
 
     DiskPtr getDisk() const { return disk; }
 
@@ -57,12 +60,18 @@ private:
 
 class DisksClient
 {
+    inline static const String DEFAULT_DISK_NAME = "default";
+    inline static const String LOCAL_DISK_NAME = "local";
+    using DiskCreator = std::function<DiskPtr()>;
+
 public:
-    explicit DisksClient(std::vector<std::pair<DiskPtr, std::optional<String>>> && disks_with_paths, std::optional<String> begin_disk);
+    DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_);
 
     const DiskWithPath & getDiskWithPath(const String & disk) const;
 
     DiskWithPath & getDiskWithPath(const String & disk);
+
+    DiskWithPath & getDiskWithPathLazyInitialization(const String & disk);
 
     const DiskWithPath & getCurrentDiskWithPath() const;
 
@@ -74,15 +83,27 @@ public:
 
     void switchToDisk(const String & disk_, const std::optional<String> & path_);
 
+    std::vector<String> getInitializedDiskNames() const;
+    std::vector<String> getUninitializedDiskNames() const;
     std::vector<String> getAllDiskNames() const;
 
-    std::vector<String> getAllFilesByPatternFromAllDisks(const String & pattern) const;
+    /// If ignore_exception is true, then the function will not throw an exception but can return incomplete result (though all returned paths are valid). This is useful for autocomplete which should not fail if there are any problems with disks.
+    std::vector<String> getAllFilesByPrefixFromInitializedDisks(const String & prefix, bool ignore_exception) const;
 
+    void addDisk(String disk_name, std::optional<String> path);
+
+    bool isDiskInitialized(const String & disk_name) const { return initialized_disks.contains(disk_name); }
 
 private:
-    void addDisk(DiskPtr disk_, const std::optional<String> & path_);
-
     String current_disk;
-    std::unordered_map<String, DiskWithPath> disks;
+    std::unordered_map<String, DiskWithPath> disks_with_paths;
+    DisksMap initialized_disks;
+
+    using PostponedDisksMap = std::map<String, std::pair<DiskCreator, std::optional<String>>>;
+    PostponedDisksMap uninitialized_disks;
+
+    const Poco::Util::AbstractConfiguration & config;
+    ContextPtr context;
+    LoggerPtr log;
 };
 }

@@ -48,10 +48,26 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false);
 
+    struct BloomFilterData
+    {
+        using HashesForColumns = std::vector<std::vector<uint64_t>>;
+        HashesForColumns hashes_per_column;
+        std::vector<std::size_t> key_columns;
+    };
+
+    struct BloomFilter
+    {
+        virtual ~BloomFilter() = default;
+
+        virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
+    };
+
+    using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
-        const DataTypes & data_types) const;
+        const DataTypes & data_types,
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -224,6 +240,8 @@ public:
         Polygon polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
+
+        std::optional<BloomFilterData> bloom_filter_data;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -236,6 +254,11 @@ public:
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
     bool isRelaxed() const { return relaxed; }
+
+    bool isSinglePoint() const { return single_point; }
+
+    void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
+                                std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
 private:
     BoolMask checkInRange(
@@ -376,6 +399,7 @@ private:
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;
+
     void getAllSpaceFillingCurves();
 
     /// Array joined column names

@@ -87,6 +87,8 @@ public:
     bool rightTableCanBeReranged() const override;
     void tryRerangeRightTableData() override;
 
+    void onBuildPhaseFinish() override;
+
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
 private:

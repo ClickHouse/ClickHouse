@@ -117,15 +117,23 @@ def generate_record():
     }
 
 
-def create_clickhouse_iceberg_database(started_cluster, node, name):
+def create_clickhouse_iceberg_database(
+    started_cluster, node, name, additional_settings={}
+):
+    settings = {
+        "catalog_type": "rest",
+        "warehouse": "demo",
+        "storage_endpoint": "http://minio:9000/warehouse",
+    }
+
+    settings.update(additional_settings)
+
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_iceberg=true;
 CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'minio123')
-SETTINGS catalog_type = 'rest',
-        storage_endpoint = 'http://minio:9000/warehouse',
-        warehouse='demo'
+SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
 
@@ -307,3 +315,33 @@ def test_select(started_cluster):
     assert num_rows == int(
         node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
     )
+
+
+def test_hide_sensitive_info(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hide_sensitive_info_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespace = f"{root_namespace}.A"
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"catalog_credential": "SECRET_1"},
+    )
+    assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"auth_header": "SECRET_2"},
+    )
+    assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")

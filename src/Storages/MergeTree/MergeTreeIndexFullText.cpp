@@ -87,6 +87,15 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
 }
 
 
+size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & gin_filter : gin_filters)
+        sum += gin_filter.memoryUsageBytes();
+    return sum;
+}
+
+
 MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(
     GinIndexStorePtr store_,
     const Names & index_columns_,

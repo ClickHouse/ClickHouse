@@ -17,6 +17,7 @@ INSERT INTO d VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c');
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 'false';
+SET enable_parallel_replicas=0;
 
 -- { echoOn }
 

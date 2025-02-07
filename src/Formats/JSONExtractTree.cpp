@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -22,6 +24,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>

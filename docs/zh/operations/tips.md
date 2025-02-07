@@ -230,6 +230,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
 
 初始化:
 
+```
     description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
 
     start on runlevel [2345]
@@ -256,3 +257,4 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
             -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
             -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
     end script
+```

@@ -78,4 +78,13 @@ const char * toString(JoinTableSide join_table_side)
     }
 }
 
+JoinKind reverseJoinKind(JoinKind kind)
+{
+    if (kind == JoinKind::Right)
+        return JoinKind::Left;
+    if (kind == JoinKind::Left)
+        return JoinKind::Right;
+    return kind;
+}
+
 }

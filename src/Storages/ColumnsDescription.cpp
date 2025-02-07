@@ -386,7 +386,9 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     };
 
     if (first)
+    {
         reorder_column([&]() { return columns.cbegin(); });
+    }
     else if (!after_column.empty() && column_name != after_column)
     {
         /// Checked first

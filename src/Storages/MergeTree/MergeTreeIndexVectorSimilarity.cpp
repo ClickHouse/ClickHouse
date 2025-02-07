@@ -172,6 +172,13 @@ String USearchIndexWithSerialization::Statistics::toString() const
             max_level, connectivity, size, capacity, ReadableSize(memory_usage), bytes_per_vector, scalar_words, nodes, edges, max_edges);
 
 }
+
+size_t USearchIndexWithSerialization::memoryUsageBytes() const
+{
+    /// Memory consumption is extremely high, asked in Discord: https://discord.com/channels/1063947616615923875/1064496121520590878/1309266814299144223
+    return Base::memory_usage();
+}
+
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,
@@ -371,8 +378,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     if (WhichDataType(nested_type_index).isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (WhichDataType(nested_type_index).isFloat64())
@@ -562,7 +569,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (!data_type_array)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
     TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
-    if (!WhichDataType(nested_type_index).isFloat())
+    if (!WhichDataType(nested_type_index).isNativeFloat())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
 }
 

@@ -233,6 +233,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     auto & state = states.emplace_back();
     state.primitive_column = column;
     state.compression = options.compression;
+    state.compression_level = options.compression_level;
 
     state.column_chunk.__isset.meta_data = true;
     state.column_chunk.meta_data.__set_path_in_schema({name});

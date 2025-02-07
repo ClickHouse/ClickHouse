@@ -77,6 +77,8 @@ public:
         return join->hasDelayedBlocks();
     }
 
+    void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
+
 private:
     JoinPtr join;
     SizeLimits limits;

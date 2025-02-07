@@ -23,6 +23,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 #include <Disks/IDisk.h>

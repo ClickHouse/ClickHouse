@@ -28,3 +28,20 @@ DETACH TABLE test_no_loop.t8;
 SELECT count(*) FROM system.detached_tables WHERE database='test_no_loop';
 
 DROP DATABASE test_no_loop;
+
+SELECT '-----------------------';
+SELECT 'max_block_size is equal to the amount of tables';
+
+DROP DATABASE IF EXISTS test_no_loop_2;
+CREATE DATABASE test_no_loop_2;
+
+SET max_block_size = 3;
+CREATE TABLE test_no_loop_2.t0 (c0 Int) ENGINE = MergeTree ORDER BY c0;
+CREATE TABLE test_no_loop_2.t1 (c0 Int) ENGINE = MergeTree ORDER BY c0;
+CREATE TABLE test_no_loop_2.t2 (c0 Int) ENGINE = MergeTree ORDER BY c0;
+DETACH TABLE test_no_loop_2.t0;
+DETACH TABLE test_no_loop_2.t1;
+DETACH TABLE test_no_loop_2.t2;
+SELECT count(*) FROM system.detached_tables WHERE database='test_no_loop_2';
+
+DROP DATABASE test_no_loop_2;

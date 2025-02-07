@@ -18,6 +18,7 @@ from ci_config import CI
 from commit_status_helper import (
     get_commit,
     get_commit_filtered_statuses,
+    post_commit_status,
     trigger_mergeable_check,
     update_upstream_sync_status,
 )
@@ -283,6 +284,14 @@ def main():
             ):
                 print("Updating upstream statuses")
                 update_upstream_sync_status(pr_info, state)
+            elif pr_info.is_merge_queue and not has_failed_statuses:
+                # set Sync status to success for MQ, to unblock merge
+                post_commit_status(
+                    commit,
+                    SUCCESS,
+                    check_name=CI.StatusNames.SYNC,
+                )
+
         else:
             print(
                 "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"

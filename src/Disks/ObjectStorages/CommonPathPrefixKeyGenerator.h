@@ -30,6 +30,8 @@ public:
 
     ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const override;
 
+    bool isRandom() const override { return true; }
+
 private:
     /// Longest key prefix and unresolved parts of the source path.
     std::tuple<std::string, std::vector<String>> getLongestObjectKeyPrefix(const String & path) const;

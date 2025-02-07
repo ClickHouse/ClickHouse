@@ -12,6 +12,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -28,7 +29,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>

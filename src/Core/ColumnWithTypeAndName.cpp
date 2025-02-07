@@ -1,6 +1,7 @@
+#include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB

@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>

@@ -25,10 +25,7 @@ private:
 
     static void insertValue(IColumn & column, DataTypePtr data_type, ValueType type, nanodbc::result & row, size_t idx);
 
-    static void insertDefaultValue(IColumn & column, const IColumn & sample_column)
-    {
-        column.insertFrom(sample_column, 0);
-    }
+    static void insertDefaultValue(IColumn & column, const IColumn & sample_column);
 
     LoggerPtr log;
     const UInt64 max_block_size;

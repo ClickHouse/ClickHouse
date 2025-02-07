@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -156,6 +157,8 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
     if (validate_content)
     {
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
         std::string data;
         auto read_buf = object_storage->readObject(metadata_object, ReadSettings{});
         readStringUntilEOF(data, *read_buf);
@@ -183,11 +186,19 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     LOG_TRACE(
         getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
 
-    auto write_buf = createWriteBuf(path_from, path_to, /* validate_content */ true);
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    constexpr bool validate_content = true;
+#else
+    constexpr bool validate_content = false;
+#endif
+
+    auto write_buf = createWriteBuf(path_from, path_to, validate_content);
     writeString(path_to.string(), *write_buf);
+
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
     });
+
     write_buf->finalize();
 
     /// parent_path() removes the trailing '/'.

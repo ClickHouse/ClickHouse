@@ -24,7 +24,8 @@ select json::JSON(max_dynamic_paths=0) as json2, JSONDynamicPaths(json2), JSONSh
 drop table test;
 
 set max_block_size=10000;
-create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine=MergeTree order by id;
+set max_threads=1;
+create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;
 insert into test select number, multiIf(number < 10000, '{"k2" : 42}', number < 30000, '{"k3" : 42}', number < 60000, '{"k4" : 42}', number < 100000, '{"k1" : 42}', '{"k1" : 42, "k2" : 42, "k3" : 42, "k4" : 42}') from numbers(150000);
 
 select 'max_dynamic_paths=3';

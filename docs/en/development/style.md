@@ -1,27 +1,23 @@
 ---
 slug: /en/development/style
-sidebar_position: 71
-sidebar_label: C++ Guide
-description: A list of recommendations regarding coding style, naming convention, formatting and more
+sidebar_position: 70
+sidebar_label: C++ Style Guide
 ---
 
-# How to Write C++ Code
+# C++ Style Guide
 
 ## General Recommendations {#general-recommendations}
 
-**1.** The following are recommendations, not requirements.
-
-**2.** If you are editing code, it makes sense to follow the formatting of the existing code.
-
-**3.** Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
-
-**4.** Many of the rules do not have logical reasons; they are dictated by established practices.
+The following are recommendations, not requirements.
+If you are editing code, it makes sense to follow the formatting of the existing code.
+Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
+Many of the rules do not have logical reasons; they are dictated by established practices.
 
 ## Formatting {#formatting}
 
-**1.** Most of the formatting will be done automatically by `clang-format`.
+**1.** Most of the formatting is done automatically by `clang-format`.
 
-**2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
+**2.** Indents is 4 spaces. Configure your development environment so that a tab adds four spaces.
 
 **3.** Opening and closing curly brackets must be on a separate line.
 
@@ -41,7 +37,7 @@ inline size_t mask() const                { return buf_size() - 1; }
 inline size_t place(HashValue x) const    { return x & mask(); }
 ```
 
-**5.** For functions. Don’t put spaces around brackets.
+**5.** For functions. Don't put spaces around brackets.
 
 ``` cpp
 void reinsert(const Value & x)
@@ -82,7 +78,7 @@ dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
 ```
 
-**10.** Don’t use spaces around the operators `.`, `->`.
+**10.** Don't use spaces around the operators `.`, `->`.
 
 If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
 
@@ -113,7 +109,7 @@ public:
 }
 ```
 
-**16.** If the same `namespace` is used for the entire file, and there isn’t anything else significant, an offset is not necessary inside `namespace`.
+**16.** If the same `namespace` is used for the entire file, and there isn't anything else significant, an offset is not necessary inside `namespace`.
 
 **17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, ...
 
@@ -125,7 +121,7 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** There shouldn’t be any spaces at the ends of lines.
+**18.** There shouldn't be any spaces at the ends of lines.
 
 **19.** Source files are UTF-8 encoded.
 
@@ -163,7 +159,7 @@ const char *pos
 
 **26.** When using template types, alias them with the `using` keyword (except in the simplest cases).
 
-In other words, the template parameters are specified only in `using` and aren’t repeated in the code.
+In other words, the template parameters are specified only in `using` and aren't repeated in the code.
 
 `using` can be declared locally, such as inside a function.
 
@@ -211,7 +207,7 @@ for (Names::const_iterator it = column_names.begin(); it != column_names.end(); 
 
 **1.** Be sure to add comments for all non-trivial parts of code.
 
-This is very important. Writing the comment might help you realize that the code isn’t necessary, or that it is designed wrong.
+This is very important. Writing the comment might help you realize that the code isn't necessary, or that it is designed wrong.
 
 ``` cpp
 /** Part of piece of memory, that can be used.
@@ -268,13 +264,13 @@ The example is borrowed from the resource http://home.tamk.fi/~jaalto/course/cod
 
 **7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
 
-**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered “documentation”.
+**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered "documentation".
 
 Note: You can use Doxygen to generate documentation from these comments. But Doxygen is not generally used because it is more convenient to navigate the code in the IDE.
 
 **9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
 
-**10.** For commenting out code, use basic comments, not “documenting” comments.
+**10.** For commenting out code, use basic comments, not "documenting" comments.
 
 **11.** Delete the commented out parts of the code before committing.
 
@@ -298,7 +294,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// Why did you do this stuff?
 ```
 
-**16.** There’s no need to write a comment at the end of a block describing what it was about.
+**16.** There's no need to write a comment at the end of a block describing what it was about.
 
 ``` cpp
 /// for
@@ -446,9 +442,9 @@ Use `RAII` and see above.
 
 Use exceptions. In most cases, you only need to throw an exception, and do not need to catch it (because of `RAII`).
 
-In offline data processing applications, it’s often acceptable to not catch exceptions.
+In offline data processing applications, it's often acceptable to not catch exceptions.
 
-In servers that handle user requests, it’s usually enough to catch exceptions at the top level of the connection handler.
+In servers that handle user requests, it's usually enough to catch exceptions at the top level of the connection handler.
 
 In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after `join`.
 
@@ -506,7 +502,7 @@ Use the following options:
 
 - Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
 - Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
-- If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
+- If there is an exception in the destructor, it's better to log it than to hide it (if the logger is available).
 - In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
 
 **6.** Anonymous code blocks.
@@ -533,7 +529,7 @@ In offline data processing programs:
 
 In server applications:
 
-- Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
+- Use the thread pool to process requests. At this point, we haven't had any tasks that required userspace context switching.
 
 Fork is not used for parallelization.
 

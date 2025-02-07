@@ -191,7 +191,7 @@ SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-返される型は DateTime64 であり、DataTime32 は比較のために 64 ビットに昇格しなければならないためです。
+返される型は DateTime64 であり、DateTime32 は比較のために 64 ビットに昇格しなければならないためです。
 :::
 
 ## least
@@ -232,7 +232,7 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-返される型は DateTime64 であり、DataTime32 は比較のために 64 ビットに昇格しなければならないためです。
+返される型は DateTime64 であり、DateTime32 は比較のために 64 ビットに昇格しなければならないためです。
 :::
 
 ## clamp

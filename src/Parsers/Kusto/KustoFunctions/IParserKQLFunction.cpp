@@ -3,7 +3,7 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <boost/lexical_cast.hpp>
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 #include <pcg_random.hpp>
 #include <Poco/String.h>
 #include <format>

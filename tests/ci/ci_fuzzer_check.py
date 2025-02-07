@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import logging
 import os
 import subprocess
@@ -69,8 +68,6 @@ def main():
 
     pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image(IMAGE_NAME))
-
     build_name = CI.get_required_build_name(check_name)
     urls = read_build_urls(build_name, reports_path)
     if not urls:
@@ -82,6 +79,7 @@ def main():
             break
     else:
         raise ValueError("Cannot find the clickhouse binary among build results")
+    docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     logging.info("Got build url %s", build_url)
 
@@ -170,7 +168,7 @@ def main():
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         # test generates its own report.html
-        additional_files=[v for _, v in paths.items()],
+        additional_files=[v for _, v in paths.items() if Path(v).is_file()],
     ).dump()
 
     logging.info("Result: '%s', '%s'", status, description)

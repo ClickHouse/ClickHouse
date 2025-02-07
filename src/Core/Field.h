@@ -1,11 +1,7 @@
 #pragma once
 
-#include <cassert>
-#include <vector>
-#include <algorithm>
 #include <map>
-#include <type_traits>
-#include <functional>
+#include <vector>
 
 #include <base/AlignedUnion.h>
 #include <Core/CompareHelper.h>
@@ -721,7 +717,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
-        assert(which == TypeToEnum<JustT>::value);
+        chassert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
@@ -730,14 +726,14 @@ private:
     requires (sizeof(CharT) == 1)
     void assignString(const CharT * data, size_t size)
     {
-        assert(which == Types::String);
+        chassert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
         ptr->assign(reinterpret_cast<const char *>(data), size);
     }
 
     void assignString(String && str)
     {
-        assert(which == Types::String);
+        chassert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
         ptr->assign(std::move(str));
     }

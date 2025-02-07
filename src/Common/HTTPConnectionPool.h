@@ -40,7 +40,7 @@ public:
     using ConnectionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
     /// can throw Poco::Net::Exception, DB::NetException, DB::Exception
-    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts) = 0;
+    virtual ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) = 0;
     virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 

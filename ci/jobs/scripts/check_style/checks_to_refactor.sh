@@ -72,9 +72,6 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     esac
 done
 
-# The stateful directory should only contain the tests that depend on the test dataset (hits or visits).
-find $ROOT_PATH/tests/queries/1_stateful -name '*.sql' -or -name '*.sh' | grep -v '00076_system_columns_bytes' | xargs -I{} bash -c 'grep -q -P "hits|visits" "{}" || echo "The test {} does not depend on the test dataset (hits or visits table) and should be located in the 0_stateless directory. You can also add an exception to the check-style script."'
-
 # Check for existence of __init__.py files
 for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
 

@@ -18,7 +18,7 @@ ClickHouse 最初是作为一个原型构建的，它的单一任务就是尽可
 :   ClickHouse 在内存中保留数据结构，允许不仅读取使用的列，而且只读取这些列的必要行范围。
 
 数据压缩
-:   将同一列的不同值存储在一起通常会导致更好的压缩比（与行式系统相比），因为在实际数据中列通常对相邻行有相同或不太多的不同值。除了通用压缩之外，ClickHouse 还支持 [专用编解码器](../../sql-reference/statements/create/table.mdx/#create-query-specialized-codecs)，可以使数据更加紧凑。
+:   将同一列的不同值存储在一起通常会导致更好的压缩比（与行式系统相比），因为在实际数据中列通常对相邻行有相同或不太多的不同值。除了通用压缩之外，ClickHouse 还支持 [专用编解码器](../../sql-reference/statements/create/table.mdx#column_compression_codec)，可以使数据更加紧凑。
 
 向量化查询执行
 :   ClickHouse 不仅以列的形式存储数据，而且以列的形式处理数据。这导致更好的 CPU 缓存利用率，并允许使用 [SIMD](https://en.wikipedia.org/wiki/SIMD) CPU 指令。

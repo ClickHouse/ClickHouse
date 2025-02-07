@@ -1,5 +1,6 @@
 import json
 import time
+from typing import Any, List, Union
 
 from ._environment import _Environment
 from .result import Result
@@ -18,7 +19,7 @@ class GH:
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=True)
             res = ret_code == 0
             if not res and "Validation Failed" in err:
-                print(f"ERROR: GH command validation error.")
+                print(f"ERROR: GH command validation error {[err]}")
                 break
             if not res and "Bad credentials" in err:
                 print("ERROR: GH credentials/auth failure")
@@ -93,6 +94,23 @@ class GH:
             assert (
                 False
             ), f"Invalid status [{status}] to be set as GH commit status.state"
+
+    @classmethod
+    def print_log_in_group(cls, group_name: str, lines: Any):
+        if not isinstance(lines, (list, tuple, set)):
+            lines = [lines]
+
+        print(f"::group::{group_name}")
+        for line in lines:
+            print(line)
+        print("::endgroup::")
+
+    @classmethod
+    def print_actions_debug_info(cls):
+        cls.print_log_in_group("GITHUB_ENVS", Shell.get_output("env | grep ^GITHUB_"))
+        cls.print_log_in_group(
+            "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
+        )
 
 
 if __name__ == "__main__":

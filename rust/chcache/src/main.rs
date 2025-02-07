@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use log::{info, trace, warn};
+use log::{trace, info, warn, error};
 use std::fs;
 use std::path::Path;
 
@@ -197,12 +197,16 @@ fn hash_preprocessed_compiler_output(compiler: String, args: &Vec<String>) -> St
         .args(preprocess_args)
         .output()
         .expect("Failed to execute command");
-    let output = String::from_utf8_lossy(&output.stdout);
 
-    assert!(output.len() > 0);
+    let stdout_output = String::from_utf8_lossy(&output.stdout);
+    let stderr_output = String::from_utf8_lossy(&output.stderr);
+
+    if stdout_output.is_empty() {
+        panic!("{}", stderr_output);
+    }
 
     let mut hasher = Hasher::new();
-    hasher.update(output.as_bytes());
+    hasher.update(stdout_output.as_bytes());
 
     let hash = hasher.finalize();
     hash.to_hex().to_string()
@@ -323,6 +327,15 @@ async fn compiler_cache_entrypoint(config: &Config) {
 
     trace!("Args: {:?}", rest_of_args);
 
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap()
+        .trim_end_matches('/')
+        .to_string();
+    trace!("Current working directory: {}", cwd);
+
     let assumed_base_path = assume_base_path(&rest_of_args);
     trace!("Assumed base path: {}", assumed_base_path);
 
@@ -330,6 +343,11 @@ async fn compiler_cache_entrypoint(config: &Config) {
     trace!("Is private: {}", is_private);
 
     let stripped_args = rest_of_args
+        .iter()
+        .map(|x| x.replace(&cwd, "/"))
+        .collect::<Vec<String>>();
+
+    let stripped_args = stripped_args
         .iter()
         .map(|x| x.replace(&assumed_base_path, "/"))
         .collect::<Vec<String>>();
@@ -403,7 +421,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
                         if !output.status.success() {
                             println!("{}", String::from_utf8_lossy(&output.stdout));
                             eprintln!("{}", String::from_utf8_lossy(&output.stderr));
-                            return;
+                            std::process::exit(output.status.code().unwrap_or(1));
                         }
                         fs::read(get_output_from_args(&rest_of_args)).expect("Unable to read file")
                     }
@@ -422,6 +440,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
     };
 
     if should_upload {
+        let mut tries = 3;
         loop {
             let upload_result =
                 load_to_clickhouse(config, &client, &total_hash, &compiler_version, &compiled_bytes).await;
@@ -430,6 +449,12 @@ async fn compiler_cache_entrypoint(config: &Config) {
                 break;
             }
             warn!("Failed to upload to ClickHouse, retrying...");
+
+            tries -= 1;
+            if tries == 0 {
+                error!("Failed to upload to ClickHouse: {}", upload_result.err().unwrap());
+                break;
+            }
         }
     }
 }

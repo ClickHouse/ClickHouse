@@ -11,15 +11,14 @@ from typing import Dict
 from build_download_helper import download_builds_filter
 from compress_files import compress_fast
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH
-from env_helper import TEMP_PATH as TEMP
+from env_helper import REPO_COPY, REPORT_PATH
 from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
-TEMP_PATH = Path(TEMP)
+TEMP_PATH = Path(f"{REPO_COPY}/ci/tmp/")
 LOGS_PATH = TEMP_PATH / "tests_logs"
 
 
@@ -167,7 +166,7 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
             f"--volume={LOGS_PATH}:/tests_logs --volume={TEMP_PATH}:/packages {image}"
         )
 
-        for retry in range(1, 4):
+        for retry in range(1):
             for file in LOGS_PATH.glob("*"):
                 file.unlink()
 
@@ -261,6 +260,7 @@ def main():
     prepare_test_scripts()
 
     if args.download:
+        print("Download packages")
 
         def filter_artifacts(path: str) -> bool:
             is_match = False
@@ -290,10 +290,13 @@ def main():
         subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
 
     if args.deb:
+        print("Test debian")
         test_results.extend(test_install_deb(deb_image))
     if args.rpm:
+        print("Test rpm")
         test_results.extend(test_install_rpm(rpm_image))
     if args.tgz:
+        print("Test tgz")
         test_results.extend(test_install_tgz(deb_image))
         test_results.extend(test_install_tgz(rpm_image))
 

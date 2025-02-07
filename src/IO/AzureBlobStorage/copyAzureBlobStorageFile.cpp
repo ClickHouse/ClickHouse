@@ -8,10 +8,11 @@
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
-#include <IO/SharedThreadPools.h>
 
 namespace ProfileEvents
 {

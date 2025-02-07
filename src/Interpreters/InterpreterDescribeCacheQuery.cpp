@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/Context.h>

@@ -19,7 +19,7 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 #include <atomic>
 #include <condition_variable>

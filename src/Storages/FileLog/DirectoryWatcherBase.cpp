@@ -1,3 +1,4 @@
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>

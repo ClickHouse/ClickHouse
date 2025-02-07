@@ -8,7 +8,7 @@ namespace DB
 class SerializationInfoTuple : public SerializationInfo
 {
 public:
-    SerializationInfoTuple(MutableSerializationInfos elems_, Names names_, const Settings & settings_);
+    SerializationInfoTuple(MutableSerializationInfos elems_, Names names_);
 
     bool hasCustomSerialization() const override;
     bool structureEquals(const SerializationInfo & rhs) const override;

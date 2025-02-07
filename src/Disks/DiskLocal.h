@@ -91,6 +91,7 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
+    bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;

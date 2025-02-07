@@ -40,6 +40,13 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
+DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+
+DOCS_FILES = DOCS_ONLY_FILES + [
+    "Settings.cpp",
+    "FormatFactorySettings.h",
+    "tests/ci/docs_check.py",
+]
 RETRY_SLEEP = 0
 
 
@@ -124,7 +131,7 @@ class PRInfo:
         self.merged_pr = 0
         self.labels = set()
 
-        repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
+        self.repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
         self.task_url = GITHUB_RUN_URL
         self.repo_full_name = GITHUB_REPOSITORY
 
@@ -174,9 +181,6 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
-            self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
-
             # master or backport/xx.x/xxxxx - where the PR will be merged
             self.base_ref = github_event["pull_request"]["base"]["ref"]
             # ClickHouse/ClickHouse
@@ -225,7 +229,6 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -239,7 +242,6 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -247,7 +249,6 @@ class PRInfo:
                 if pull_request:
                     self.merged_pr = pull_request["number"]
                 self.labels = set()
-                self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
                 self.base_name = self.repo_full_name
                 self.head_ref = ref
@@ -313,8 +314,6 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
-            self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
             self.head_ref = ref
@@ -322,6 +321,23 @@ class PRInfo:
 
         if need_changed_files:
             self.fetch_changed_files()
+
+    @property
+    def pr_html_url(self) -> str:
+        if getattr(self, "_pr_html_url", None) is not None:
+            return self._pr_html_url
+
+        if self.number != 0:
+            return f"{self.repo_prefix}/pull/{self.number}"
+        return f"{self.repo_prefix}/commits/{self.base_ref}"
+
+    @pr_html_url.setter
+    def pr_html_url(self, url: str) -> None:
+        self._pr_html_url = url
+
+    @property
+    def commit_html_url(self) -> str:
+        return f"{self.repo_prefix}/commit/{self.sha}"
 
     @property
     def is_master(self) -> bool:
@@ -408,11 +424,8 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (
-                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "Settings.cpp" in f
-                or "FormatFactorySettings.h" in f
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
+                docs_path in f for docs_path in DOCS_FILES
             ):
                 return True
         return False
@@ -420,7 +433,6 @@ class PRInfo:
     def has_changes_in_documentation_only(self) -> bool:
         """
         checks if changes are docs related without other changes
-        FIXME: avoid hardcoding filenames here
         """
         if not self.changed_files_requested:
             self.fetch_changed_files()
@@ -434,10 +446,7 @@ class PRInfo:
             path_in_docs = f.startswith("docs/")
             if not (
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "docs_check.py" in f
-                or "aspell-dict.txt" in f
-                or ext == ".md"
+                or any(docs_path in f for docs_path in DOCS_ONLY_FILES)
             ):
                 return False
         return True

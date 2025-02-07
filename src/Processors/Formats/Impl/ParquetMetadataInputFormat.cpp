@@ -76,6 +76,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                  std::make_shared<DataTypeUInt64>(),
                  std::make_shared<DataTypeUInt64>(),
                  std::make_shared<DataTypeUInt64>(),
+                 std::make_shared<DataTypeUInt64>(),
                  std::make_shared<DataTypeArray>(
                      std::make_shared<DataTypeTuple>(
                          DataTypes{
@@ -92,10 +93,10 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
-                             DataTypeFactory::instance().get("Bool"),
+                             std::make_shared<DataTypeInt64>(),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "have_bloom_filter"}))},
-             Names{"num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes"}))},
+             Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
 }
@@ -313,16 +314,18 @@ void ParquetMetadataInputFormat::fillRowGroupsMetadata(const std::shared_ptr<par
     for (int32_t i = 0; i != metadata->num_row_groups(); ++i)
     {
         auto row_group_metadata = metadata->RowGroup(i);
+        /// file_offset
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(0)).insertValue(row_group_metadata->file_offset());
         /// num_columns
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(0)).insertValue(row_group_metadata->num_columns());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(1)).insertValue(row_group_metadata->num_columns());
         /// num_rows
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(1)).insertValue(row_group_metadata->num_rows());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(2)).insertValue(row_group_metadata->num_rows());
         /// total_uncompressed_size
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(2)).insertValue(row_group_metadata->total_byte_size());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(3)).insertValue(row_group_metadata->total_byte_size());
         /// total_compressed_size
-        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(3)).insertValue(row_group_metadata->total_compressed_size());
+        assert_cast<ColumnUInt64 &>(row_groups_column.getColumn(4)).insertValue(row_group_metadata->total_compressed_size());
         /// columns
-        fillColumnChunksMetadata(row_group_metadata, row_groups_column.getColumn(4));
+        fillColumnChunksMetadata(row_group_metadata, row_groups_column.getColumn(5));
     }
     row_groups_array_column.getOffsets().push_back(row_groups_column.size());
 }
@@ -351,8 +354,7 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
             fillColumnStatistics(column_chunk_metadata->statistics(), tuple_column.getColumn(5), row_group_metadata->schema()->Column(column_i)->type_length());
         else
             tuple_column.getColumn(5).insertDefault();
-        bool have_bloom_filter = column_chunk_metadata->bloom_filter_offset().has_value();
-        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(6)).insertValue(have_bloom_filter);
+        assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
     }
     array_column.getOffsets().push_back(tuple_column.size());
 }

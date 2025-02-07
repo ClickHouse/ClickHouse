@@ -99,7 +99,7 @@ Possible values:
 
 Default value: `1`.
 
-The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
+The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
 The `Join`-engine allows to specify [join_use_nulls](/docs/en/operations/settings/settings.md/#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/docs/en/sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
 

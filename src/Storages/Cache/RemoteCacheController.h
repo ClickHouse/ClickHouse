@@ -4,7 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -87,7 +87,7 @@ private:
     // Flush file and status information.
     void flush(bool need_flush_status = false);
 
-    BackgroundSchedulePool::TaskHolder download_task_holder;
+    BackgroundSchedulePoolTaskHolder download_task_holder;
     void backgroundDownload(ReadBufferPtr remote_read_buffer);
 
     std::mutex mutex;

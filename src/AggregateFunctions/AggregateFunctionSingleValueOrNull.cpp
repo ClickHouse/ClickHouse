@@ -82,7 +82,7 @@ public:
 
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data().read(buf, serialization, arena); }
 
-    void insertResultInto(IColumn & to) const
+    void insertResultInto(IColumn & to, const DataTypePtr & result_type) const
     {
         if (is_null || first_value)
         {
@@ -92,7 +92,7 @@ public:
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            data().insertResultInto(col.getNestedColumn());
+            data().insertResultInto(col.getNestedColumn(), result_type);
         }
     }
 };
@@ -176,7 +176,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        data(place).insertResultInto(to);
+        data(place).insertResultInto(to, result_type);
     }
 };
 

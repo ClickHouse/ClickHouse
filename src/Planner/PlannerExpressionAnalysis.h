@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/InterpolateDescription.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 

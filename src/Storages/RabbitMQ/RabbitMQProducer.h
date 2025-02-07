@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <list>
-#include <mutex>
-#include <atomic>
-#include <amqpcpp.h>
+#include <Columns/IColumn_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Names.h>
+
+#include <atomic>
+#include <amqpcpp.h>
 
 namespace DB
 {

@@ -9,6 +9,8 @@
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Poco/UTF8Encoding.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <limits>
 
@@ -24,11 +26,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
 template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
-
 
 template <typename Type>
 const char * DataTypeEnum<Type>::getFamilyName() const

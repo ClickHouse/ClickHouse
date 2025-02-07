@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Common/ThreadPool.h>
@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 
 
 namespace Poco { class Logger; }

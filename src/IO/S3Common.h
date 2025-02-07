@@ -1,11 +1,9 @@
 #pragma once
 
-#include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/S3/Client.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-
-#include <unordered_set>
 
 #include "config.h"
 

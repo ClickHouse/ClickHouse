@@ -10,6 +10,7 @@
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 
+#include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <IO/BufferWithOwnMemory.h>
 

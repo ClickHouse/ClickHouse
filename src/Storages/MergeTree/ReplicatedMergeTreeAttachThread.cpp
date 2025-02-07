@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace CurrentMetrics
 {
@@ -36,6 +37,11 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 {
     shutdown();
+}
+
+void ReplicatedMergeTreeAttachThread::start()
+{
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()

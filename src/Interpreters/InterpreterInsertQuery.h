@@ -67,7 +67,7 @@ public:
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
-    bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
+    bool shouldAddSquashingForStorage(const StoragePtr & table) const;
 
 private:
     static Block getSampleBlockImpl(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);

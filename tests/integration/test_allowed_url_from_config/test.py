@@ -18,11 +18,6 @@ node5 = cluster.add_instance(
 )
 node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.xml"])
 
-if not is_arm():
-    node7 = cluster.add_instance(
-        "node7", main_configs=["configs/config_for_redirect.xml"], with_hdfs=True
-    )
-
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -271,34 +266,3 @@ def test_table_function_remote(start_cluster):
             "SELECT * FROM remote('localhost:800', system, metrics)"
         )
     )
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_redirect(start_cluster):
-    hdfs_api = start_cluster.hdfs_api
-
-    hdfs_api.write_data("/simple_storage", "1\t\n")
-    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
-    node7.query(
-        "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)"
-    )
-    assert "not allowed" in node7.query_and_get_error(
-        "SET max_http_get_redirects=1; SELECT * from table_test_7_1"
-    )
-    node7.query("DROP TABLE table_test_7_1")
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_HDFS(start_cluster):
-    assert "not allowed" in node7.query_and_get_error(
-        "CREATE TABLE table_test_7_2 (word String) ENGINE=HDFS('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'CSV')"
-    )
-    assert "not allowed" in node7.query_and_get_error(
-        "SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')"
-    )
-
-
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
-def test_schema_inference(start_cluster):
-    error = node7.query_and_get_error("desc url('http://test.com`, 'TSVRaw'')")
-    assert error.find("ReadWriteBufferFromHTTPBase") == -1

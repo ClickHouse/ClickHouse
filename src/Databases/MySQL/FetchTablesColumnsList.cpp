@@ -1,6 +1,7 @@
 #include "config.h"
 
 #if USE_MYSQL
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>

@@ -11,6 +11,7 @@
 
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -361,15 +362,16 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 
     {
         /// Dump keys.
-        out << prefix << "Keys: ";
+        out << prefix << "Keys:";
 
         bool first = true;
         for (const auto & key : keys)
         {
-            if (!first)
+            if (first)
+                out << " ";
+            else
                 out << ", ";
             first = false;
-
             out << key;
         }
 

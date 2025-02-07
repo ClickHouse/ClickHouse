@@ -126,10 +126,6 @@ struct HashMapCell
         DB::readDoubleQuoted(value.second, rb);
     }
 
-    static bool constexpr need_to_notify_cell_during_move = false;
-
-    static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
-
     template <size_t I>
     auto & get() & {
         if constexpr (I == 0) return value.first;

@@ -40,7 +40,7 @@ public:
 
     bool isDataLakeConfiguration() const override { return true; }
 
-    std::string getEngineName() const override { return DataLakeMetadata::name; }
+    std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
@@ -74,6 +74,13 @@ public:
             return ColumnsDescription(std::move(schema_from_metadata));
         }
         return std::nullopt;
+    }
+
+    void implementPartitionPruning(const ActionsDAG & filter_dag) override
+    {
+        if (!current_metadata || !current_metadata->supportsPartitionPruning())
+            return;
+        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override

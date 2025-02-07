@@ -12,6 +12,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <filesystem>
+
 
 namespace DB
 {

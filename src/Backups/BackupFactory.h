@@ -45,6 +45,8 @@ public:
         bool azure_attempt_to_create_container = true;
         ReadSettings read_settings;
         WriteSettings write_settings;
+
+        CreateParams getCreateParamsForBaseBackup(BackupInfo base_backup_info_, String old_password) const;
     };
 
     static BackupFactory & instance();

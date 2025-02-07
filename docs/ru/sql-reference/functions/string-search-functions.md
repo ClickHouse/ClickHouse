@@ -846,10 +846,10 @@ SELECT hasSubsequence('garbage', 'arg') ;
 
 Такая же, как и [hasSubsequence](#hasSubsequence), но работает без учета регистра.
 
-## hasSubsequenceUTF8
+## hasSubsequenceUTF8 {#has_subsequence_utf8}
 
 Такая же, как и [hasSubsequence](#hasSubsequence) при допущении что `haystack` и `needle` содержат набор кодовых точек, представляющий текст в кодировке UTF-8.
 
 ## hasSubsequenceCaseInsensitiveUTF8
 
-Такая же, как и [hasSubsequenceUTF8](#hasSubsequenceUTF8), но работает без учета регистра.
+Такая же, как и [hasSubsequenceUTF8](#has_subsequence_utf8), но работает без учета регистра.

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 namespace parquet

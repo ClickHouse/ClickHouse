@@ -3,8 +3,8 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-CREATE TABLE t1 (key UInt32, key1 UInt32, key2 Nullable(UInt32), key3 UInt32, s String) engine = TinyLog;
-CREATE TABLE t2 (key UInt32, key1 UInt32, key2 UInt32, key3 Nullable(UInt32), s String) engine = TinyLog;
+CREATE TABLE t1 (key UInt32, key1 UInt32, key2 Nullable(UInt32), key3 UInt32, s String) engine = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (key UInt32, key1 UInt32, key2 UInt32, key3 Nullable(UInt32), s String) engine = MergeTree ORDER BY tuple();
 
 {% set table_size = 15 %}
 

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
@@ -153,6 +154,20 @@ void ReplicatedMergeTreeCleanupThread::wakeupEarlierIfNeeded()
     wakeup();
 }
 
+void ReplicatedMergeTreeCleanupThread::start()
+{
+    task->activateAndSchedule();
+}
+
+void ReplicatedMergeTreeCleanupThread::wakeup()
+{
+    task->schedule();
+}
+
+void ReplicatedMergeTreeCleanupThread::stop()
+{
+    task->deactivate();
+}
 
 Float32 ReplicatedMergeTreeCleanupThread::iterate()
 {

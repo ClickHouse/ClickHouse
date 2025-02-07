@@ -1,7 +1,9 @@
 ---
 slug: /en/development/integrating_rust_libraries
+sidebar_label: Rust Libraries
 ---
-# Integrating Rust libraries
+
+# Rust Libraries
 
 Rust library integration will be described based on BLAKE3 hash-function integration.
 

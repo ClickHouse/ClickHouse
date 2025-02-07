@@ -1,5 +1,8 @@
 #pragma once
 
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -85,6 +88,13 @@ public:
     void get(size_t index, Field & res) const override
     {
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
+    }
+
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
+    {
+        WriteBufferFromOwnString buf;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);
+        return {buf.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t index) const override

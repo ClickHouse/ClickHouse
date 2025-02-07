@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/callOnTypeIndex.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
 

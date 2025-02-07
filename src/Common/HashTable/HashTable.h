@@ -210,12 +210,6 @@ struct HashTableCell
     void read(DB::ReadBuffer & rb)        { DB::readBinaryLittleEndian(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 
-    /// When cell pointer is moved during erase, reinsert or resize operations
-
-    static constexpr bool need_to_notify_cell_during_move = false;
-
-    static void move(HashTableCell * /* old_location */, HashTableCell * /* new_location */) {}
-
 };
 
 /** Determines the size of the hash table, and when and how much it should be resized.
@@ -410,32 +404,6 @@ struct ZeroValueStorage<false, Cell>
 };
 
 
-template <bool enable, typename Allocator, typename Cell>
-struct AllocatorBufferDeleter;
-
-template <typename Allocator, typename Cell>
-struct AllocatorBufferDeleter<false, Allocator, Cell>
-{
-    AllocatorBufferDeleter(Allocator &, size_t) {}
-
-    void operator()(Cell *) const {}
-
-};
-
-template <typename Allocator, typename Cell>
-struct AllocatorBufferDeleter<true, Allocator, Cell>
-{
-    AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
-        : allocator(allocator_)
-        , size(size_) {}
-
-    void operator()(Cell * buffer) const { allocator.free(buffer, size); }
-
-    Allocator & allocator;
-    size_t size;
-};
-
-
 // The HashTable
 template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator>
 class HashTable : private boost::noncopyable,
@@ -567,21 +535,7 @@ protected:
         /// Expand the space.
 
         size_t old_buffer_size = getBufferSizeInBytes();
-
-        /** If cell required to be notified during move we need to temporary keep old buffer
-         * because realloc does not quarantee for reallocated buffer to have same base address
-         */
-        using Deleter = AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move, Allocator, Cell>;
-        Deleter buffer_deleter(*this, old_buffer_size);
-        std::unique_ptr<Cell, Deleter> old_buffer(buf, buffer_deleter);
-
-        if constexpr (Cell::need_to_notify_cell_during_move)
-        {
-            buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(new_grower.bufSize())));
-            memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
-        }
-        else
-            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
+        buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
 
         grower = new_grower;
 
@@ -592,12 +546,7 @@ protected:
         size_t i = 0;
         for (; i < old_size; ++i)
             if (!buf[i].isZero(*this))
-            {
-                size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
-
-                if constexpr (Cell::need_to_notify_cell_during_move)
-                    Cell::move(&(old_buffer.get())[i], &buf[updated_place_value]);
-            }
+                reinsert(buf[i], buf[i].getHash(*this));
 
         /** There is also a special case:
           *    if the element was to be at the end of the old buffer,                  [        x]
@@ -609,13 +558,7 @@ protected:
           */
         size_t new_size = grower.bufSize();
         for (; i < new_size && !buf[i].isZero(*this); ++i)
-        {
-            size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
-
-            if constexpr (Cell::need_to_notify_cell_during_move)
-                if (&buf[i] != &buf[updated_place_value])
-                    Cell::move(&buf[i], &buf[updated_place_value]);
-        }
+            reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -629,28 +572,25 @@ protected:
     /** Paste into the new buffer the value that was in the old buffer.
       * Used when increasing the buffer size.
       */
-    size_t reinsert(Cell & x, size_t hash_value)
+    void reinsert(Cell & x, size_t hash_value)
     {
         size_t place_value = grower.place(hash_value);
 
         /// If the element is in its place.
         if (&x == &buf[place_value])
-            return place_value;
+            return;
 
         /// Compute a new location, taking into account the collision resolution chain.
         place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
 
         /// If the item remains in its place in the old collision resolution chain.
         if (!buf[place_value].isZero(*this))
-            return place_value;
+            return;
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
         memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
-
-        /// Then the elements that previously were in collision with this can move to the old place.
-        return place_value;
     }
 
 
@@ -1045,14 +985,7 @@ public:
     }
 
     /// Reinsert node pointed to by iterator
-    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
-    {
-        size_t place_value = reinsert(*it.getPtr(), hash_value);
-
-        if constexpr (Cell::need_to_notify_cell_during_move)
-            if (it.getPtr() != &buf[place_value])
-                Cell::move(it.getPtr(), &buf[place_value]);
-    }
+    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value) { reinsert(*it.getPtr(), hash_value); }
 
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
@@ -1235,9 +1168,6 @@ public:
 
             /// Move the element to the freed place
             memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
-
-            if constexpr (Cell::need_to_notify_cell_during_move)
-                Cell::move(&buf[next_position], &buf[erased_key_position]);
 
             /// Now we have another freed place
             erased_key_position = next_position;

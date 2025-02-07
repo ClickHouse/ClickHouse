@@ -55,6 +55,7 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(object_storage_queue_fail_commit) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
@@ -82,6 +83,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
+    PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
 
 
 namespace FailPoints

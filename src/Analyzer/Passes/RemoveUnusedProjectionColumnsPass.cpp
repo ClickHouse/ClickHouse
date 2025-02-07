@@ -154,6 +154,40 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
                 if (query_node->isDistinct())
                     continue;
             }
+            else
+            {
+                auto * union_node = query_or_union_node->as<UnionNode>();
+                chassert(union_node != nullptr);
+
+                /// We can't remove unused projections in the case of EXCEPT and INTERSECT
+                /// because it can lead to incorrect query results. Example:
+                ///
+                /// SELECT count()
+                /// FROM
+                /// (
+                ///     SELECT
+                ///         1 AS a,
+                ///         2 AS b
+                ///     INTERSECT ALL
+                ///     SELECT
+                ///         1,
+                ///         1
+                /// )
+                ///
+                /// Will be transformed into the following query with output 1 instead of 0:
+                ///
+                /// SELECT count()
+                /// FROM
+                /// (
+                ///     SELECT
+                ///         1 AS a, -- we must keep at least 1 column
+                ///     INTERSECT ALL
+                ///     SELECT
+                ///         1
+                /// );
+                if (union_node->getUnionMode() > SelectUnionMode::UNION_DISTINCT)
+                    continue;
+            }
 
             auto used_projection_indexes = convertUsedColumnNamesToUsedProjectionIndexes(query_or_union_node, used_columns);
             updateUsedProjectionIndexes(query_or_union_node, used_projection_indexes);

@@ -181,9 +181,16 @@ function stop_server()
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    # FIXME: workaround for slow shutdown of Distributed tables (due to sequential tables shutdown)
+    # FIXME: workaround for slow shutdown of Distributed tables (due to
+    # sequential tables shutdown), since flush_on_detach=0 will not help if the
+    # send is already in progress.
+    #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
-    clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS" ||:
+    for i in {1..30}; do
+        if clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS"; then
+            break
+        fi
+    done
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     if [ "$check_hang" == true ]

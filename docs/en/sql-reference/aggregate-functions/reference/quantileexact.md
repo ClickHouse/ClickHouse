@@ -32,7 +32,26 @@ Alias: `medianExact`.
 
 Type:
 
-- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+- For numeric data types the output format will be the same as the input format. For example:
+
+```sql
+
+SELECT
+    toTypeName(quantileExact(number)) AS `quantile`,
+    toTypeName(quantileExact(number::Int32)) AS `quantile_int32`,
+    toTypeName(quantileExact(number::Float32)) AS `quantile_float32`,
+    toTypeName(quantileExact(number::Float64)) AS `quantile_float64`,
+    toTypeName(quantileExact(number::Int64)) AS `quantile_int64`
+FROM numbers(1)
+
+
+   ┌─quantile─┬─quantile_int32─┬─quantile_float32─┬─quantile_float64─┬─quantile_int64─┐
+1. │ UInt64   │ Int32          │ Float32          │ Float64          │ Int64          │
+   └──────────┴────────────────┴──────────────────┴──────────────────┴────────────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
 - [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
 - [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
@@ -70,7 +89,7 @@ SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 └───────────────────────────────┘
 ```
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles) function.
 
 **Syntax**
 

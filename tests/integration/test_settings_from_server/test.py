@@ -7,7 +7,7 @@ from helpers.network import PartitionManager
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=[],
+    main_configs=["configs/config.d/send.xml"],
     user_configs=["configs/users.d/users.xml"],
 )
 node_no_send = cluster.add_instance(

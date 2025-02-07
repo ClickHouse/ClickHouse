@@ -19,7 +19,7 @@ ColumnsDescription StorageSystemSettings::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "Setting name."},
         {"value", std::make_shared<DataTypeString>(), "Setting value."},
-        {"changed", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is changed from its default value."},
+        {"changed", std::make_shared<DataTypeUInt8>(), "Shows whether the setting was explicitly defined in the config or explicitly changed."},
         {"description", std::make_shared<DataTypeString>(), "Short setting description."},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
             "Minimum value of the setting, if any is set via constraints. If the setting has no minimum value, contains NULL."

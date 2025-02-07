@@ -35,7 +35,7 @@ ClickHouse没有像[OLTP](https://en.wikipedia.org/wiki/Online_transaction_proce
 
 `ALTER TABLE ... DROP PARTITION`提供了一种成本效率高的方式来删除整个分区。它不是那么灵活，需要在创建表时配置适当的分区方案，但仍然涵盖了大多数常见情况。像 mutations 一样，需要从外部系统执行以进行常规使用。
 
-有关[操作分区](../../sql-reference/statements/alter/partition.mdx/#alter_drop-partition)的更多详细信息。
+有关[操作分区](../../sql-reference/statements/alter/partition.mdx#drop-partitionpart)的更多详细信息。
 
 ## TRUNCATE {#truncate}
 

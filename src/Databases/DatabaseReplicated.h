@@ -5,7 +5,6 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
 

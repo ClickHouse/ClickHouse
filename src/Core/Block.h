@@ -4,14 +4,16 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <base/StringRef.h>
 
 #include <initializer_list>
 #include <list>
 #include <set>
 #include <vector>
 #include <sparsehash/dense_hash_map>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
+class SipHash;
 
 namespace DB
 {
