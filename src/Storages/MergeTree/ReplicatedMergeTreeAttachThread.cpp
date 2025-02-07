@@ -167,7 +167,13 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
     /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
-    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
+    storage.checkTableStructure(
+        replica_path,
+        metadata_snapshot,
+        /* metadata_version = */ nullptr,
+        /* strict_check = */ true,
+        /* zookeeper_retries_info = */ {},
+        /* is_attach = */ true);
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),

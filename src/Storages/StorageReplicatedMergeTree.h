@@ -597,8 +597,8 @@ private:
     void clearCreateQueryZooKeeperRetriesInfo();
 
     bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-                             const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
-    bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const;
+                             const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_attach = false) const;
+    bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check, bool is_attach) const;
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
