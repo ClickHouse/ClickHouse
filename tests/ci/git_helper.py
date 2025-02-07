@@ -142,7 +142,7 @@ def checkout_submodules() -> None:
     submodules = {
         s.split("\n", maxsplit=1)[1]
         for s in git_runner(
-            "git config --file .gitmodules --null --get-regexp path"
+            "git config --file .gitmodules --null --get-regexp '^submodule[.].+[.]path$'"
         ).split("\0")
         if "\n" in s
     }
