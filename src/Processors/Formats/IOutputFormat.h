@@ -68,12 +68,14 @@ public:
 
     void setTotals(const Block & totals)
     {
+        std::lock_guard lock(writing_mutex);
         writeSuffixIfNeeded();
         consumeTotals(Chunk(totals.getColumns(), totals.rows()));
         are_totals_written = true;
     }
     void setExtremes(const Block & extremes)
     {
+        std::lock_guard lock(writing_mutex);
         writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
