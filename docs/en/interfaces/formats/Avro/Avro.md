@@ -15,7 +15,7 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 
 ## Description
 
-[Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache’s Hadoop project.
+[Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache's Hadoop project.
 ClickHouse's `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
 ## Data Types Matching
