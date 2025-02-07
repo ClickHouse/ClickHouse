@@ -638,7 +638,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             if (storage_metadata_snapshot->getColumns().empty())
             {
                 /// (Assuming that view has empty list of columns iff it's parametrized.)
-                if (storage->isView())
+                if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parametrized view can't be queried through a Merge table.");
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
