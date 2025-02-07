@@ -10,6 +10,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include "Interpreters/ActionsDAG.h"
 #include "Storages/ColumnsDescription.h"
+#include <IO/S3/URI.h>
 
 #include <memory>
 namespace DB

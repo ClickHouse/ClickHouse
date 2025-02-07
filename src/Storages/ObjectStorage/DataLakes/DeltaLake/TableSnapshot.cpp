@@ -11,6 +11,8 @@
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 
+namespace fs = std::filesystem;
+
 namespace DeltaLake
 {
 
