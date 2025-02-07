@@ -57,23 +57,9 @@ def test_initiator_user_in_ddl(started_cluster):
                 (SELECT * FROM secret LIMIT 1) as bar
             ORDER BY x
         )
-        SETTINGS distributed_ddl_entry_format_version = 5
-        """,
-        user="test",
-    )
-    assert "super_secret" in error
-
-    error = node1.query_and_get_error(
-        """
-        ALTER TABLE table ON CLUSTER default
-        ADD PROJECTION test (
-            SELECT
-                x,
-                (SELECT * FROM secret LIMIT 1) as bar
-            ORDER BY x
-        )
         SETTINGS distributed_ddl_entry_format_version = 8
         """,
         user="test",
     )
     assert "super_secret" not in error
+    assert "Not enough privileges" in error
