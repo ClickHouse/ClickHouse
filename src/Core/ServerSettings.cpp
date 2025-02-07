@@ -901,9 +901,6 @@ namespace DB
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
-    DECLARE(Bool, send_settings_to_client, true, R"(
-    Send user settings from server configuration to clients (in the server Hello message).
-    )", 0) \
     \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \

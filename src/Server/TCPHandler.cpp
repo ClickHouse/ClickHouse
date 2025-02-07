@@ -119,7 +119,6 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
-    extern const ServerSettingsBool send_settings_to_client;
 }
 }
 
@@ -1876,12 +1875,7 @@ void TCPHandler::sendHello()
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
     {
         if (is_interserver_mode ||
-            !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client] ||
-            /// If the client is new enough to receive settings but not new enough to know about
-            /// apply_settings_from_server setting, we effectively apply this setting on the server
-            /// side, right here.
-            (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_APPLY_SETTINGS_FROM_SERVER_SETTING
-                && !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server]))
+            !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
             session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);

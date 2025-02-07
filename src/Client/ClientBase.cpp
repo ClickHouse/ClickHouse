@@ -2773,14 +2773,7 @@ void ClientBase::applySettingsFromServerIfNeeded()
     {
         /// Apply settings received from server with lower priority than settings changed from
         /// command line or query.
-        if (settings.isChanged(change.name))
-            continue;
-
-        /// The setting apply_settings_from_server may itself be received from server.
-        /// Apply it first.
-        if (change.name == "apply_settings_from_server")
-            client_context->setSetting("apply_settings_from_server", change.value);
-        else
+        if (!settings.isChanged(change.name))
             changes_to_apply.push_back(change);
     }
 
