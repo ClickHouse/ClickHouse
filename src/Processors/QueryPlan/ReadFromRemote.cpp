@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int REPLICA_IS_STALE;
 }
 
 namespace FailPoints
@@ -508,8 +509,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             if (try_results.empty() && local_delay >= max_allowed_delay)
             {
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "There are no replicas except the local one and the local replica's delay is {} higher than max_replica_delay_for_distributed_queries",
+                    ErrorCodes::REPLICA_IS_STALE,
+                    "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
                     local_delay
                 );
             }
