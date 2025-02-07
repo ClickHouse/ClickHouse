@@ -235,7 +235,7 @@ SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val)
 当将其他类型转换到字符串或从字符串转换到其他类型时，使用与TabSeparated格式相同的规则对字符串的值进行格式化或解析。如果无法解析字符串则抛出异常并取消查询。
 
 当将Date转换为数字或反之，Date对应Unix时间戳的天数。
-将DataTime转换为数字或反之，DateTime对应Unix时间戳的秒数。
+将DateTime转换为数字或反之，DateTime对应Unix时间戳的秒数。
 
 toDate/toDateTime函数的日期和日期时间格式定义如下：
 

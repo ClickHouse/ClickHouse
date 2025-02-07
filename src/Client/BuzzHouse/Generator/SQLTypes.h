@@ -371,7 +371,7 @@ public:
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
-    String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, uint32_t limit) const;
+    static String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, uint32_t limit);
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::ARRAY; }
 
@@ -446,9 +446,8 @@ class NestedSubType
 public:
     uint32_t cname;
     SQLType * subtype;
-    ArrayType * array_subtype;
 
-    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(s->typeDeepCopy())) { }
+    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s) { }
 };
 
 class NestedType : public SQLType
