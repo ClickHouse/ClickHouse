@@ -31,6 +31,8 @@ set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
 message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
 
 configure_file(".cargo/config.toml.in" ".cargo/config.toml" @ONLY)
+# Force a copy to the main directory. This is done to also affect the build of delta-kernel-rs (outside of the submodule)
+configure_file(".cargo/config.toml.in" "${CMAKE_BINARY_DIR}/.cargo/config.toml" @ONLY)
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
