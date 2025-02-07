@@ -94,13 +94,14 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
 
 std::string TableMetadata::constructLocation(const std::string & endpoint_) const
 {
-    std::filesystem::path location = endpoint_;
-    if (endpoint_.ends_with('/'))
-        location = endpoint_.substr(0, endpoint_.size() - 1);
-    if (!endpoint_.ends_with(bucket))
-        location /= bucket;
-    location /= path;
-    return std::filesystem::path(location) / "";
+    std::string location = endpoint_;
+    if (location.ends_with('/'))
+        location.pop_back();
+
+    if (location.ends_with(bucket))
+        return std::filesystem::path(location) / path / "";
+    else
+        return std::filesystem::path(location) / bucket / path / "";
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)
