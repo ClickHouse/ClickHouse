@@ -1944,6 +1944,25 @@ CONV_FN(MergeFunc, mfunc)
     ret += "')";
 }
 
+CONV_FN(ClusterFunc, cluster)
+{
+    ret += ClusterFunc_CName_Name(cluster.cname());
+    ret += "('";
+    ret += cluster.ccluster();
+    ret += "', '";
+    ret += cluster.cdatabase();
+    ret += "', '";
+    ret += cluster.ctable();
+    ret += "'";
+    if (cluster.has_sharding_key())
+    {
+        ret += ", '";
+        ret += cluster.sharding_key();
+        ret += "'";
+    }
+    ret += ")";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -1978,6 +1997,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
+            break;
+        case TableFunctionType::kCluster:
+            ClusterFuncToString(ret, tf.cluster());
             break;
         default:
             ret += "numbers(10)";

@@ -1540,16 +1540,22 @@ enum SQLFunc {
 }
 
 enum SQLTableFunc {
-    TFfile = 1;
-    TFformat = 2;
-    TFgenerateSeries = 3;
-    TFmerge = 4;
-    TFmysql = 5;
-    TFpostgresql = 6;
-    TFremote = 7;
-    TFremoteSecure = 8;
-    TFS3 = 9;
-    TFsqlite = 10;
+    TFcluster = 1;
+    TFclusterAllReplicas = 2;
+    TFfile = 3;
+    TFfileCluster = 4;
+    TFformat = 5;
+    TFgenerateSeries = 6;
+    TFmerge = 7;
+    TFmysql = 8;
+    TFpostgresql = 9;
+    TFremote = 10;
+    TFremoteSecure = 11;
+    TFS3 = 12;
+    TFS3Cluster = 13;
+    TFsqlite = 14;
+    TFurl = 15;
+    TFurlCluster = 16;
 }
 
 message Database {
@@ -2449,6 +2455,18 @@ message MergeFunc {
     required string mtable = 2;
 }
 
+message ClusterFunc {
+    enum CName {
+        cluster = 1;
+        clusterAllReplicas = 2;
+    }
+    required CName cname = 1;
+    required string ccluster = 2;
+    required string cdatabase = 3;
+    required string ctable = 4;
+    optional string sharding_key = 5;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2461,6 +2479,7 @@ message TableFunction {
         S3Func s3 = 8;
         SQLTableFuncCall func = 9;
         MergeFunc merge = 10;
+        ClusterFunc cluster = 11;
     }
 }
 

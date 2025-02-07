@@ -316,7 +316,8 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     const uint32_t tudf = 5;
     const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
     const uint32_t mudf = 3;
-    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table + mudf;
+    const uint32_t cudf = 4 * static_cast<uint32_t>(!fc.clusters.empty() && has_table);
+    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table + mudf + cudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     const String name
@@ -397,7 +398,6 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     }
     else if (engineudf && nopt < (derived_table + cte + table + view + engineudf + 1))
     {
-        SQLRelation rel(name);
         JoinedTableFunction * jtf = tos->mutable_joined_table_function();
         const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
 
@@ -528,6 +528,27 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         }
         jtf->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.emplace_back(rel);
+    }
+    else if (cudf && nopt < (derived_table + cte + table + view + engineudf + tudf + system_table + mudf + cudf + 1))
+    {
+        JoinedTableFunction * jtf = tos->mutable_joined_table_function();
+        TableFunction * tf = jtf->mutable_tfunc();
+        ClusterFunc * cdf = tf->mutable_cluster();
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+
+        cdf->set_cname(static_cast<ClusterFunc_CName>((rg.nextRandomUInt32() % static_cast<uint32_t>(ClusterFunc::CName_MAX)) + 1));
+        cdf->set_ccluster(rg.pickRandomlyFromVector(fc.clusters));
+        cdf->set_cdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
+        cdf->set_ctable("t" + std::to_string(t.tname));
+        if (rg.nextBool())
+        {
+            /// Optional sharding key
+            flatTableColumnPath(0, t, [](const SQLColumn &) { return true; });
+            cdf->set_sharding_key(rg.pickRandomlyFromVector(this->entries).getBottomName());
+            this->entries.clear();
+        }
+        jtf->mutable_table_alias()->set_table(name);
+        addTableRelation(rg, true, name, t);
     }
     else
     {
