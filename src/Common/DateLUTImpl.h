@@ -1199,6 +1199,16 @@ public:
         return lut[index].date + time_offset;
     }
 
+    Time makeTime(UInt8 hour, UInt8 minute, UInt8 second) const
+    {
+        Time time_offset = hour * 3600 + minute * 60 + second;
+
+        if (time_offset >= lut[1].time_at_offset_change())
+            time_offset -= lut[0].amount_of_offset_change();
+
+        return time_offset;
+    }
+
     template <typename DateOrTime>
     const Values & getValues(DateOrTime v) const { return lut[toLUTIndex(v)]; }
 
@@ -1236,7 +1246,7 @@ public:
 
     struct TimeComponents
     {
-        uint8_t hour;
+        uint64_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1284,6 +1294,27 @@ public:
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
             res.time.hour = 23;
+
+        return res;
+    }
+
+    TimeComponents toTimeComponents(Time t) const
+    {
+
+        TimeComponents res;
+
+        if (unlikely(t < 0))
+        {
+            res.second = 0;
+            res.minute = 0;
+            res.hour = 0;
+        }
+        else
+        {
+            res.second = t % 60;
+            res.minute = t / 60 % 60;
+            res.hour = t / 3600;
+        }
 
         return res;
     }

@@ -93,6 +93,8 @@ enum class MagicNumber : uint8_t
     Decimal64   = 20,
     IPv4        = 21,
     Date32      = 22,
+    Time        = 23,
+    Time64      = 24,
 };
 
 MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
@@ -143,6 +145,8 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Date32:       return TypeIndex::Date32;
         case MagicNumber::DateTime:     return TypeIndex::DateTime;
         case MagicNumber::DateTime64:   return TypeIndex::DateTime64;
+        case MagicNumber::Time:         return TypeIndex::Time;
+        case MagicNumber::Time64:       return TypeIndex::Time64;
         case MagicNumber::Enum8:        return TypeIndex::Enum8;
         case MagicNumber::Enum16:       return TypeIndex::Enum16;
         case MagicNumber::Decimal32:    return TypeIndex::Decimal32;
@@ -174,6 +178,8 @@ TypeIndex baseType(TypeIndex type_idx)
         case TypeIndex::Int64:
         case TypeIndex::Decimal64:
         case TypeIndex::DateTime64:
+            return TypeIndex::Int64;
+        case TypeIndex::Time64:
             return TypeIndex::Int64;
         case TypeIndex::UInt8:
         case TypeIndex::Enum8:
@@ -216,6 +222,8 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::IPv4:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::Decimal32:
         case TypeIndex::Int64:
         case TypeIndex::UInt64:

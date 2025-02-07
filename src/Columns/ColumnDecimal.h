@@ -201,6 +201,7 @@ extern template class ColumnDecimal<Decimal64>;
 extern template class ColumnDecimal<Decimal128>;
 extern template class ColumnDecimal<Decimal256>;
 extern template class ColumnDecimal<DateTime64>;
+extern template class ColumnDecimal<Time64>;
 
 
 }

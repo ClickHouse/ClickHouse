@@ -9,6 +9,7 @@
 
 #include <type_traits>
 
+#include "Common/logger_useful.h"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -26,6 +27,8 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/intExp.h>
+#include "Functions/DateTimeTransforms.h"
+
 
 #include <Formats/FormatSettings.h>
 
@@ -1102,6 +1105,66 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
+/** In hhh:mm:ss format, according to specified time zone.
+  * As an exception, also supported parsing of unix timestamp in form of decimal number.
+  */
+template <typename ReturnType = void, bool dt64_mode = false>
+inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if constexpr (!dt64_mode)
+    {
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
+            else
+                return false;
+        }
+    }
+
+    /// Optimistic path, when whole value is in buffer.
+    const char * s = buf.position();
+
+    /// hhh:mm:ss
+    static constexpr auto time_broken_down_length = 9;
+    bool optimistic_path_for_date_time_input = s + time_broken_down_length <= buf.buffer().end();
+
+    if (optimistic_path_for_date_time_input)
+    {
+        if (s[3] < '0' || s[3] > '9')
+        {
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4])
+                    || !isNumericASCII(s[5]) || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                    return ReturnType(false);
+
+                if (!isSymbolIn(s[3], allowed_time_delimiters))
+                    return ReturnType(false);
+            }
+
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+
+            {
+                hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
+                minute = (s[4] - '0') * 10 + (s[5] - '0');
+                second = (s[7] - '0') * 10 + (s[8] - '0');
+            }
+
+            datetime = date_lut.makeTime(hour, minute, second);
+            buf.position() += time_broken_down_length;
+
+            return ReturnType(true);
+        }
+        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+    }
+    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+} /// TODO
+
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
 {
@@ -1200,14 +1263,123 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     return ReturnType(is_ok);
 }
 
+template <typename ReturnType>
+inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    time_t whole = 0;
+    bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
+    bool is_empty = buf.eof();
+
+    if (!is_empty)
+    {
+        if constexpr (throw_exception)
+        {
+            try
+            {
+                readTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+            }
+            catch (const DB::Exception &)
+            {
+                if (buf.eof() || *buf.position() != '.')
+                    throw;
+            }
+        }
+        else
+        {
+            auto ok = readTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+            if (!ok && (buf.eof() || *buf.position() != '.'))
+                return ReturnType(false);
+        }
+    }
+
+    int negative_fraction_multiplier = 1;
+
+    DB::DecimalUtils::DecimalComponents<Time64> components{static_cast<Time64::NativeType>(whole), 0};
+
+    if (!buf.eof() && *buf.position() == '.')
+    {
+        ++buf.position();
+
+        /// Read digits, up to 'scale' positions.
+        for (size_t i = 0; i < scale; ++i)
+        {
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                components.fractional *= 10;
+                components.fractional += *buf.position() - '0';
+                ++buf.position();
+            }
+            else
+            {
+                /// Adjust to scale.
+                components.fractional *= 10;
+            }
+        }
+
+        /// Ignore digits that are out of precision.
+        while (!buf.eof() && isNumericASCII(*buf.position()))
+            ++buf.position();
+
+        /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
+        /// E.g. `hhh:mm:ss.123` is represented internally as timestamp `-<timestamp>.877` when timestamp is negative.
+        /// Thus need to convert <negative_timestamp>.<fractional> to <negative_timestamp+1>.<1-0.<fractional>>
+        /// Also, setting fractional part to be negative when whole is 0 results in wrong value, in this case multiply result by -1.
+        if (!is_negative_timestamp && components.whole < 0 && components.fractional != 0)
+        {
+            const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
+            ++components.whole;
+            components.fractional = scale_multiplier - components.fractional;
+            if (!components.whole)
+            {
+                negative_fraction_multiplier = -1;
+            }
+        }
+    }
+    /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
+    else if (whole >= 10413792000LL)
+    {
+        /// Unix timestamp with subsecond precision, already scaled to integer.
+        /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
+        components.fractional =  components.whole % common::exp10_i32(scale);
+        components.whole = components.whole / common::exp10_i32(scale);
+    }
+
+    bool is_ok = true;
+    if constexpr (std::is_same_v<ReturnType, void>)
+    {
+        time64 = DecimalUtils::decimalFromComponents<Time64>(components, scale) * negative_fraction_multiplier;
+    }
+    else
+    {
+        is_ok = DecimalUtils::tryGetDecimalFromComponents<Time64>(components, scale, time64);
+        if (is_ok)
+            time64 *= negative_fraction_multiplier;
+    }
+
+    return ReturnType(is_ok);
+}
+
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
     readDateTimeTextImpl<void>(datetime, buf, time_zone);
 }
 
+inline void readTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+{
+    readTimeTextImpl<void>(datetime, buf, time_zone);
+}
+
 inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
+    StackTrace trace;
     readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
+}
+
+inline void readTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    readTimeTextImpl<void>(time64, scale, buf, date_lut);
 }
 
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
@@ -1218,6 +1390,11 @@ inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateL
 inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
 {
     return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+}
+
+inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+{
+    return readTimeTextImpl<bool>(time64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)

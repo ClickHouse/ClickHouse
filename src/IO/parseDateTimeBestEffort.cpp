@@ -1,3 +1,4 @@
+#include "Common/Exception.h"
 #include <Common/DateLUTImpl.h>
 #include <Common/StringUtils.h>
 
@@ -802,11 +803,312 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
     return ReturnType(true);
 }
 
+template <typename ReturnType, bool is_us_style, bool strict = false>
+ReturnType parseTime64BestEffortImpl(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, const char * allowed_date_delimiters = nullptr)
+{
+    time_t whole;
+    DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
+
+    if constexpr (std::is_same_v<ReturnType, bool>)
+    {
+        if (!parseDateTimeBestEffortImpl<bool, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters))
+            return false;
+    }
+    else
+    {
+        parseDateTimeBestEffortImpl<ReturnType, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters);
+    }
+
+
+    Time64::NativeType fractional = subsecond.value;
+    if (scale < subsecond.digits)
+    {
+        fractional /= common::exp10_i64(subsecond.digits - scale);
+    }
+    else if (scale > subsecond.digits)
+    {
+        fractional *= common::exp10_i64(scale - subsecond.digits);
+    }
+
+    if constexpr (std::is_same_v<ReturnType, bool>)
+        return DecimalUtils::tryGetDecimalFromComponents<Time64>(whole, fractional, scale, res);
+
+    res = DecimalUtils::decimalFromComponents<Time64>(whole, fractional, scale);
+    return ReturnType(true);
+}
+
+template <typename ReturnType, bool is_us_style, bool strict = false, bool is_64 = false>
+ReturnType parseTimeBestEffortImpl(
+    time_t & res,
+    ReadBuffer & in,
+    const DateLUTImpl & local_time_zone,
+    const DateLUTImpl & utc_time_zone,
+    DateTimeSubsecondPart * fractional,
+    [[maybe_unused]] const char * allowed_time_delimiters = nullptr)
+{
+    // Lambda for error handling
+    auto on_error = [&]<typename... FmtArgs>(int error_code [[maybe_unused]],
+                                             FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
+                                             FmtArgs && ...fmt_args [[maybe_unused]])
+    {
+        if constexpr (std::is_same_v<ReturnType, void>)
+            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+        else
+            return false;
+    };
+
+    // Initialize time components
+    res = 0;
+    UInt32 hour = 0;   // Supports exactly three digits
+    UInt8 minute = 0;
+    UInt8 second = 0;
+
+    bool has_time_zone_offset = false;
+    bool time_zone_offset_negative = false;
+    UInt8 time_zone_offset_hour = 0;
+    UInt8 time_zone_offset_minute = 0;
+
+    // Loop until end of input buffer
+    while (!in.eof())
+    {
+        // Read exactly three digits for hours
+        char digits[4]; // Buffer to accommodate exactly three digits and null terminator
+        size_t num_digits = readDigits(digits, sizeof(digits) - 1, in); // Leave space for null terminator
+
+        if (num_digits != 3)
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected exactly 3 digits for hour component, got {}", num_digits);
+
+        digits[num_digits] = '\0'; // Null-terminate the string
+
+        // Parse hours
+        hour = 0;
+        for (size_t i = 0; i < num_digits; ++i)
+        {
+            if (!isdigit(digits[i]))
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in hour component", digits[i]);
+            hour = hour * 10 + (digits[i] - '0');
+        }
+
+        // Validate hour range
+        if (hour > 999)
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: hour value {} exceeds maximum allowed 999", hour);
+
+        // Check for delimiter after hour
+        if (in.eof())
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected ':' after hour component");
+
+        char c = *in.position();
+
+        if (c == ':')
+        {
+            // Delimiter found, consume it
+            ++in.position();
+        }
+        else
+        {
+            // Unexpected character after hour
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected ':' after hour component, found '{}'", c);
+        }
+
+        // Read minutes
+        num_digits = readDigits(digits, sizeof(digits) - 1, in);
+        if (num_digits != 2)
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected exactly 2 digits for minute component, got {}", num_digits);
+
+        digits[num_digits] = '\0'; // Null-terminate the string
+
+        // Parse minutes
+        minute = 0;
+        for (size_t i = 0; i < num_digits; ++i)
+        {
+            if (!isdigit(digits[i]))
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in minute component", digits[i]);
+            minute = minute * 10 + (digits[i] - '0');
+        }
+
+        // Check for delimiter after minute
+        if (in.eof())
+            break; // End of input
+
+        c = *in.position();
+
+        if (c == ':')
+        {
+            // Delimiter found, consume it
+            ++in.position();
+        }
+        else if (c == '.' || c == ' ' || c == 'T' || c == '\t')
+        {
+            // Delimiters that might indicate fractional seconds or end of time
+            ++in.position();
+        }
+        else if (c == '+' || c == '-')
+        {
+            // Time zone offset detected
+            // Proceed to parse time zone offset
+        }
+        else
+        {
+            // Unexpected character after minute, could be end of time or invalid format
+            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: unexpected character '{}' after minute component", c);
+        }
+
+        // Attempt to read seconds
+        if (!in.eof() && *in.position() == ':')
+        {
+            // Delimiter indicates presence of seconds, parse them
+            ++in.position(); // Consume ':'
+
+            num_digits = readDigits(digits, sizeof(digits) - 1, in);
+            if (num_digits != 2)
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected exactly 2 digits for second component, got {}", num_digits);
+
+            digits[num_digits] = '\0'; // Null-terminate the string
+
+            // Parse seconds
+            second = 0;
+            for (size_t i = 0; i < num_digits; ++i)
+            {
+                if (!isdigit(digits[i]))
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in second component", digits[i]);
+                second = second * 10 + (digits[i] - '0');
+            }
+
+            // Check for fractional seconds or time zone
+            if (!in.eof() && *in.position() == '.')
+            {
+                ++in.position(); // Consume '.'
+
+                num_digits = readDigits(digits, sizeof(digits) - 1, in);
+                if (num_digits == 0)
+                {
+                    // No fractional digits provided, assume 0
+                    if constexpr (strict)
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected fractional digits after '.'");
+                }
+                else
+                {
+                    // Parse fractional seconds
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
+                    // Limit to the precision supported by FractionalType
+                    size_t max_fractional_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), static_cast<size_t>(num_digits));
+                    fractional->digits = max_fractional_digits;
+                    fractional->value = 0;
+                    for (size_t i = 0; i < max_fractional_digits; ++i)
+                    {
+                        if (!isdigit(digits[i]))
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in fractional second component", digits[i]);
+                        fractional->value = fractional->value * 10 + (digits[i] - '0');
+                    }
+                    // Note: Extra digits beyond precision are ignored
+                }
+            }
+        }
+        else if (!in.eof() && (*in.position() == '.' || *in.position() == ' ' || *in.position() == 'T' || *in.position() == '\t'))
+        {
+            // Handle fractional seconds without seconds (e.g., HHH:MM:SS.f)
+            if (*in.position() == '.')
+            {
+                ++in.position(); // Consume '.'
+
+                num_digits = readDigits(digits, sizeof(digits) - 1, in);
+                if (num_digits == 0)
+                {
+                    // No fractional digits provided, assume 0
+                    if constexpr (strict)
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected fractional digits after '.'");
+                }
+                else
+                {
+                    // Parse fractional seconds
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
+                    // Limit to the precision supported by FractionalType
+                    size_t max_fractional_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), static_cast<size_t>(num_digits));
+                    fractional->digits = max_fractional_digits;
+                    fractional->value = 0;
+                    for (size_t i = 0; i < max_fractional_digits; ++i)
+                    {
+                        if (!isdigit(digits[i]))
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in fractional second component", digits[i]);
+                        fractional->value = fractional->value * 10 + (digits[i] - '0');
+                    }
+                    // Note: Extra digits beyond precision are ignored
+                }
+            }
+            else
+            {
+                // Consume other delimiters
+                ++in.position();
+            }
+        }
+
+        // Check for time zone offset
+        if (!in.eof() && (*in.position() == '+' || *in.position() == '-'))
+        {
+            char tz_sign = *in.position();
+            time_zone_offset_negative = (tz_sign == '-');
+            ++in.position(); // Consume sign
+
+            // Read time zone offset hours
+            num_digits = readDigits(digits, sizeof(digits) - 1, in);
+            if (num_digits < 1 || num_digits > 2)
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected 1 or 2 digits for time zone offset hour component, got {}", num_digits);
+
+            time_zone_offset_hour = 0;
+            for (size_t i = 0; i < num_digits; ++i)
+            {
+                if (!isdigit(digits[i]))
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in time zone offset hour component", digits[i]);
+                time_zone_offset_hour = time_zone_offset_hour * 10 + (digits[i] - '0');
+            }
+
+            // Check for ':' in time zone offset
+            if (!in.eof() && *in.position() == ':')
+            {
+                ++in.position(); // Consume ':'
+
+                // Read time zone offset minutes
+                num_digits = readDigits(digits, sizeof(digits) - 1, in);
+                if (num_digits < 1 || num_digits > 2)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: expected 1 or 2 digits for time zone offset minute component, got {}", num_digits);
+
+                time_zone_offset_minute = 0;
+                for (size_t i = 0; i < num_digits; ++i)
+                {
+                    if (!isdigit(digits[i]))
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read Time: non-digit character '{}' in time zone offset minute component", digits[i]);
+                    time_zone_offset_minute = time_zone_offset_minute * 10 + (digits[i] - '0');
+                }
+            }
+        }
+
+        // Adjust for time zone offset
+        if (has_time_zone_offset)
+        {
+            // Convert to UTC based on the offset
+            res = utc_time_zone.makeDateTime(1970, 1, 1, hour, minute, second); // Date is arbitrary since we're only handling time
+            res += time_zone_offset_negative ? (time_zone_offset_hour * 3600 + time_zone_offset_minute * 60) :
+                                               -(time_zone_offset_hour * 3600 + time_zone_offset_minute * 60);
+        }
+        else
+        {
+            // Use local time zone
+            res = local_time_zone.makeDateTime(1970, 1, 1, hour, minute, second); // Date is arbitrary since we're only handling time
+        }
+
+        return ReturnType(true);
+    }
+}
 }
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr);
+}
+
+void parseTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    parseTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
@@ -837,6 +1139,21 @@ void parseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     return parseDateTime64BestEffortImpl<bool, false>(res, scale, in, local_time_zone, utc_time_zone);
+}
+
+void parseTime64BestEffortUS(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    parseTime64BestEffortImpl<void, true>(res, scale, in, local_time_zone, utc_time_zone);
+}
+
+bool tryParseTime64BestEffort(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseTime64BestEffortImpl<bool, false>(res, scale, in, local_time_zone, utc_time_zone);
+}
+
+void parseTime64BestEffort(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    parseTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 bool tryParseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

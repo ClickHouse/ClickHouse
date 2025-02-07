@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeImpl>;
+using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeTime, ToTimeImpl>;
 
 REGISTER_FUNCTION(ToTime)
 {

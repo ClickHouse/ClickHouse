@@ -2,13 +2,16 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/TransformTime64.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
@@ -122,6 +125,26 @@ public:
             {
                 return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), *date_lut)
                         == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            }
+            if (checkAndGetDataType<DataTypeTime>(type_ptr))
+            {
+                return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), *date_lut)
+                        == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            }
+            if (checkAndGetDataType<DataTypeTime64>(type_ptr))
+            {
+                const auto & left_time = left.safeGet<Time64>();
+                TransformTime64<typename Transform::FactorTransform> transformer_left(left_time.getScale());
+
+                const auto & right_time = right.safeGet<Time64>();
+                TransformTime64<typename Transform::FactorTransform> transformer_right(right_time.getScale());
+
+                return transformer_left.execute(left_time.getValue(), *date_lut)
+                        == transformer_right.execute(right_time.getValue(), *date_lut)
                     ? is_monotonic
                     : is_not_monotonic;
             }

@@ -1631,14 +1631,14 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 **参照**
 - [date_trunc](#date_trunc)
 
-## toTime
+## toTimeWithFixedDate
 
 時間を保持しながら、日時を特定の固定日付に変換します。
 
 **構文**
 
 ```sql
-toTime(date[,timezone])
+toTimeWithFixedDate(date[,timezone])
 ```
 
 **引数**
