@@ -237,6 +237,11 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings(this->clusters, true, "clusters", "cluster");
 }
 
+std::string FuzzConfig::getConnectionHostAndPort() const
+{
+    return cb->getConnectionHostAndPortForFuzzing();
+}
+
 void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const
 {
     String buf;

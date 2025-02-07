@@ -216,7 +216,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         rfunc->set_user(sc.user);
         rfunc->set_password(sc.password);
     }
-    else if ((table_engine && t.isMySQLEngine()) || (!table_engine && t.hasMySQLPeer()))
+    else if ((table_engine && t.isMySQLEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasMySQLPeer()))
     {
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
@@ -227,7 +227,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         mfunc->set_user(sc.user);
         mfunc->set_password(sc.password);
     }
-    else if ((table_engine && t.isPostgreSQLEngine()) || (!table_engine && t.hasPostgreSQLPeer()))
+    else if ((table_engine && t.isPostgreSQLEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasPostgreSQLPeer()))
     {
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
@@ -239,14 +239,14 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         pfunc->set_password(sc.password);
         pfunc->set_rschema("test");
     }
-    else if ((table_engine && t.isSQLiteEngine()) || (!table_engine && t.hasSQLitePeer()))
+    else if ((table_engine && t.isSQLiteEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasSQLitePeer()))
     {
         SQLiteFunc * sfunc = tfunc->mutable_sqite();
 
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
-    else if (table_engine && t.isS3Engine())
+    else if (table_engine && t.isS3Engine() && rg.nextSmallNumber() < 7)
     {
         String buf;
         bool first = true;
@@ -281,23 +281,28 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     }
     else
     {
-        chassert(0);
+        RemoteFunc * rfunc = tfunc->mutable_remote();
+
+        chassert(table_engine);
+        rfunc->set_address(fc.getConnectionHostAndPort());
+        rfunc->set_rdatabase(t.db ? ("d" + std::to_string(t.db->dname)) : "default");
+        rfunc->set_rtable("t" + std::to_string(t.tname));
     }
 }
 
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
+    const auto has_table_lambda = [&](const SQLTable & tt)
+    {
+        return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
+            && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
+            && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer());
+    };
+    const bool has_table = collectionHas<SQLTable>(has_table_lambda);
+
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
     const uint32_t cte = 10 * static_cast<uint32_t>(!this->ctes.empty());
-    const uint32_t table = (40
-                            * static_cast<uint32_t>(collectionHas<SQLTable>(
-                                [&](const SQLTable & tt)
-                                {
-                                    return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
-                                        && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
-                                        && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer());
-                                })))
-        + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
+    const uint32_t table = (40 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
     const uint32_t view = 20
         * static_cast<uint32_t>(
                               this->peer_query != PeerQuery::ClickHouseOnly
@@ -307,13 +312,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
                                       return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
                                           && (vv.is_deterministic || this->allow_not_deterministic);
                                   }));
-    const uint32_t engineudf = 5
-        * static_cast<uint32_t>(this->allow_engine_udf
-                                && collectionHas<SQLTable>(
-                                    [&](const SQLTable & tt)
-                                    {
-                                        return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine();
-                                    }));
+    const uint32_t engineudf = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t tudf = 5;
     const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
     const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table;
@@ -359,13 +358,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     {
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-            [&](const SQLTable & tt)
-            {
-                return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
-                    && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
-                    && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer());
-            }));
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
 
         if (t.db)
         {
@@ -405,9 +398,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     {
         SQLRelation rel(name);
         JoinedTableFunction * jtf = tos->mutable_joined_table_function();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-            [&](const SQLTable & tt)
-            { return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine(); }));
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
 
         setTableRemote(rg, true, t, jtf->mutable_tfunc());
         addTableRelation(rg, true, name, t);

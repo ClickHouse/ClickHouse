@@ -124,6 +124,8 @@ private:
 public:
     void loadServerConfigurations();
 
+    std::string getConnectionHostAndPort() const;
+
     void loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const;
 
     bool tableHasPartitions(bool detached, const String & database, const String & table) const;

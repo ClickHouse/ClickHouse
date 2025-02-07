@@ -1546,8 +1546,9 @@ enum SQLTableFunc {
     TFmysql = 4;
     TFpostgresql = 5;
     TFremote = 6;
-    TFS3 = 7;
-    TFsqlite = 8;
+    TFremoteSecure = 7;
+    TFS3 = 8;
+    TFsqlite = 9;
 }
 
 message Database {

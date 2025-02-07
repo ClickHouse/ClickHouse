@@ -1271,6 +1271,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFremote, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFremoteSecure, 0, 0, 1, 6),
     CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),
     CHFunction(SQLTableFunc::TFpostgresql, 0, 0, 5, 7),
     CHFunction(SQLTableFunc::TFsqlite, 0, 0, 2, 2),
