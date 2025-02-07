@@ -260,7 +260,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         sfunc->set_password(sc.password);
         sfunc->set_format(t.file_format);
         flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
-        for (const auto & entry : remote_entries)
+        for (const auto & entry : this->remote_entries)
         {
             SQLType * tp = entry.getBottomType();
 
@@ -272,7 +272,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
                 entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
         }
-        remote_entries.clear();
+        this->remote_entries.clear();
         sfunc->set_structure(buf);
         if (!t.file_comp.empty())
         {
@@ -543,9 +543,9 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         if (rg.nextBool())
         {
             /// Optional sharding key
-            flatTableColumnPath(0, t, [](const SQLColumn &) { return true; });
-            cdf->set_sharding_key(rg.pickRandomlyFromVector(this->entries).getBottomName());
-            this->entries.clear();
+            flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+            cdf->set_sharding_key(rg.pickRandomlyFromVector(this->remote_entries).getBottomName());
+            this->remote_entries.clear();
         }
         jtf->mutable_table_alias()->set_table(name);
         addTableRelation(rg, true, name, t);
