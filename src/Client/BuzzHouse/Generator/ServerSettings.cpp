@@ -713,6 +713,14 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          false)},
     {"output_format_orc_string_as_string", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parallel_formatting", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"output_format_parquet_bloom_filter_bits_per_value",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.7, 0.0, 100.0)); }, {}, false)},
+    {"output_format_parquet_bloom_filter_flush_threshold_bytes",
+     CHSetting(
+         [](RandomGenerator & rg)
+         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
+         {},
+         false)},
     {"output_format_parquet_compliant_nested_types", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_compression_method",
      CHSetting(
@@ -736,6 +744,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"output_format_parquet_write_bloom_filter", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_write_page_index", CHSetting(trueOrFalse, {}, false)},
     {"output_format_pretty_color",
      CHSetting(
