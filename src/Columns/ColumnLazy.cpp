@@ -365,7 +365,7 @@ void ColumnLazy::getExtremes(Field &, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getExtremes is not supported for {}", getName());
 }
 
-void ColumnLazy::forEachSubcolumnRecursively(RecursiveMutableColumnCallback)
+void ColumnLazy::forEachSubcolumnRecursively(RecursiveColumnCallback) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method forEachSubcolumnRecursively is not supported for {}", getName());
 }
