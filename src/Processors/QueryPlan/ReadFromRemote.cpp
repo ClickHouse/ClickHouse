@@ -498,6 +498,10 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (!use_delayed_remote_source)
         {
             const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            if (!replicated_storage)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
+            }
             const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
             const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
 
