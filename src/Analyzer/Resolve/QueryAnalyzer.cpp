@@ -587,7 +587,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
+        auto query_tree = node->clone();
+
+        QueryTreePassManager query_tree_pass_manager(subquery_context);
+        addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
+        query_tree_pass_manager.run(query_tree);
+
+        if (auto storage = subquery_context->getViewSource())
+            replaceStorageInQueryTree(query_tree, context, storage);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
         if (only_analyze)
         {
