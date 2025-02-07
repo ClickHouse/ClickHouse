@@ -938,6 +938,18 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            /// Check if there are projections that have this column in the primary key.
+            /// We should rebuild such projections.
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+                if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                {
+                    for (const auto & column : projection.required_columns)
+                        dependencies.emplace(column, ColumnDependency::PROJECTION);
+                    materialized_projections.insert(projection.name);
+                }
+            }
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
@@ -1032,7 +1044,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_indices.insert(index.name);
     }
 
-    NameSet read_columns_set(read_columns.begin(), read_columns.end());
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
@@ -1057,13 +1068,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             projection_cols.begin(),
             projection_cols.end(),
             [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
-
-        /// Check if primary key columns were modified.
-        const auto & primary_key_columns = projection.metadata->getPrimaryKeyColumns();
-        changed |= std::any_of(
-            primary_key_columns.begin(),
-            primary_key_columns.end(),
-            [&](const auto & col) { return read_columns_set.contains(col); });
 
         if (changed)
             materialized_projections.insert(projection.name);
