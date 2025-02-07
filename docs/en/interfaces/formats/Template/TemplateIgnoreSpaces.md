@@ -17,7 +17,7 @@ Similar to [`Template`], but skips whitespace characters between delimiters and 
 However, if format strings contain whitespace characters, these characters will be expected in the input stream. 
 Also allows specifying empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. 
 Such placeholders are used only for skipping whitespace characters.
-It’s possible to read `JSON` using this format if the values of columns have the same order in all rows.
+It's possible to read `JSON` using this format if the values of columns have the same order in all rows.
 
 :::note
 This format is suitable only for input.

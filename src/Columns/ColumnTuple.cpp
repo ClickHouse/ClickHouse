@@ -728,20 +728,36 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnTuple::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnTuple::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     for (auto & column : columns)
+    {
+        callback(*column);
+        column->forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+{
+    for (const auto & column : columns)
+        callback(column);
+}
+
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    for (const auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
 }
+
 
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {

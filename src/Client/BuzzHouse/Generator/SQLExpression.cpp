@@ -382,22 +382,18 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             BinaryExpr * bexpr = cexpr->mutable_binary_expr();
 
-            this->depth++;
-            if (rg.nextSmallNumber() < 5)
+            if (rg.nextBool())
             {
                 bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
-
-                this->generatePredicate(rg, bexpr->mutable_lhs());
-                this->width++;
-                this->generatePredicate(rg, bexpr->mutable_rhs());
             }
             else
             {
                 bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator_MAX)) + 1));
-                this->generateExpression(rg, bexpr->mutable_lhs());
-                this->width++;
-                this->generateExpression(rg, bexpr->mutable_rhs());
             }
+            this->depth++;
+            this->generateExpression(rg, bexpr->mutable_lhs());
+            this->width++;
+            this->generateExpression(rg, bexpr->mutable_rhs());
             this->width--;
             this->depth--;
         }
@@ -546,9 +542,10 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
 void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
-    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 62);
+    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 64);
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
-    const uint32_t nfuncs = static_cast<uint32_t>((nallow_funcs ? funcs_size : 0) + (allow_aggr ? CHAggrs.size() : 0));
+    const uint32_t nfuncs = static_cast<uint32_t>(
+        (nallow_funcs ? funcs_size : 0) + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - 1)) : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
 
@@ -903,7 +900,14 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
         this->depth++;
-        bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % 7) + 10));
+        if (rg.nextSmallNumber() < 9)
+        {
+            bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % 6) + 13));
+        }
+        else
+        {
+            bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator_MAX)) + 1));
+        }
         this->generateExpression(rg, bexpr->mutable_lhs());
         this->width++;
         this->generateExpression(rg, bexpr->mutable_rhs());

@@ -13,6 +13,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
