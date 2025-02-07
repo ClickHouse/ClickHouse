@@ -143,6 +143,8 @@ public:
 
     void get(size_t n, Field & res) const override;
 
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+
     bool isDefaultAt(size_t n) const override
     {
         return variant_column_ptr->isDefaultAt(n);
@@ -313,7 +315,7 @@ public:
 
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
@@ -321,10 +323,16 @@ public:
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+        variant_column->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        callback(*variant_column);
         variant_column->forEachSubcolumnRecursively(callback);
     }
 

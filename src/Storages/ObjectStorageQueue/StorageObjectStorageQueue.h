@@ -3,7 +3,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -79,15 +79,18 @@ private:
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_backoff_ms TSA_GUARDED_BY(mutex);
+    UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
+    bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
 
+    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
     std::atomic<bool> stream_cancelled{false};
     UInt64 reschedule_processing_interval_ms;
 
@@ -129,6 +132,7 @@ private:
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
+        size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
         const std::string & exception_message = {}) const;
 };

@@ -14,6 +14,9 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueProcessedFiles;
     extern const Event ObjectStorageQueueFailedFiles;
+    extern const Event ObjectStorageQueueTrySetProcessingRequests;
+    extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
+    extern const Event ObjectStorageQueueTrySetProcessingFailed;
 };
 
 namespace DB
@@ -46,6 +49,8 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
     processing_start_time = now();
+    processing_end_time = {};
+    processed_rows = 0;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
@@ -121,11 +126,13 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     const std::string & failed_node_path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<size_t> & metadata_ref_count_,
     LoggerPtr log_)
     : path(path_)
     , node_name(getNodeName(path_))
     , file_status(file_status_)
     , max_loading_retries(max_loading_retries_)
+    , metadata_ref_count(metadata_ref_count_)
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -241,6 +248,8 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     if (!processing_lock.try_lock())
         return {};
 
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
+
     auto [success, file_state] = setProcessingImpl();
     if (success)
     {
@@ -256,7 +265,53 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
              path, file_state, success ? "" : "not ",
              processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
 
+    if (success)
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
+    else
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
+
     return success;
+}
+
+std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
+ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
+{
+    if (metadata_ref_count.load() > 1)
+    {
+        std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+        if (!processing_lock.try_lock())
+        {
+            /// This is possible in case on the same server
+            /// there are more than one S3(Azure)Queue table processing the same keeper path.
+            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+            return std::nullopt;
+        }
+
+        auto state = file_status->state.load();
+        if (state == FileStatus::State::Processing
+            || state == FileStatus::State::Processed
+            || (state == FileStatus::State::Failed
+                && file_status->retries
+                && file_status->retries >= max_loading_retries))
+        {
+            LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                    path, state, file_status->retries, max_loading_retries);
+
+            /// This is possible in case on the same server
+            /// there are more than one S3(Azure)Queue table processing the same keeper path.
+            LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+            return std::nullopt;
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
+    return prepareProcessingRequestsImpl(requests);
+}
+
+void ObjectStorageQueueIFileMetadata::finalizeProcessing(int processing_id_version_)
+{
+    processing_id_version = processing_id_version_;
+    file_status->onProcessing();
 }
 
 void ObjectStorageQueueIFileMetadata::resetProcessing()
@@ -292,15 +347,15 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         return;
     }
 
-    if (responses[0]->error == Coordination::Error::ZBADVERSION)
+    if (responses[0]->error == Coordination::Error::ZBADVERSION
+        || responses[0]->error == Coordination::Error::ZNONODE
+        || responses[1]->error == Coordination::Error::ZNONODE)
     {
-        LOG_WARNING(
+        LOG_TRACE(
             log, "Processing node no longer exists ({}) "
-            "while setting file as non-retriable failed. "
-            "This could be as a result of expired keeper session. "
-            "Cannot set file as failed, will retry.",
+            "while resetting processing state. "
+            "This could be as a result of expired keeper session. ",
             processing_node_path);
-        chassert(false);
         return;
     }
 
@@ -401,7 +456,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 {
     if (!processing_id_version.has_value())
     {
-        /// Processing was not started.
+        chassert(false);
         return;
     }
 

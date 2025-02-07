@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Chunk.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/SortCursor.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>

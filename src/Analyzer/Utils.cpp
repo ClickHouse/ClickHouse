@@ -211,8 +211,7 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     bool resolve)
 {
     std::string cast_type = type->getName();
-    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
-    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type), std::make_shared<DataTypeString>());
 
     std::string cast_function_name = "_CAST";
     auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
@@ -230,7 +229,7 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
 {
-    const auto * constant_node = condition_node->as<ConstantNode>();
+    const auto * constant_node = condition_node ? condition_node->as<ConstantNode>() : nullptr;
     if (!constant_node)
         return {};
 
@@ -820,8 +819,7 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
 
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
-    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
 
     auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
     QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
@@ -975,6 +973,105 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNo
     auto columns_to_select_list = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
     NamesAndTypes columns_to_select(columns_to_select_list.begin(), columns_to_select_list.end());
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
+}
+
+bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)
+{
+    QueryTreeNodes stack = { node };
+    while (!stack.empty())
+    {
+        auto current = stack.back();
+        stack.pop_back();
+
+        switch (current->getNodeType())
+        {
+            case QueryTreeNodeType::CONSTANT:
+                break;
+            case QueryTreeNodeType::COLUMN:
+            {
+                auto * column_node = current->as<ColumnNode>();
+                auto source = column_node->getColumnSourceOrNull();
+                if (source && table_expression && !source->isEqual(*table_expression))
+                    return true;
+                break;
+            }
+            default:
+            {
+                for (const auto & child : current->getChildren())
+                {
+                    if (child)
+                        stack.push_back(child);
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    auto * function = expression->as<FunctionNode>();
+    if (!function)
+        return;
+
+    if (function->getFunctionName() != "and")
+    {
+        if (hasUnknownColumn(expression, table_expression))
+            expression = nullptr;
+        return;
+    }
+
+    QueryTreeNodesDeque conjunctions;
+    QueryTreeNodesDeque processing{ expression };
+
+    while (!processing.empty())
+    {
+        auto node = std::move(processing.front());
+        processing.pop_front();
+
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            if (function_node->getFunctionName() == "and")
+                std::ranges::copy(
+                    function_node->getArguments(),
+                    std::back_inserter(processing)
+                );
+            else
+                conjunctions.push_back(node);
+        }
+        else
+        {
+            conjunctions.push_back(node);
+        }
+    }
+
+    std::swap(processing, conjunctions);
+
+    for (const auto & node : processing)
+    {
+        if (!hasUnknownColumn(node, table_expression))
+            conjunctions.push_back(node);
+    }
+
+    if (conjunctions.empty())
+    {
+        expression = {};
+        return;
+    }
+    if (conjunctions.size() == 1)
+    {
+        expression = conjunctions[0];
+        return;
+    }
+
+    function->getArguments().getNodes().clear();
+    std::ranges::move(conjunctions, std::back_inserter(function->getArguments().getNodes()));
+
+    const auto function_impl = FunctionFactory::instance().get("and", context);
+    function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
 }
 
 }
