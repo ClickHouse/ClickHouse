@@ -1256,6 +1256,9 @@ public:
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
+    using StoragePolicyCreator = std::function<StoragePolicyPtr(const StoragePoliciesMap & storage_policies_map)>;
+    StoragePolicyPtr getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const;
+
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
 
