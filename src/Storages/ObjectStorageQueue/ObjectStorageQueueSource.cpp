@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueReadBytes;
     extern const Event ObjectStorageQueueExceptionsDuringRead;
     extern const Event ObjectStorageQueueExceptionsDuringInsert;
+    extern const Event ObjectStorageQueueCancelledFiles;
 }
 
 namespace DB
@@ -972,6 +973,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         {
             case FileState::Processed:
             {
+                chassert(exception_during_read.empty());
                 if (insert_succeeded)
                 {
                     if (is_ordered_mode)
@@ -1009,6 +1011,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             case FileState::Cancelled: [[fallthrough]];
             case FileState::Processing:
             {
+                chassert(exception_during_read.empty());
                 if (insert_succeeded)
                 {
                     throw Exception(
@@ -1017,7 +1020,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         file_state, file_metadata->getPath());
                 }
 
-                if (file_state != FileState::Cancelled)
+                if (file_state == FileState::Cancelled)
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCancelledFiles);
+                else
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
 
                 file_metadata->prepareFailedRequests(
