@@ -799,7 +799,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         FileMetadataPtr file_metadata;
         if (reader)
         {
-            chassert(processed_files.back().state == FileState::Processing);
+            chassert(processed_files.back().state == FileState::Processing, toString(processed_files.back().state));
             chassert(
                 processed_files.back().metadata->getPath() == reader.getObjectInfo()->getPath(),
                 fmt::format("Mismatch {} vs {}", processed_files.back().metadata->getPath(),
@@ -895,6 +895,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             {
                 /// Continue processing.
                 /// This failed file will be committed along with processed files.
+                reader = {};
                 continue;
             }
         }
