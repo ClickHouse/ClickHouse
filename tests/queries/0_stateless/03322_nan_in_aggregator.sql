@@ -1,4 +1,4 @@
-SET send_logs_level='error';
+SET send_logs_level='fatal';
 
 SELECT uniqExact(CAST(number, 'String'))
 FROM numbers(1000.)
