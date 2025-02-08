@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>

@@ -32,7 +32,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -1638,7 +1637,7 @@ protected:
     mutable std::mutex outdated_data_parts_mutex;
     mutable std::condition_variable outdated_data_parts_cv;
 
-    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
+    BackgroundSchedulePoolTaskHolder outdated_data_parts_loading_task;
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
@@ -1654,7 +1653,7 @@ protected:
         MutableDataPartPtr part;
     };
 
-    BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
+    BackgroundSchedulePoolTaskHolder unexpected_data_parts_loading_task;
     std::vector<UnexpectedPartLoadState> unexpected_data_parts;
     bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
 

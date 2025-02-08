@@ -6,7 +6,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -54,6 +53,7 @@ from report import (
     JOB_STARTED_TEST_NAME,
     OK,
     PENDING,
+    SKIPPED,
     SUCCESS,
     BuildResult,
     JobReport,
@@ -64,7 +64,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,too-many-branches
 
 
 def get_check_name(check_name: str, batch: int, num_batches: int) -> str:
@@ -673,17 +673,10 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             except Exception as e:
                 raise e
     print("Going to update overall CI report")
-    for retry in range(2):
-        try:
-            set_status_comment(commit, pr_info)
-            break
-        except Exception as e:
-            print(
-                f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
-            )
-            time.sleep(1)
-    else:
-        print("ERROR: All retry attempts failed.")
+    try:
+        set_status_comment(commit, pr_info)
+    except Exception as e:
+        print(f"WARNING: Failed to update CI Running status, ex [{e}]")
     print("... CI report update - done")
 
 
@@ -1413,6 +1406,7 @@ def main() -> int:
             assert False, "BUG! Not supported scenario"
 
     ### RUN action for migration to praktika: start
+    # temporary mode for migration to new ci workflow
     elif args.run_from_praktika:
         check_name = os.environ["JOB_NAME"]
         check_name = BUILD_NAMES_MAPPING.get(check_name, check_name)
@@ -1439,24 +1433,29 @@ def main() -> int:
             gh = GitHub(get_best_robot_token(), per_page=100)
             commit = get_commit(gh, pr_info.sha)
             if not job_report.dummy:
-                check_url = upload_result_helper.upload_results(
-                    s3,
-                    pr_info.number,
-                    pr_info.sha,
-                    pr_info.head_ref,
-                    job_report.test_results,
-                    job_report.additional_files,
-                    check_name,  # TODO: make with batch
-                )
-                post_commit_status(
-                    commit,
-                    job_report.status,
-                    check_url,
-                    format_description(job_report.description),
-                    check_name,  # TODO: make with batch
-                    pr_info,
-                    dump_to_file=True,
-                )
+                if (
+                    job_report.status not in (SUCCESS, SKIPPED)
+                    and not CI.is_build_job(check_name)
+                ) or "style" in check_name.lower():
+                    # create and post statuses only for not success jobs or for style check as it required for sync
+                    check_url = upload_result_helper.upload_results(
+                        s3,
+                        pr_info.number,
+                        pr_info.sha,
+                        pr_info.head_ref,
+                        job_report.test_results,
+                        job_report.additional_files,
+                        check_name,
+                    )
+                    post_commit_status(
+                        commit,
+                        job_report.status,
+                        check_url,
+                        format_description(job_report.description),
+                        check_name,
+                        pr_info,
+                        dump_to_file=True,
+                    )
             else:
                 print("ERROR: Job was killed - generate evidence")
                 job_report.duration = (
@@ -1486,15 +1485,15 @@ def main() -> int:
                         job_report.additional_files,
                         check_name,  # TODO: make with batch,
                     )
-                post_commit_status(
-                    commit,
-                    ERROR,
-                    check_url,
-                    "Error: " + error_description,
-                    check_name,  # TODO: make with batch
-                    pr_info,
-                    dump_to_file=True,
-                )
+                    post_commit_status(
+                        commit,
+                        ERROR,
+                        check_url,
+                        "Error: " + error_description,
+                        check_name,  # TODO: make with batch
+                        pr_info,
+                        dump_to_file=True,
+                    )
         except Exception:
             traceback.print_exc()
             print("Post failed")

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
