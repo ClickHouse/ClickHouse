@@ -32,7 +32,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
