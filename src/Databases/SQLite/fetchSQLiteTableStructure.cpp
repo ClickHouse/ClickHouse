@@ -31,13 +31,18 @@ static DataTypePtr convertSQLiteDataType(String type)
     DataTypePtr res;
     type = Poco::toLower(type);
 
+    /// The SQLite columns get the INTEGER affinity if the type name contains "int". This means variable-length integers up to 8 bytes. The bit width is not really enforced even
+    /// in a STRICT table, so in general we should treat these columns as Int64. Besides that, we allow some common fixed-width int specifiers for applications to select a 
+    /// particular width, even though it's not enforced in any way by SQLite itself.
+    /// Docs: https://www.sqlite.org/datatype3.html
+    /// The most insane quote from there: Note that a declared type of "FLOATING POINT" would give INTEGER affinity, not REAL affinity, due to the "INT" at the end of "POINT". 
     if (type == "tinyint")
         res = std::make_shared<DataTypeInt8>();
-    else if (type == "smallint")
+    else if (type == "smallint" || type == "int2")
         res = std::make_shared<DataTypeInt16>();
-    else if ((type.starts_with("int") && type != "int8") || type == "mediumint")
+    else if (type == "mediumint" || type == "int4")
         res = std::make_shared<DataTypeInt32>();
-    else if (type == "bigint" || type == "int8")
+    else if (type.contains("int"))
         res = std::make_shared<DataTypeInt64>();
     else if (type == "float")
         res = std::make_shared<DataTypeFloat32>();
