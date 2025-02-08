@@ -324,9 +324,8 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
                         from_zk.partition_key, parsed_zk_partition_key, partition_key);
 }
 
-void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context, bool is_attach) const
+void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
-
     checkImmutableFieldsEquals(from_zk, columns, context);
 
     String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context, false).definition_ast);
@@ -347,7 +346,8 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
     }
 
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context, true);
-    String parsed_zk_ttl_table = formattedAST(TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, is_attach).definition_ast);
+    String parsed_zk_ttl_table = formattedAST(
+        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in TTL. "
