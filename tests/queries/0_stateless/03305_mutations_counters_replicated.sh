@@ -57,6 +57,7 @@ $CLICKHOUSE_CLIENT --query "
 
     $counters_query;
     KILL MUTATION WHERE mutation_id = '0000000002' SYNC FORMAT Null;
+    SYSTEM SYNC REPLICA t_mutations_counters_2 LIGHTWEIGHT;
     $counters_query;
 
     DROP TABLE t_mutations_counters_2;
