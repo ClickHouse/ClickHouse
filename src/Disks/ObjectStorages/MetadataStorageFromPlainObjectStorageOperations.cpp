@@ -105,7 +105,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Undoing '{}' directory creation", path);
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
     const auto base_path = path.parent_path();
     if (path_map.removePathIfExists(base_path))
     {
@@ -228,6 +228,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 {
     if (write_finalized)
     {
+        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
         {
             std::lock_guard lock(path_map.mutex);
             auto & map = path_map.map;
@@ -286,6 +287,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     if (!remove_attempted)
         return;
 
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
