@@ -212,7 +212,8 @@ public:
         const boost::container::flat_set<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
         const String & forwarded_address,
-        const String & custom_quota_key) const;
+        const String & custom_quota_key,
+        UInt64 normalized_query_hash) const;
 
     std::shared_ptr<const EnabledQuota> getAuthenticationQuota(
         const String & user_name,

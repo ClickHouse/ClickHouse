@@ -683,7 +683,7 @@ public:
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
-    std::shared_ptr<const EnabledQuota> getQuota() const;
+    std::shared_ptr<const EnabledQuota> getQuota(UInt64 normalized_query_hash) const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
     /// Resource management related

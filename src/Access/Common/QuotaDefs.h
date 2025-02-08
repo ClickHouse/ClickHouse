@@ -54,6 +54,7 @@ enum class QuotaKeyType : uint8_t
     CLIENT_KEY, /// Client should explicitly supply a key to use.
     CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
     CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
+    NORMALIZED_QUERY, /// Quota is counted for similar queries.
 
     MAX
 };

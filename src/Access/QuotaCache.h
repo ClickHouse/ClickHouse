@@ -29,6 +29,7 @@ public:
         const Poco::Net::IPAddress & address,
         const String & forwarded_address,
         const String & client_key,
+        UInt64 normalized_query_hash,
         bool throw_if_client_key_empty);
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;

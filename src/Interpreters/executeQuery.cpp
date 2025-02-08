@@ -711,7 +711,7 @@ void logExceptionBeforeStart(
     auto query_end_time = std::chrono::system_clock::now();
 
     /// Exception before the query execution.
-    if (auto quota = context->getQuota())
+    if (auto quota = context->getQuota(normalized_query_hash))
         quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
@@ -1271,7 +1271,7 @@ static BlockIO executeQueryImpl(
                         "Deduplication in dependent materialized view cannot work together with async inserts. "\
                         "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
-            quota = context->getQuota();
+            quota = context->getQuota(normalized_query_hash);
             if (quota)
             {
                 quota_checked = true;
@@ -1404,7 +1404,7 @@ static BlockIO executeQueryImpl(
 
                 if (!interpreter->ignoreQuota() && !quota_checked)
                 {
-                    quota = context->getQuota();
+                    quota = context->getQuota(normalized_query_hash);
                     if (quota)
                     {
                         if (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())

@@ -32,7 +32,7 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
-    const auto & params = enabled.params;
+    const EnabledQuota::Params & params = enabled.params;
     switch (quota->key_type)
     {
         case QuotaKeyType::NONE:
@@ -75,6 +75,10 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
             if (!params.client_key.empty())
                 return params.client_key;
             return params.client_address.toString();
+        }
+        case QuotaKeyType::NORMALIZED_QUERY:
+        {
+            return params.normalized_query_hash ? toString(params.normalized_query_hash) : "";
         }
         case QuotaKeyType::MAX: break;
     }
@@ -178,6 +182,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     const Poco::Net::IPAddress & client_address,
     const String & forwarded_address,
     const String & client_key,
+    UInt64 normalized_query_hash,
     bool throw_if_client_key_empty)
 {
     std::lock_guard lock{mutex};
@@ -190,6 +195,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     params.client_address = client_address;
     params.forwarded_address = forwarded_address;
     params.client_key = client_key;
+    params.normalized_query_hash = normalized_query_hash;
     auto it = enabled_quotas.find(params);
     if (it != enabled_quotas.end())
     {

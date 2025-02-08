@@ -512,6 +512,8 @@ namespace
             quota->key_type = QuotaKeyType::IP_ADDRESS;
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
             quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
+        else if (config.has(quota_config + ".normalized_query"))
+            quota->key_type = QuotaKeyType::NORMALIZED_QUERY;
         else if (config.has(quota_config + ".keyed"))
             quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
         else

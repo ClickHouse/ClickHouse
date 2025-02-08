@@ -815,9 +815,10 @@ std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const boost::container::flat_set<UUID> & enabled_roles,
     const Poco::Net::IPAddress & address,
     const String & forwarded_address,
-    const String & custom_quota_key) const
+    const String & custom_quota_key,
+    UInt64 normalized_query_hash) const
 {
-    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key, true);
+    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key, normalized_query_hash, true);
 }
 
 std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
@@ -833,14 +834,14 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
         // client_key is not received at the moment of authentication during TCP connection
         // if key type is set to QuotaKeyType::CLIENT_KEY
         // QuotaCache::QuotaInfo::calculateKey will throw exception without throw_if_client_key_empty = false
-        String quota_key;
         bool throw_if_client_key_empty = false;
         return quota_cache->getEnabledQuota(*user_id,
                                             user->getName(),
                                             roles_info->enabled_roles,
                                             address,
                                             forwarded_address,
-                                            quota_key,
+                                            "",
+                                            0,
                                             throw_if_client_key_empty);
     }
     return nullptr;

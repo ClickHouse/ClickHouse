@@ -514,7 +514,8 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
                                                             roles_info->enabled_roles,
                                                             params.address,
                                                             params.forwarded_address,
-                                                            params.quota_key);
+                                                            params.quota_key,
+                                                            0);
         }
         else
         {

@@ -253,6 +253,11 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
             static const auto info = make_info("CLIENT_KEY_OR_IP_ADDRESS");
             return info;
         }
+        case QuotaKeyType::NORMALIZED_QUERY:
+        {
+            static const auto info = make_info("NORMALIZED_QUERY");
+            return info;
+        }
         case QuotaKeyType::MAX: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(type));
