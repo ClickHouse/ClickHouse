@@ -228,11 +228,14 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
 
 
 def subprocess_check_call(
-    args: Union[Sequence[str], str], detach: bool = False, nothrow: bool = False
+    args: Union[Sequence[str], str],
+    detach: bool = False,
+    nothrow: bool = False,
+    **kwargs,
 ) -> str:
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
-    return run_and_check(args, detach=detach, nothrow=nothrow)
+    return run_and_check(args, detach=detach, nothrow=nothrow, **kwargs)
 
 
 def get_odbc_bridge_path():
@@ -2042,8 +2045,18 @@ class ClickHouseCluster:
                 exec_cmd += ["-u", kwargs["user"]]
             if "privileged" in kwargs:
                 exec_cmd += ["--privileged"]
+
+            env = None
+            if "environment" in kwargs:
+                env = kwargs.pop("environment", None)
+                for k, v in env.items():
+                    exec_cmd += ["--env", k + "=" + v]
+
+            exec_cmd += [container_id]
+            exec_cmd += list(cmd)
+
             result = subprocess_check_call(
-                exec_cmd + [container_id] + list(cmd), detach=detach, nothrow=nothrow
+                exec_cmd, detach=detach, nothrow=nothrow, env=env
             )
             return result
         else:
