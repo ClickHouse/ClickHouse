@@ -1,6 +1,5 @@
 #include <optional>
 #include <memory>
-#include <stdexcept>
 #include <unordered_map>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -14,10 +13,8 @@
 #include "Columns/IColumn.h"
 #include "base/scope_guard.h"
 #include <Common/logger_useful.h>
-#include "Columns/ColumnTuple.h"
 #include "Core/Field.h"
 #include "Functions/IFunction.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
 #include "base/types.h"
 
 #include <DataTypes/DataTypeArray.h>
@@ -293,7 +290,6 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
 std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
     const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id)
 {
-    std::cerr << "compare ids " << old_id << ' ' << new_id << '\n';
     std::unordered_map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
     auto old_schema_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
@@ -318,10 +314,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         if (old_node_it != old_schema_entries.end())
         {
             auto [old_json,  old_node] = old_node_it->second;
-            std::cerr << "Dumped field and old field " << DumpJSONIntoStr(field) << "\n\n" << DumpJSONIntoStr(old_json) << '\n';
             if (field->isObject("type") && field->getObject("type")->getValue<std::string>("type") == "struct")
-            {   
-                
+            {
                 auto old_type = getFieldType(old_json, "type", required);
                 auto transform = std::make_shared<IdentityFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
@@ -330,7 +324,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             }
             else
             {
-                if (old_json->isObject("type") && !field->isObject("type") )
+                if (old_json->isObject("type") && !field->isObject("type"))
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -401,21 +395,7 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
     }
-    if (!old_schema_it->second)
-    {
-        std::cerr << "nil bp1\n";
-    }
-    if (!new_schema_it->second)
-    {
-        std::cerr << "nil bp1\n";
-    }
-    std::cerr << old_schema_it->second << '\n';
-    std::cerr << new_schema_it->second << '\n';
-    auto dag = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
-    transform_dags_by_ids[{old_id, new_id}] = dag;
-    if (!dag) 
-        std::cerr << "dag is nil\n";
-    return dag;
+    return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
 }
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
