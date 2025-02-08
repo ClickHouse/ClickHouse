@@ -4,6 +4,7 @@
 #include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Common/Histogram.h>
 
@@ -18,6 +19,7 @@ ColumnsDescription StorageSystemMetrics::getColumnsDescription()
         {"metric", std::make_shared<DataTypeString>(), "Metric name."},
         {"value", std::make_shared<DataTypeInt64>(), "Metric value."},
         {"description", std::make_shared<DataTypeString>(), "Metric description."},
+        {"labels", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Metric labels."},
     };
 
     description.setAliases({
@@ -36,6 +38,7 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
         res_columns[0]->insert(CurrentMetrics::getName(CurrentMetrics::Metric(i)));
         res_columns[1]->insert(value);
         res_columns[2]->insert(CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i)));
+        res_columns[3]->insertDefault();
     }
 
     const auto & factory = Histogram::Factory::instance();
@@ -77,7 +80,7 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, ContextPtr, co
             res_columns[3]->insert(labels_map);
 
             // _sum metric
-            res_columns[0]->insert(record->name + "_count");
+            res_columns[0]->insert(record->name + "_sum");
             res_columns[1]->insert(metric->getSum());
             res_columns[2]->insert(record->documentation);
             res_columns[3]->insert(labels_map);
