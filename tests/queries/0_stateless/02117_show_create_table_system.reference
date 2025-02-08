@@ -385,6 +385,7 @@ CREATE TABLE system.metrics
     `metric` String,
     `value` Int64,
     `description` String,
+    `labels` Map(String, String),
     `name` String ALIAS metric
 )
 ENGINE = SystemMetrics
