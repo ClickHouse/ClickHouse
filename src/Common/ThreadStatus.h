@@ -159,7 +159,7 @@ public:
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, std::string_view thread_name, bool allow_existing_group = false) noexcept;
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher() noexcept;
 
 private:
