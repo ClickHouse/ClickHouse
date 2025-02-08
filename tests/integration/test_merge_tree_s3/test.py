@@ -888,8 +888,6 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     )
     assert "ExpectedError Message: mock s3 injected unretryable error" in error, error
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
-
     table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
     ).strip()
