@@ -68,7 +68,7 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, c
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal final
 {
-    static_assert(!std::is_same<PoolT, GlobalThreadPool>::value, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
+    static_assert(!std::is_same_v<PoolT, GlobalThreadPool>, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
     PoolT & pool;
     std::string thread_name;
