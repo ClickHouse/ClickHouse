@@ -167,21 +167,35 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 {
     hash_joins.resize(slots);
 
-    for (size_t i = 0; i < slots; ++i)
+    try
     {
-        /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
-        const size_t reserve_size = 0;
+        for (size_t ind = 0; ind < slots; ++ind)
+        {
+            pool->scheduleOrThrow(
+                [&, i = ind]()
+                {
+                    /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
+                    const size_t reserve_size = 0;
 
-        auto inner_hash_join = std::make_shared<InternalHashJoin>();
-        inner_hash_join->data = std::make_unique<HashJoin>(
-            table_join_,
-            right_sample_block,
-            any_take_last_row_,
-            reserve_size,
-            fmt::format("concurrent{}", i),
-            /*use_two_level_maps*/ true);
-        inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
-        hash_joins[i] = std::move(inner_hash_join);
+                    auto inner_hash_join = std::make_shared<InternalHashJoin>();
+                    inner_hash_join->data = std::make_unique<HashJoin>(
+                        table_join_,
+                        right_sample_block,
+                        any_take_last_row_,
+                        reserve_size,
+                        fmt::format("concurrent{}", i),
+                        /*use_two_level_maps*/ true);
+                    inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
+                    hash_joins[i] = std::move(inner_hash_join);
+                });
+        }
+        pool->wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        pool->wait();
+        throw;
     }
 }
 
