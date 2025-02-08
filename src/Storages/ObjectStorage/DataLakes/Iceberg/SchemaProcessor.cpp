@@ -319,7 +319,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         {
             auto [old_json,  old_node] = old_node_it->second;
             std::cerr << "Dumped field and old field " << DumpJSONIntoStr(field) << "\n\n" << DumpJSONIntoStr(old_json) << '\n';
-            if (field->isObject("type"))
+            if (field->isObject("type") && field->getObject("type")->getValue<std::string>("type") == "struct")
             {   
                 
                 auto old_type = getFieldType(old_json, "type", required);
@@ -330,7 +330,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             }
             else
             {
-                if (old_json->isObject("type"))
+                if (old_json->isObject("type") && !field->isObject("type") )
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
