@@ -359,12 +359,23 @@ void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
     nested->rollback(checkpoint);
 }
 
-void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnMap::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnMap::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*nested);
+    nested->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(nested);
+}
+
+void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*nested);
     nested->forEachSubcolumnRecursively(callback);

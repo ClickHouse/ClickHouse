@@ -58,6 +58,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
@@ -545,7 +546,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
+    QueryCacheUsage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -678,7 +679,7 @@ void logQueryException(
     }
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
-    elem.query_cache_usage = QueryCache::Usage::None;
+    elem.query_cache_usage = QueryCacheUsage::None;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         setExceptionStackTrace(elem);
@@ -1319,7 +1320,7 @@ static BlockIO executeQueryImpl(
         const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
-        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
+        QueryCacheUsage query_cache_usage = QueryCacheUsage::None;
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
         /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
@@ -1354,13 +1355,13 @@ static BlockIO executeQueryImpl(
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryCache::Reader reader = query_cache->createReader(key);
+                    QueryCacheReader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        query_cache_usage = QueryCache::Usage::Read;
+                        query_cache_usage = QueryCacheUsage::Read;
                         return true;
                     }
                 }
@@ -1498,7 +1499,7 @@ static BlockIO executeQueryImpl(
                             }
                             else
                             {
-                                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
                                                  key,
                                                  std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                                  settings[Setting::query_cache_squash_partial_results],
@@ -1506,7 +1507,7 @@ static BlockIO executeQueryImpl(
                                                  settings[Setting::query_cache_max_size_in_bytes],
                                                  settings[Setting::query_cache_max_entries]));
                                 res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                                query_cache_usage = QueryCache::Usage::Write;
+                                query_cache_usage = QueryCacheUsage::Write;
                             }
                         }
                     }
@@ -1565,7 +1566,7 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCache::Usage::Write)
+                if (query_cache_usage == QueryCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();

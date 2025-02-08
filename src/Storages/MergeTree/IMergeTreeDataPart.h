@@ -25,7 +25,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
@@ -50,6 +49,9 @@ class MergeTreeTransaction;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
+
+class PrimaryIndexCache;
+using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
 enum class DataPartRemovalState : uint8_t
 {
