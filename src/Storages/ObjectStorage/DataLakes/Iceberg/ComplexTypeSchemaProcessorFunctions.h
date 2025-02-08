@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include <vector>
 #include <memory>
 
@@ -8,11 +9,16 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <Functions/IFunction.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <Poco/SharedPtr.h>
 #include "Common/Exception.h"
 #include "Common/typeid_cast.h"
 #include "Columns/ColumnTuple.h"
 #include "DataTypes/DataTypeTuple.h"
 #include "DataTypes/IDataType.h"
+
+#include <iostream>
 
 namespace DB
 {
@@ -21,6 +27,7 @@ enum class ChangeType : uint8_t
 {
     REORDERING,
     DELETING,
+    ADDING,
 
     /// Type below is used for casts and renamings
     IDENTITY,
@@ -70,6 +77,18 @@ public:
     std::string field_name;
 };
 
+class IcebergAddingOperation : public IcebergChangeSchemaOperation
+{
+public:
+    IcebergAddingOperation(const std::vector<std::string> & root_, const std::string & field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::ADDING), root(root_), field_name(field_name_)
+    {
+    }
+
+    std::vector<std::string> root;
+    std::string field_name;
+};
+
 class IcebergIdentityOperation : public IcebergChangeSchemaOperation
 {
 public:
@@ -82,16 +101,34 @@ public:
 class ExecutableIdentityEvolutionFunction : public IExecutableFunction
 {
 public:
+    explicit ExecutableIdentityEvolutionFunction(DataTypePtr type_) : type(type_)
+    {
+    }
+
     String getName() const override { return "ExecutableIdentityEvolutionFunction"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto& column = arguments[0].column;
-        return column;
+        auto result_column = type->createColumn();
+        std::cerr << "column type " << type->getName() << ' ' << input_rows_count << '\n';
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            Tuple current_node;
+            Field field;
+            column->get(i, field);
+            field.tryGet(current_node);
+            std::cerr <<"add " << field.dump() << '\n';
+            Tuple result_node = current_node;
+            result_column->insert(result_node);
+        }
+
+        return result_column;
     }
 
 private:
-    Field time_value;
+    DataTypePtr type;
 };
 
 class IdentityFunctionStruct : public IFunctionBase
@@ -118,7 +155,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableIdentityEvolutionFunction>();
+        return std::make_unique<ExecutableIdentityEvolutionFunction>(types[0]);
     }
 
     bool isDeterministic() const override
@@ -137,24 +174,30 @@ private:
     DataTypes old_types;
 };
 
-class ExecutableReorderingEvolutionFunction : public IExecutableFunction
+class ExecutableAddingEvolutionFunction : public IExecutableFunction
 {
 public:
-    explicit ExecutableReorderingEvolutionFunction(const IcebergReorderingOperation & operation_, const DataTypes & types_) : operation(operation_), types(types_) {}
+    explicit ExecutableAddingEvolutionFunction(const IcebergAddingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
+        : operation(operation_)
+        , types(types_)
+        , old_types(old_types_)
+    {
+    }
 
-    String getName() const override { return "ExecutableReorderingEvolutionFunction"; }
+    String getName() const override { return "ExecutableAddingEvolutionFunction"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
 
 private:
-    IcebergReorderingOperation operation;
+    IcebergAddingOperation operation;
     DataTypes types;
+    DataTypes old_types;
 };
 
-class ReorderingFunctionStruct : public IFunctionBase
+class AddingFunctionStruct : public IFunctionBase
 {
 public:
-    explicit ReorderingFunctionStruct(const IcebergReorderingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
+    explicit AddingFunctionStruct(const IcebergAddingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
         : operation(operation_)
         , types(types_)
         , old_types(old_types_)
@@ -175,7 +218,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableReorderingEvolutionFunction>(operation, types);
+        return std::make_unique<ExecutableAddingEvolutionFunction>(operation, types, old_types);
     }
 
     bool isDeterministic() const override
@@ -189,7 +232,7 @@ public:
     }
 
 private:
-    IcebergReorderingOperation operation;
+    IcebergAddingOperation operation;
     DataTypes types;
     DataTypes old_types;
 };
@@ -197,7 +240,7 @@ private:
 class ExecutableDeletingEvolutionFunction : public IExecutableFunction
 {
 public:
-    explicit ExecutableDeletingEvolutionFunction(const IcebergDeletingOperation & operation_, const DataTypes & types_) : operation(operation_), types(types_) {}
+    explicit ExecutableDeletingEvolutionFunction(const IcebergDeletingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_) : operation(operation_), types(types_), old_types(old_types_) {}
 
     String getName() const override { return "ExecutableReorderingEvolutionFunction"; }
 
@@ -206,6 +249,7 @@ public:
 private:
     IcebergDeletingOperation operation;
     DataTypes types;
+    DataTypes old_types;
 };
 
 class DeleteFunctionStruct : public IFunctionBase
@@ -232,7 +276,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableDeletingEvolutionFunction>(operation, types);
+        return std::make_unique<ExecutableDeletingEvolutionFunction>(operation, types, old_types);
     }
 
     bool isDeterministic() const override
@@ -251,5 +295,6 @@ private:
     DataTypes old_types;
 };
 
+std::string DumpJSONIntoStr(Poco::SharedPtr<Poco::JSON::Object> obj);
 
 }
