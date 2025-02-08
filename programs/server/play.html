@@ -354,11 +354,14 @@
         {
             display: none;
             position: absolute;
+            user-select: none;
             right: 0;
             top: -1.25em;
             font-size: 75%;
             font-weight: normal;
             color: var(--misc-text-color);
+            z-index: 1;
+            background: var(--element-background-color);
         }
 
         th:hover .type-hint
