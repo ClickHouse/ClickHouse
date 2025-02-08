@@ -12,16 +12,15 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
-#include "Common/Exception.h"
-#include "Common/typeid_cast.h"
-#include "Columns/ColumnTuple.h"
-#include "DataTypes/DataTypeTuple.h"
 #include "DataTypes/IDataType.h"
-
-#include <iostream>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 enum class ChangeType : uint8_t
 {
