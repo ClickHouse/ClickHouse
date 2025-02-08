@@ -34,7 +34,8 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
 static void removeUsedColumnNames(
     const ActionsDAG & actions,
     NameSet & lazily_read_column_name_set,
-    AliasToName & alias_index)
+    AliasToName & alias_index,
+    String filter_name = {})
 {
     const auto & actions_outputs = actions.getOutputs();
 
@@ -51,7 +52,8 @@ static void removeUsedColumnNames(
         if (!node)
             continue;
 
-        if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+        if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::ARRAY_JOIN
+            || (!filter_name.empty() && filter_name == output_node->result_name))
         {
             using ActionsNode = ActionsDAG::Node;
 
@@ -79,7 +81,7 @@ static void removeUsedColumnNames(
                         visited_nodes.insert(child);
                     }
                 }
-             }
+            }
         }
     }
 
@@ -132,9 +134,9 @@ static void collectLazilyReadColumnNames(
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         if (prewhere_info->row_level_filter)
-            removeUsedColumnNames(*prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index);
+            removeUsedColumnNames(*prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index, prewhere_info->row_level_column_name);
 
-        removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index);
+        removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index, prewhere_info->prewhere_column_name);
     }
 
     for (auto step_it = steps.rbegin(); step_it != steps.rend(); ++step_it)
@@ -152,7 +154,7 @@ static void collectLazilyReadColumnNames(
 
         if (auto * filter_step = typeid_cast<FilterStep *>(step))
         {
-            removeUsedColumnNames(filter_step->getExpression(), lazily_read_column_name_set, alias_index);
+            removeUsedColumnNames(filter_step->getExpression(), lazily_read_column_name_set, alias_index, filter_step->getFilterColumnName());
             continue;
         }
 
