@@ -1,8 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <sstream>
 #include <vector>
-#include <memory>
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
@@ -23,7 +23,7 @@
 namespace DB
 {
 
-enum class ChangeType : uint8_t 
+enum class ChangeType : uint8_t
 {
     REORDERING,
     DELETING,
@@ -36,15 +36,9 @@ enum class ChangeType : uint8_t
 class IcebergChangeSchemaOperation
 {
 public:
-    explicit IcebergChangeSchemaOperation(ChangeType change_type_)
-    : change_type(change_type_)
-    {
-    }
+    explicit IcebergChangeSchemaOperation(ChangeType change_type_) : change_type(change_type_) { }
 
-    ChangeType getType() const
-    {
-        return change_type;
-    }
+    ChangeType getType() const { return change_type; }
 
 protected:
     ChangeType change_type;
@@ -53,7 +47,8 @@ protected:
 class IcebergReorderingOperation : public IcebergChangeSchemaOperation
 {
 public:
-    IcebergReorderingOperation(const std::vector<std::string> & root_,
+    IcebergReorderingOperation(
+        const std::vector<std::string> & root_,
         const std::vector<std::string> & initial_order_,
         const std::vector<std::string> & final_order_)
         : IcebergChangeSchemaOperation(ChangeType::REORDERING), root(root_), initial_order(initial_order_), final_order(final_order_)
@@ -92,207 +87,75 @@ public:
 class IcebergIdentityOperation : public IcebergChangeSchemaOperation
 {
 public:
-    IcebergIdentityOperation()
-        : IcebergChangeSchemaOperation(ChangeType::IDENTITY)
-    {
-    }
+    IcebergIdentityOperation() : IcebergChangeSchemaOperation(ChangeType::IDENTITY) { }
+};
+
+struct IIcebergSchemaTransform
+{
+    virtual void transform(Tuple & initial_node) = 0;
+
+    virtual ~IIcebergSchemaTransform() = default;
 };
 
 class ExecutableIdentityEvolutionFunction : public IExecutableFunction
 {
 public:
-    explicit ExecutableIdentityEvolutionFunction(DataTypePtr type_) : type(type_)
+    explicit ExecutableIdentityEvolutionFunction(
+        DataTypePtr type_, DataTypePtr old_type_, Poco::SharedPtr<Poco::JSON::Object> old_json_, Poco::SharedPtr<Poco::JSON::Object> field_)
+        : type(type_), old_type(old_type_), old_json(old_json_), field(field_)
     {
     }
 
     String getName() const override { return "ExecutableIdentityEvolutionFunction"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
-    {
-        const auto& column = arguments[0].column;
-        auto result_column = type->createColumn();
-        std::cerr << "column type " << type->getName() << ' ' << input_rows_count << '\n';
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            Tuple current_node;
-            Field field;
-            column->get(i, field);
-            field.tryGet(current_node);
-            std::cerr <<"add " << field.dump() << '\n';
-            Tuple result_node = current_node;
-            result_column->insert(result_node);
-        }
-
-        return result_column;
-    }
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
 
 private:
+    void lazyInitialize() const;
+
     DataTypePtr type;
+    DataTypePtr old_type;
+    Poco::SharedPtr<Poco::JSON::Object> old_json;
+    Poco::SharedPtr<Poco::JSON::Object> field;
+
+    mutable std::vector<std::shared_ptr<IIcebergSchemaTransform>> transforms;
+    mutable bool initialized = false;
 };
 
 class IdentityFunctionStruct : public IFunctionBase
 {
 public:
-    explicit IdentityFunctionStruct(const IcebergIdentityOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
-        : operation(operation_)
-        , types(types_)
-        , old_types(old_types_)
+    explicit IdentityFunctionStruct(
+        const DataTypes & types_,
+        const DataTypes & old_types_,
+        Poco::SharedPtr<Poco::JSON::Object> old_json_,
+        Poco::SharedPtr<Poco::JSON::Object> field_)
+        : types(types_), old_types(old_types_), old_json(old_json_), field(field_)
     {
     }
 
     String getName() const override { return "IdentityFunctionStruct"; }
 
-    const DataTypes & getArgumentTypes() const override
-    {
-        return types;
-    }
+    const DataTypes & getArgumentTypes() const override { return old_types; }
 
-    const DataTypePtr & getResultType() const override
-    {
-        return types[0];
-    }
+    const DataTypePtr & getResultType() const override { return types[0]; }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableIdentityEvolutionFunction>(types[0]);
+        return std::make_unique<ExecutableIdentityEvolutionFunction>(types[0], old_types[0], old_json, field);
     }
 
-    bool isDeterministic() const override
-    {
-        return true;
-    }
+    bool isDeterministic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
 private:
     IcebergIdentityOperation operation;
     DataTypes types;
     DataTypes old_types;
-};
-
-class ExecutableAddingEvolutionFunction : public IExecutableFunction
-{
-public:
-    explicit ExecutableAddingEvolutionFunction(const IcebergAddingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
-        : operation(operation_)
-        , types(types_)
-        , old_types(old_types_)
-    {
-    }
-
-    String getName() const override { return "ExecutableAddingEvolutionFunction"; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
-
-private:
-    IcebergAddingOperation operation;
-    DataTypes types;
-    DataTypes old_types;
-};
-
-class AddingFunctionStruct : public IFunctionBase
-{
-public:
-    explicit AddingFunctionStruct(const IcebergAddingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
-        : operation(operation_)
-        , types(types_)
-        , old_types(old_types_)
-    {
-    }
-
-    String getName() const override { return "ReorderingFunctionStruct"; }
-
-    const DataTypes & getArgumentTypes() const override
-    {
-        return old_types;
-    }
-
-    const DataTypePtr & getResultType() const override
-    {
-        return types[0];
-    }
-
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
-    {
-        return std::make_unique<ExecutableAddingEvolutionFunction>(operation, types, old_types);
-    }
-
-    bool isDeterministic() const override
-    {
-        return true;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
-
-private:
-    IcebergAddingOperation operation;
-    DataTypes types;
-    DataTypes old_types;
-};
-
-class ExecutableDeletingEvolutionFunction : public IExecutableFunction
-{
-public:
-    explicit ExecutableDeletingEvolutionFunction(const IcebergDeletingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_) : operation(operation_), types(types_), old_types(old_types_) {}
-
-    String getName() const override { return "ExecutableReorderingEvolutionFunction"; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
-
-private:
-    IcebergDeletingOperation operation;
-    DataTypes types;
-    DataTypes old_types;
-};
-
-class DeleteFunctionStruct : public IFunctionBase
-{
-public:
-    explicit DeleteFunctionStruct(const IcebergDeletingOperation & operation_, const DataTypes & types_, const DataTypes & old_types_)
-        : operation(operation_)
-        , types(types_)
-        , old_types(old_types_)
-    {
-    }
-
-    String getName() const override { return "ReorderingFunctionStruct"; }
-
-    const DataTypes & getArgumentTypes() const override
-    {
-        return old_types;
-    }
-
-    const DataTypePtr & getResultType() const override
-    {
-        return types[0];
-    }
-
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
-    {
-        return std::make_unique<ExecutableDeletingEvolutionFunction>(operation, types, old_types);
-    }
-
-    bool isDeterministic() const override
-    {
-        return true;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
-
-private:
-    IcebergDeletingOperation operation;
-    DataTypes types;
-    DataTypes old_types;
+    Poco::SharedPtr<Poco::JSON::Object> old_json;
+    Poco::SharedPtr<Poco::JSON::Object> field;
 };
 
 std::string DumpJSONIntoStr(Poco::SharedPtr<Poco::JSON::Object> obj);

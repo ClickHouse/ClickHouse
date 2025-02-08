@@ -1631,11 +1631,30 @@ def test_tuple_evolved_nested(
         table_select_expression,
         [
             ['a', 'Int32'], 
-            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        e Nullable(Float64), \\n        nc Nullable(Int32)))'],
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        e Nullable(Float64),\\n        nc Nullable(Int32)))'],
             ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
         ],
         [
             ['1', "(1.23,(4.559999942779541,NULL))", '(1,2)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b.b.nc FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        nc Nullable(Int32),\\n        e Nullable(Float64)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(NULL,4.559999942779541))", '(1,2)']
         ],
     )
 
