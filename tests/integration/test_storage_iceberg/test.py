@@ -1544,7 +1544,6 @@ def test_tuple_evolved_nested(
             ['1', "(1.23,(4.559999942779541,NULL))", '(1,2)']
         ],
     )
-
     execute_spark_query(
         f"""
             ALTER TABLE {TABLE_NAME} ALTER COLUMN b.b.nc FIRST;
