@@ -1,6 +1,7 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/thread_local_rng.h>

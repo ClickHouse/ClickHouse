@@ -13,7 +13,7 @@ alias: []
 
 ## Description
 
-The `Native` format is ClickHouse's most efficient format because it is truly “columnar” 
+The `Native` format is ClickHouse's most efficient format because it is truly "columnar" 
 in that it does not convert columns to rows.  
 
 In this format data is written and read by [blocks](/docs/en/development/architecture#block) in a binary format. 

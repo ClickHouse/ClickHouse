@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
 #include <memory>
@@ -379,10 +380,24 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
+    /// Returns true if processor can spill memory to disk.
+    /// Aggregate, join and sort processors can be spillable.
+    /// For unspillable processors, the memory usage is not tracked.
+    inline bool isSpillable() const { return spillable; }
+
+    virtual ProcessorMemoryStats getMemoryStats()
+    {
+        return {};
+    }
+
+    // If the in-memory data's size is not larger then bytes, it doesn't spill
+    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+
 protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
+    bool spillable = false;
 
 private:
     /// For:
@@ -411,6 +426,7 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
 };
 
 

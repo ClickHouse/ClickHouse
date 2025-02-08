@@ -560,8 +560,8 @@ Result:
 ## array(x1, ...), operator \[x1, ...\]
 
 Creates an array from the function arguments.
-The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn’t clear which type of array to create. That is, you can’t use this function to create an empty array (to do that, use the ‘emptyArray\*’ function described above).
-Returns an ‘Array(T)’ type result, where ‘T’ is the smallest common type out of the passed arguments.
+The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn’t clear which type of array to create. That is, you can’t use this function to create an empty array (to do that, use the 'emptyArray\*’ function described above).
+Returns an 'Array(T)’ type result, where 'T’ is the smallest common type out of the passed arguments.
 
 ## arrayWithConstant(length, elem)
 
@@ -602,7 +602,7 @@ If the index falls outside of the bounds of an array, it returns some default va
 
 ## has(arr, elem)
 
-Checks whether the ‘arr’ array has the ‘elem’ element.
+Checks whether the 'arr’ array has the 'elem’ element.
 Returns 0 if the element is not in the array, or 1 if it is.
 
 `NULL` is processed as a value.
@@ -770,7 +770,7 @@ i
 
 ## indexOf(arr, x)
 
-Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+Returns the index of the first element with value 'x’ (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
 
 Example:
@@ -789,11 +789,11 @@ Elements set to `NULL` are handled as normal values.
 
 ## indexOfAssumeSorted(arr, x)
 
-Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+Returns the index of the first element with value 'x’ (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
 Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
 If the array is not sorted, results are undefined.
-If the internal array is of type Nullable, function ‘indexOf‘ will be called.
+If the internal array is of type Nullable, function 'indexOf' will be called.
 
 Example:
 
@@ -1101,7 +1101,7 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../data-types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -1126,7 +1126,7 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see “[Data types](../data-types/index.md#data_types)”. Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../data-types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -1318,7 +1318,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\['hello’, 'world’\]), that is, \['hello’ –\> 2, 'world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, 'hello’ will be the second element in the result, and 'world’ will be the first.
 
 Other examples are shown below.
 
@@ -1431,8 +1431,8 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 In this example, the array is sorted in the following way:
 
-1. At first, the source array (\[‘hello’, ‘world’\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \[‘world’, ‘hello’\].
-2. Array that was sorted on the previous step, is reversed. So, the final result is \[‘hello’, ‘world’\].
+1. At first, the source array (\['hello’, 'world’\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \['world’, 'hello’\].
+2. Array that was sorted on the previous step, is reversed. So, the final result is \['hello’, 'world’\].
 
 Other examples are shown below.
 
@@ -1584,11 +1584,11 @@ Result:
 If one argument is passed, it counts the number of different elements in the array.
 If multiple arguments are passed, it counts the number of different tuples of elements at corresponding positions in multiple arrays.
 
-If you want to get a list of unique items in an array, you can use arrayReduce(‘groupUniqArray’, arr).
+If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray’, arr).
 
 ## arrayJoin(arr)
 
-A special function. See the section [“ArrayJoin function”](../../sql-reference/functions/array-join.md#functions_arrayjoin).
+A special function. See the section ["ArrayJoin function"](../../sql-reference/functions/array-join.md#functions_arrayjoin).
 
 ## arrayDifference
 
@@ -1997,7 +1997,7 @@ SELECT arrayReverse([1, 2, 3])
 
 ## reverse(arr)
 
-Synonym for [“arrayReverse”](#arrayreverse)
+Synonym for ["arrayReverse"](#arrayreverse)
 
 ## arrayFlatten
 

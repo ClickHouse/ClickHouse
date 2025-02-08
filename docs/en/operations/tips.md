@@ -18,7 +18,7 @@ $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gov
 
 ## CPU Limitations {#cpu-limitations}
 
-Processors can overheat. Use `dmesg` to see if the CPU’s clock rate was limited due to overheating.
+Processors can overheat. Use `dmesg` to see if the CPU's clock rate was limited due to overheating.
 The restriction can also be set externally at the datacenter level. You can use `turbostat` to monitor it under a load.
 
 ## RAM {#ram}
@@ -89,7 +89,7 @@ Never set the block size too small or too large.
 You can use RAID-0 on SSD.
 Regardless of RAID use, always use replication for data security.
 
-Enable NCQ with a long queue. For HDD, choose the mq-deadline or CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
+Enable NCQ with a long queue. For HDD, choose the mq-deadline or CFQ scheduler, and for SSD, choose noop. Don't reduce the 'readahead' setting.
 For HDD, enable the write cache.
 
 Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is enabled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
@@ -157,7 +157,7 @@ ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  
 
 If you would like to continue using ZooKeeper then it is best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
-You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the “zkcopy” utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
+You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
@@ -170,7 +170,7 @@ Do not change `minSessionTimeout` setting, large values may affect ClickHouse re
 
 With the default settings, ZooKeeper is a time bomb:
 
-> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see `autopurge`), and this is the responsibility of the operator.
+> The ZooKeeper server won't delete files from old snapshots and logs when using the default configuration (see `autopurge`), and this is the responsibility of the operator.
 
 This bomb must be defused.
 

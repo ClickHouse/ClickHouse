@@ -1,5 +1,5 @@
 #include <Processors/Transforms/ExtremesTransform.h>
-
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 
 namespace DB

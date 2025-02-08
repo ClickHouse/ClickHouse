@@ -8,9 +8,11 @@
 
 #include <Columns/ColumnConst.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ConstantValue.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -57,13 +59,13 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
 {
     auto new_tree = query_tree->clone();
 
     PrepareForExternalDatabaseVisitor visitor;
     visitor.visit(new_tree);
-    const auto * query_node = new_tree->as<QueryNode>();
+    auto * query_node = new_tree->as<QueryNode>();
 
     const auto & join_tree = query_node->getJoinTree();
     bool allow_where = true;
@@ -75,6 +77,16 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tre
             allow_where = join_node->getRightTableExpression()->isEqual(*table_expression);
         else
             allow_where = (join_node->getKind() == JoinKind::Inner);
+    }
+
+    /// Remove all sub-expressions (operands of AND) that depend on columns from other tables.
+    /// This is needed for a correct push-down of these filters to an external storage.
+    if (allow_where)
+    {
+        if (query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), table_expression, context);
+        if (query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), table_expression, context);
     }
 
     auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });

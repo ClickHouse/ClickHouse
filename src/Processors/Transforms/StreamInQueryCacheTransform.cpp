@@ -5,8 +5,8 @@ namespace DB
 
 StreamInQueryCacheTransform::StreamInQueryCacheTransform(
     const Block & header_,
-    std::shared_ptr<QueryCache::Writer> query_cache_writer_,
-    QueryCache::Writer::ChunkType chunk_type_)
+    std::shared_ptr<QueryCacheWriter> query_cache_writer_,
+    QueryCacheWriter::ChunkType chunk_type_)
     : ISimpleTransform(header_, header_, false)
     , query_cache_writer(query_cache_writer_)
     , chunk_type(chunk_type_)

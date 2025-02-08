@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -15,10 +16,11 @@
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 
-
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+
+#include "config.h"
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
@@ -190,9 +192,10 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms, 0, "Time to keep a locally merged part without starting a new merge containing this part. Gives other replicas a chance fetch the part and start this merge. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_range_for_merge_window_size, 10, "Time to keep a locally merged part without starting a new merge containing this part. Gives other replicas a chance fetch the part and start this merge. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, "If enabled too many parts counter will rely on shared data in Keeper, not on local replica state. Only available in ClickHouse Cloud", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, "Enables requesting FS cache hints from in-memory cache on other replicas. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, "If enabled all the replicas try to fetch part in memory data (like primary key, partition info and so on) from other replicas where it already exists.", 0) \
+    DECLARE(Bool, allow_reduce_blocking_parts_task, false, "Background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
@@ -264,7 +267,6 @@ namespace ErrorCodes
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
-    DECLARE(Bool, allow_reduce_blocking_parts_task, false, "Experimental background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \

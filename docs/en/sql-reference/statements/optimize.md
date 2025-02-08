@@ -8,7 +8,7 @@ title: "OPTIMIZE Statement"
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/docs/en/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
 
 :::note
-`OPTIMIZE` can’t fix the `Too many parts` error.
+`OPTIMIZE` can't fix the `Too many parts` error.
 :::
 
 **Syntax**
@@ -17,7 +17,7 @@ This query tries to initialize an unscheduled merge of data parts for tables. No
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
 ```
 
-The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family (including [materialized views](../../sql-reference/statements/create/view.md#materialized-view)) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren’t supported.
+The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family (including [materialized views](../../sql-reference/statements/create/view.md#materialized-view)) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren't supported.
 
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `2`) or on current replica (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `1`).
 

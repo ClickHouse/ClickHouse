@@ -52,9 +52,9 @@ message MessageType {
 };
 ```
 
-To find the correspondence between table columns and fields of the Protocol Buffers’ message type, ClickHouse compares their names.
+To find the correspondence between table columns and fields of the Protocol Buffers' message type, ClickHouse compares their names.
 This comparison is case-insensitive and the characters `_` (underscore) and `.` (dot) are considered as equal.
-If the types of a column and a field of the Protocol Buffers’ message are different, then the necessary conversion is applied.
+If the types of a column and a field of the Protocol Buffers' message are different, then the necessary conversion is applied.
 
 Nested messages are supported. For example, for the field `z` in the following message type:
 

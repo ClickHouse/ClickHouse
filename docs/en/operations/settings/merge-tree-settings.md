@@ -111,7 +111,7 @@ Enables or disables writing the final index mark at the end of data part (after 
 
 Default value: 1.
 
-Don’t change or bad things will happen.
+Don't change or bad things will happen.
 
 ## storage_policy
 
@@ -169,7 +169,7 @@ Possible values:
 
 Default value: 1000.
 
-ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
+ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the background merge process can merge parts faster than they are added.
 
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 

@@ -136,7 +136,7 @@ protected:
     /// If dry_run = false, the task will be processed right after this call.
     virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run);
 
-    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    void processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query);
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
@@ -154,7 +154,7 @@ protected:
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);

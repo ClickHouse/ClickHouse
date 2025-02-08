@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -293,6 +294,8 @@ void ColumnDynamic::get(size_t n, Field & res) const
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
     {
         variant_col.get(n, res);
+        if (!res.isNull())
+            res = convertFieldToType(res, *getTypeAt(n));
         return;
     }
 
@@ -1083,6 +1086,23 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     }
 
     return variant_info.variant_names[discr];
+}
+
+DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
+{
+    const auto & variant_col = getVariantColumn();
+    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        return nullptr;
+
+    if (discr == getSharedVariantDiscriminator())
+    {
+        const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
+        ReadBufferFromMemory buf(value.data, value.size);
+        return decodeDataType(buf);
+    }
+
+    return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
 }
 
 void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const

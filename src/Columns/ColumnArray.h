@@ -166,13 +166,27 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*offsets);
+        offsets->forEachMutableSubcolumnRecursively(callback);
+        callback(*data);
+        data->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        callback(offsets);
+        callback(data);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*offsets);
         offsets->forEachSubcolumnRecursively(callback);

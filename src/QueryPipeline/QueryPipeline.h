@@ -2,7 +2,6 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Interpreters/Cache/QueryCache.h> /// nested classes such as QC::Writer can't be fwd declared
 #include <functional>
 
 namespace DB
@@ -36,6 +35,9 @@ class ReadProgressCallback;
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
+class QueryCacheWriter;
+
+class SourceFromChunks;
 
 class QueryPipeline
 {
@@ -108,7 +110,7 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer);
+    void writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> query_cache_writer);
     void finalizeWriteInQueryCache();
     void readFromQueryCache(
         std::unique_ptr<SourceFromChunks> source,

@@ -1,4 +1,5 @@
 #include <memory>
+#include <IO/copyData.h>
 #include <Storages/StorageKeeperMap.h>
 
 #include <Columns/ColumnString.h>
@@ -15,6 +16,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/MutationsInterpreter.h>
 
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 

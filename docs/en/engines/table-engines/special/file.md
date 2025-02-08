@@ -31,7 +31,7 @@ The `Format` parameter specifies one of the available file formats. To perform
 
 ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
 
-When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it’s put into `data.Format` file in that subdirectory.
+When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it's put into `data.Format` file in that subdirectory.
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 

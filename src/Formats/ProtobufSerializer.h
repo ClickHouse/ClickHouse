@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
-#   include <Columns/IColumn.h>
+#   include <Columns/IColumn_fwd.h>
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>
 

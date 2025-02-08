@@ -269,7 +269,7 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(data);
     }
@@ -280,10 +280,15 @@ public:
         data->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    {
+        callback(data);
+    }
+
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*data);
-        data->forEachSubcolumnRecursively(callback);
+        data->forEachMutableSubcolumnRecursively(callback);
     }
 
     bool structureEquals(const IColumn & rhs) const override

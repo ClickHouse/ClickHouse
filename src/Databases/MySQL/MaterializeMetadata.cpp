@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -243,7 +244,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 
     {
         auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-        auto out = db_disk->writeFile(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE);
+        auto out = db_disk->writeFile(persistent_tmp_path, 1024, WriteMode::Rewrite, getWriteSettingsForMetadata());
 
         /// TSV format metadata file.
         writeString("Version:\t" + toString(meta_version), *out);
@@ -253,6 +254,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         writeString("\nData Version:\t" + toString(data_version), *out);
 
         out->next();
+        out->sync();
         out->finalize();
         out.reset();
     }
@@ -266,10 +268,7 @@ MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & 
 
     if (db_disk->existsFile(persistent_path))
     {
-        ReadSettings read_settings = getReadSettings();
-        read_settings.local_fs_method = LocalFSReadMethod::read;
-        read_settings.local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-        auto in = db_disk->readFile(persistent_path, read_settings);
+        auto in = db_disk->readFile(persistent_path, getReadSettingsForMetadata());
 
         assertString("Version:\t" + toString(meta_version), *in);
         assertString("\nBinlog File:\t", *in);

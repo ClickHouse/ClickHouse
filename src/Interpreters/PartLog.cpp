@@ -251,10 +251,7 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
-            {
-                WriteBufferFromString out(elem.partition);
-                part->partition.serializeText(part->storage, out, {});
-            }
+            elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();

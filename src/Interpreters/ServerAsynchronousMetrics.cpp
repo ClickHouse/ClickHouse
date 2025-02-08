@@ -17,7 +17,13 @@
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 
+#include "config.h"
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
+
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>

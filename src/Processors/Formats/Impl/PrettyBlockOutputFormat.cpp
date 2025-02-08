@@ -229,6 +229,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     if (format_settings.pretty.fallback_to_vertical
         && displayed_rows == 0
         && num_rows <= format_settings.pretty.fallback_to_vertical_max_rows_per_chunk
+        && num_columns >= format_settings.pretty.fallback_to_vertical_min_columns
         && (table_width >= format_settings.pretty.fallback_to_vertical_min_table_width || has_newlines))
     {
         use_vertical_format = true;

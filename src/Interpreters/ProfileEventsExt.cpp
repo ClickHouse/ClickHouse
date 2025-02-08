@@ -6,11 +6,10 @@
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 namespace ProfileEvents

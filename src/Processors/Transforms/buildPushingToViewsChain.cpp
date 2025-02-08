@@ -508,6 +508,12 @@ Chain buildPushingToViewsChain(
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
+    auto log = getLogger("buildPushingToViewsChain");
+    LOG_TEST(log, "Views: {}", views.size());
+
+    if (no_destination && views.empty())
+        LOG_WARNING(log, "No views attached and no_destination = 1");
+
     ViewsDataPtr views_data;
     if (!views.empty())
     {
@@ -516,7 +522,6 @@ Chain buildPushingToViewsChain(
     }
 
     std::vector<Chain> chains;
-
     for (const auto & view_id : views)
     {
         try
@@ -542,7 +547,7 @@ Chain buildPushingToViewsChain(
                 context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
             }
         }
-        catch (const Exception & e)
+        catch (const Poco::Exception & e)
         {
             LOG_ERROR(&Poco::Logger::get("PushingToViews"), "Failed to push block to view {}, {}", view_id, e.message());
             if (!context->getSettingsRef()[Setting::materialized_views_ignore_errors])
