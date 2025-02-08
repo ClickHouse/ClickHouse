@@ -17,11 +17,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 enum class ChangeType : uint8_t
 {
     REORDERING,
@@ -156,7 +151,5 @@ private:
     Poco::SharedPtr<Poco::JSON::Object> old_json;
     Poco::SharedPtr<Poco::JSON::Object> field;
 };
-
-std::string DumpJSONIntoStr(Poco::SharedPtr<Poco::JSON::Object> obj);
 
 }
