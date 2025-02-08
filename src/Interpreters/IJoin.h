@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
