@@ -1091,144 +1091,6 @@ def test_evolved_schema_simple(
         ],
     )
 
-    execute_spark_query(
-        f"""
-        ALTER TABLE {TABLE_NAME}
-        ADD COLUMNS (
-            go STRUCT<b1: Float, b2: Float>
-        );
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (3.0, 12, -9.13, 'BBB', named_struct('b1', 1.23, 'b2', 4.56));
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["b", "Nullable(Float64)"],
-            ["f", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-            ["go", "Tuple(\\n    b1 Nullable(Float32),\\n    b2 Nullable(Float32))"],
-        ],
-        [
-            ["3", "-30", "7.12", "AAA", "(NULL,NULL)"],
-            ["3", "12", "-9.13", "BBB", "(1.23,4.56)"],
-            ["3", "12", "-9.13", "BBB", "(NULL,NULL)"],
-            ["3.4", "\\N", "-9.13", "\\N", "(NULL,NULL)"],
-            ["5", "7", "18.1", "\\N", "(NULL,NULL)"],
-            ["\\N", "4", "7.12", "\\N", "(NULL,NULL)"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-        ALTER TABLE {TABLE_NAME}
-        RENAME COLUMN go TO bo;
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (4.0, 12, -9.13, 'CCC', named_struct('b1', 2.23, 'b2', 5.56));
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["b", "Nullable(Float64)"],
-            ["f", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-            ["bo", "Tuple(\\n    b1 Nullable(Float32),\\n    b2 Nullable(Float32))"],
-        ],
-        [
-            ["3", "-30", "7.12", "AAA", "(NULL,NULL)"],
-            ["3", "12", "-9.13", "BBB", "(1.23,4.56)"],
-            ["3", "12", "-9.13", "BBB", "(NULL,NULL)"],
-            ["3.4", "\\N", "-9.13", "\\N", "(NULL,NULL)"],
-            ["4", "12", "-9.13", "CCC", "(2.23,5.56)"],
-            ["5", "7", "18.1", "\\N", "(NULL,NULL)"],
-            ["\\N", "4", "7.12", "\\N", "(NULL,NULL)"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN bo AFTER b;
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (6.0, named_struct('b1', 3.23, 'b2', 6.56), 12, -9.13, 'CCC');
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["b", "Nullable(Float64)"],
-            ["bo", "Tuple(\\n    b1 Nullable(Float32),\\n    b2 Nullable(Float32))"],
-            ["f", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["3", "(1.23,4.56)", "12", "-9.13", "BBB"],
-            ["3", "(NULL,NULL)", "-30", "7.12", "AAA"],
-            ["3", "(NULL,NULL)", "12", "-9.13", "BBB"],
-            ["3.4", "(NULL,NULL)", "\\N", "-9.13", "\\N"],
-            ["4", "(2.23,5.56)", "12", "-9.13", "CCC"],
-            ["5", "(NULL,NULL)", "7", "18.1", "\\N"],
-            ["6", "(3.23,6.56)", "12", "-9.13", "CCC"],
-            ["\\N", "(NULL,NULL)", "4", "7.12", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} DROP COLUMN bo;
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (7.0, 12, -9.13, 'CCC');
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["b", "Nullable(Float64)"],
-            ["f", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["3", "-30", "7.12", "AAA"],
-            ["3", "12", "-9.13", "BBB"],
-            ["3", "12", "-9.13", "BBB"],
-            ["3.4", "\\N", "-9.13", "\\N"],
-            ["4", "12", "-9.13", "CCC"],
-            ["5", "7", "18.1", "\\N"],
-            ["6", "12", "-9.13", "CCC"],
-            ["7", "12", "-9.13", "CCC"],
-            ["\\N", "4", "7.12", "\\N"],
-        ],
-    )
-
-
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["local"])
 @pytest.mark.parametrize("is_table_function", [False])
@@ -1504,6 +1366,58 @@ def test_tuple_evolved_simple(
         ],
         [
             ['1', "(NULL,1.23,'ABBA')", '(2)']
+        ],
+    )
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (2, named_struct('g', 5, 'e', 1.23, 'b', 'BACCARA'), named_struct('d', 3))")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    g Nullable(Int32),\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(NULL,1.23,'ABBA')", '(2)'],
+            ['2', "(5,1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN b.g TO a;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Int32),\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(NULL,1.23,'ABBA')", '(2)'],
+            ['2', "(5,1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN b.e")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Int32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(NULL,'ABBA')", '(2)'],
+            ['2', "(5,'BACCARA')", '(3)']
         ],
     )
 
@@ -2087,6 +2001,74 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         ],
         [
            ["(3,('Singapore',12345))", '[4,7]']
+        ]
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( map_column Map<INT, INT> );
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 4, 'city', named_struct('name', 'Moscow', 'zip', 54321)), ARRAY(4, 7), MAP(1, 2));
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))'],
+            ['map_column', 'Map(Int32, Nullable(Int32))']
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]', '{}'],
+           ["(4,('Moscow',54321))", '[4,7]', '{1:2}'],
+        ]
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN map_column TO col_to_del;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))'],
+            ['col_to_del', 'Map(Int32, Nullable(Int32))']
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]', '{}'],
+           ["(4,('Moscow',54321))", '[4,7]', '{1:2}'],
+        ]
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN col_to_del;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))']
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]'],
+           ["(4,('Moscow',54321))", '[4,7]'],
         ]
     )
 
