@@ -312,7 +312,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         auto old_node_it = old_schema_entries.find(id);
         if (old_node_it != old_schema_entries.end())
         {
-            auto [old_json,  old_node] = old_node_it->second;
+            auto [old_json, old_node] = old_node_it->second;
             if (field->isObject("type") && field->getObject("type")->getValue<std::string>("type") == "struct")
             {
                 auto old_type = getFieldType(old_json, "type", required);
