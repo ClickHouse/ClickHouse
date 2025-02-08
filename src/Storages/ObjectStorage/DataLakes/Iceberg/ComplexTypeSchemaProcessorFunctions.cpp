@@ -265,11 +265,4 @@ void ExecutableIdentityEvolutionFunction::lazyInitialize() const
     }
 }
 
-std::string DumpJSONIntoStr(Poco::SharedPtr<Poco::JSON::Object> obj)
-{
-    std::stringstream os;
-    Poco::JSON::Stringifier::stringify(obj, os);
-    return os.str();
-}
-
 }
