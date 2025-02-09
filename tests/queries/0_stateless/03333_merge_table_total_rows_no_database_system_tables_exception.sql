@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
 -- ^ creates a database.
 
 DROP DATABASE IF EXISTS test_03333;
