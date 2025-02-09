@@ -38,8 +38,11 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCommitRequests;
+    extern const Event ObjectStorageQueueSuccessfulCommits;
+    extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueInsertIterations;
+    extern const Event ObjectStorageQueueProcessedRows;
 }
 
 
@@ -642,6 +645,8 @@ void StorageObjectStorageQueue::commit(
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     const std::string & exception_message) const
 {
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
+
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
@@ -653,16 +658,16 @@ void StorageObjectStorageQueue::commit(
         return;
     }
 
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
+
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
         object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects);
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
     }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests);
 
     auto zk_client = getZooKeeper();
     Coordination::Responses responses;
@@ -673,7 +678,12 @@ void StorageObjectStorageQueue::commit(
 
     auto code = zk_client->tryMulti(requests, responses);
     if (code != Coordination::Error::ZOK)
+    {
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
         throw zkutil::KeeperMultiException(code, requests, responses);
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
     for (auto & source : sources)
         source->finalizeCommit(insert_succeeded, exception_message);
