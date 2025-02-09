@@ -11,7 +11,11 @@ from .utils import Utils
 
 
 def _get_workflows(
-    name=None, file=None, _for_validation_check=False, _file_names_out=None
+    name=None,
+    file=None,
+    _for_validation_check=False,
+    _file_names_out=None,
+    default=False,
 ) -> List[Workflow.Config]:
     """
     Gets user's workflow configs
@@ -24,17 +28,20 @@ def _get_workflows(
         )
     directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
-        if Settings.DISABLED_WORKFLOWS:
-            if any(
-                py_file.name == Path(disabled_wf_file).name
-                for disabled_wf_file in Settings.DISABLED_WORKFLOWS
-            ):
-                print(
-                    f"NOTE: Workflow [{py_file.name}] disabled via Settings.DISABLED_WORKFLOWS - skip"
-                )
+        if not default:
+            if Settings.DISABLED_WORKFLOWS:
+                if any(
+                    py_file.name == Path(disabled_wf_file).name
+                    for disabled_wf_file in Settings.DISABLED_WORKFLOWS
+                ):
+                    print(
+                        f"NOTE: Workflow [{py_file.name}] disabled via Settings.DISABLED_WORKFLOWS - skip"
+                    )
+                    continue
+            if file and str(file) not in str(py_file):
                 continue
-        if file and str(file) not in str(py_file):
-            continue
+        else:
+            name = Settings.DEFAULT_LOCAL_TEST_WORKFLOW
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"
