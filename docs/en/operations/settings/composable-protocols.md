@@ -1,10 +1,11 @@
 ---
+description: "Composable protocols allows more flexible configuration of TCP access to the ClickHouse server."
 slug: /en/operations/settings/composable-protocols
 sidebar_position: 64
 sidebar_label: Composable Protocols
+title: "Composable Protocols"
+keywords: ["composable protocols"]
 ---
-
-# Composable Protocols
 
 Composable protocols allows more flexible configuration of TCP access to the ClickHouse server. This configuration can co-exist with or replace conventional configuration.
 
