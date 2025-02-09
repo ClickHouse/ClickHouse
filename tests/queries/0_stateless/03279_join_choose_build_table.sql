@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 CREATE TABLE sales (
     id Int32,
