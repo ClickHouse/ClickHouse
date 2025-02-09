@@ -129,7 +129,7 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
-    const auto set_source_hash = set_source_node->getTreeHash();
+    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false });
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.

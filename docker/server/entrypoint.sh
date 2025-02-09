@@ -59,6 +59,7 @@ fi
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
+CLICKHOUSE_SKIP_USER_SETUP="${CLICKHOUSE_SKIP_USER_SETUP:-0}"
 
 function create_directory_and_do_chown() {
     local dir=$1
@@ -104,28 +105,46 @@ do
     create_directory_and_do_chown "$dir"
 done
 
+if [ "$CLICKHOUSE_SKIP_USER_SETUP" == "1" ]; then
+    echo "$0: explicitly skip changing user 'default'"
 # if clickhouse user is defined - create it (user "default" already exists out of box)
-if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
+elif [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
-    <clickhouse>
-      <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
-      <users>
-        <!-- Remove default user -->
-        <default remove="remove">
-        </default>
+<clickhouse>
+  <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
+  <users>
+    <!-- Remove default user -->
+    <default remove="remove">
+    </default>
 
-        <${CLICKHOUSE_USER}>
-          <profile>default</profile>
-          <networks>
-            <ip>::/0</ip>
-          </networks>
-          <password><![CDATA[${CLICKHOUSE_PASSWORD//]]>/]]]]><![CDATA[>}]]></password>
-          <quota>default</quota>
-          <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
-        </${CLICKHOUSE_USER}>
-      </users>
-    </clickhouse>
+    <${CLICKHOUSE_USER}>
+      <profile>default</profile>
+      <networks>
+        <ip>::/0</ip>
+      </networks>
+      <password><![CDATA[${CLICKHOUSE_PASSWORD//]]>/]]]]><![CDATA[>}]]></password>
+      <quota>default</quota>
+      <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
+    </${CLICKHOUSE_USER}>
+  </users>
+</clickhouse>
+EOT
+else
+    echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
+    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+<clickhouse>
+  <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
+  <users>
+    <default>
+      <!-- User default is available only locally -->
+      <networks>
+        <ip>::1</ip>
+        <ip>127.0.0.1</ip>
+      </networks>
+    </default>
+  </users>
+</clickhouse>
 EOT
 fi
 

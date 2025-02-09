@@ -415,7 +415,7 @@ See [Regexp](formats/Regexp.md)
 ## Format Schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
-It’s required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
+It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
 The format schema is a combination of a file name and the name of a message type in this file, delimited by a colon,
 e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
