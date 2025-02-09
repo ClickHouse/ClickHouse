@@ -445,7 +445,7 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        if (allow_experimental_analyzer)
+        if (enable_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
                     getStorageID(),
