@@ -2,8 +2,6 @@ from multiprocessing.dummy import Pool
 from time import sleep
 
 import pytest
-from kazoo.client import KazooClient
-from minio.deleteobjects import DeleteObject
 
 from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -46,11 +44,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def destroy_zk_client(zk):

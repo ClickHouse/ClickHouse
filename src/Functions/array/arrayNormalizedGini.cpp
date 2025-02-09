@@ -406,10 +406,10 @@ REGISTER_FUNCTION(NormalizedGini)
         = {{"Example",
             "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);",
             "(0.18055555555555558,0.2638888888888889,0.6842105263157896)"}};
-    FunctionDocumentation::Categories doc_categories = {"Array"};
+    FunctionDocumentation::Category doc_category = {"Array"};
 
     factory.registerFunction<FunctionArrayNormalizedGini>(
-        {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Sensitive);
+        {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_category}, FunctionFactory::Case::Sensitive);
 }
 
 }

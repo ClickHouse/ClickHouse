@@ -323,7 +323,7 @@ A spike of uploaders [around covid is noticeable](https://www.theverge.com/2020/
 
 ### More subtitles over time and when
 
-With advances in speech recognition, it’s easier than ever to create subtitles for video with youtube adding auto-captioning in late 2009 - was the jump then?
+With advances in speech recognition, it's easier than ever to create subtitles for video with youtube adding auto-captioning in late 2009 - was the jump then?
 
 ```sql
 SELECT
