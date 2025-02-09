@@ -728,7 +728,7 @@
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, columns, nest_level);
+            populateTableRows(tbody, results, nest_level);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -841,7 +841,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, columns, nest_level);
+        populateTableRows(tbody, results, nest_level);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {
