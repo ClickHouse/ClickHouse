@@ -42,7 +42,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     auto queue_settings = std::make_unique<ObjectStorageQueueSettings>();
     if (args.storage_def->settings)
     {
-        queue_settings->loadFromQuery(*args.storage_def);
+        const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
+        queue_settings->loadFromQuery(*args.storage_def, is_attach, args.table_id);
 
         Settings settings = args.getContext()->getSettingsCopy();
         settings.applyChanges(args.storage_def->settings->changes);

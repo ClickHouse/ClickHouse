@@ -19,13 +19,14 @@ enum class AccessType : uint8_t
 #define APPLY_FOR_ACCESS_TYPES(M) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
-    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>, CHECK <table>;
+    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
                                        implicitly enabled by any grant on the table */\
+    M(CHECK, "", TABLE, ALL) /* allows to execute CHECK TABLE; */\
     M(SHOW_COLUMNS, "", COLUMN, SHOW) /* allows to execute SHOW CREATE TABLE, DESCRIBE;
                                          implicitly enabled with any grant on the column */\
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
-    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE */\
+    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
     M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
     \
     M(SELECT, "", COLUMN, ALL) \
@@ -168,6 +169,7 @@ enum class AccessType : uint8_t
     M(SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, "SYSTEM PREWARM PRIMARY INDEX, PREWARM PRIMARY INDEX CACHE, PREWARM PRIMARY INDEX", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_PRIMARY_INDEX_CACHE, "SYSTEM DROP PRIMARY INDEX, DROP PRIMARY INDEX CACHE, DROP PRIMARY INDEX", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_UNCOMPRESSED_CACHE, "SYSTEM DROP UNCOMPRESSED, DROP UNCOMPRESSED CACHE, DROP UNCOMPRESSED", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_SKIPPING_INDEX_CACHE, "SYSTEM DROP SKIPPING INDEX CACHE, DROP SKIPPING INDEX CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_MMAP_CACHE, "SYSTEM DROP MMAP, DROP MMAP CACHE, DROP MMAP", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_QUERY_CACHE, "SYSTEM DROP QUERY, DROP QUERY CACHE, DROP QUERY", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_COMPILED_EXPRESSION_CACHE, "SYSTEM DROP COMPILED EXPRESSION, DROP COMPILED EXPRESSION CACHE, DROP COMPILED EXPRESSIONS", GLOBAL, SYSTEM_DROP_CACHE) \

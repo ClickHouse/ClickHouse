@@ -68,7 +68,7 @@ namespace Setting
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_opearators;
+    extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -356,7 +356,7 @@ ColumnsWithTypeAndName createBlockForSet(
 
     GetSetElementParams set_params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
-        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_opearators],
+        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
@@ -484,7 +484,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, std::move(block), context->getSettingsRef());
+    return prepared_sets.addFromTuple(set_key, right_arg_func, std::move(block), context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -1490,7 +1490,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                     return set;
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, storage_set->getSet(), table_id);
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
             }
 
             if (!data.getContext()->isGlobalContext())
@@ -1520,7 +1520,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
 
         return data.prepared_sets->addFromSubquery(
-            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
+            set_key, right_in_operand, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
 
     const auto & last_actions = data.actions_stack.getLastActions();

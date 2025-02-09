@@ -68,6 +68,9 @@ public:
     void setRefreshesStopped(bool stopped);
     bool refreshesStopped() const;
 
+    /// Called during shutdown, after setRefreshesStopped(true).
+    void joinBackgroundTasks(std::chrono::steady_clock::time_point deadline);
+
 private:
     using TaskMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using DependentsMap = std::unordered_map<StorageID, std::unordered_set<RefreshTaskPtr>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
@@ -82,6 +85,7 @@ private:
     InnerTableMap inner_tables;
 
     std::atomic<bool> refreshes_stopped {false};
+    std::chrono::steady_clock::time_point refreshes_stopped_at;
 
     RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
     void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);

@@ -871,6 +871,8 @@ Strings BackupCoordinationStageSync::waitHostsReachStage(const Strings & hosts, 
 bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const
 {
     process_list_element->checkTimeLimit();
+    if (state.host_with_error)
+        std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
     for (size_t i = 0; i != hosts.size(); ++i)
     {
@@ -887,9 +889,6 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
             results[i] = stage_it->second;
             continue;
         }
-
-        if (state.host_with_error)
-            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
         if (host_info.finished)
             throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
@@ -1175,15 +1174,16 @@ bool BackupCoordinationStageSync::checkIfOtherHostsFinish(
     const String & reason, std::optional<std::chrono::milliseconds> timeout, bool time_is_out, bool & result, bool throw_if_error) const
 {
     if (throw_if_error)
+    {
         process_list_element->checkTimeLimit();
+        if (state.host_with_error)
+            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
+    }
 
     for (const auto & [host, host_info] : state.hosts)
     {
         if ((host == current_host) || host_info.finished)
             continue;
-
-        if (throw_if_error && state.host_with_error)
-            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
         String reason_text = reason.empty() ? "" : (" " + reason);
 

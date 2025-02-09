@@ -32,7 +32,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -425,8 +424,6 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
-
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isMergeTree() const override { return true; }
@@ -486,6 +483,7 @@ public:
         virtual NameSet getAllUpdatedColumns() const = 0;
 
         bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
+        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
         virtual ~IMutationsSnapshot() = default;
     };
@@ -737,11 +735,19 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
 
-    /// Delete irrelevant parts from memory and disk.
-    /// If 'force' - don't wait for old_parts_lifetime.
-    size_t clearOldPartsFromFilesystem(bool force = false);
-    /// Try to clear parts from filesystem. Throw exception in case of errors.
-    void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
+    /// Try to clear parts from filesystem.
+    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
+
+    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
+    /// Throw exception in case of errors.
+    /// Otherwise, in non-parallel case will break and return.
+    void clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed);
+
+    /// Try to clear parts from filesystem.
+    /// In case of error at some point for the rest of the parts its part's state is rollback Deleting - > Outdated.
+    /// That allows to schedule them for deletion a bit later
+    size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
@@ -1535,7 +1541,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1631,7 +1637,7 @@ protected:
     mutable std::mutex outdated_data_parts_mutex;
     mutable std::condition_variable outdated_data_parts_cv;
 
-    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
+    BackgroundSchedulePoolTaskHolder outdated_data_parts_loading_task;
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
@@ -1647,7 +1653,7 @@ protected:
         MutableDataPartPtr part;
     };
 
-    BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
+    BackgroundSchedulePoolTaskHolder unexpected_data_parts_loading_task;
     std::vector<UnexpectedPartLoadState> unexpected_data_parts;
     bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
 
@@ -1772,11 +1778,6 @@ private:
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
     virtual bool waitZeroCopyLockToDisappear(const ZeroCopyLock &, size_t) { return false; }
-
-    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
-    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 

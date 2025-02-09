@@ -39,6 +39,8 @@ sqlite3 "${DB_PATH}" "INSERT INTO table3 VALUES ('', 4)"
 
 sqlite3 "${DB_PATH}" 'CREATE TABLE table4 (a int, b integer, c tinyint, d smallint, e mediumint, f bigint, g int2, h int8)'
 sqlite3 "${DB_PATH}" 'CREATE TABLE table5 (a character(20), b varchar(10), c real, d double, e double precision, f float)'
+sqlite3 "${DB_PATH}" "CREATE TABLE \"table6'\" (col1 text, col2 smallint);"
+sqlite3 "${DB_PATH}" "INSERT INTO \"table6'\" VALUES ('table6_line1', 1), ('table6_line2', 2), ('table6_line3', 3)"
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'create database engine'";
@@ -80,6 +82,8 @@ ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table3 ORDER BY col2'
 ${CLICKHOUSE_CLIENT} --query="select 'test table function'";
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table1') SELECT 'line4', 4"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table1') ORDER BY col2"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', '\\'); select 1 --') ORDER BY col2 -- { serverError SQLITE_ENGINE_ERROR }"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', 'table6''') ORDER BY col2"
 
 
 ${CLICKHOUSE_CLIENT} --query="select 'test schema inference'";

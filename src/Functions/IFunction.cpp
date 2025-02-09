@@ -191,7 +191,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     NullPresence null_presence = getNullPresense(args);
 
-    if (null_presence.has_null_constant || null_presence.has_nullable)
+    if (null_presence.has_null_constant)
     {
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
@@ -202,10 +202,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 "is expected to return Nullable result, got {}",
                 getName(),
                 result_type->getName());
-    }
 
-    if (null_presence.has_null_constant)
-    {
         /// If any of the input arguments is null literal, the result is null constant.
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }

@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB

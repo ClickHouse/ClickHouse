@@ -1,6 +1,7 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/thread_local_rng.h>
@@ -305,6 +306,22 @@ void RefreshTask::wait()
             throw_if_error();
         }
     }
+}
+
+bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline)
+{
+    std::unique_lock lock(mutex);
+
+    execution.cancel_ddl_queries.request_stop();
+
+    auto duration = deadline - std::chrono::steady_clock::now();
+    /// (Manually clamping to 0 because the standard library used to have (and possibly still has?)
+    ///  a bug that wait_until would wait forever if the timestamp is in the past.)
+    duration = std::max(duration, std::chrono::steady_clock::duration(0));
+    return refresh_cv.wait_for(lock, duration, [&]
+        {
+            return state != RefreshState::Running && state != RefreshState::Scheduling;
+        });
 }
 
 std::chrono::sys_seconds RefreshTask::getNextRefreshTimeslot() const

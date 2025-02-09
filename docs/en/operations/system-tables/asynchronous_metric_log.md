@@ -51,5 +51,6 @@ value:      0
 
 **See Also**
 
+- [asynchronous_metric_log setting](../../operations/server-configuration-parameters/settings.md#asynchronous_metric_log) — Enabling and disabling the setting.
 - [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics, calculated periodically in the background.
 - [system.metric_log](../system-tables/metric_log.md) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.

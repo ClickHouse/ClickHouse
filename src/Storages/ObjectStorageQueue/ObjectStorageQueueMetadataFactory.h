@@ -26,7 +26,7 @@ private:
     {
         explicit MetadataWithRefCount(std::shared_ptr<ObjectStorageQueueMetadata> metadata_) : metadata(metadata_) {}
         std::shared_ptr<ObjectStorageQueueMetadata> metadata;
-        size_t ref_count = 0;
+        std::unique_ptr<std::atomic<size_t>> ref_count = std::make_unique<std::atomic<size_t>>(0);
     };
     using MetadataByPath = std::unordered_map<std::string, MetadataWithRefCount>;
 

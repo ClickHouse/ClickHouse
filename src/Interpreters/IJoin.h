@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
@@ -127,6 +126,9 @@ public:
 
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
+
+    /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
+    virtual void onBuildPhaseFinish() { }
 
 private:
     Block totals;

@@ -75,7 +75,13 @@ public:
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
-            flags[mapped.block][mapped.row_num].store(true, std::memory_order_relaxed);
+            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
+            {
+                for (auto it = mapped.begin(); it.ok(); ++it)
+                    flags[it->block][it->row_num].store(true, std::memory_order_relaxed);
+            }
+            else
+                flags[mapped.block][mapped.row_num].store(true, std::memory_order_relaxed);
         }
         else
         {

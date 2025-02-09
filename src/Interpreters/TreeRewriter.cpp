@@ -1243,12 +1243,12 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
-        constexpr auto format_string = "Missing columns: {} while processing query: '{}', required columns:{}{}";
+        constexpr auto format_string = "Missing columns: {} while processing: '{}', required columns:{}{}";
         WriteBufferFromOwnString ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while processing query: '" << queryToString(query) << "'";
+        ss << " while processing: '" << queryToString(query) << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())
@@ -1256,32 +1256,34 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            std::vector<String> hint_name{};
-            std::set<String> helper_hint_name{};
-            for (const auto & name : columns_context.requiredColumns())
+            std::vector<String> hints;
+            std::set<String> used_hints;
+            for (const auto & col : columns_context.requiredColumns())
             {
-                auto hints = storage->getHints(name);
-                for (const auto & hint : hints)
+                for (const auto & hint : storage->getHints(col))
                 {
                     // We want to preserve the ordering of the hints
                     // (as they are ordered by Levenshtein distance)
-                    auto [_, inserted] = helper_hint_name.insert(hint);
+                    auto [_, inserted] = used_hints.insert(hint);
                     if (inserted)
-                        hint_name.push_back(hint);
+                        hints.push_back(hint);
                 }
             }
 
-            if (!hint_name.empty())
+            if (!hints.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << toStringWithFinalSeparator(hint_name, " or ");
+                ss << toStringWithFinalSeparator(hints, " or ");
             }
         }
         else
         {
             if (!source_column_names.empty())
-                for (const auto & name : columns_context.requiredColumns())
+            {
+                ss << ", available columns:";
+                for (const auto & name : source_column_names)
                     ss << " '" << name << "'";
+            }
             else
                 ss << ", no source columns";
         }

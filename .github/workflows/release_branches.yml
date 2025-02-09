@@ -307,65 +307,6 @@ jobs:
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
-############################ FUNCTIONAl STATEFUL TESTS #######################################
-##############################################################################################
-  FunctionalStatefulTestRelease:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestAarch64:
-    needs: [RunConfig, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (aarch64)
-      runner_type: func-tester-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestAsan:
-    needs: [RunConfig, BuilderDebAsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (asan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestTsan:
-    needs: [RunConfig, BuilderDebTsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (tsan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestMsan:
-    needs: [RunConfig, BuilderDebMsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (msan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestUBsan:
-    needs: [RunConfig, BuilderDebUBsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (ubsan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestDebug:
-    needs: [RunConfig, BuilderDebDebug]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (debug)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
   StressTestAsan:
@@ -458,13 +399,6 @@ jobs:
       - FunctionalStatelessTestTsan
       - FunctionalStatelessTestMsan
       - FunctionalStatelessTestUBsan
-      - FunctionalStatefulTestDebug
-      - FunctionalStatefulTestRelease
-      - FunctionalStatefulTestAarch64
-      - FunctionalStatefulTestAsan
-      - FunctionalStatefulTestTsan
-      - FunctionalStatefulTestMsan
-      - FunctionalStatefulTestUBsan
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan

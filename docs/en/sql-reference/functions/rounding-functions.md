@@ -9,7 +9,7 @@ sidebar_label: Rounding
 ## floor
 
 Returns the largest rounded number less than or equal `x`.
-A rounded number is a multiple of 1 / 10 * N, or the nearest number of the appropriate data type if 1 / 10 * N isn’t exact.
+A rounded number is a multiple of 1 / 10 * N, or the nearest number of the appropriate data type if 1 / 10 * N isn't exact.
 
 Integer arguments may be rounded with negative `N` argument, with non-negative `N` the function returns `x`, i.e. does nothing.
 
@@ -74,7 +74,7 @@ Alias: `ceil`
 
 ## truncate
 
-Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`‘s.
+Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`'s.
 
 **Syntax**
 
@@ -103,7 +103,7 @@ SELECT truncate(123.499, 1) as res;
 Rounds a value to a specified number of decimal places.
 
 The function returns the nearest number of the specified order.
-If the input value has equal distance to two neighboring numbers, the function uses banker’s rounding for [Float*](../data-types/float.md) inputs and rounds away from zero for the other number types ([Decimal*](../data-types/decimal.md).
+If the input value has equal distance to two neighboring numbers, the function uses banker's rounding for [Float*](../data-types/float.md) inputs and rounds away from zero for the other number types ([Decimal*](../data-types/decimal.md).
 
 **Syntax**
 
@@ -178,7 +178,7 @@ round(467,-2) = 500
 round(-467,-2) = -500
 ```
 
-Banker’s rounding.
+Banker's rounding.
 
 ``` text
 round(3.5) = 4
@@ -195,7 +195,7 @@ round(3.65, 1) = 3.6
 
 Rounds a number to a specified decimal position.
 
-If the rounding number is halfway between two numbers, the function uses banker’s rounding.
+If the rounding number is halfway between two numbers, the function uses banker's rounding.
 Banker's rounding is a method of rounding fractional numbers
 When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position.
 For example: 3.5 rounds up to 4, 2.5 rounds down to 2.
@@ -205,12 +205,12 @@ The `roundBankers` function also rounds integers the same way, for example, `rou
 
 In other cases, the function rounds numbers to the nearest integer.
 
-Using banker’s rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
+Using banker's rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
 
 For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
 - No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
-- Banker’s rounding: 2 + 2 + 4 + 4 = 12.
+- Banker's rounding: 2 + 2 + 4 + 4 = 12.
 - Rounding to the nearest integer: 2 + 3 + 4 + 5 = 14.
 
 **Syntax**
@@ -233,7 +233,7 @@ roundBankers(x [, N])
 
 **Returned value**
 
-A value rounded by the banker’s rounding method.
+A value rounded by the banker's rounding method.
 
 **Examples**
 
@@ -260,7 +260,7 @@ Result:
 └─────┴───┘
 ```
 
-Examples of Banker’s rounding:
+Examples of Banker's rounding:
 
 ```
 roundBankers(0.4) = 0

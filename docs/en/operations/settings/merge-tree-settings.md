@@ -111,7 +111,7 @@ Enables or disables writing the final index mark at the end of data part (after 
 
 Default value: 1.
 
-Don’t change or bad things will happen.
+Don't change or bad things will happen.
 
 ## storage_policy
 
@@ -169,7 +169,7 @@ Possible values:
 
 Default value: 1000.
 
-ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
+ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the background merge process can merge parts faster than they are added.
 
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 
@@ -614,7 +614,7 @@ The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30 second
 ## max_bytes_to_merge_at_max_space_in_pool {#max-bytes-to-merge-at-max-space-in-pool}
 
 The maximum total parts size (in bytes) to be merged into one part, if there are enough resources available.
-`max_bytes_to_merge_at_max_space_in_pool` -- roughly corresponds to the maximum possible part size created by an automatic background merge.
+Corresponds roughly to the maximum possible part size created by an automatic background merge.
 
 Possible values:
 
@@ -622,9 +622,10 @@ Possible values:
 
 Default value: 161061273600 (150 GB).
 
-The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there are enough free resources in the pool, it starts background merges.
+Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
-Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
+Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space is taken into account).
 
 ## max_bytes_to_merge_at_min_space_in_pool {#max-bytes-to-merge-at-min-space-in-pool}
 
@@ -707,6 +708,8 @@ You can also specify a query complexity setting [max_partitions_to_read](query-c
 
 Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
 
+By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
+
 Possible values:
 
 - Positive integer.
@@ -716,6 +719,18 @@ Default value: 0 — Disabled.
 ## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
 
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
+
+By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
+
+If settings `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only` should respect setting `max_bytes_to_merge_at_max_space_in_pool`.
 
 Possible values:
 
@@ -1171,3 +1186,15 @@ Default value: false.
 When enabled, min-max (skipping) indices are added for all string columns of the table.
 
 Default value: false.
+
+## materialize_skip_indexes_on_merge
+
+When enabled, merges build and store skip indices for new parts.
+
+Default: true
+
+## assign_part_uuids
+
+When enabled, unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.
+
+Default: 0.

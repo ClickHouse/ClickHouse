@@ -27,12 +27,6 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 sync_pr.py --merge || :
-# Runs in MQ:
-#      - name: Python unit tests
-#        run: |
-#          cd "$GITHUB_WORKSPACE/tests/ci"
-#          echo "Testing the main ci directory"
-#          python3 -m unittest discover -s . -p 'test_*.py'
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -50,27 +44,13 @@ jobs:
       - name: Re-create GH statuses for skipped jobs if any
         run: |
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --update-gh-statuses
-# Runs in MQ:
-#  BuildDockers:
-#    needs: [RunConfig]
-#    if: ${{ !failure() && !cancelled() }}
-#    uses: ./.github/workflows/docker_test_images.yml
-#    with:
-#      data: ${{ needs.RunConfig.outputs.data }}
-  # StyleCheck:
-  #   needs: [RunConfig, BuildDockers]
-  #   if: ${{ !failure() && !cancelled() }}
-  #   uses: ./.github/workflows/reusable_test.yml
-  #   with:
-  #     test_name: Style check
-  #     runner_type: style-checker
-  #     data: ${{ needs.RunConfig.outputs.data }}
-  #     run_command: |
-  #         python3 style_check.py --no-push
-
-  ################################# Main stages #################################
-  # for main CI chain
-  #
+  Builds_0:
+    needs: [RunConfig]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_0') }}
+    uses: ./.github/workflows/reusable_build_stage.yml
+    with:
+      stage: Builds_0
+      data: ${{ needs.RunConfig.outputs.data }}
   Builds_1:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
@@ -79,13 +59,6 @@ jobs:
     with:
       stage: Builds_1
       data: ${{ needs.RunConfig.outputs.data }}
-  Tests_1:
-    needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_1
-      data: ${{ needs.RunConfig.outputs.data }}
   Builds_2:
     needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_2') }}
@@ -93,16 +66,22 @@ jobs:
     with:
       stage: Builds_2
       data: ${{ needs.RunConfig.outputs.data }}
-  Tests_2_ww:
-    needs: [RunConfig, Builds_2]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2_ww') }}
+  Tests_0:
+    needs: [RunConfig, Builds_0]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_0') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
-      stage: Tests_2_ww
+      stage: Tests_0
+      data: ${{ needs.RunConfig.outputs.data }}
+  Tests_1:
+    needs: [RunConfig, Builds_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_1
       data: ${{ needs.RunConfig.outputs.data }}
   Tests_2:
-    # Test_3 should not wait for Test_1/Test_2 and should not be blocked by them on master branch since all jobs need to run there.
-    needs: [RunConfig, Builds_1]
+    needs: [RunConfig, Builds_1, Builds_0]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
@@ -114,7 +93,7 @@ jobs:
   Builds_Report:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() && needs.RunConfig.result == 'success' && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Builds') }}
-    needs: [RunConfig, Builds_1, Builds_2]
+    needs: [RunConfig, Builds_1, Builds_2, Builds_0]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Builds
@@ -123,7 +102,7 @@ jobs:
 
   FinishCheck:
     if: ${{ !cancelled() }}
-    needs: [RunConfig, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
+    needs: [RunConfig, Builds_0, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code

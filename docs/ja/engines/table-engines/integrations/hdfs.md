@@ -227,8 +227,8 @@ libhdfs3はHDFS namenode HAをサポートします。
 
 ## 仮想カラム {#virtual-columns}
 
-- `_path` — ファイルへのパス。型：`LowCardinalty(String)`。
-- `_file` — ファイルの名称。型：`LowCardinalty(String)`。
+- `_path` — ファイルへのパス。型：`LowCardinality(String)`。
+- `_file` — ファイルの名称。型：`LowCardinality(String)`。
 - `_size` — ファイルのバイト単位のサイズ。型：`Nullable(UInt64)`。サイズが不明な場合、値は `NULL` です。
 - `_time` — ファイルの最終修正時刻。型：`Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 

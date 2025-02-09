@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/IDataType.h>

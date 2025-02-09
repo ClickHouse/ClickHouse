@@ -78,8 +78,10 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
 #include <Columns/Collator.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -533,7 +535,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor::visit(query_ptr);
+        ApplyWithSubqueryVisitor(context).visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();

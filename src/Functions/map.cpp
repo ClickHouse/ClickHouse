@@ -3,8 +3,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>

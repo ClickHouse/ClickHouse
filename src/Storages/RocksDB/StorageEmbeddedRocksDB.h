@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Common/MultiVersion.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/SharedMutex.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>

@@ -1,24 +1,16 @@
 ---
 slug: /en/development/build-cross-riscv
-sidebar_position: 68
-title: How to Build ClickHouse on Linux for RISC-V 64 Architecture 
+sidebar_position: 30
 sidebar_label: Build on Linux for RISC-V 64
 ---
 
-As of writing (11.11.2021) building for risc-v considered to be highly experimental. Not all features can be enabled.
+# How to Build ClickHouse on Linux for RISC-V 64
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with RISC-V 64 CPU architecture. This is intended for continuous integration checks that run on Linux servers.
-
-The cross-build for RISC-V 64 is based on the [Build instructions](../development/build.md), follow them first.
-
-## Install Clang-19
-
-Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup or do
-```
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-```
+ClickHouse has experimental support for RISC-V. Not all features can be enabled.
 
 ## Build ClickHouse {#build-clickhouse}
+
+To cross-compile for RISC-V on an non-RISC-V machine:
 
 ``` bash
 cd ClickHouse

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -15,10 +16,11 @@
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 
-
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+
+#include "config.h"
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
@@ -91,6 +93,7 @@ namespace ErrorCodes
     DECLARE(Bool, fsync_part_directory, false, "Do fsync for part directory after all part operations (writes, renames, etc.).", 0) \
     DECLARE(UInt64, non_replicated_deduplication_window, 0, "How many last blocks of hashes should be kept on disk (0 - disabled).", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, "Max amount of parts which can be merged at once (0 - disabled). Doesn't affect OPTIMIZE FINAL query.", 0) \
+    DECLARE(Bool, materialize_skip_indexes_on_merge, true, "If merges create and store skip indexes, otherwise they can be created/stored by explicit MATERIALIZE INDEX", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, "Minimum time to wait before trying to select parts to merge again after no parts were selected. A lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters", 0) \
     DECLARE(UInt64, max_merge_selecting_sleep_ms, 60000, "Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters", 0) \
     DECLARE(Float, merge_selecting_sleep_slowdown_factor, 1.2f, "The sleep time for merge selecting task is multiplied by this factor when there's nothing to merge and divided when a merge was assigned", 0) \
@@ -189,8 +192,10 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms, 0, "Time to keep a locally merged part without starting a new merge containing this part. Gives other replicas a chance fetch the part and start this merge. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_range_for_merge_window_size, 10, "Time to keep a locally merged part without starting a new merge containing this part. Gives other replicas a chance fetch the part and start this merge. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, "If enabled too many parts counter will rely on shared data in Keeper, not on local replica state. Only available in ClickHouse Cloud", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, "Enables requesting FS cache hints from in-memory cache on other replicas. Only available in ClickHouse Cloud", 0) \
+    DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, "If enabled all the replicas try to fetch part in memory data (like primary key, partition info and so on) from other replicas where it already exists.", 0) \
+    DECLARE(Bool, allow_reduce_blocking_parts_task, false, "Background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
@@ -231,7 +236,7 @@ namespace ErrorCodes
     DECLARE(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
     DECLARE(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
     DECLARE(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm.", 0) \
-    DECLARE(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
+    DECLARE(Bool, assign_part_uuids, false, "When enabled, a unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited. This setting is the default that can be overridden by the query-level setting with the same name.", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, "Max number of concurrently executed queries related to the MergeTree table (0 - disabled). Queries will still be limited by other max_concurrent_queries settings.", 0) \
     DECLARE(UInt64, min_marks_to_honor_max_concurrent_queries, 0, "Minimal number of marks to honor the MergeTree-level's max_concurrent_queries (0 - disabled). Queries will still be limited by other max_concurrent_queries settings.", 0) \
@@ -262,7 +267,6 @@ namespace ErrorCodes
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
-    DECLARE(Bool, allow_reduce_blocking_parts_task, false, "Experimental background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \

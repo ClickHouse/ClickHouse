@@ -168,7 +168,7 @@ DataTypePtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::
     return std::make_shared<DataTypeUInt8>();
 }
 
-SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &) const
+SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &, const DataTypePtr &) const
 {
     return std::make_shared<SerializationVariantElementNullMap>(variant_element_name, global_variant_discriminator);
 }

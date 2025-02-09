@@ -3,7 +3,7 @@
 #include <vector>
 #include <algorithm>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 
 namespace DB

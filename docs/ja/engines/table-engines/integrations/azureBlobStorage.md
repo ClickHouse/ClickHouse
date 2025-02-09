@@ -51,8 +51,8 @@ SELECT * FROM test_table;
 
 ## 仮想カラム {#virtual-columns}
 
-- `_path` — ファイルへのパス。型: `LowCardinalty(String)`。
-- `_file` — ファイル名。型: `LowCardinalty(String)`。
+- `_path` — ファイルへのパス。型: `LowCardinality(String)`。
+- `_file` — ファイル名。型: `LowCardinality(String)`。
 - `_size` — ファイルのバイト単位でのサイズ。型: `Nullable(UInt64)`。サイズが不明な場合、値は `NULL`。
 - `_time` — ファイルの最終更新日時。型: `Nullable(DateTime)`。日時が不明な場合、値は `NULL`。
 

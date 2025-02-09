@@ -26,8 +26,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsUInt64 grace_hash_join_max_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 }
 
 namespace ErrorCodes
@@ -316,6 +316,8 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
+    if (force_spill)
+        return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
@@ -331,6 +333,8 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
 
 bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 {
+    if (force_spill)
+        return true;
     size_t total_rows = 0;
     size_t total_bytes = 0;
     for (const auto & block : blocks)
@@ -343,6 +347,8 @@ bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 
 bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
 {
+    if (force_spill)
+        return true;
     size_t total_rows = hash_join_->getTotalRowCount();
     size_t total_bytes = hash_join_->getTotalByteCount();
 
@@ -661,6 +667,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             num_rows += block.rows();
             addBlockToJoinImpl(std::move(block));
         }
+        hash_join->onBuildPhaseFinish();
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
@@ -728,6 +735,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
+        force_spill = false;
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
 
@@ -780,4 +788,10 @@ GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const
     return buckets;
 }
 
+void GraceHashJoin::onBuildPhaseFinish()
+{
+    // It cannot be called concurrently with other IJoin methods
+    if (hash_join)
+        hash_join->onBuildPhaseFinish();
+}
 }

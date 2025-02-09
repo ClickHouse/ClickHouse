@@ -1,6 +1,7 @@
 #include "AggregateFunctionMerge.h"
 #include "AggregateFunctionCombinatorFactory.h"
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
@@ -10,6 +11,11 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+void AggregateFunctionMerge::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
+{
+    nested_func->merge(place, assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num], arena);
 }
 
 namespace

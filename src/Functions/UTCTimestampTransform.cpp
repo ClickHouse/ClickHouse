@@ -120,7 +120,7 @@ namespace
                 }
                 return result_column;
             }
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", name);
         }
 
     };

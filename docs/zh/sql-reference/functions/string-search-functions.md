@@ -695,7 +695,7 @@ SELECT hasSubsequence('garbage', 'arg') ;
 
 ## hasSubsequenceUTF8
 
-类似于 [hasSubsequence](#hasSubsequence) 但是假定 `haystack` 和 `needle` 是 UTF-8 编码的字符串。
+类似于 [hasSubsequence](#hassubsequence) 但是假定 `haystack` 和 `needle` 是 UTF-8 编码的字符串。
 
 ## hasSubsequenceCaseInsensitiveUTF8
 

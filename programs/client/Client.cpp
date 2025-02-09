@@ -10,7 +10,6 @@
 #include <Common/ThreadStatus.h>
 #include "Client/ConnectionString.h"
 #include "Core/Protocol.h"
-#include "Parsers/formatAST.h"
 
 #include <Access/AccessControl.h>
 
@@ -38,6 +37,8 @@
 #include <Poco/Util/Application.h>
 
 #include "config.h"
+
+#include <filesystem>
 
 namespace fs = std::filesystem;
 using namespace std::literals;

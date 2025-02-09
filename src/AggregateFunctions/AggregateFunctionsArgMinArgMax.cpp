@@ -247,7 +247,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).result().insertResultInto(to);
+        this->data(place).result().insertResultInto(to, this->result_type);
     }
 };
 

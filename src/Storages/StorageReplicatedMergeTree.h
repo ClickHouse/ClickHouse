@@ -37,7 +37,7 @@
 #include <Common/Throttler.h>
 #include <Common/EventNotifier.h>
 #include <base/defines.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/ProfileEventsScope.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
@@ -486,20 +486,20 @@ private:
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
-    BackgroundSchedulePool::TaskHolder queue_updating_task;
+    BackgroundSchedulePoolTaskHolder queue_updating_task;
 
-    BackgroundSchedulePool::TaskHolder mutations_updating_task;
+    BackgroundSchedulePoolTaskHolder mutations_updating_task;
     Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
-    BackgroundSchedulePool::TaskHolder merge_selecting_task;
+    BackgroundSchedulePoolTaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
     UInt64 merge_selecting_sleep_ms;
 
     /// A task that marks finished mutations as done.
-    BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
+    BackgroundSchedulePoolTaskHolder mutations_finalizing_task;
 
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;

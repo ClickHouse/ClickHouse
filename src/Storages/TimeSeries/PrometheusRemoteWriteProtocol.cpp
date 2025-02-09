@@ -5,8 +5,10 @@
 
 #include <algorithm>
 
+#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -27,6 +29,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB

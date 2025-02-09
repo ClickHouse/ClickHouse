@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Processors/OffsetTransform.h>
 
 

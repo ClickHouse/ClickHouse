@@ -80,7 +80,7 @@ Other possible results:
 Query:
 
 ```sql
-SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there’s a will, there’s a way.');
+SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there's a will, there's a way.');
 ```
 
 Result:

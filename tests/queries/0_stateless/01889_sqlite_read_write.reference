@@ -5,6 +5,7 @@ table2
 table3
 table4
 table5
+table6\'
 show creare table:
 CREATE TABLE SQLite.table1\n(\n    `col1` Nullable(String),\n    `col2` Nullable(Int16)\n)\nENGINE = SQLite
 CREATE TABLE SQLite.table2\n(\n    `col1` Nullable(Int32),\n    `col2` Nullable(String)\n)\nENGINE = SQLite
@@ -36,6 +37,9 @@ line1	1
 line2	2
 line3	3
 line4	4
+table6_line1	1
+table6_line2	2
+table6_line3	3
 test schema inference
 col1	Nullable(String)					
 col2	Nullable(Int32)					

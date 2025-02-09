@@ -2,6 +2,7 @@
 
 #if USE_ULID
 
+#include <Common/intExp10.h>
 #include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>

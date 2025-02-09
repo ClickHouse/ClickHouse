@@ -36,6 +36,8 @@ namespace ErrorCodes
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
+    DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batcn in object storage", 0) \
+    DECLARE(Bool, enable_hash_ring_filtering, 0, "Enable filtering files among replicas according to hash ring for Unordered mode", 0) \
     DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
@@ -121,7 +123,7 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
+void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)
     {
@@ -149,7 +151,22 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
                 {
                     bool inserted = names.insert(change.name).second;
                     if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
+                    {
+                        if (is_attach)
+                        {
+                            LOG_WARNING(
+                                getLogger("StorageObjectStorageQueue"),
+                                "Storage {} has a duplicated setting {}. "
+                                "Will use the first declared setting's value",
+                                storage_id.getNameForLogs(), change.name);
+                        }
+                        else
+                        {
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Setting {} is defined multiple times", change.name);
+                        }
+                    }
                 }
             }
 

@@ -2,19 +2,20 @@
 
 #include <limits>
 #include <optional>
-#include <magic_enum.hpp>
-#include <fmt/format.h>
+
+#include <base/EnumReflection.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
+#include <fmt/format.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <Common/noexcept_scope.h>
-#include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents

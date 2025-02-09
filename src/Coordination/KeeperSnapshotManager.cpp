@@ -7,6 +7,7 @@
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
@@ -210,11 +211,11 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         writeBinary(snapshot.zxid, out);
         if (keeper_context->digestEnabled())
         {
-            writeBinary(static_cast<uint8_t>(Storage::CURRENT_DIGEST_VERSION), out);
+            writeBinary(static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION), out);
             writeBinary(snapshot.nodes_digest, out);
         }
         else
-            writeBinary(static_cast<uint8_t>(Storage::NO_DIGEST), out);
+            writeBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), out);
     }
 
     writeBinary(snapshot.session_id, out);
@@ -325,11 +326,11 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         readBinary(storage.zxid, in);
         uint8_t digest_version;
         readBinary(digest_version, in);
-        if (digest_version != Storage::DigestVersion::NO_DIGEST)
+        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
         {
             uint64_t nodes_digest;
             readBinary(nodes_digest, in);
-            if (digest_version == Storage::CURRENT_DIGEST_VERSION)
+            if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
             {
                 storage.nodes_digest = nodes_digest;
                 recalculate_digest = false;
@@ -478,7 +479,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -486,7 +487,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #endif
                 }
             }

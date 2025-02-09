@@ -12,6 +12,7 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>

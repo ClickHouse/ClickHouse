@@ -6,7 +6,7 @@ title: "Functions for Working with Geohash"
 
 ## Geohash
 
-[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer the geohash string is, the more precise the geographic location will be.
+[Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth's surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer the geohash string is, the more precise the geographic location will be.
 
 If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
 
@@ -106,10 +106,10 @@ All coordinate parameters must be of the same type: either `Float32` or `Float64
 **Returned values**
 
 - Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items. [Array](../../data-types/array.md)([String](../../data-types/string.md)).
-- `[]` - Empty array if minimum latitude and longitude values aren’t less than corresponding maximum values.
+- `[]` - Empty array if minimum latitude and longitude values aren't less than corresponding maximum values.
 
 :::note    
-Function throws an exception if resulting array is over 10’000’000 items long.
+Function throws an exception if resulting array is over 10'000'000 items long.
 :::
 
 **Example**

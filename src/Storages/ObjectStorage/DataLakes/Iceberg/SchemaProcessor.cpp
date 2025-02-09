@@ -1,3 +1,4 @@
+#include <optional>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 #include <Poco/JSON/Array.h>
@@ -6,6 +7,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include "base/scope_guard.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -36,7 +38,6 @@ extern const int UNSUPPORTED_METHOD;
 
 namespace
 {
-
 
 template <typename T>
 bool equals(const T & first, const T & second)
@@ -90,9 +91,12 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
 
 }
 
+std::string IcebergSchemaProcessor::default_link{};
+
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
 {
     Int32 schema_id = schema_ptr->getValue<Int32>("schema-id");
+    current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
@@ -103,17 +107,49 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
         iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
         auto fields = schema_ptr->get("fields").extract<Poco::JSON::Array::Ptr>();
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
+        String current_full_name{};
         for (size_t i = 0; i != fields->size(); ++i)
         {
             auto field = fields->getObject(static_cast<UInt32>(i));
             auto name = field->getValue<String>("name");
             bool required = field->getValue<bool>("required");
-            clickhouse_schema->push_back(NameAndTypePair{name, getFieldType(field, "type", required)});
+            current_full_name = name;
+            auto type = getFieldType(field, "type", required, current_full_name, true);
+            clickhouse_schema->push_back(NameAndTypePair{name, type});
+            clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>("id")}] = NameAndTypePair{current_full_name, type};
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
+    current_schema_id = std::nullopt;
 }
 
+NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
+{
+    auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
+    if (it == clickhouse_types_by_source_ids.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} is unknown", source_id);
+    return it->second;
+}
+
+std::optional<NameAndTypePair> IcebergSchemaProcessor::tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const
+{
+    auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
+    if (it == clickhouse_types_by_source_ids.end())
+        return {};
+    return it->second;
+}
+
+NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const
+{
+    NamesAndTypesList fields;
+    for (const auto & source_id : source_ids)
+    {
+        auto it = clickhouse_types_by_source_ids.find({schema_id, source_id});
+        if (it != clickhouse_types_by_source_ids.end())
+            fields.push_back(it->second);
+    }
+    return fields;
+}
 
 DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 {
@@ -158,7 +194,8 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
+DataTypePtr
+IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
     String type_name = type->getValue<String>("type");
     if (type_name == "list")
@@ -188,7 +225,18 @@ DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::O
             auto field = fields->getObject(static_cast<Int32>(i));
             element_names.push_back(field->getValue<String>("name"));
             auto required = field->getValue<bool>("required");
-            element_types.push_back(getFieldType(field, "type", required));
+            if (is_subfield_of_root)
+            {
+                (current_full_name += ".").append(element_names.back());
+                scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
+                element_types.push_back(getFieldType(field, "type", required, current_full_name, true));
+                clickhouse_types_by_source_ids[{current_schema_id.value(), field->getValue<Int32>("id")}]
+                    = NameAndTypePair{current_full_name, element_types.back()};
+            }
+            else
+            {
+                element_types.push_back(getFieldType(field, "type", required));
+            }
         }
 
         return std::make_shared<DataTypeTuple>(element_types, element_names);
@@ -197,10 +245,11 @@ DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::O
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr IcebergSchemaProcessor::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required)
+DataTypePtr IcebergSchemaProcessor::getFieldType(
+    const Poco::JSON::Object::Ptr & field, const String & type_key, bool required, String & current_full_name, bool is_subfield_of_root)
 {
     if (field->isObject(type_key))
-        return getComplexTypeFromObject(field->getObject(type_key));
+        return getComplexTypeFromObject(field->getObject(type_key), current_full_name, is_subfield_of_root);
 
     auto type = field->get(type_key);
     if (type.isString())
@@ -212,7 +261,6 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(const Poco::JSON::Object::Ptr &
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
 }
-
 
 /**
 * Iceberg allows only three types of primitive type conversion:

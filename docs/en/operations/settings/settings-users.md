@@ -178,7 +178,7 @@ To open access for user from any network, specify:
 ```
 
 :::note
-It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
+It's insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
 :::
 
 To open access only from localhost, specify:

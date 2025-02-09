@@ -522,6 +522,17 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     return offsets_column;
 }
 
+static ColumnPtr readOffsetsFromFixedArrowListColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, int32_t length)
+{
+    auto offsets_column = ColumnUInt64::create();
+    ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
+    int64_t size = arrow_column->length();
+    offsets_data.reserve(size);
+    for (int64_t i = 0; i < size; ++i)
+        offsets_data.emplace_back((i + 1) * length);
+    return offsets_column;
+}
+
 /*
  * Arrow Dictionary and ClickHouse LowCardinality types are a bit different.
  * Dictionary(Nullable(X)) in ArrowColumn format is composed of a nullmap, dictionary and an index.
@@ -908,8 +919,29 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         }
         case arrow::Type::LIST:
         case arrow::Type::LARGE_LIST:
+        case arrow::Type::FIXED_SIZE_LIST:
         {
-            bool is_large_list = arrow_column->type()->id() == arrow::Type::LARGE_LIST;
+            enum class ListType
+            {
+                List,
+                LargeList,
+                FixedSizeList
+            };
+            ListType list_type = [&]
+            {
+                switch (arrow_column->type()->id())
+                {
+                    case arrow::Type::LIST:
+                        return ListType::List;
+                    case arrow::Type::LARGE_LIST:
+                        return ListType::LargeList;
+                    case arrow::Type::FIXED_SIZE_LIST:
+                        return ListType::FixedSizeList;
+                    default:
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected list type: {}", arrow_column->type()->name());
+                }
+            }();
+
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
@@ -918,19 +950,41 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nested_type_hint = array_type_hint->getNestedType();
             }
 
-            bool is_nested_nullable_column = false;
-            if (is_large_list)
+            bool is_nested_nullable_column = [&]
             {
-                auto * arrow_large_list_type = assert_cast<arrow::LargeListType *>(arrow_column->type().get());
-                is_nested_nullable_column = arrow_large_list_type->value_field()->nullable();
-            }
-            else
-            {
-                auto * arrow_list_type = assert_cast<arrow::ListType *>(arrow_column->type().get());
-                is_nested_nullable_column = arrow_list_type->value_field()->nullable();
-            }
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                    {
+                        auto * arrow_large_list_type = assert_cast<arrow::LargeListType *>(arrow_column->type().get());
+                        return arrow_large_list_type->value_field()->nullable();
+                    }
+                    case ListType::FixedSizeList:
+                    {
+                        auto * arrow_fixed_size_list_type = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get());
+                        return arrow_fixed_size_list_type->value_field()->nullable();
+                    }
+                    case ListType::List:
+                    {
+                        auto * arrow_list_type = assert_cast<arrow::ListType *>(arrow_column->type().get());
+                        return arrow_list_type->value_field()->nullable();
+                    }
+                }
+            }();
 
-            auto arrow_nested_column = is_large_list ? getNestedArrowColumn<arrow::LargeListArray>(arrow_column) : getNestedArrowColumn<arrow::ListArray>(arrow_column);
+            auto arrow_nested_column = [&]
+            {
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                        return getNestedArrowColumn<arrow::LargeListArray>(arrow_column);
+                    case ListType::FixedSizeList:
+                        return getNestedArrowColumn<arrow::FixedSizeListArray>(arrow_column);
+                    case ListType::List:
+                        return getNestedArrowColumn<arrow::ListArray>(arrow_column);
+                }
+            }();
+
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 dictionary_infos,
@@ -941,7 +995,21 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             if (!nested_column.column)
                 return {};
 
-            auto offsets_column = is_large_list ? readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column) : readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
+            auto offsets_column = [&]
+            {
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                        return readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column);
+                    case ListType::FixedSizeList:
+                    {
+                        auto fixed_length = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get())->list_size();
+                        return readOffsetsFromFixedArrowListColumn(arrow_column, fixed_length);
+                    }
+                    case ListType::List:
+                        return readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
+                }
+            }();
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
 
             DataTypePtr array_type;
@@ -1136,6 +1204,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
+        arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
         arrow_column->type()->id() != arrow::Type::STRUCT &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)

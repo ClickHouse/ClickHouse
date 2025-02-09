@@ -36,6 +36,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>

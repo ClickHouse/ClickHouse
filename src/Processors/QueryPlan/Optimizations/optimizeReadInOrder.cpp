@@ -14,7 +14,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -23,6 +22,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>

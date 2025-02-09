@@ -315,7 +315,7 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
-            "--pre-pull --command ' echo Pre Pull finished ' "
+            "--command ' echo Pre Pull finished ' "
         )
 
         for i in range(5):

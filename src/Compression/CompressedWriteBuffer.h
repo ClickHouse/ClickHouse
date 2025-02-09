@@ -1,13 +1,10 @@
 #pragma once
 
-#include <memory>
-
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionFactory.h>
 
 
 namespace DB
@@ -18,7 +15,7 @@ class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 public:
     explicit CompressedWriteBuffer(
         WriteBuffer & out_,
-        CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
+        CompressionCodecPtr codec_ = nullptr,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);

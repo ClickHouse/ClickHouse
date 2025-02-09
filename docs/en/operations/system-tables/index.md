@@ -12,14 +12,14 @@ pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 System tables provide information about:
 
 - Server states, processes, and environment.
-- Server’s internal processes.
+- Server's internal processes.
 - Options used when the ClickHouse binary was built.
 
 System tables:
 
 - Located in the `system` database.
 - Available only for reading data.
-- Can’t be dropped or altered, but can be detached.
+- Can't be dropped or altered, but can be detached.
 
 Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 

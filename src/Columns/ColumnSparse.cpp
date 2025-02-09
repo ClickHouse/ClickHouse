@@ -94,6 +94,11 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
+{
+    return values->getValueNameAndType(getValueIndex(n));
+}
+
 bool ColumnSparse::getBool(size_t n) const
 {
     return values->getBool(getValueIndex(n));
@@ -677,18 +682,32 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
+    /// First calculate the exact size of the resulting column to avoid reallocations and to use the exact amount of memory.
+    size_t total_offsets_size = 0;
+    {
+        auto offset_it = begin();
+        for (size_t i = 0; i < _size; ++i, ++offset_it)
+        {
+            if (!offset_it.isDefault())
+            {
+                size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
+                total_offsets_size += replicate_size;
+            }
+        }
+    }
+    res_offsets_data.reserve_exact(total_offsets_size);
+
     auto offset_it = begin();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         if (!offset_it.isDefault())
         {
             size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            res_offsets_data.reserve_exact(res_offsets_data.size() + replicate_size);
             for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
-                res_values->insertFrom(*values, offset_it.getValueIndex());
             }
+            res_values->insertManyFrom(*values, offset_it.getValueIndex(), replicate_size);
         }
     }
 
@@ -795,13 +814,27 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnSparse::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnSparse::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*values);
+    values->forEachMutableSubcolumnRecursively(callback);
+    callback(*offsets);
+    offsets->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(values);
+    callback(offsets);
+}
+
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*values);
     values->forEachSubcolumnRecursively(callback);
