@@ -5,8 +5,6 @@ sidebar_label: Reddit comments
 title: "Reddit comments dataset"
 ---
 
-# Reddit comments dataset
-
 This dataset contains publicly available comments on Reddit that go back to December, 2005, to March, 2023, and contains over 14B rows of data. The raw data is in JSON format in compressed files and the rows look like the following:
 
 ```json
