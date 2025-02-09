@@ -874,6 +874,9 @@ transactionOldestSnapshot
 transform
 translate
 translateUTF8
+trimBoth
+trimLeft
+trimRight
 trunc
 tryBase58Decode
 tumble

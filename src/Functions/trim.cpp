@@ -1,25 +1,139 @@
-#include <cstddef>
 #include <Columns/ColumnString.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionStringToString.h>
-#include <base/find_symbols.h>
-#include "Common/FunctionDocumentation.h"
 #include "Columns/IColumn.h"
 #include "Functions/IFunction.h"
-#include "Interpreters/castColumn.h"
-
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
+
+template <typename Mode>
+class FunctionTrim : public IFunction
+{
+public:
+    static constexpr auto name = Mode::name;
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTrim<Mode>>(); }
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors mandatory_args{
+            {"input_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"trim_character", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        return arguments[0].type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        std::optional<SearchSymbols> custom_trim_characters;
+        if (arguments.size() == 2 && input_rows_count > 0)
+        {
+            const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            const String & trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
+            custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+        }
+
+        ColumnPtr col_input_full;
+        col_input_full = arguments[0].column->convertToFullColumnIfConst();
+
+        if (const ColumnString * col_input_string = checkAndGetColumn<ColumnString>(col_input_full.get()))
+        {
+            auto col_res = ColumnString::create();
+            vector(col_input_string->getChars(), col_input_string->getOffsets(), custom_trim_characters, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            return col_res;
+        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+    }
+
+    static void vector(
+        const ColumnString::Chars & input_data,
+        const ColumnString::Offsets & input_offsets,
+        const std::optional<SearchSymbols> & custom_trim_characters,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
+    {
+        res_offsets.resize_exact(input_rows_count);
+        res_data.reserve_exact(input_data.size());
+
+        size_t prev_offset = 0;
+        size_t res_offset = 0;
+
+        const UInt8 * start;
+        size_t length;
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset - 1, custom_trim_characters, start, length);
+
+            res_data.resize(res_data.size() + length + 1);
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
+            res_offset += length + 1;
+            res_data[res_offset - 1] = '\0';
+
+            res_offsets[i] = res_offset;
+            prev_offset = input_offsets[i];
+        }
+    }
+
+    static void execute(const UInt8 * data, size_t size, const std::optional<SearchSymbols> & custom_trim_characters, const UInt8 *& res_data, size_t & res_size)
+    {
+        const char * char_begin = reinterpret_cast<const char *>(data);
+        const char * char_end = char_begin + size;
+
+        if constexpr (Mode::trim_left)
+        {
+            const char * found = nullptr;
+            if (!custom_trim_characters)
+                found = find_first_not_symbols<' '>(char_begin, char_end);
+            else
+            {
+                std::string_view input(char_begin, char_end);
+                found = find_first_not_symbols(input, *custom_trim_characters);
+            }
+            size_t num_chars = found - char_begin;
+            char_begin += num_chars;
+        }
+        if constexpr (Mode::trim_right)
+        {
+            const char * found = nullptr;
+            if (!custom_trim_characters)
+                found = find_last_not_symbols_or_null<' '>(char_begin, char_end);
+            else
+            {
+                std::string_view input(char_begin, char_end);
+                found = find_last_not_symbols_or_null(input, *custom_trim_characters);
+            }
+            if (found)
+                char_end = found + 1;
+            else
+                char_end = char_begin;
+        }
+
+        res_data = reinterpret_cast<const UInt8 *>(char_begin);
+        res_size = char_end - char_begin;
+    }
+};
 
 struct TrimModeLeft
 {
@@ -42,122 +156,6 @@ struct TrimModeBoth
     static constexpr bool trim_right = true;
 };
 
-template <typename Mode>
-class FunctionTrim : public IFunction
-{
-public:
-    // TODO(manish): find out if this function is suitable for short-circuit execution
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    static constexpr auto name = Mode::name;
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTrim<Mode>>(); }
-
-    String getName() const override { return name; }
-
-    // trim() is variadic, but we only support 1 or 2 arguments
-    bool isVariadic() const override { return true; }
-
-    // 0 => function is variadic
-    size_t getNumberOfArguments() const override { return 0; } // 1 or 2 arguments are supported
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() < 1 || arguments.size() > 2)
-        {
-            throw Exception{ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Invalid number of arguments for function {}: passed {}, required 1 or 2",
-                name,
-                arguments.size()};
-        }
-
-        if (!isString(arguments[0].type))
-        {
-            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected String",
-                arguments[0].type->getName(),
-                getName()};
-        }
-
-        if (arguments.size() == 2 && !isString(arguments[1].type))
-        {
-            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected String",
-                arguments[1].type->getName(),
-                getName()};
-        }
-
-        return std::make_shared<DataTypeString>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName& arguments, const DataTypePtr& result_type, size_t) const override
-    {
-        size_t arg_size = arguments.size();
-        Columns converted_columns(arg_size);
-        for (size_t arg = 0; arg < arg_size; ++arg)
-        {
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
-        }
-
-        const ColumnString* str_column = checkAndGetColumn<ColumnString>(converted_columns[0].get());
-        const ColumnString* chars_column = (arg_size == 2) ? checkAndGetColumn<ColumnString>(converted_columns[1].get()) : nullptr;
-
-        if (!str_column)
-        {
-            throw Exception{ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName()};
-        }
-
-        auto result_column = ColumnString::create();
-
-        for (size_t i = 0; i < str_column->size(); ++i)
-        {
-            StringRef str = str_column->getDataAt(i);
-            size_t start = 0;
-            size_t end = str.size;
-
-            // Trim hardcoded whitespace char (same as 1-argument trim())
-            if (!chars_column)
-            {
-                // Compile-time check for whitespace
-                if constexpr (Mode::trim_left)
-                {
-                    start = find_first_not_symbols<' '>(str.data, str.data + str.size) - str.data;
-                }
-                if constexpr (Mode::trim_right)
-                {
-                    const char * right_pos = find_last_not_symbols_or_null<' '>(str.data, str.data + str.size);
-                    end = right_pos ? (right_pos - str.data + 1) : 0;
-                }
-            }
-            // Custom trim characters (dynamic trim with the second argument)
-            else
-            {
-                StringRef chars = chars_column->getDataAt(i);
-                SearchSymbols trim_chars(std::string(chars.data, chars.size));
-
-                // Trim left at runtime
-                if constexpr (Mode::trim_left)
-                {
-                    start = find_first_not_symbols(str.data, str.data + str.size, trim_chars) - str.data;
-                }
-
-                // Trim right at runtime
-                if constexpr (Mode::trim_right)
-                {
-                    const char * right_pos = find_last_not_symbols_or_null(str.data, str.data + str.size, trim_chars);
-                    end = right_pos ? (right_pos - str.data + 1) : 0;
-                }
-            }
-            start = std::min(start, end);
-            result_column->insertData(str.data + start, end - start);
-        }
-        return result_column;
-    }
-};
-
 using FunctionTrimLeft = FunctionTrim<TrimModeLeft>;
 using FunctionTrimRight = FunctionTrim<TrimModeRight>;
 using FunctionTrimBoth = FunctionTrim<TrimModeBoth>;
@@ -166,18 +164,9 @@ using FunctionTrimBoth = FunctionTrim<TrimModeBoth>;
 
 REGISTER_FUNCTION(Trim)
 {
-    factory.registerFunction<FunctionTrimLeft>(
-        FunctionDocumentation{.description="Removes specified characters from the beginning of a string. Uses whitespace if no character provided as a second argument."},
-        FunctionFactory::Case::Insensitive
-    );
-    factory.registerFunction<FunctionTrimRight>(
-        FunctionDocumentation{.description="Removes specified characters from the end of a string. Uses whitespace if no character provided as a second argument."},
-        FunctionFactory::Case::Insensitive
-    );
-    factory.registerFunction<FunctionTrimBoth>(
-        FunctionDocumentation{.description="Removes specified characters from both the beginning and end of a string. Uses whitespace if no character provided as a second argument."},
-        FunctionFactory::Case::Insensitive
-    );
+    factory.registerFunction<FunctionTrimLeft>();
+    factory.registerFunction<FunctionTrimRight>();
+    factory.registerFunction<FunctionTrimBoth>();
     factory.registerAlias("ltrim", FunctionTrimLeft::name);
     factory.registerAlias("rtrim", FunctionTrimRight::name);
     factory.registerAlias("trim", FunctionTrimBoth::name);

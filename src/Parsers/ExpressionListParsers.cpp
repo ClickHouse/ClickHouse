@@ -1618,7 +1618,10 @@ class TrimLayer : public Layer
 {
 public:
     TrimLayer(bool trim_left_, bool trim_right_)
-        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), trim_left(trim_left_), trim_right(trim_right_) {}
+        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true)
+        , trim_left(trim_left_)
+        , trim_right(trim_right_)
+    {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
