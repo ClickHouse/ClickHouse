@@ -129,14 +129,11 @@ SELECT json FROM test;
 ```
 
 ```text
-┌─json──────────────────────────────────────────────────────────┐
-│ {"a":{"b":"42"},"c":["1","2","3"]}                            │
-│ {"f":"Hello, World!"}                                         │
-│ {"a":{"b":"43","e":"10"},"c":["4","5","6"]}                   │
-│ {"a":{"b":"42","g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
-│ {"d":"2020-01-02","f":"Hello, World!"}                        │
-│ {"a":{"b":"43","e":"10","g":43.43},"c":["4","5","6"]}         │
-└───────────────────────────────────────────────────────────────┘
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
@@ -145,12 +142,9 @@ SELECT json.a.b, json.a.g, json.c, json.d FROM test;
 
 ```text
 ┌─json.a.b─┬─json.a.g─┬─json.c──┬─json.d─────┐
-│ 42       │ 42.42    │ [1,2,3] │ 2020-01-01 │
-│ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
-│ 43       │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
-│ 42       │ ᴺᵁᴸᴸ     │ [1,2,3] │ ᴺᵁᴸᴸ       │
-│ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ       │
-│ 43       │ ᴺᵁᴸᴸ     │ [4,5,6] │ ᴺᵁᴸᴸ       │
+│       42 │ 42.42    │ [1,2,3] │ 2020-01-01 │
+│        0 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
+│       43 │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
 └──────────┴──────────┴─────────┴────────────┘
 ```
 
@@ -165,9 +159,6 @@ SELECT json.non.existing.path FROM test;
 │ ᴺᵁᴸᴸ                   │
 │ ᴺᵁᴸᴸ                   │
 │ ᴺᵁᴸᴸ                   │
-│ ᴺᵁᴸᴸ                   │
-│ ᴺᵁᴸᴸ                   │
-│ ᴺᵁᴸᴸ                   │
 └────────────────────────┘
 ```
 
@@ -178,12 +169,9 @@ SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeNam
 
 ```text
 ┌─toTypeName(json.a.b)─┬─toTypeName(json.a.g)─┬─toTypeName(json.c)─┬─toTypeName(json.d)─┐
-│ Dynamic              │ Dynamic              │ Dynamic            │ Dynamic            │
-│ Dynamic              │ Dynamic              │ Dynamic            │ Dynamic            │
-│ Dynamic              │ Dynamic              │ Dynamic            │ Dynamic            │
-│ Dynamic              │ Dynamic              │ Dynamic            │ Dynamic            │
-│ Dynamic              │ Dynamic              │ Dynamic            │ Dynamic            │
-│ Dynamic              │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
 └──────────────────────┴──────────────────────┴────────────────────┴────────────────────┘
 ```
 
@@ -197,9 +185,6 @@ select json.a.g.:Float64, dynamicType(json.a.g), json.d.:Date, dynamicType(json.
 
 ```text
 ┌─json.a.g.:`Float64`─┬─dynamicType(json.a.g)─┬─json.d.:`Date`─┬─dynamicType(json.d)─┐
-│                ᴺᵁᴸᴸ │ None                  │           ᴺᵁᴸᴸ │ None                │
-│                ᴺᵁᴸᴸ │ None                  │           ᴺᵁᴸᴸ │ None                │
-│                ᴺᵁᴸᴸ │ None                  │           ᴺᵁᴸᴸ │ None                │
 │               42.42 │ Float64               │     2020-01-01 │ Date                │
 │                ᴺᵁᴸᴸ │ None                  │     2020-01-02 │ Date                │
 │               43.43 │ Float64               │           ᴺᵁᴸᴸ │ None                │
@@ -214,9 +199,6 @@ select json.a.g::UInt64 as uint FROM test;
 
 ```text
 ┌─uint─┐
-│    0 │
-│    0 │
-│    0 │
 │   42 │
 │    0 │
 │   43 │
