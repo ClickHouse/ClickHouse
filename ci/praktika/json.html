@@ -239,7 +239,8 @@
         }
 
         table {
-            width: 100%;
+            table-layout: auto;
+            width: auto;
             border-collapse: collapse;
         }
 
@@ -248,10 +249,9 @@
         }
 
         th.status-column, td.status-column {
-            max-width: 100px; /* Set the maximum width for the column */
+            width: auto;
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide the overflowed text */
-            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
         }
 
         th.time-column, td.time-column {
@@ -697,7 +697,8 @@
     }
 
     // Define the fixed columns globally, so both functions can use it
-    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+    const columns = ['status', 'name', 'start_time', 'duration'];
+    // const columns = ['status', 'name', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
         // name: '🗂️',
@@ -737,7 +738,7 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, columns, nest_level) {
+    function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);  // Get the current URL
 
         // Clear existing rows if re-rendering (used in sorting)
@@ -750,22 +751,29 @@
                 const td = document.createElement('td');
                 const value = result[column];
 
-                if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
-                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
-                } else if (column === 'status') {
-                    // Apply status formatting
+                if (column === 'status') {
+                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
+                    if (result.info && result.info.trim() !== "") {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                    }
                     td.appendChild(span);
+
+                    // // Click event to toggle the info row
+                    // span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                } else if (column === 'name') {
+                    // Create a link for the name field, using name_X
+                    const link = document.createElement('a');
+                    const newUrl = new URL(currentUrl);
+                    newUrl.searchParams.set(`name_${nest_level}`, value);
+                    link.href = newUrl.toString();
+                    link.textContent = value;
+                    td.classList.add('name-column');
+                    td.appendChild(link);
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -782,6 +790,32 @@
 
             tbody.appendChild(row);
         });
+    }
+
+    /**
+     * Toggles an additional row below the clicked row to display the "info" text.
+     */
+    function toggleInfoRow(row, infoText) {
+        if (!infoText) return; // Do nothing if there's no info
+
+        let nextRow = row.nextElementSibling;
+
+        // Check if the next row is already an "info" row
+        if (nextRow && nextRow.classList.contains('info-row')) {
+            nextRow.remove(); // If it's there, remove it
+        } else {
+            // Otherwise, create a new row for the info text
+            const infoRow = document.createElement('tr');
+            infoRow.classList.add('info-row');
+
+            const infoCell = document.createElement('td');
+            infoCell.colSpan = row.children.length; // Make it span the full width
+            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
+            infoCell.classList.add('info-text');
+
+            infoRow.appendChild(infoCell);
+            row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
+        }
     }
 
     function sortTable(results, column, key, tbody, nest_level, columns) {
