@@ -1,4 +1,5 @@
 #include <amqpcpp.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,6 +34,7 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
 
@@ -848,7 +850,7 @@ void StorageRabbitMQ::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), shared_from_this(), local_context, query_info);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }

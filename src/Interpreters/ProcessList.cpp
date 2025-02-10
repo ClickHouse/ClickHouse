@@ -9,6 +9,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -94,8 +95,12 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr
-ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds)
+ProcessList::EntryPtr ProcessList::insert(
+    const String & query_,
+    UInt64 normalized_query_hash,
+    const IAST * ast,
+    ContextMutablePtr query_context,
+    UInt64 watch_start_nanoseconds)
 {
     EntryPtr res;
 
@@ -109,7 +114,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     std::shared_ptr<QueryStatus> query;
 
     {
-        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); // To avoid deadlock in case of OOM
+        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
         IAST::QueryKind query_kind = ast->getQueryKind();
 
@@ -292,6 +297,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         query = std::make_shared<QueryStatus>(
             query_context,
             query_,
+            normalized_query_hash,
             client_info,
             priorities.insert(settings[Setting::priority]),
             std::move(thread_group),
@@ -403,6 +409,7 @@ ProcessListEntry::~ProcessListEntry()
 QueryStatus::QueryStatus(
     ContextPtr context_,
     const String & query_,
+    UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupPtr && thread_group_,
@@ -411,6 +418,7 @@ QueryStatus::QueryStatus(
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
+    , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
@@ -703,6 +711,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.normalized_query_hash = normalized_query_hash;
     res.query_kind        = query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();

@@ -55,6 +55,8 @@ Calculates the difference of two values `a` and `b`. The result is always signed
 
 Similar to `plus`, it is possible to subtract an integer from a date or date with time.
 
+Additionally, subtraction between date with time is supported, resulting in the time difference between them.
+
 **Syntax**
 
 ```sql

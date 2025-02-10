@@ -48,6 +48,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AvroFormatSettings
 AzureQueue
 Azurite
 BFloat
@@ -229,8 +230,8 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
+DataTypesMatching
 DatabaseCatalog
 DatabaseCatalogThreads
 DatabaseCatalogThreadsActive
@@ -838,6 +839,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyFormatSettings
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
@@ -936,6 +938,7 @@ RowBinary
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryFormatSettings
 Runtime
 SATA
 SELECTs
@@ -963,6 +966,7 @@ SaaS
 Sanjeev
 Sankey
 Scalable
+ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -1531,6 +1535,7 @@ corrmatrix
 corrstable
 cors
 cosineDistance
+cooldown
 countDigits
 countEqual
 countIf
@@ -1995,6 +2000,7 @@ infty
 initcap
 initcapUTF
 initialQueryID
+initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -2876,6 +2882,7 @@ sysctl
 syslog
 syslogd
 systemd
+sqlreference
 tabix
 tablum
 tabseparated
