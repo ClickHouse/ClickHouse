@@ -301,6 +301,9 @@ namespace ServerSetting
     extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
+    extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
 }
 
 }
@@ -1254,6 +1257,11 @@ try
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    getMergeTreePrefixesDeserializationThreadPool().initialize(
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+        server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
+
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -1936,6 +1944,10 @@ try
                 0, // We don't need any threads one all the parts will be deleted
                 new_server_settings[ServerSetting::max_parts_cleaning_thread_pool_size]);
 
+            getMergeTreePrefixesDeserializationThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+                new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
