@@ -2528,7 +2528,17 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     Columns result;
     result.resize(1);
-    reader->readRows(0, total_mark, false, 0, result);
+    try
+    {
+        reader->readRows(0, total_mark, false, 0, result);
+    }
+    catch (...)
+    {
+        /// We couldn't read the sample. It can happen if we need the sample to calculate columns sizes but data files were not finalized yet.
+        /// In this case we don't want to throw an exception as it can break the mutation/merge.
+        /// TODO: instead of try/catch here we need to implement lazy column sizes calculation.
+        return column.type->createColumn();
+    }
     return result[0];
 }
 
