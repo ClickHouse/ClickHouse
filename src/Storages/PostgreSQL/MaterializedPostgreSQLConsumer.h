@@ -3,7 +3,6 @@
 #include <Core/PostgreSQL/Connection.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>

@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -51,6 +52,11 @@
 
 #include <fmt/core.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event SystemLogErrorOnFlush;
+}
 
 namespace DB
 {
@@ -127,6 +133,7 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -327,6 +334,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         metric_log->startCollect("MetricLog", collect_interval_milliseconds);
     }
 
+    if (latency_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("latency_log.collect_interval_milliseconds",
+                                                                DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        latency_log->startCollect("LatencyLog", collect_interval_milliseconds);
+    }
+
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
@@ -514,6 +528,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
