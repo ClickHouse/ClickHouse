@@ -46,10 +46,10 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
-            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
-            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryCacheUsage::Unknown)},
+            {"None",        static_cast<Int8>(QueryCacheUsage::None)},
+            {"Write",       static_cast<Int8>(QueryCacheUsage::Write)},
+            {"Read",        static_cast<Int8>(QueryCacheUsage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -77,7 +77,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"current_database", low_cardinality_string, "Name of the current database."},
         {"query", std::make_shared<DataTypeString>(), " Query string."},
         {"formatted_query", std::make_shared<DataTypeString>(), "Formatted query string."},
-        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "Identical hash value without the values of literals for similar queries."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", low_cardinality_string, "Type of the query."},
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
