@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+
 namespace DB
 {
 
@@ -39,21 +40,6 @@ void ProfileInfo::write(WriteBuffer & out, UInt64 client_revision) const
         writeBinary(hasAppliedAggregation(), out);
         writeVarUInt(getRowsBeforeAggregation(), out);
     }
-}
-
-
-void ProfileInfo::setFrom(const ProfileInfo & rhs, bool skip_block_size_info)
-{
-    if (!skip_block_size_info)
-    {
-        rows = rhs.rows;
-        blocks = rhs.blocks;
-        bytes = rhs.bytes;
-    }
-    applied_limit = rhs.applied_limit;
-    rows_before_limit = rhs.rows_before_limit;
-    applied_aggregation = rhs.applied_aggregation;
-    rows_before_aggregation = rhs.rows_before_aggregation;
 }
 
 

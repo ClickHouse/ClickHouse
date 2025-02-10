@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 
-#include <vector>
 
 namespace DB
 {
@@ -21,8 +20,6 @@ struct ProfileInfo
     size_t rows = 0;
     size_t blocks = 0;
     size_t bytes = 0;
-
-    using ProfileInfos = std::vector<const ProfileInfo *>;
 
     /** Get the number of rows if there were no LIMIT.
       * If there is no LIMIT, 0 is returned.
@@ -42,10 +39,6 @@ struct ProfileInfo
     /// Writes only main fields i.e. fields that required by internal transmission protocol.
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
-
-    /// Sets main fields from other object (see methods above).
-    /// If skip_block_size_info if true, then rows, bytes and block fields are ignored.
-    void setFrom(const ProfileInfo & rhs, bool skip_block_size_info);
 
     /// Only for Processors.
     void setRowsBeforeLimit(size_t rows_before_limit_)
