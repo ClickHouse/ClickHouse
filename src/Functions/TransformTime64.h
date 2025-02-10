@@ -44,7 +44,7 @@ public:
     static constexpr auto name = Transform::name;
 
     // non-explicit constructor to allow creating from scale value (or with no scale at all), indispensable in some contexts.
-    TransformTime64(UInt32 scale_ = 0) /// NOLINT
+    TransformTime64(UInt32 scale_) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale_))
     {}
 
@@ -87,41 +87,6 @@ public:
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }
-
-    // template <typename... Args>
-    // auto NO_SANITIZE_UNDEFINED execute(const DateTime64 & t, [[maybe_unused]] Args && ... args) const
-    // {
-    //     if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
-    //     {
-    //         return wrapped_transform.execute(t, scale_multiplier, std::forward<Args>(args)...);
-    //     }
-    //     else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
-    //     {
-    //         auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-
-    //         components
-
-    //         const auto result = wrapped_transform.execute(components, std::forward<Args>(args)...);
-    //         using ResultType = std::decay_t<decltype(result)>;
-
-    //         if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<DateTime64>, ResultType>)
-    //         {
-    //             return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(result, scale_multiplier);
-    //         }
-    //         else
-    //         {
-    //             return result;
-    //         }
-    //     }
-    //     else
-    //     {
-    //         auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-    //         if (t.value < 0 && components.fractional)
-    //             --components.whole;
-
-    //         return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
-    //     }
-    // }
 
     template <typename T, typename... Args>
     requires(!std::same_as<T, Time64>)

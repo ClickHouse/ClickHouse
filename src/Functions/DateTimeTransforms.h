@@ -812,7 +812,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
 };
 
 
-struct ToTimeImpl // TODO: CHANGE NAME
+struct ToTimeWithFixedDateImpl
 {
     /// When transforming to time, the date will be equated to 1970-01-02.
     static constexpr auto name = "toTimeWithFixedDate";
@@ -1669,7 +1669,7 @@ struct TimezoneOffsetImpl
     }
 
     static constexpr bool hasPreimage() { return false; }
-    using FactorTransform = ToTimeImpl;
+    using FactorTransform = ToTimeWithFixedDateImpl;
 };
 
 struct ToMinuteImpl
@@ -2319,7 +2319,7 @@ struct Transformer
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
+            if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime> || std::is_same_v<ToType, DataTypeTime>)
             {
                 if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
