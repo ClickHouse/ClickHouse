@@ -75,9 +75,13 @@ $CLICKHOUSE_CLIENT --query "
     SELECT sleep(randConstant() / toUInt32(-1)) * 0.1 FORMAT Null;
 
     OPTIMIZE TABLE t_rename_alter FINAL;
-    SELECT count() > 0 FROM t_rename_alter WHERE NOT ignore(*);
-"
+" 2>/dev/null
+# Some concurrent alters may fail because of "Metadata on replica is not up to date with common metadata in Zookeeper"
+# It is ok, we only check that server doesn't crash in this
 
 wait
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_rename_alter SYNC;"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0 FROM t_rename_alter WHERE NOT ignore(*);
+    DROP TABLE IF EXISTS t_rename_alter SYNC;
+"
