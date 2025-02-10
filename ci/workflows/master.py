@@ -6,7 +6,7 @@ from ci.workflows.job_configs import JobConfigs
 workflow = Workflow.Config(
     name="MasterCI",
     event=Workflow.Event.PUSH,
-    branches=[BASE_BRANCH, "ci_prepare_for_master_wf_migration"],
+    branches=[BASE_BRANCH],
     jobs=[
         *JobConfigs.build_jobs,
         *JobConfigs.unittest_jobs,

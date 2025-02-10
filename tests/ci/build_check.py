@@ -236,10 +236,7 @@ def main():
             sys.exit(1)
     else:
         static_bin_name = CI.get_build_config(build_name).static_binary_name
-        # TODO: test
-        static_bin_name += "_test"
-        # if pr_info.is_master and static_bin_name:
-        if static_bin_name:
+        if pr_info.is_master and static_bin_name:
             s3 = S3Helper()
             # Full binary with debug info:
             s3_path_full = "/".join(
