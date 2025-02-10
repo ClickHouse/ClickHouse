@@ -1228,7 +1228,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             column_like.begin(),
             column_like.end(),
             std::back_inserter(colids),
-            [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); });
+            [](std::pair<std::string, ASTPtr> & p)
+            {
+                const auto * identifier = typeid_cast<ASTIdentifier *>(p.second.get());
+                return identifier && !identifier->shortName().empty();
+            });
 
         if (!tables->children.empty() && !tids.empty() && !colids.empty() && fuzz_rand() % 50 == 0)
         {
