@@ -436,6 +436,8 @@ void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
 DatabaseAtomic::DetachedTables DatabaseAtomic::cleanupDetachedTables()
 {
     DetachedTables not_in_use;
+    if (detached_tables.empty())
+        return not_in_use;
     auto it = detached_tables.begin();
     LOG_DEBUG(log, "There are {} detached tables. Start searching non used tables.", detached_tables.size());
     while (it != detached_tables.end())
