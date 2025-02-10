@@ -1,4 +1,9 @@
 #pragma once
+
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
+
 #include <Core/Types.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -73,3 +78,5 @@ struct KernelUtils
 };
 
 }
+
+#endif

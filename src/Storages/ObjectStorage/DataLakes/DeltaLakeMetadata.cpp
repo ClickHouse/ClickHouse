@@ -1,7 +1,7 @@
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include "config.h"
 
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 
 namespace DB

@@ -1,4 +1,9 @@
 #pragma once
+
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
+
 #include <Core/Types.h>
 #include <IO/S3/URI.h>
 #include <Common/Logger.h>
@@ -44,3 +49,5 @@ private:
 };
 
 }
+
+#endif

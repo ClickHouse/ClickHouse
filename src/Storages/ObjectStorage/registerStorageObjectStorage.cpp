@@ -245,7 +245,7 @@ void registerStorageIceberg(StorageFactory & factory)
 #endif
 
 
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerStorageDeltaLake(StorageFactory & factory)
 {
 #if USE_AWS_S3

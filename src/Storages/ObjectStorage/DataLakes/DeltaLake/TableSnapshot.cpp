@@ -1,5 +1,7 @@
 #include "config.h"
 
+#if USE_DELTA_KERNEL_RS
+
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/parseFieldFromString.h>
@@ -154,3 +156,5 @@ const DB::NamesAndTypesList & TableSnapshot::getSchema()
 }
 
 }
+
+#endif

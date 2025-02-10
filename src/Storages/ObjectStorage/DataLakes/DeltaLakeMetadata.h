@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>

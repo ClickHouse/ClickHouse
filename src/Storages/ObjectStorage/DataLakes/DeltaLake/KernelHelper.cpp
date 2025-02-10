@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
+
 #include "KernelHelper.h"
 #include "KernelUtils.h"
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -99,3 +103,5 @@ DeltaLake::KernelHelperPtr getKernelHelper(const StorageObjectStorage::Configura
 }
 
 }
+
+#endif

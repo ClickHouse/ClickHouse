@@ -196,7 +196,7 @@ using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinitio
 using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
 #endif
 #if USE_AWS_S3
-#    if USE_PARQUET
+#    if USE_PARQUET && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
 #    endif
 using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration>;

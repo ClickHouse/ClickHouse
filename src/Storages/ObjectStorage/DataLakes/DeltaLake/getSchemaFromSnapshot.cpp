@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
+
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 
@@ -360,3 +364,5 @@ DB::NamesAndTypesList getSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
 }
 
 }
+
+#endif

@@ -6,7 +6,8 @@ include(ExternalProject)
 
 
 set(ENABLE_DELTA_KERNEL_RS TRUE)
-if (NOT ENABLE_LIBRARIES)
+# TODO: For now only build Linux x86 and ARM in Release of Debug
+if (NOT ENABLE_LIBRARIES OR NOT LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR SANITIZE OR SANITIZE_COVERAGE)
   set(ENABLE_DELTA_KERNEL_RS FALSE)
 else()
   list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/delta-kernel-rs/cmake")

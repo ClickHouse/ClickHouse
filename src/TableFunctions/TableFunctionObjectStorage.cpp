@@ -238,7 +238,7 @@ template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, Storage
 template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
 #endif
 
-#if USE_PARQUET && USE_AWS_S3
+#if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
 #endif
 
@@ -291,7 +291,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 
 
 #if USE_AWS_S3
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionDeltaLake>(
@@ -322,7 +322,7 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
     registerTableFunctionIceberg(factory);
 #endif
 #if USE_AWS_S3
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerTableFunctionDeltaLake(factory);
 #endif
     registerTableFunctionHudi(factory);
