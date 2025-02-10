@@ -22,6 +22,7 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <IO/S3/BlobStorageLogWriter.h>
+#include <Interpreters/UDFLog.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
