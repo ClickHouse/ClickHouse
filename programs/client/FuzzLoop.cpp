@@ -187,6 +187,10 @@ bool Client::processWithFuzzing(const String & full_query)
 
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
     {
+#if USE_BUZZHOUSE
+        const bool has_buzzhouse_settings = fc && fc->measure_performance && ei;
+        bool measure_performance = has_buzzhouse_settings && orig_ast->as<ASTSelectQuery>();
+#endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
         ASTPtr ast_to_process;
@@ -247,6 +251,21 @@ bool Client::processWithFuzzing(const String & full_query)
                 continue;
             }
 
+#if USE_BUZZHOUSE
+            if (measure_performance)
+            {
+                /// Add tag to find query later on
+                auto * select_query = ast_to_process->as<ASTSelectQuery>();
+                if (!select_query->settings())
+                {
+                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+                }
+                auto * set_query = select_query->settings()->as<ASTSetQuery>();
+
+                set_query->changes.setSetting("log_comment", "measure_performance");
+            }
+#endif
+
             query_to_execute = ast_to_process->formatForErrorMessage();
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
@@ -289,36 +308,37 @@ bool Client::processWithFuzzing(const String & full_query)
             // fuzz starting from this successful query
             fmt::print(stderr, "Query succeeded, using this AST as a start\n");
             fuzz_base = ast_to_process;
-#if USE_BUZZHOUSE
-            if (fc && fc->measure_performance && ei
-                && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>()
-                    || orig_ast->as<ASTSelectIntersectExceptQuery>()))
-            {
-                uint64_t memory_usage1 = 0;
-                uint64_t memory_usage2 = 0;
-                uint64_t query_duration_ms1 = 0;
-                uint64_t query_duration_ms2 = 0;
-                bool measure_performance = true;
-
-                measure_performance
-                    &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, query_duration_ms1, memory_usage1);
-                ei->replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
-                measure_performance &= ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
-                measure_performance
-                    &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_duration_ms2, memory_usage2);
-
-                if (measure_performance)
-                {
-                    fc->comparePerformanceResults("AST fuzzer", query_duration_ms1, memory_usage1, query_duration_ms2, memory_usage2);
-                }
-            }
-#endif
         }
 #if USE_BUZZHOUSE
-        if (fc && fc->measure_performance && ei)
+        bool peer_success = true;
+        uint64_t memory_usage1 = 0;
+        uint64_t memory_usage2 = 0;
+        uint64_t query_duration_ms1 = 0;
+        uint64_t query_duration_ms2 = 0;
+
+        measure_performance &= !have_error;
+        if (measure_performance)
         {
-            auto u = ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
-            UNUSED(u);
+            measure_performance
+                &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, query_duration_ms1, memory_usage1);
+            /// Replicate settings, so both servers have same configuration
+            ei->replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
+        }
+        if (has_buzzhouse_settings)
+        {
+            /// Always run query on peer server
+            fmt::print(stderr, "Running query on peer server\n");
+            peer_success &= ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
+        }
+        if (measure_performance)
+        {
+            measure_performance &= peer_success
+                && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_duration_ms2, memory_usage2);
+
+            if (measure_performance)
+            {
+                fc->comparePerformanceResults("AST fuzzer", query_duration_ms1, memory_usage1, query_duration_ms2, memory_usage2);
+            }
         }
 #endif
     }

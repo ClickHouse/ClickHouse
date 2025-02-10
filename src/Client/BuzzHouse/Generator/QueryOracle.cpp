@@ -439,6 +439,19 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
     }
+    else if (measure_performance)
+    {
+        /// Add tag to find query later on
+        if (!sel->has_setting_values())
+        {
+            (void)sel->mutable_setting_values();
+        }
+        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
+    }
 }
 
 void QueryOracle::findTablesWithPeersAndReplace(
