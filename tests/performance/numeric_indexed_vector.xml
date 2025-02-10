@@ -1,0 +1,133 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE uin_value_details (ds Date, uin UInt32, value Float64) ENGINE = MergeTree() ORDER BY ds</create_query>
+
+    <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-20', number, number * number from numbers(1000)</fill_query>
+    <fill_query>INSERT INTO uin_value_details (ds, uin, value) SELECT '2023-12-21', number, number from numbers(1000);</fill_query>
+
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-22', number, number * number from numbers(5000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-23', number, number from numbers(5000)</fill_query>
+
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(100000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(100000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(100000)</fill_query>
+    <fill_query>insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(100000)</fill_query>
+
+    <query>
+with
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-20')
+    from uin_value_details
+) as vec_1,
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-21')
+    from uin_value_details
+) as vec_2
+, numericIndexedVectorPointwiseMultiply(vec_1, vec_2) as vec_3
+, numericIndexedVectorPointwiseDivide(vec_1, vec_2) as vec_4
+select arrayJoin([
+    numericIndexedVectorShortDebugString(vec_1)
+    , toString(numericIndexedVectorAllValueSum(vec_1))
+    , numericIndexedVectorShortDebugString(vec_2)
+    , toString(numericIndexedVectorAllValueSum(vec_2))
+    , numericIndexedVectorShortDebugString(vec_3)
+    , toString(numericIndexedVectorAllValueSum(vec_3))
+    , numericIndexedVectorShortDebugString(vec_4)
+    , toString(numericIndexedVectorAllValueSum(vec_4))
+])
+    </query>
+    <query>
+with
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-22')
+    from uin_value_details
+) as vec_1,
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-23')
+    from uin_value_details
+) as vec_2
+, numericIndexedVectorPointwiseMultiply(vec_1, vec_2) as vec_3
+, numericIndexedVectorPointwiseDivide(vec_1, vec_2) as vec_4
+select arrayJoin([
+    numericIndexedVectorShortDebugString(vec_1)
+    , toString(numericIndexedVectorAllValueSum(vec_1))
+    , numericIndexedVectorShortDebugString(vec_2)
+    , toString(numericIndexedVectorAllValueSum(vec_2))
+    , numericIndexedVectorShortDebugString(vec_3)
+    , toString(numericIndexedVectorAllValueSum(vec_3))
+    , numericIndexedVectorShortDebugString(vec_4)
+    , toString(numericIndexedVectorAllValueSum(vec_4))
+])
+    </query>
+    <query>
+with
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
+    from uin_value_details
+) as vec_1,
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27')
+    from uin_value_details
+) as vec_2
+, (
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28')
+    from uin_value_details
+) as vec_3,
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29')
+    from uin_value_details
+) as vec_4
+, numericIndexedVectorPointwiseMultiply(vec_1, vec_2) as vec_5
+, numericIndexedVectorPointwiseMultiply(vec_1, vec_3) as vec_6
+, numericIndexedVectorPointwiseMultiply(vec_1, vec_4) as vec_7
+, numericIndexedVectorPointwiseMultiply(vec_2, vec_3) as vec_8
+, numericIndexedVectorPointwiseMultiply(vec_2, vec_4) as vec_9
+, numericIndexedVectorPointwiseMultiply(vec_3, vec_4) as vec_10
+, numericIndexedVectorPointwiseDivide(vec_1, vec_2) as vec_11
+, numericIndexedVectorPointwiseDivide(vec_1, vec_3) as vec_12
+, numericIndexedVectorPointwiseDivide(vec_1, vec_4) as vec_13
+, numericIndexedVectorPointwiseDivide(vec_2, vec_3) as vec_14
+, numericIndexedVectorPointwiseDivide(vec_2, vec_4) as vec_15
+, numericIndexedVectorPointwiseDivide(vec_3, vec_4) as vec_16
+select arrayJoin([
+    numericIndexedVectorShortDebugString(vec_1)
+    , toString(numericIndexedVectorAllValueSum(vec_1))
+    , numericIndexedVectorShortDebugString(vec_2)
+    , toString(numericIndexedVectorAllValueSum(vec_2))
+    , numericIndexedVectorShortDebugString(vec_3)
+    , toString(numericIndexedVectorAllValueSum(vec_3))
+    , numericIndexedVectorShortDebugString(vec_4)
+    , toString(numericIndexedVectorAllValueSum(vec_4))
+    , numericIndexedVectorShortDebugString(vec_5)
+    , toString(numericIndexedVectorAllValueSum(vec_5))
+    , numericIndexedVectorShortDebugString(vec_6)
+    , toString(numericIndexedVectorAllValueSum(vec_6))
+    , numericIndexedVectorShortDebugString(vec_7)
+    , toString(numericIndexedVectorAllValueSum(vec_7))
+    , numericIndexedVectorShortDebugString(vec_8)
+    , toString(numericIndexedVectorAllValueSum(vec_8))
+    , numericIndexedVectorShortDebugString(vec_9)
+    , toString(numericIndexedVectorAllValueSum(vec_9))
+    , numericIndexedVectorShortDebugString(vec_10)
+    , toString(numericIndexedVectorAllValueSum(vec_10))
+    , numericIndexedVectorShortDebugString(vec_11)
+    , toString(numericIndexedVectorAllValueSum(vec_11))
+    , numericIndexedVectorShortDebugString(vec_12)
+    , toString(numericIndexedVectorAllValueSum(vec_12))
+    , numericIndexedVectorShortDebugString(vec_13)
+    , toString(numericIndexedVectorAllValueSum(vec_13))
+    , numericIndexedVectorShortDebugString(vec_14)
+    , toString(numericIndexedVectorAllValueSum(vec_14))
+    , numericIndexedVectorShortDebugString(vec_15)
+    , toString(numericIndexedVectorAllValueSum(vec_15))
+    , numericIndexedVectorShortDebugString(vec_16)
+    , toString(numericIndexedVectorAllValueSum(vec_16))
+])
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS uin_value_details;</drop_query>
+</test>
