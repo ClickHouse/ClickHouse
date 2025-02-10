@@ -408,8 +408,7 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
-    auto target_analysis = machine->getTargetIRAnalysis();
-    runOptimizationPassesOnModule(*module, std::move(target_analysis));
+    runOptimizationPassesOnModule(*module);
 
 #ifdef PRINT_ASSEMBLY
     AssemblyPrinter assembly_printer(*machine);
@@ -505,9 +504,8 @@ static std::string DumpModuleIR(const llvm::Module& module)
 
 #endif
 
-void CHJIT::runOptimizationPassesOnModule(llvm::Module & module, llvm::TargetIRAnalysis target_analysis) const
+void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    /// llvm::DebugFlag = true; // comment out to enable debug output
     const char *argv[] =
     {
         "CH-JIT",
@@ -520,6 +518,7 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module, llvm::TargetIRA
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
+    auto target_analysis = machine->getTargetIRAnalysis();
     fam.registerPass([&] { return target_analysis; });
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;

@@ -95,7 +95,7 @@ private:
 
     std::string getMangledName(const std::string & name_to_mangle) const;
 
-    void runOptimizationPassesOnModule(llvm::Module & module, llvm::TargetIRAnalysis target_analysis) const;
+    void runOptimizationPassesOnModule(llvm::Module & module) const;
 
     static std::unique_ptr<llvm::TargetMachine> getTargetMachine();
 
