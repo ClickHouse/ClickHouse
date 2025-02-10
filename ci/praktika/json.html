@@ -60,14 +60,6 @@
             color: #ffaa00; /* Slightly darker yellow */
         }
 
-        #info-container {
-            margin-left: calc(var(--status-width) + 20px);
-            margin-bottom: 10px;
-            background-color: var(--tile-background);
-            padding: 10px;
-            text-align: left;
-        }
-
         #status-container {
             position: fixed;
             top: 0;
@@ -80,7 +72,7 @@
             font-size: 18px;
             margin: 0;
             overflow-y: auto;
-            margin-bottom: 40px;
+            margin-bottom: 50px;
         }
 
         #status-container a {
@@ -141,16 +133,25 @@
 
         #result-container {
             background-color: var(--tile-background);
-            margin-left: calc(var(--status-width) + 20px);
+            position: fixed;
+            top: 0;
+            bottom: 50px;
+            left: calc(var(--status-width) + 20px); /* Align with status container */
+            right: 0; /* Stretch to the right edge */
+
             padding: 0;
             box-sizing: border-box;
-            text-align: center;
             font-size: 18px;
             font-weight: normal;
-            flex-grow: 1;
-            margin-bottom: 40px;
-            overflow-x: auto;
+
+            overflow: auto;
             white-space: nowrap;
+        }
+
+        #info-content {
+            text-align: left;
+            padding: 10px;
+            margin-bottom: 20px;
         }
 
         #footer {
@@ -238,7 +239,8 @@
         }
 
         table {
-            width: 100%;
+            table-layout: auto;
+            width: auto;
             border-collapse: collapse;
         }
 
@@ -247,10 +249,9 @@
         }
 
         th.status-column, td.status-column {
-            max-width: 100px; /* Set the maximum width for the column */
+            width: auto;
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide the overflowed text */
-            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
         }
 
         th.time-column, td.time-column {
@@ -310,7 +311,6 @@
     </style>
 </head>
 <body>
-<div id="info-container"></div>
 <div id="status-container"></div>
 <div id="result-container"></div>
 
@@ -697,7 +697,8 @@
     }
 
     // Define the fixed columns globally, so both functions can use it
-    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+    const columns = ['status', 'name', 'start_time', 'duration'];
+    // const columns = ['status', 'name', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
         // name: '🗂️',
@@ -727,7 +728,7 @@
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, columns, nest_level);
+            populateTableRows(tbody, results, nest_level);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -737,7 +738,7 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, columns, nest_level) {
+    function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);  // Get the current URL
 
         // Clear existing rows if re-rendering (used in sorting)
@@ -750,22 +751,29 @@
                 const td = document.createElement('td');
                 const value = result[column];
 
-                if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
-                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
-                } else if (column === 'status') {
-                    // Apply status formatting
+                if (column === 'status') {
+                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
+                    if (result.info && result.info.trim() !== "") {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                    }
                     td.appendChild(span);
+
+                    // // Click event to toggle the info row
+                    // span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                } else if (column === 'name') {
+                    // Create a link for the name field, using name_X
+                    const link = document.createElement('a');
+                    const newUrl = new URL(currentUrl);
+                    newUrl.searchParams.set(`name_${nest_level}`, value);
+                    link.href = newUrl.toString();
+                    link.textContent = value;
+                    td.classList.add('name-column');
+                    td.appendChild(link);
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -782,6 +790,32 @@
 
             tbody.appendChild(row);
         });
+    }
+
+    /**
+     * Toggles an additional row below the clicked row to display the "info" text.
+     */
+    function toggleInfoRow(row, infoText) {
+        if (!infoText) return; // Do nothing if there's no info
+
+        let nextRow = row.nextElementSibling;
+
+        // Check if the next row is already an "info" row
+        if (nextRow && nextRow.classList.contains('info-row')) {
+            nextRow.remove(); // If it's there, remove it
+        } else {
+            // Otherwise, create a new row for the info text
+            const infoRow = document.createElement('tr');
+            infoRow.classList.add('info-row');
+
+            const infoCell = document.createElement('td');
+            infoCell.colSpan = row.children.length; // Make it span the full width
+            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
+            infoCell.classList.add('info-text');
+
+            infoRow.appendChild(infoCell);
+            row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
+        }
     }
 
     function sortTable(results, column, key, tbody, nest_level, columns) {
@@ -807,7 +841,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, columns, nest_level);
+        populateTableRows(tbody, results, nest_level);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {
@@ -970,13 +1004,18 @@
             }
             i++;
         }
-        // Result table
+
         const resultsDiv = document.getElementById('result-container');
+        const textDiv = document.createElement('div');
+        textDiv.id = 'info-content';
+        textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+        resultsDiv.appendChild(textDiv);
+
         const resultsData = result.results;
         if (Array.isArray(resultsData) && resultsData.length > 0) {
             const table = createResultsTable(resultsData, i);
             if (table) {
-                resultsDiv.appendChild(table);
+                resultsDiv.appendChild(table); // Appends table correctly
             }
         }
         // Status and info
@@ -992,8 +1031,6 @@
         } else {
             addTimeTraceWidget(result.results)
         }
-        const infoElement = document.getElementById('info-container');
-        infoElement.innerHTML = (result.info || '').replace(/\n/g, '<br>');
     }
 
     async function fetchData(PR, REF, sha, nameParams) {
@@ -1004,7 +1041,7 @@
                 .replace(/_+$/, '');
         }
 
-        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
+        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
         let suffix = '';
 
         if (PR) {
@@ -1056,7 +1093,6 @@
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
-            document.getElementById('info-container').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
