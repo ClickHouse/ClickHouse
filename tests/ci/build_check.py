@@ -12,7 +12,7 @@ import docker_images_helper
 from ci_config import CI
 from ci_utils import Shell
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET
-from git_helper import Git
+from git_helper import Git, checkout_submodules, unshallow
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
 from stopwatch import Stopwatch
@@ -161,17 +161,11 @@ def main():
 
     if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
         print("Unshallow repo")
-        Shell.check(
-            f"git fetch --prune --no-recurse-submodules --depth 10000 --filter=tree:0 origin {pr_info.head_ref} master +refs/tags/*:refs/tags/*",
-            verbose=True,
-        )
+        unshallow()
 
     print("Fetch submodules")
     # TODO: test sparse checkout: update-submodules.sh?
-    Shell.check(
-        "git submodule init && git submodule update --depth 1 --recursive --jobs 20",
-        verbose=True,
-    )
+    checkout_submodules()
 
     logging.info("Repo copy path %s", repo_path)
 

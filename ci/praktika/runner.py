@@ -10,6 +10,7 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
@@ -100,6 +101,8 @@ class Runner:
         return 0
 
     def _pre_run(self, workflow, job, local_run=False):
+        if job.name == Settings.CI_CONFIG_JOB_NAME:
+            GH.print_actions_debug_info()
         env = _Environment.get()
 
         result = Result(
@@ -485,12 +488,12 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
-            print(f"=== Run scrip finished ===\n\n")
+            print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
             self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
-            print(f"=== Post run scrip finished ===")
+            print(f"=== Post run script finished ===")
 
         if not res:
             sys.exit(1)
