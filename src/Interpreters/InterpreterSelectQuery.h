@@ -14,8 +14,6 @@
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Columns/FilterDescription.h>
-
 namespace Poco
 {
 class Logger;

@@ -1,9 +1,12 @@
 #pragma once
-#include <type_traits>
+#include <Columns/IColumn.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/ExpressionActions.h>
+
+#include <type_traits>
 
 namespace DB
 {

@@ -27,6 +27,7 @@
 
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Set.h>
 
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
