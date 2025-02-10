@@ -63,7 +63,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
         auto & column_to_read = columns_to_read[i];
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
 
-        if (position && column_to_read.isSubcolumn())
+        if (position.has_value() && column_to_read.isSubcolumn())
         {
             auto name_in_storage = column_to_read.getNameInStorage();
             auto subcolumn_name = column_to_read.getSubcolumnName();
