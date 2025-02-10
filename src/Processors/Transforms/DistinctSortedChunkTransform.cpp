@@ -205,6 +205,7 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
         return;
 
     convertToFullIfSparse(chunk);
+    convertToFullIfConst(chunk);
 
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns
