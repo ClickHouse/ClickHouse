@@ -40,14 +40,12 @@ struct ProfileInfo
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
 
-    /// Only for Processors.
     void setRowsBeforeLimit(size_t rows_before_limit_)
     {
         applied_limit = true;
         rows_before_limit = rows_before_limit_;
     }
 
-    /// Only for Processors.
     void setRowsBeforeAggregation(size_t rows_before_aggregation_)
     {
         applied_aggregation = true;
