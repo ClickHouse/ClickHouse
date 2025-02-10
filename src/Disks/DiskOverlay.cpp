@@ -222,11 +222,6 @@ void DiskOverlay::createDirectory(const String & path)
 
 void DiskOverlay::createDirectories(const String & path)
 {
-    if (existsFileOrDirectory(path))
-    {
-        /// createDirectories semantic implies "create if not exists".
-        return;
-    }
     ensureHaveDirectories(path);
 }
 
@@ -306,6 +301,13 @@ public:
         , base_iter(std::move(base_iter_))
         , tracked_metadata(tracked_metadata_)
     {
+        if (!diff_iter->isValid())
+        {
+            while (base_iter->isValid() && tracked_metadata->existsFile(dataPath(base_iter->path())))
+            {
+                base_iter->next();
+            }
+        }
     }
 
     void next() override
@@ -313,13 +315,14 @@ public:
         if (diff_iter->isValid())
         {
             diff_iter->next();
-            if (diff_iter->isValid())
-                return;
+            return;
         }
 
         while (base_iter->isValid())
         {
             base_iter->next();
+            if (!base_iter->isValid())
+                break;
             if (!tracked_metadata->existsFile(dataPath(base_iter->path())))
             {
                 LOG_TEST(log, "Found path {} in the base disk", base_iter->path());
