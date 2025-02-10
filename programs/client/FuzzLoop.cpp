@@ -189,7 +189,7 @@ bool Client::processWithFuzzing(const String & full_query)
     {
 #if USE_BUZZHOUSE
         const bool has_buzzhouse_settings = fc && fc->measure_performance && ei;
-        bool measure_performance = has_buzzhouse_settings && orig_ast->as<ASTSelectQuery>();
+        bool measure_performance = has_buzzhouse_settings && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
 #endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
@@ -255,14 +255,32 @@ bool Client::processWithFuzzing(const String & full_query)
             if (measure_performance)
             {
                 /// Add tag to find query later on
-                auto * select_query = ast_to_process->as<ASTSelectQuery>();
-                if (!select_query->settings())
-                {
-                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-                }
-                auto * set_query = select_query->settings()->as<ASTSetQuery>();
+                auto * union_sel = ast_to_process->as<ASTSelectWithUnionQuery>();
+                auto * select_query
+                    = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get());
 
-                set_query->changes.setSetting("log_comment", "measure_performance");
+                if (select_query)
+                {
+                    if (!select_query->settings())
+                    {
+                        auto settings_query = std::make_shared<ASTSetQuery>();
+                        SettingsChanges settings_changes;
+                        settings_changes.setSetting("log_comment", "measure_performance");
+                        settings_query->changes = std::move(settings_changes);
+                        settings_query->is_standalone = false;
+                        select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
+                    }
+                    else
+                    {
+                        auto * set_query = select_query->settings()->as<ASTSetQuery>();
+
+                        set_query->changes.setSetting("log_comment", "measure_performance");
+                    }
+                }
+                else
+                {
+                    measure_performance = false;
+                }
             }
 #endif
 
@@ -297,7 +315,7 @@ bool Client::processWithFuzzing(const String & full_query)
             fuzzer.notifyQueryFailed(ast_to_process);
             have_error = false;
         }
-        else if (ast_to_process->formatForErrorMessage().size() > 500)
+        else if (ast_to_process->formatForErrorMessage().size() > 2000)
         {
             // ast too long, start from original ast
             fmt::print(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
