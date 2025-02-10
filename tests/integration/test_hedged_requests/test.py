@@ -95,7 +95,7 @@ def check_settings(
     sleep_after_receiving_query_ms,
 ):
     attempts = 0
-    while attempts < 1000:
+    while attempts < 100:
         setting1 = NODES[node_name].http_query(
             "SELECT value FROM system.settings WHERE name='sleep_in_send_tables_status_ms'"
         )
@@ -112,7 +112,7 @@ def check_settings(
             and int(setting3) == sleep_after_receiving_query_ms
         ):
             return
-        time.sleep(0.1)
+        time.sleep(1)
         attempts += 1
 
     assert attempts < 1000
@@ -311,6 +311,7 @@ def test_combination4(started_cluster):
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=1000,
         node_3_sleep_in_send_tables_status=1000,
+        node_3_sleep_in_send_data=sleep_time,
     )
     check_query(expected_replica="node_2")
     check_changing_replica_events(4)
