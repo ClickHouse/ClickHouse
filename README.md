@@ -47,7 +47,6 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/305497951/) - Feb 8, 2025
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 10, 2025
 * [Auckland Meetup](https://www.meetup.com/clickhouse-auckland-meetup-group/events/305666103/) - Feb 19, 2025
 * [Wellington Meetup](https://www.meetup.com/clickhouse-wellington-user-group/events/305666164/) - Feb 20, 2025
@@ -59,6 +58,7 @@ Upcoming meetups
 * [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/305916369) - March 26, 2025
 
 Recent meetups
+* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/305497951/) - Feb 8, 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/305146729/) - Feb 5, 2025
 * [FOSDEM Dinner](https://clickhouse.com/company/events/202502-emea-brussels-fosdem-dinner) - Feb 1, 2025
 * [Mumbai Meetup](https://www.meetup.com/clickhouse-mumbai-user-group/events/305497320/) - Feb 1, 2025
