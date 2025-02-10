@@ -1024,7 +1024,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
     }
 }
 
-SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev) const
+SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationObjectTypedPath>(prev, path);
 }

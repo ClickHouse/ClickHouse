@@ -5,15 +5,14 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
@@ -27,6 +26,7 @@
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -60,7 +60,6 @@
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -77,6 +76,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
