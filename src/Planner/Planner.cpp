@@ -1502,7 +1502,7 @@ void Planner::buildPlanForQueryNode()
         {
             LOG_TRACE(getLogger("QueryCache"), "Entry found");
             addReadFromQueryCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());            
-            planner_context->getMutableQueryContext()->setQueryCacheUsage(QueryCacheUsage::Read);
+            // Should somehow add info about cache usage in subqueries to logs 
             return;
         }
     } else {
@@ -1961,7 +1961,7 @@ void Planner::buildPlanForQueryNode()
                 query_plan.addStep(std::move(stream_into_query_cache_step));
                 LOG_TRACE(getLogger("QueryCache"),
                         "Write step added");
-                planner_context->getMutableQueryContext()->setQueryCacheUsage(QueryCacheUsage::Write);
+                // Should somehow add info about cache usage in subqueries to logs 
             }
         } else {
             LOG_TRACE(getLogger("QueryCache"), "AAA");
