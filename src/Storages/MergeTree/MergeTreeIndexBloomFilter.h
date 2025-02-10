@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/HashTable/HashSet.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>

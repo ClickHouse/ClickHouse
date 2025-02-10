@@ -131,6 +131,7 @@ class HtmlRunnerHooks:
                 result = Result.generate_pending(job.name)
             results.append(result)
         summary_result = Result.generate_pending(_workflow.name, results=results)
+        summary_result.start_time = Utils.timestamp()
         summary_result.links.append(env.CHANGE_URL)
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
@@ -173,28 +174,17 @@ class HtmlRunnerHooks:
         if _workflow.enable_cache:
             skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
             job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
-        else:
-            skip_jobs = []
-
-        env = _Environment.get()
-        results = []
-        for job in _workflow.jobs:
-            if job.name not in skip_jobs:
-                result = Result.generate_pending(job.name)
-            else:
-                result = Result.generate_skipped(job.name, job_cache_records[job.name])
-            results.append(result)
-        summary_result = Result.generate_pending(_workflow.name, results=results)
-        summary_result.links.append(env.CHANGE_URL)
-        summary_result.links.append(env.RUN_URL)
-        summary_result.start_time = Utils.timestamp()
-        info = Info()
-        summary_result.set_info(
-            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
-            if info.pr_number
-            else f"{info.git_branch}  |  {info.git_sha}"
-        )
-        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=1)
+            results = []
+            for job in _workflow.jobs:
+                if job.name in skip_jobs:
+                    result = Result.generate_skipped(
+                        job.name, job_cache_records[job.name]
+                    )
+                    results.append(result)
+            if results:
+                assert _ResultS3.update_workflow_results(
+                    _workflow.name, new_sub_results=results
+                )
 
     @classmethod
     def pre_run(cls, _workflow, _job):
