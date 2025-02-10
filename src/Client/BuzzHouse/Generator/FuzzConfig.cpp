@@ -340,6 +340,11 @@ void FuzzConfig::comparePerformanceResults(
 {
     if (this->measure_performance)
     {
+        String time_res1 = formatReadableTime(static_cast<double>(query_duration_ms1 * 1000000));
+        String time_res2 = formatReadableTime(static_cast<double>(query_duration_ms2 * 1000000));
+        String mem_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage1));
+        String mem_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage2));
+
         if (this->query_time_minimum < query_duration_ms1
             && query_duration_ms1
                 > static_cast<uint64_t>(query_duration_ms2 * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
@@ -348,8 +353,8 @@ void FuzzConfig::comparePerformanceResults(
                 DB::ErrorCodes::BUZZHOUSE,
                 "{}: ClickHouse peer server query was faster than the target server: {} vs {}",
                 oracle_name,
-                formatReadableTime(static_cast<double>(query_duration_ms1 * 1000000)),
-                formatReadableTime(static_cast<double>(query_duration_ms2 * 1000000)));
+                time_res1,
+                time_res2);
         }
         if (this->query_memory_minimum < memory_usage1
             && memory_usage1 > static_cast<uint64_t>(memory_usage2 * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
@@ -358,9 +363,11 @@ void FuzzConfig::comparePerformanceResults(
                 DB::ErrorCodes::BUZZHOUSE,
                 "{}: ClickHouse peer server query used less memory than the target server: {} vs {}",
                 oracle_name,
-                formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage1)),
-                formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage2)));
+                mem_res1,
+                mem_res2);
         }
+        LOG_INFO(log, "{}: peer query time: {} vs server query time {}", oracle_name, time_res1, time_res2);
+        LOG_INFO(log, "{}: peer query memory usage: {} vs server query memory usage {}", oracle_name, mem_res1, mem_res2);
     }
 }
 
