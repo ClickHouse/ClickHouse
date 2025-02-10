@@ -14,7 +14,7 @@ namespace DB
  * (see https://github.com/apache/parquet-format/blob/94b9d631aef332c78b8f1482fb032743a9c3c407/src/main/thrift/parquet.thrift#L1263).
  * The result row has the following structure:
  * key_value_metadata - a Map(String, String) containing all custom key-value metadata pairs from the file
- * 
+ *
  * Note: If a Parquet file contains no key-value metadata entries, this format will return one row
  * with an empty map.
  * */

@@ -32,5 +32,3 @@ FORMAT PrettyJSONEachRow
     }
 }
 ```
-
-
