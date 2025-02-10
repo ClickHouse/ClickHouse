@@ -28,7 +28,7 @@ bool CompressedReadBufferFromFile::nextImpl()
             return false;
 
         compressed_data_read_ok = true;
-        LOG_TEST(log, "Decompressing {} bytes from {}", size_compressed, file_in.getFileName());
+        LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", size_compressed, file_in.getFileName(), size_decompressed);
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -131,7 +131,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 break;
             size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
-            LOG_TEST(log, "Decompressing {} bytes from {}", new_size_compressed, file_in.getFileName());
+            LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", new_size_compressed, file_in.getFileName(), size_decompressed);
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
