@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- https://github.com/ClickHouse/ClickHouse/issues/75247
 CREATE TABLE a (x LowCardinality(String)) ENGINE=Memory;
 CREATE TABLE b (x LowCardinality(String), y Float64) ENGINE=Memory;
