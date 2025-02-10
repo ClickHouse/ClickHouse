@@ -4,7 +4,6 @@
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <boost/noncopyable.hpp>

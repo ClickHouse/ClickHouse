@@ -70,7 +70,6 @@ protected:
     std::vector<bool> is_part_on_remote_disk;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
-
 };
 
 }
