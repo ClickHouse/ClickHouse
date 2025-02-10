@@ -159,7 +159,7 @@ toInt8('-8'): -8
 **See also**
 
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toint8ornull).
+- [`toInt8OrNull`](#toInt8OrNull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrZero
@@ -219,10 +219,10 @@ toInt8OrZero('abc'): 0
 **See also**
 
 - [`toInt8`](#toint8).
-- [`toInt8OrNull`](#toint8ornull).
+- [`toInt8OrNull`](#toInt8OrNull).
 - [`toInt8OrDefault`](#toint8ordefault).
 
-## toInt8OrNull
+## toInt8OrNull {#toInt8OrNull}
 
 Like [`toInt8`](#toint8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
@@ -344,7 +344,7 @@ toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 
 - [`toInt8`](#toint8).
 - [`toInt8OrZero`](#toint8orzero).
-- [`toInt8OrNull`](#toint8orNull).
+- [`toInt8OrNull`](#toInt8OrNull).
 
 ## toInt16
 
@@ -1830,7 +1830,7 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 - [`toUInt8`](#touint8).
 - [`toUInt8OrZero`](#touint8orzero).
-- [`toUInt8OrNull`](#touint8orNull).
+- [`toUInt8OrNull`](#touint8ornull).
 
 ## toUInt16
 
@@ -3491,6 +3491,158 @@ toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
 - [`toFloat64`](#tofloat64).
 - [`toFloat64OrZero`](#tofloat64orzero).
 - [`toFloat64OrNull`](#tofloat64ornull).
+
+## toBFloat16
+
+Converts an input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16). 
+Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toBFloat16(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+**Returned value**
+
+- 16-bit brain-float value. [BFloat16](../data-types/float.md/#bfloat16).
+
+**Example**
+
+```sql
+SELECT toBFloat16(toFloat32(42.7))
+
+42.5
+
+SELECT toBFloat16(toFloat32('42.7'));
+
+42.5
+
+SELECT toBFloat16('42.7');
+
+42.5
+```
+
+**See also**
+
+- [`toBFloat16OrZero`](#tobfloat16orzero).
+- [`toBFloat16OrNull`](#tobfloat16ornull).
+
+## toBFloat16OrZero
+
+Converts a String input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16).
+If the string does not represent a floating point value, the function returns zero.
+
+**Syntax**
+
+```sql
+toBFloat16OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+
+- String representations of numeric values.
+
+Unsupported arguments (return `0`):
+
+- String representations of binary and hexadecimal values.
+- Numeric values.
+
+**Returned value**
+
+- 16-bit brain-float value, otherwise `0`. [BFloat16](../data-types/float.md/#bfloat16).
+
+:::note
+The function allows a silent loss of precision while converting from the string representation.
+:::
+
+**Example**
+
+```sql
+SELECT toBFloat16OrZero('0x5E'); -- unsupported arguments
+
+0
+
+SELECT toBFloat16OrZero('12.3'); -- typical use
+
+12.25
+
+SELECT toBFloat16OrZero('12.3456789');
+
+12.3125 -- silent loss of precision
+```
+
+**See also**
+
+- [`toBFloat16`](#tobfloat16).
+- [`toBFloat16OrNull`](#tobfloat16ornull).
+
+## toBFloat16OrNull
+
+Converts a String input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16) 
+but if the string does not represent a floating point value, the function returns `NULL`.
+
+**Syntax**
+
+```sql
+toBFloat16OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+
+- String representations of numeric values.
+
+Unsupported arguments (return `NULL`):
+
+- String representations of binary and hexadecimal values.
+- Numeric values.
+
+**Returned value**
+
+- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](../data-types/float.md/#bfloat16).
+
+:::note
+The function allows a silent loss of precision while converting from the string representation.
+:::
+
+**Example**
+
+```sql
+SELECT toBFloat16OrNull('0x5E'); -- unsupported arguments
+
+\N
+
+SELECT toBFloat16OrNull('12.3'); -- typical use
+
+12.25
+
+SELECT toBFloat16OrNull('12.3456789');
+
+12.3125 -- silent loss of precision
+```
+
+**See also**
+
+- [`toBFloat16`](#tobfloat16).
+- [`toBFloat16OrZero`](#tobfloat16orzero).
 
 ## toDate
 
@@ -5177,7 +5329,7 @@ toTypeName(b): Decimal(76, 0)
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
 All these functions accept one argument.
 
-When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can’t be parsed, an exception is thrown and the request is canceled.
+When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
 
 When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
@@ -5889,7 +6041,7 @@ reinterpretAsDate(x)
 **Implementation details**
 
 :::note
-If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
 :::
 
 **Example**
@@ -5929,7 +6081,7 @@ reinterpretAsDateTime(x)
 **Implementation details**
 
 :::note
-If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
 :::
 
 **Example**
@@ -6930,7 +7082,7 @@ Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except t
 
 Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](../data-types/datetime.md/#data_type-datetime) data type.
 
-The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse’s and some other date and time formats.
+The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
 
 **Syntax**
 
@@ -7189,45 +7341,6 @@ Result:
 └───────────────────────┘
 ```
 
-## toUnixTimestamp64Milli
-
-Converts a `DateTime64` to a `Int64` value with fixed millisecond precision. The input value is scaled up or down appropriately depending on its precision.
-
-:::note
-The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
-:::
-
-**Syntax**
-
-```sql
-toUnixTimestamp64Milli(value)
-```
-
-**Arguments**
-
-- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
-SELECT toUnixTimestamp64Milli(dt64);
-```
-
-Result:
-
-```response
-┌─toUnixTimestamp64Milli(dt64)─┐
-│                1234567891011 │
-└──────────────────────────────┘
-```
-
 ## toUnixTimestamp64Second
 
 Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
@@ -7265,6 +7378,45 @@ Result:
 ┌─toUnixTimestamp64Second(dt64)─┐
 │                    1234567891 │
 └───────────────────────────────┘
+```
+
+## toUnixTimestamp64Milli
+
+Converts a `DateTime64` to a `Int64` value with fixed millisecond precision. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::
+
+**Syntax**
+
+```sql
+toUnixTimestamp64Milli(value)
+```
+
+**Arguments**
+
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
+SELECT toUnixTimestamp64Milli(dt64);
+```
+
+Result:
+
+```response
+┌─toUnixTimestamp64Milli(dt64)─┐
+│                1234567891011 │
+└──────────────────────────────┘
 ```
 
 ## toUnixTimestamp64Micro
@@ -7345,6 +7497,48 @@ Result:
 └─────────────────────────────┘
 ```
 
+## fromUnixTimestamp64Second
+
+Converts an `Int64` to a `DateTime64` value with fixed second precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
+:::
+
+**Syntax**
+
+``` sql
+fromUnixTimestamp64Second(value[, timezone])
+```
+
+**Arguments**
+
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+
+**Returned value**
+
+- `value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH CAST(1733935988, 'Int64') AS i64
+SELECT
+    fromUnixTimestamp64Second(i64, 'UTC') AS x,
+    toTypeName(x);
+```
+
+Result:
+
+```response
+┌───────────────────x─┬─toTypeName(x)────────┐
+│ 2024-12-11 16:53:08 │ DateTime64(0, 'UTC') │
+└─────────────────────┴──────────────────────┘
+```
+
 ## fromUnixTimestamp64Milli
 
 Converts an `Int64` to a `DateTime64` value with fixed millisecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
@@ -7373,7 +7567,7 @@ fromUnixTimestamp64Milli(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Milli(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7383,7 +7577,7 @@ Result:
 
 ```response
 ┌───────────────────────x─┬─toTypeName(x)────────┐
-│ 2009-02-13 23:31:31.011 │ DateTime64(3, 'UTC') │
+│ 2024-12-11 16:53:08.123 │ DateTime64(3, 'UTC') │
 └─────────────────────────┴──────────────────────┘
 ```
 
@@ -7415,7 +7609,7 @@ fromUnixTimestamp64Micro(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123456, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Micro(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7425,7 +7619,7 @@ Result:
 
 ```response
 ┌──────────────────────────x─┬─toTypeName(x)────────┐
-│ 1970-01-15 06:56:07.891011 │ DateTime64(6, 'UTC') │
+│ 2024-12-11 16:53:08.123456 │ DateTime64(6, 'UTC') │
 └────────────────────────────┴──────────────────────┘
 ```
 
@@ -7457,7 +7651,7 @@ fromUnixTimestamp64Nano(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123456789, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Nano(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7467,7 +7661,7 @@ Result:
 
 ```response
 ┌─────────────────────────────x─┬─toTypeName(x)────────┐
-│ 1970-01-01 00:20:34.567891011 │ DateTime64(9, 'UTC') │
+│ 2024-12-11 16:53:08.123456789 │ DateTime64(9, 'UTC') │
 └───────────────────────────────┴──────────────────────┘
 ```
 

@@ -41,7 +41,7 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
     if (limit_length)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
-        limit_length->formatImpl(ostr, settings, state, frame);
+        limit_length->format(ostr, settings, state, frame);
     }
 }
 
@@ -92,7 +92,7 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
         if (from)
         {
             ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
-            from->formatImpl(ostr, settings, state, frame);
+            from->format(ostr, settings, state, frame);
         }
 
         formatLike(ostr, settings);
@@ -100,7 +100,7 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
         if (where_expression)
         {
             ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-            where_expression->formatImpl(ostr, settings, state, frame);
+            where_expression->format(ostr, settings, state, frame);
         }
 
         formatLimit(ostr, settings, state, frame);

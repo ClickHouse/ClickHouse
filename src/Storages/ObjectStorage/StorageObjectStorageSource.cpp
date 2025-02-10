@@ -1,4 +1,5 @@
 #include "StorageObjectStorageSource.h"
+#include <memory>
 #include <optional>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -19,9 +20,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
-#include "Interpreters/Cache/FileCache.h"
-#include "Interpreters/Cache/FileCacheKey.h"
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 
 namespace fs = std::filesystem;
@@ -46,6 +48,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -135,16 +138,28 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     std::unique_ptr<IIterator> iterator;
     if (configuration->isPathWithGlobs())
     {
-        /// Iterate through disclosed globs and make a source for each file
-        iterator = std::make_unique<GlobIterator>(
-            object_storage, configuration, predicate, virtual_columns,
-            local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-            query_settings.throw_on_zero_files_match, file_progress_callback);
+        auto path = configuration->getPath();
+        if (hasExactlyOneBracketsExpansion(path))
+        {
+            auto paths = expandSelectionGlob(configuration->getPath());
+
+            ConfigurationPtr copy_configuration = configuration->clone();
+            copy_configuration->setPaths(paths);
+            iterator = std::make_unique<KeysIterator>(
+                object_storage, copy_configuration, virtual_columns, is_archive ? nullptr : read_keys,
+                query_settings.ignore_non_existent_file, file_progress_callback);
+        }
+        else
+            /// Iterate through disclosed globs and make a source for each file
+            iterator = std::make_unique<GlobIterator>(
+                object_storage, configuration, predicate, virtual_columns,
+                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                query_settings.throw_on_zero_files_match, file_progress_callback);
     }
     else
     {
         ConfigurationPtr copy_configuration = configuration->clone();
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
@@ -506,6 +521,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     std::unique_ptr<ReadBufferFromFileBase> impl;
     if (use_cache)
     {
+        chassert(object_info.metadata.has_value());
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
@@ -540,9 +556,13 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
-            LOG_TEST(log, "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                     filesystem_cache_name, object_info.getPath(),
-                     object_info.metadata->etag, toString(hash.get128()));
+            LOG_TEST(
+                log,
+                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                filesystem_cache_name,
+                object_info.getPath(),
+                object_info.metadata->etag,
+                toString(hash.get128()));
         }
     }
 
@@ -567,6 +587,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         reader,
         modified_read_settings,
         buffer_size,
+        modified_read_settings.remote_read_min_bytes_for_seek,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
@@ -623,6 +644,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     {
         const auto key_with_globs = configuration_->getPath();
         const auto key_prefix = configuration->getPathWithoutGlobs();
+
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
@@ -632,7 +654,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs == "/**";
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));

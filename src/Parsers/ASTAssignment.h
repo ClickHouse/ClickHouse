@@ -35,7 +35,7 @@ protected:
 
         ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
 
-        expression()->formatImpl(ostr, settings, state, frame);
+        expression()->format(ostr, settings, state, frame);
     }
 };
 

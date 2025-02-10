@@ -23,6 +23,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -150,7 +151,8 @@ static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAnd
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
-    std::string key, value;
+    std::string key;
+    std::string value;
     std::unordered_map<std::string, std::string> used_keys;
     while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
     {
@@ -169,17 +171,17 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const NameAndTypePair & pair)
+    auto add_virtual = [&](const NameAndTypePair & pair, bool prefer_virtual_column) /// By using prefer_virtual_column we define whether we will overwrite the storage column with the virtual one
     {
         const auto & name = pair.getNameInStorage();
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (!context->getSettingsRef()[Setting::use_hive_partitioning])
+            if (!prefer_virtual_column)
                 return;
 
             if (storage_columns.size() == 1)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read this file", path);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read/write this file", path);
             auto local_type = storage_columns.get(name).type;
             storage_columns.remove(name);
             desc.addEphemeral(name, local_type, "");
@@ -190,7 +192,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
-        add_virtual(item);
+        add_virtual(item, false);
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
@@ -202,9 +204,9 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
             if (type == nullptr)
                 type = std::make_shared<DataTypeString>();
             if (type->canBeInsideLowCardinality())
-                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)});
+                add_virtual({item.first, std::make_shared<DataTypeLowCardinality>(type)}, true);
             else
-                add_virtual({item.first, type});
+                add_virtual({item.first, type}, true);
         }
     }
 
@@ -244,15 +246,13 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
 
     Block block;
-    NameSet common_virtuals;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        common_virtuals = getVirtualNamesForFileLikeStorage();
+    NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
         if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -55,7 +54,7 @@ public:
         ~Finalizer();
 
         void finish();
-        void cancel();
+        void cancel() noexcept;
     };
 
     /// Finalize writing part and fill inner structures

@@ -1,5 +1,5 @@
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/parseGlobs.h>
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
@@ -35,6 +36,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -91,7 +93,8 @@ StorageObjectStorage::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
-    ASTPtr partition_by_)
+    ASTPtr partition_by_,
+    bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
@@ -102,10 +105,13 @@ StorageObjectStorage::StorageObjectStorage(
 {
     try
     {
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
+        if (!lazy_init)
+        {
+            if (configuration->hasExternalDynamicMetadata())
+                configuration->updateAndGetCurrentSchema(object_storage, context);
+            else
+                configuration->update(object_storage, context);
+        }
     }
     catch (...)
     {
@@ -130,7 +136,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard())
         sample_path = getPathSample(context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
@@ -217,8 +223,14 @@ public:
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
         const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag)
+        if (filter_actions_dag.has_value())
+        {
             predicate = filter_actions_dag->getOutputs().at(0);
+            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
+            {
+                configuration->implementPartitionPruning(*filter_actions_dag);
+            }
+        }
         createIterator(predicate);
     }
 
@@ -329,7 +341,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        getName(),
+        fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
         column_names,
         getVirtualsList(),
         query_info,
@@ -506,6 +518,11 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     sample_path = iterator->getLastFilePath();
     configuration->format = format;
     return std::pair(columns, format);
+}
+
+void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_type_name)

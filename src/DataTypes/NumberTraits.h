@@ -48,8 +48,8 @@ template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
 template <> struct Construct<false, false, 16> { using Type = UInt128; };
 template <> struct Construct<false, false, 32> { using Type = UInt256; };
-template <> struct Construct<false, true, 1> { using Type = Float32; };
-template <> struct Construct<false, true, 2> { using Type = Float32; };
+template <> struct Construct<false, true, 1> { using Type = BFloat16; };
+template <> struct Construct<false, true, 2> { using Type = BFloat16; };
 template <> struct Construct<false, true, 4> { using Type = Float32; };
 template <> struct Construct<false, true, 8> { using Type = Float64; };
 template <> struct Construct<true, false, 1> { using Type = Int8; };
@@ -58,8 +58,8 @@ template <> struct Construct<true, false, 4> { using Type = Int32; };
 template <> struct Construct<true, false, 8> { using Type = Int64; };
 template <> struct Construct<true, false, 16> { using Type = Int128; };
 template <> struct Construct<true, false, 32> { using Type = Int256; };
-template <> struct Construct<true, true, 1> { using Type = Float32; };
-template <> struct Construct<true, true, 2> { using Type = Float32; };
+template <> struct Construct<true, true, 1> { using Type = BFloat16; };
+template <> struct Construct<true, true, 2> { using Type = BFloat16; };
 template <> struct Construct<true, true, 4> { using Type = Float32; };
 template <> struct Construct<true, true, 8> { using Type = Float64; };
 
@@ -203,39 +203,6 @@ struct ResultOfIf
             std::conditional_t<(sizeof(A) > sizeof(B)), A, B>,
         std::conditional_t<!is_decimal<A> && !is_decimal<B>,
             ConstructedType, Error>>>;
-};
-
-/** Type casting for `modulo` function:
-    * UInt<x>,  UInt<y>   ->  UInt<max(x,y)>
-    * Int<x>,   Int<y>    ->  Int<max(x,y)>
-    * UInt<x>,  Int<y>    ->  Int<max(x*2, y)>
-    * UInt64,   Int<x>    ->  Error
-    * Float<x>, Float<y>  ->  Float64
-    * Float<x>, [U]Int<y> ->  Float64
-    */
-template <typename A, typename B>
-struct ResultOfModuloNativePromotion
-{
-    static_assert(is_arithmetic_v<A> && is_arithmetic_v<B>);
-
-    static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
-    static constexpr bool has_integer = is_integer<A> || is_integer<B>;
-    static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
-    static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
-
-    static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
-    static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_integer = max(is_integer<A> ? sizeof(A) : 0, is_integer<B> ? sizeof(B) : 0);
-
-    using ConstructedType = typename Construct<
-        has_signed,
-        false,
-        (has_signed ^ has_unsigned) ? max(max_size_of_unsigned_integer * 2, max_size_of_signed_integer) : max(sizeof(A), sizeof(B))>::Type;
-
-    using Type = std::conditional_t<
-        std::is_same_v<A, B>,
-        A,
-        std::conditional_t<has_float, Float64, std::conditional_t<sizeof(ConstructedType) <= 8, ConstructedType, Error>>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are cast to whole numbers. */

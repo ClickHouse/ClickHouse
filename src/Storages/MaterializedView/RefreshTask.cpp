@@ -1,12 +1,12 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/thread_local_rng.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -14,9 +14,11 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+
 
 namespace CurrentMetrics
 {
@@ -307,6 +309,22 @@ void RefreshTask::wait()
     }
 }
 
+bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline)
+{
+    std::unique_lock lock(mutex);
+
+    execution.cancel_ddl_queries.request_stop();
+
+    auto duration = deadline - std::chrono::steady_clock::now();
+    /// (Manually clamping to 0 because the standard library used to have (and possibly still has?)
+    ///  a bug that wait_until would wait forever if the timestamp is in the past.)
+    duration = std::max(duration, std::chrono::steady_clock::duration(0));
+    return refresh_cv.wait_for(lock, duration, [&]
+        {
+            return state != RefreshState::Running && state != RefreshState::Scheduling;
+        });
+}
+
 std::chrono::sys_seconds RefreshTask::getNextRefreshTimeslot() const
 {
     std::lock_guard guard(mutex);
@@ -559,8 +577,11 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
             String query_for_logging = refresh_query->formatForLogging(
                 refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+            UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+
             auto process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
@@ -929,7 +950,10 @@ String RefreshTask::CoordinationZnode::toString() const
 void RefreshTask::CoordinationZnode::parse(const String & data)
 {
     ReadBufferFromString in(data);
-    Int64 last_completed_timeslot_int, last_success_time_int, last_success_duration_int, last_attempt_time_int;
+    Int64 last_completed_timeslot_int;
+    Int64 last_success_time_int;
+    Int64 last_success_duration_int;
+    Int64 last_attempt_time_int;
     in >> "format version: 1\n"
        >> "last_completed_timeslot: " >> last_completed_timeslot_int >> "\n"
        >> "last_success_time: " >> last_success_time_int >> "\n"

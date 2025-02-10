@@ -21,6 +21,8 @@ namespace ErrorCodes
 {
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace
@@ -62,11 +64,10 @@ bool BackupCoordinationStageSync::State::operator !=(const State & other) const 
 
 void BackupCoordinationStageSync::State::merge(const State & other)
 {
-    if (other.host_with_error && !host_with_error)
+    if (other.host_with_error)
     {
         const String & host = *other.host_with_error;
-        host_with_error = host;
-        hosts.at(host).exception = other.hosts.at(host).exception;
+        addErrorInfo(other.hosts.at(host).exception, host);
     }
 
     for (const auto & [host, other_host_info] : other.hosts)
@@ -75,6 +76,16 @@ void BackupCoordinationStageSync::State::merge(const State & other)
         host_info.stages.insert(other_host_info.stages.begin(), other_host_info.stages.end());
         if (other_host_info.finished)
             host_info.finished = true;
+    }
+}
+
+
+void BackupCoordinationStageSync::State::addErrorInfo(std::exception_ptr exception, const String & host)
+{
+    if (!host_with_error && exception)
+    {
+        host_with_error = host;
+        hosts.at(host).exception = exception;
     }
 }
 
@@ -135,25 +146,13 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
 
 BackupCoordinationStageSync::~BackupCoordinationStageSync()
 {
-    /// Normally either finish() or setError() must be called.
-    if (!tried_to_finish)
-    {
-        if (state.host_with_error)
-        {
-            /// setError() was called and succeeded.
-            finish(/* throw_if_error = */ false);
-        }
-        else if (!tried_to_set_error)
-        {
-            /// Neither finish() nor setError() were called, it's a bug.
-            chassert(false, "~BackupCoordinationStageSync() is called without finish() or setError()");
-            LOG_ERROR(log, "~BackupCoordinationStageSync() is called without finish() or setError()");
-        }
-    }
+    /// If everything is ok, then the finish() function should be called already and the watching thread should be already stopped too.
+    /// However if an error happened then that might be different,
+    /// so here in the destructor we need to ensure that we've tried to create the finish node and also we've stopped the watching thread.
 
-    /// Normally the watching thread should be stopped already because the finish() function stops it.
-    /// However if an error happened then the watching thread can be still running,
-    /// so here in the destructor we have to ensure that it's stopped.
+    if (!finished())
+        finish(/* throw_if_error = */ false);
+
     stopWatchingThread();
 }
 
@@ -281,7 +280,11 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
         {
             auto [exception, host] = parseErrorNode(serialized_error);
             if (exception)
+            {
+                std::lock_guard lock{mutex};
+                state.addErrorInfo(exception, host);
                 std::rethrow_exception(exception);
+            }
         }
 
         if (check_concurrency)
@@ -543,7 +546,8 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
         std::lock_guard lock{mutex};
 
         /// Log all changes in zookeeper nodes in the "stage" folder to make debugging easier.
-        Strings added_zk_nodes, removed_zk_nodes;
+        Strings added_zk_nodes;
+        Strings removed_zk_nodes;
         std::set_difference(new_zk_nodes.begin(), new_zk_nodes.end(), zk_nodes.begin(), zk_nodes.end(), back_inserter(added_zk_nodes));
         std::set_difference(zk_nodes.begin(), zk_nodes.end(), new_zk_nodes.begin(), new_zk_nodes.end(), back_inserter(removed_zk_nodes));
         if (!added_zk_nodes.empty())
@@ -577,12 +581,8 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
             {
                 String serialized_error = zookeeper->get(error_node_path);
                 auto [exception, host] = parseErrorNode(serialized_error);
-                auto * host_info = get_host_info(host);
-                if (exception && host_info)
-                {
-                    host_info->exception = exception;
-                    new_state.host_with_error = host;
-                }
+                if (exception)
+                    new_state.addErrorInfo(exception, host);
             }
         }
         else if (zk_node.starts_with("started|"))
@@ -692,7 +692,12 @@ void BackupCoordinationStageSync::cancelQueryIfError()
     if (!exception)
         return;
 
-    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+    auto code = getExceptionErrorCode(exception);
+    auto cancel_reason = ((code == ErrorCodes::QUERY_WAS_CANCELLED) || (code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT))
+        ? CancelReason::CANCELLED_BY_USER
+        : CancelReason::CANCELLED_BY_ERROR;
+
+    process_list_element->cancelQuery(cancel_reason, exception);
 
     state_changed.notify_all();
 }
@@ -747,7 +752,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
     /// we don't want the watching thread to try waiting here for retries or a reconnection).
     /// Also we don't set the `state.host_with_error` field here because `state.host_with_error` can only be set
     /// AFTER creating the 'error' node (see the comment for `State`).
-    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_ERROR, exception);
 
     state_changed.notify_all();
 }
@@ -796,7 +801,6 @@ void BackupCoordinationStageSync::setStage(const String & stage, const String & 
     {
         LOG_INFO(log, "Skipped creating the 'finish' node because the initiator uses outdated version {}", getInitiatorVersion());
         std::lock_guard lock{mutex};
-        tried_to_finish = true;
         state.hosts.at(current_host).finished = true;
     }
 }
@@ -804,12 +808,19 @@ void BackupCoordinationStageSync::setStage(const String & stage, const String & 
 
 void BackupCoordinationStageSync::createStageNode(const String & stage, const String & stage_result, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
 {
+    if (isErrorSet())
+        rethrowSetError();
+
     String serialized_error;
     if (zookeeper->tryGet(error_node_path, serialized_error))
     {
         auto [exception, host] = parseErrorNode(serialized_error);
         if (exception)
+        {
+            std::lock_guard lock{mutex};
+            state.addErrorInfo(exception, host);
             std::rethrow_exception(exception);
+        }
     }
 
     auto code = zookeeper->tryCreate(getStageNodePath(stage), stage_result, zkutil::CreateMode::Persistent);
@@ -860,6 +871,8 @@ Strings BackupCoordinationStageSync::waitHostsReachStage(const Strings & hosts, 
 bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const
 {
     process_list_element->checkTimeLimit();
+    if (state.host_with_error)
+        std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
     for (size_t i = 0; i != hosts.size(); ++i)
     {
@@ -876,9 +889,6 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
             results[i] = stage_it->second;
             continue;
         }
-
-        if (state.host_with_error)
-            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
         if (host_info.finished)
             throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
@@ -923,7 +933,7 @@ bool BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
             return true;
         }
 
-        if (tried_to_finish)
+        if (tried_to_finish[throw_if_error])
         {
             /// We don't repeat creating the finish node, no matter if it was successful or not.
             LOG_INFO(log, "Skipped creating the finish node for {} because earlier we failed to do that", current_host_desc);
@@ -950,6 +960,11 @@ bool BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
         }
     }
 
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        tried_to_finish[throw_if_error] = true;
+    });
+
     stopWatchingThread();
 
     try
@@ -960,6 +975,7 @@ bool BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
             with_retries.renewZooKeeper(zookeeper);
             createFinishNodeAndRemoveAliveNode(zookeeper, throw_if_error);
         });
+        return true;
     }
     catch (...)
     {
@@ -967,21 +983,10 @@ bool BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
             current_host_desc,
             getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
 
-        std::lock_guard lock{mutex};
-        tried_to_finish = true;
-
         if (throw_if_error)
             throw;
         return false;
     }
-
-    {
-        std::lock_guard lock{mutex};
-        tried_to_finish = true;
-        state.hosts.at(current_host).finished = true;
-    }
-
-    return true;
 }
 
 
@@ -992,6 +997,24 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
 
     for (size_t attempt_no = 1; attempt_no <= max_attempts_after_bad_version; ++attempt_no)
     {
+        if (throw_if_error)
+        {
+            if (isErrorSet())
+                rethrowSetError();
+
+            String serialized_error;
+            if (zookeeper->tryGet(error_node_path, serialized_error))
+            {
+                auto [exception, host] = parseErrorNode(serialized_error);
+                if (exception)
+                {
+                    std::lock_guard lock{mutex};
+                    state.addErrorInfo(exception, host);
+                    std::rethrow_exception(exception);
+                }
+            }
+        }
+
         /// The 'num_hosts' node may not exist if createStartAndAliveNodes() failed in the constructor.
         if (!num_hosts)
         {
@@ -1004,16 +1027,12 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
             }
         }
 
-        String serialized_error;
-        if (throw_if_error && zookeeper->tryGet(error_node_path, serialized_error))
-        {
-            auto [exception, host] = parseErrorNode(serialized_error);
-            if (exception)
-                std::rethrow_exception(exception);
-        }
-
         if (zookeeper->exists(finish_node_path))
+        {
+            std::lock_guard lock{mutex};
+            state.hosts.at(current_host).finished = true;
             return;
+        }
 
         bool start_node_exists = zookeeper->exists(start_node_path);
 
@@ -1049,6 +1068,8 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
                 hosts_left_desc = (*num_hosts == 0) ? ", no hosts left" : fmt::format(", {} hosts left", *num_hosts);
             }
             LOG_INFO(log, "Created the 'finish' node in ZooKeeper for {}{}", current_host_desc, hosts_left_desc);
+            std::lock_guard lock{mutex};
+            state.hosts.at(current_host).finished = true;
             return;
         }
 
@@ -1153,15 +1174,16 @@ bool BackupCoordinationStageSync::checkIfOtherHostsFinish(
     const String & reason, std::optional<std::chrono::milliseconds> timeout, bool time_is_out, bool & result, bool throw_if_error) const
 {
     if (throw_if_error)
+    {
         process_list_element->checkTimeLimit();
+        if (state.host_with_error)
+            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
+    }
 
     for (const auto & [host, host_info] : state.hosts)
     {
         if ((host == current_host) || host_info.finished)
             continue;
-
-        if (throw_if_error && state.host_with_error)
-            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
         String reason_text = reason.empty() ? "" : (" " + reason);
 
@@ -1307,26 +1329,35 @@ bool BackupCoordinationStageSync::setError(std::exception_ptr exception, bool th
 
 bool BackupCoordinationStageSync::setError(const Exception & exception, bool throw_if_error)
 {
+    /// Most likely this exception has been already logged so here we're logging it without stacktrace.
+    String exception_message = getExceptionMessage(exception, /* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true);
+    LOG_INFO(log, "Sending exception from {} to other hosts: {}", current_host_desc, exception_message);
+
+    {
+        std::lock_guard lock{mutex};
+        if (state.host_with_error)
+        {
+            /// We create the error node always before assigning `state.host_with_error`,
+            /// thus if `state.host_with_error` is set then we can be sure that the error node exists.
+            LOG_INFO(log, "The error node already exists");
+            return true;
+        }
+
+        if (tried_to_set_error)
+        {
+            LOG_INFO(log, "Skipped creating the error node because earlier we failed to do that");
+            return false;
+        }
+    }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{mutex};
+        tried_to_set_error = true;
+    });
+
     try
     {
-        /// Most likely this exception has been already logged so here we're logging it without stacktrace.
-        String exception_message = getExceptionMessage(exception, /* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true);
-        LOG_INFO(log, "Sending exception from {} to other hosts: {}", current_host_desc, exception_message);
 
-        {
-            std::lock_guard lock{mutex};
-            if (state.host_with_error)
-            {
-                LOG_INFO(log, "The error node already exists");
-                return true;
-            }
-
-            if (tried_to_set_error)
-            {
-                LOG_INFO(log, "Skipped creating the error node because earlier we failed to do that");
-                return false;
-            }
-        }
 
         auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::setError", WithRetries::kErrorHandling);
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
@@ -1334,21 +1365,13 @@ bool BackupCoordinationStageSync::setError(const Exception & exception, bool thr
             with_retries.renewZooKeeper(zookeeper);
             createErrorNode(exception, zookeeper);
         });
-
-        {
-            std::lock_guard lock{mutex};
-            tried_to_set_error = true;
-            return true;
-        }
+        return true;
     }
     catch (...)
     {
-        LOG_TRACE(log, "Caught exception while removing nodes from ZooKeeper for this {}: {}",
+        LOG_TRACE(log, "Caught exception while creating the error node for this {}: {}",
                   is_restore ? "restore" : "backup",
                   getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
-
-        std::lock_guard lock{mutex};
-        tried_to_set_error = true;
 
         if (throw_if_error)
             throw;
@@ -1359,6 +1382,14 @@ bool BackupCoordinationStageSync::setError(const Exception & exception, bool thr
 
 void BackupCoordinationStageSync::createErrorNode(const Exception & exception, Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
 {
+    if (isErrorSet())
+    {
+        /// We create the error node always before assigning `state.host_with_error`,
+        /// thus if `state.host_with_error` is set then we can be sure that the error node exists.
+        LOG_INFO(log, "The error node already exists");
+        return;
+    }
+
     String serialized_error;
     {
         WriteBufferFromOwnString buf;
@@ -1367,16 +1398,15 @@ void BackupCoordinationStageSync::createErrorNode(const Exception & exception, C
         serialized_error = buf.str();
     }
 
+    zookeeper->createIfNotExists(operation_zookeeper_path, "");
+    zookeeper->createIfNotExists(zookeeper_path, "");
+
     auto code = zookeeper->tryCreate(error_node_path, serialized_error, zkutil::CreateMode::Persistent);
 
     if (code == Coordination::Error::ZOK)
     {
         std::lock_guard lock{mutex};
-        if (!state.host_with_error)
-        {
-            state.host_with_error = current_host;
-            state.hosts.at(current_host).exception = parseErrorNode(serialized_error).first;
-        }
+        state.addErrorInfo(parseErrorNode(serialized_error).first, current_host);
         LOG_TRACE(log, "Sent exception from {} to other hosts", current_host_desc);
         return;
     }
@@ -1388,11 +1418,7 @@ void BackupCoordinationStageSync::createErrorNode(const Exception & exception, C
         if (another_exception)
         {
             std::lock_guard lock{mutex};
-            if (!state.host_with_error)
-            {
-                state.host_with_error = host;
-                state.hosts.at(host).exception = another_exception;
-            }
+            state.addErrorInfo(another_exception, host);
             LOG_INFO(log, "Another error is already assigned for this {}", operation_name);
             return;
         }
@@ -1418,6 +1444,13 @@ bool BackupCoordinationStageSync::isErrorSet() const
 {
     std::lock_guard lock{mutex};
     return state.host_with_error.has_value();
+}
+
+void BackupCoordinationStageSync::rethrowSetError() const
+{
+    std::lock_guard lock{mutex};
+    chassert(state.host_with_error);
+    std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 }
 
 }

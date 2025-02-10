@@ -1,4 +1,6 @@
+#include <Columns/IColumn.h>
 #include <Formats/ColumnMapping.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {

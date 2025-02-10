@@ -68,7 +68,8 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool distributed_processing_ = false,
-        ASTPtr partition_by_ = nullptr);
+        ASTPtr partition_by_ = nullptr,
+        bool lazy_init = false);
 
     String getName() const override;
 
@@ -130,6 +131,8 @@ public:
         const std::optional<FormatSettings> & format_settings,
         std::string & sample_path,
         const ContextPtr & context);
+
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     bool hasExternalDynamicMetadata() const override;
 
@@ -193,7 +196,7 @@ public:
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
     virtual void addStructureAndFormatToArgsIfNeeded(
-        ASTs & args, const String & structure_, const String & format_, ContextPtr context) = 0;
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
     bool withPartitionWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
@@ -217,6 +220,8 @@ public:
     const DataLakePartitionColumns & getPartitionColumns() const { return partition_columns; }
 
     virtual bool isDataLakeConfiguration() const { return false; }
+
+    virtual void implementPartitionPruning(const ActionsDAG &) { }
 
     virtual bool hasExternalDynamicMetadata() { return false; }
 

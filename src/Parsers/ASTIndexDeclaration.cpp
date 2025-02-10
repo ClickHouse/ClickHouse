@@ -71,24 +71,24 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             if (expr->as<ASTExpressionList>())
             {
                 ostr << "(";
-                expr->formatImpl(ostr, s, state, frame);
+                expr->format(ostr, s, state, frame);
                 ostr << ")";
             }
             else
-                expr->formatImpl(ostr, s, state, frame);
+                expr->format(ostr, s, state, frame);
         }
         else
         {
             s.writeIdentifier(ostr, name, /*ambiguous=*/false);
             ostr << " ";
-            expr->formatImpl(ostr, s, state, frame);
+            expr->format(ostr, s, state, frame);
         }
     }
 
     if (auto type = getType())
     {
         ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
-        type->formatImpl(ostr, s, state, frame);
+        type->format(ostr, s, state, frame);
     }
 
     if (granularity)
