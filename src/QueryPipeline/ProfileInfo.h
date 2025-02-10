@@ -65,7 +65,6 @@ private:
     /// For these fields we make accessors, because they must be calculated beforehand.
     mutable bool applied_limit = false;                    /// Whether LIMIT was applied
     mutable size_t rows_before_limit = 0;
-    mutable bool calculated_rows_before_limit = false; /// Whether the field rows was calculated
 
     mutable bool applied_aggregation = false; /// Whether GROUP BY was applied
     mutable size_t rows_before_aggregation = 0;
