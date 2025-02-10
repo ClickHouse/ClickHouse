@@ -4,7 +4,7 @@
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/SettingsChangesHistory.h>
-#include <Disks/DiskFomAST.h>
+#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -368,13 +368,13 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFomAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
                     else
                     {
-                        DiskFomAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
+                        DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
                     }
 
                     if (has("storage_policy"))
