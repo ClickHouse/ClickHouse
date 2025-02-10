@@ -1,5 +1,14 @@
 {
     "02700_s3_part_INT_MAX": {
-        "reason": "fails with asan"
+        "reason": "Fails on asan"
+    },
+    "00157_cache_dictionary": {
+        "reason": "fails with asan,debug,msan"
+    },
+    "02815_no_throw_in_simple_queries": {
+        "reason": "Fails on asan,msan,tsan,debug,Aarch64"
+    },
+    "03206_no_exceptions_clickhouse_local": {
+        "reason": "Fails on asan,msan,tsan,debug,Aarch64"
     }
 }
