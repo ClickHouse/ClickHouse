@@ -947,7 +947,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// have this column in the primary key. We should rebuild such projections.
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
-                if (!merge_tree_data_part->getColumn(command.column_name).type->equals(*command.data_type))
+                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
+                if (column && !column->type->equals(*command.data_type))
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
