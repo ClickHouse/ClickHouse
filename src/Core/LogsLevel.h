@@ -2,7 +2,7 @@
 
 namespace DB
 {
-enum class LogsLevel : uint8_t
+enum class LogsLevel
 {
     none = 0, /// Disable
     fatal,

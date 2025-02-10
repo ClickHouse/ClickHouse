@@ -20,10 +20,12 @@ class ODBCHandler : public HTTPRequestHandler, WithContext
 {
 public:
     ODBCHandler(
+        size_t keep_alive_timeout_,
         ContextPtr context_,
         const String & mode_)
         : WithContext(context_)
         , log(getLogger("ODBCHandler"))
+        , keep_alive_timeout(keep_alive_timeout_)
         , mode(mode_)
     {
     }
@@ -33,6 +35,7 @@ public:
 private:
     LoggerPtr log;
 
+    size_t keep_alive_timeout;
     String mode;
 
     static inline std::mutex mutex;

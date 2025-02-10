@@ -5,7 +5,6 @@
 import uuid
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -97,7 +96,6 @@ def get_node(query_node, table="dist", *args, **kwargs):
         "log_queries": 1,
         "log_queries_min_type": "QUERY_START",
         "prefer_localhost_replica": 0,
-        "max_parallel_replicas": 1,
     }
     if "settings" not in kwargs:
         kwargs["settings"] = settings
@@ -202,10 +200,10 @@ def test_distributed_replica_max_ignored_errors():
         "connect_timeout": 2,
         "receive_timeout": 2,
         "send_timeout": 2,
+        "idle_connection_timeout": 2,
         "tcp_keep_alive_timeout": 2,
         "distributed_replica_max_ignored_errors": 0,
         "distributed_replica_error_half_life": 60,
-        "max_parallel_replicas": 1,
     }
 
     # initiate connection (if started only this test)

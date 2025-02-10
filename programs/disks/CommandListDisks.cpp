@@ -1,49 +1,68 @@
-#include <algorithm>
-#include <Interpreters/Context.h>
-#include <Common/TerminalSize.h>
-#include "DisksClient.h"
 #include "ICommand.h"
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class CommandListDisks final : public ICommand
 {
 public:
-    explicit CommandListDisks() : ICommand("CommandListDisks")
+    CommandListDisks()
     {
         command_name = "list-disks";
-        description = "Lists all available disks";
+        description = "List disks names";
+        usage = "list-disks [OPTION]";
     }
 
-    void executeImpl(const CommandLineOptions &, DisksClient & client) override
+    void processOptions(
+        Poco::Util::LayeredConfiguration &,
+        po::variables_map &) const override
+    {}
+
+    void execute(
+        const std::vector<String> & command_arguments,
+        std::shared_ptr<DiskSelector> &,
+        Poco::Util::LayeredConfiguration & config) override
     {
-        const std::vector<String> initialized_disks = client.getInitializedDiskNames();
-        std::set<String> sorted_and_selected_disk_state;
-
-
-        for (const auto & disk_name : initialized_disks)
+        if (!command_arguments.empty())
         {
-            sorted_and_selected_disk_state.insert(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
-        }
-        if (!sorted_and_selected_disk_state.empty())
-        {
-            std::cout << "Initialized disks:\n" << fmt::format("{}", fmt::join(sorted_and_selected_disk_state, "\n")) << "\n";
+            printHelpMessage();
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
-        std::vector<String> uninitialized_disks = client.getUninitializedDiskNames();
-        if (!uninitialized_disks.empty())
+        constexpr auto config_prefix = "storage_configuration.disks";
+        constexpr auto default_disk_name = "default";
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_prefix, keys);
+
+        bool has_default_disk = false;
+
+        /// For the output to be ordered
+        std::set<String> disks;
+
+        for (const auto & disk_name : keys)
         {
-            std::set<String> sorted_uninitialized_disks(uninitialized_disks.begin(), uninitialized_disks.end());
-            std::cout << "Uninitialized disks:\n" << fmt::format("{}", fmt::join(sorted_uninitialized_disks, "\n")) << "\n";
+            if (disk_name == default_disk_name)
+                has_default_disk = true;
+            disks.insert(disk_name);
         }
+
+        if (!has_default_disk)
+            disks.insert(default_disk_name);
+
+        for (const auto & disk : disks)
+            std::cout << disk << '\n';
     }
-
-private:
 };
-
-CommandPtr makeCommandListDisks()
-{
-    return std::make_shared<DB::CommandListDisks>();
 }
+
+std::unique_ptr <DB::ICommand> makeCommandListDisks()
+{
+    return std::make_unique<DB::CommandListDisks>();
 }

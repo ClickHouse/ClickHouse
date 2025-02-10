@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx;"
 
 # NGRAM BF
-$CLICKHOUSE_CLIENT --query="
+$CLICKHOUSE_CLIENT -n --query="
 CREATE TABLE bloom_filter_idx
 (
     k UInt64,

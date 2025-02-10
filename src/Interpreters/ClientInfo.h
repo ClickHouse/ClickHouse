@@ -1,8 +1,11 @@
 #pragma once
 
-#include <base/types.h>
+#include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
+#include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/VersionNumber.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace Poco::Net
@@ -35,7 +38,6 @@ public:
         POSTGRESQL = 5,
         LOCAL = 6,
         TCP_INTERSERVER = 7,
-        PROMETHEUS = 8,
     };
 
     enum class HTTPMethod : uint8_t
@@ -83,11 +85,7 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt32 client_tcp_protocol_version = 0;
-
-    /// Numbers are starting from 1. Zero means unset.
-    UInt32 script_query_number = 0;
-    UInt32 script_line_number = 0;
+    unsigned client_tcp_protocol_version = 0;
 
     /// In case of distributed query, client info for query is actually a client info of client.
     /// In order to get a version of server-initiator, use connection_ values.
@@ -95,7 +93,7 @@ public:
     UInt64 connection_client_version_major = 0;
     UInt64 connection_client_version_minor = 0;
     UInt64 connection_client_version_patch = 0;
-    UInt32 connection_tcp_protocol_version = 0;
+    unsigned connection_tcp_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
@@ -111,12 +109,13 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
-    std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const;
-
-    String getLastForwardedForHost() const
+    String getLastForwardedFor() const
     {
-        auto addr = getLastForwardedFor();
-        return addr ? addr->host().toString() : "";
+        if (forwarded_for.empty())
+            return {};
+        String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
+        boost::trim(last);
+        return last;
     }
 
     /// Common
@@ -128,18 +127,8 @@ public:
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
-    UInt64 obsolete_count_participating_replicas{0};
+    UInt64 count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
-
-    enum class BackgroundOperationType : uint8_t
-    {
-        NOT_A_BACKGROUND_OPERATION = 0,
-        MERGE = 1,
-        MUTATION = 2,
-    };
-
-    /// It's ClientInfo and context created for background operation (not real query)
-    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
@@ -159,11 +148,12 @@ public:
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
+    VersionNumber getVersionNumber() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();
 };
 
 String toString(ClientInfo::Interface interface);
-String toString(ClientInfo::HTTPMethod method);
+
 }

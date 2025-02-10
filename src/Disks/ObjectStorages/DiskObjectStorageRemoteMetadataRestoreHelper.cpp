@@ -73,7 +73,7 @@ int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStora
     if (!object_storage->exists(object))
         return version;
 
-    auto buf = object_storage->readObject(object, ReadSettings{});
+    auto buf = object_storage->readObject(object);
     readIntText(version, *buf);
 
     return version;
@@ -117,7 +117,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecu
     bool dir_contains_only_files = true;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        if (disk->existsDirectory(it->path()))
+        if (disk->isDirectory(it->path()))
         {
             dir_contains_only_files = false;
             break;
@@ -129,7 +129,6 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecu
     {
         pool.scheduleOrThrowOnError([this, path]
         {
-            setThreadName("BackupWorker");
             for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
                 migrateFileToRestorableSchema(it->path());
         });
@@ -138,7 +137,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchemaRecu
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (disk->existsDirectory(it->path()))
+            if (disk->isDirectory(it->path()))
             {
                 migrateToRestorableSchemaRecursive(it->path(), pool);
             }
@@ -161,7 +160,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchema()
         ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled};
 
         for (const auto & root : data_roots)
-            if (disk->existsDirectory(root))
+            if (disk->exists(root))
                 migrateToRestorableSchemaRecursive(root + '/', pool);
 
         pool.wait();
@@ -180,7 +179,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
 {
     LOG_INFO(disk->log, "Restore operation for disk {} called", disk->name);
 
-    if (!disk->existsFile(RESTORE_FILE_NAME))
+    if (!disk->exists(RESTORE_FILE_NAME))
     {
         LOG_INFO(disk->log, "No restore file '{}' exists, finishing restore", RESTORE_FILE_NAME);
         return;
@@ -228,7 +227,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restore(const Poco::Util::Abs
 
         bool cleanup_s3 = information.source_path != disk->object_key_prefix;
         for (const auto & root : data_roots)
-            if (disk->existsDirectory(root))
+            if (disk->exists(root))
                 disk->removeSharedRecursive(root + '/', !cleanup_s3, {});
 
         LOG_INFO(disk->log, "Old metadata removed, restoring new one");
@@ -326,7 +325,7 @@ static std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const Strin
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::moveRecursiveOrRemove(const String & from_path, const String & to_path, bool send_metadata)
 {
-    if (disk->existsFileOrDirectory(to_path))
+    if (disk->exists(to_path))
     {
         if (send_metadata)
         {
@@ -337,7 +336,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::moveRecursiveOrRemove(const S
             };
             createFileOperationObject("rename", revision, object_metadata);
         }
-        if (disk->existsDirectory(from_path))
+        if (disk->isDirectory(from_path))
         {
             for (auto it = disk->iterateDirectory(from_path); it->isValid(); it->next())
                 moveRecursiveOrRemove(it->path(), fs::path(to_path) / it->name(), false);
@@ -364,18 +363,18 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
         for (const auto & object : objects)
         {
 
-            LOG_INFO(disk->log, "Calling restore for key for disk {}", object->relative_path);
+            LOG_INFO(disk->log, "Calling restore for key for disk {}", object.relative_path);
 
             /// Skip file operations objects. They will be processed separately.
-            if (object->relative_path.contains("/operations/"))
+            if (object.relative_path.find("/operations/") != String::npos)
                 continue;
 
-            const auto [revision, _] = extractRevisionAndOperationFromKey(object->relative_path);
+            const auto [revision, _] = extractRevisionAndOperationFromKey(object.relative_path);
             /// Filter early if it's possible to get revision from key.
             if (revision > restore_information.revision)
                 continue;
 
-            keys_names.push_back(object->relative_path);
+            keys_names.push_back(object.relative_path);
         }
 
         if (!keys_names.empty())
@@ -405,20 +404,26 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
 {
     for (const auto & key : keys)
     {
-        auto metadata = source_object_storage->getObjectMetadata(key);
-        auto object_attributes = metadata.attributes;
+        auto meta = source_object_storage->getObjectMetadata(key);
+        auto object_attributes = meta.attributes;
 
         String path;
-        /// Restore file if object has 'path' in metadata.
-        auto path_entry = object_attributes.find("path");
-        if (path_entry == object_attributes.end())
+        if (object_attributes.has_value())
         {
-            /// Such keys can remain after migration, we can skip them.
-            LOG_WARNING(disk->log, "Skip key {} because it doesn't have 'path' in metadata", key);
-            continue;
-        }
+            /// Restore file if object has 'path' in metadata.
+            auto path_entry = object_attributes->find("path");
+            if (path_entry == object_attributes->end())
+            {
+                /// Such keys can remain after migration, we can skip them.
+                LOG_WARNING(disk->log, "Skip key {} because it doesn't have 'path' in metadata", key);
+                continue;
+            }
 
-        path = path_entry->second;
+            path = path_entry->second;
+        }
+        else
+            continue;
+
         disk->createDirectories(directoryPath(path));
         auto object_key = ObjectStorageKey::createAsRelative(disk->object_key_prefix, shrinkKey(source_path, key));
 
@@ -430,7 +435,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
             source_object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, *disk->object_storage);
 
         auto tx = disk->metadata_storage->createTransaction();
-        tx->addBlobToMetadata(path, object_key, metadata.size_bytes);
+        tx->addBlobToMetadata(path, object_key, meta.size_bytes);
         tx->commit();
 
         LOG_TRACE(disk->log, "Restored file {}", path);
@@ -469,10 +474,10 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
 
         for (const auto & object : objects)
         {
-            const auto [revision, operation] = extractRevisionAndOperationFromKey(object->relative_path);
+            const auto [revision, operation] = extractRevisionAndOperationFromKey(object.relative_path);
             if (revision == UNKNOWN_REVISION)
             {
-                LOG_WARNING(disk->log, "Skip key {} with unknown revision", object->relative_path);
+                LOG_WARNING(disk->log, "Skip key {} with unknown revision", object.relative_path);
                 continue;
             }
 
@@ -485,18 +490,18 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
             if (send_metadata)
                 revision_counter = revision - 1;
 
-            auto object_attributes = source_object_storage->getObjectMetadata(object->relative_path).attributes;
+            auto object_attributes = *(source_object_storage->getObjectMetadata(object.relative_path).attributes);
             if (operation == rename)
             {
                 auto from_path = object_attributes["from_path"];
                 auto to_path = object_attributes["to_path"];
-                if (disk->existsFileOrDirectory(from_path))
+                if (disk->exists(from_path))
                 {
                     moveRecursiveOrRemove(from_path, to_path, send_metadata);
 
                     LOG_TRACE(disk->log, "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
 
-                    if (restore_information.detached && disk->existsDirectory(to_path))
+                    if (restore_information.detached && disk->isDirectory(to_path))
                     {
                         /// Sometimes directory paths are passed without trailing '/'. We should keep them in one consistent way.
                         if (!from_path.ends_with('/'))
@@ -517,7 +522,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
             {
                 auto src_path = object_attributes["src_path"];
                 auto dst_path = object_attributes["dst_path"];
-                if (disk->existsFile(src_path))
+                if (disk->exists(src_path))
                 {
                     disk->createDirectories(directoryPath(dst_path));
                     disk->createHardLink(src_path, dst_path, send_metadata);
@@ -541,7 +546,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         for (const auto & path : renames)
         {
             /// Skip already detached parts.
-            if (path.contains("/detached/"))
+            if (path.find("/detached/") != std::string::npos)
                 continue;
 
             /// Skip not finished parts. They shouldn't be in 'detached' directory, because CH wouldn't be able to finish processing them.
@@ -564,7 +569,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
                 to_path /= from_path.filename();
 
             /// to_path may exist and non-empty in case for example abrupt restart, so remove it before rename
-            if (disk->metadata_storage->existsFileOrDirectory(to_path))
+            if (disk->metadata_storage->exists(to_path))
                 tx->removeRecursive(to_path);
 
             disk->createDirectories(directoryPath(to_path));

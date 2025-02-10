@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include <Common/SipHash.h>
+#include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <base/StringRef.h>
@@ -86,9 +88,12 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             out.resize_fill(num_rows);
 
             /// Note: here we violate strict aliasing.
-            /// It should be ok as long as we do not refer to any value from `out` before filling.
+            /// It should be ok as log as we do not reffer to any value from `out` before filling.
             const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
-            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            size_t offset_to = offset;
+            if constexpr (std::endian::native == std::endian::big)
+                offset_to = sizeof(Key) - sizeof(T) - offset;
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset_to);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
         }
@@ -244,6 +249,18 @@ static inline T ALWAYS_INLINE packFixed(
     }
 
     return key;
+}
+
+
+/// Hash a set of keys into a UInt128 value.
+static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
+{
+    SipHash hash;
+    for (size_t j = 0; j < keys_size; ++j)
+        key_columns[j]->updateHashWithValue(i, hash);
+
+    return hash.get128();
 }
 
 /** Serialize keys into a continuous chunk of memory.

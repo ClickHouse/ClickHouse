@@ -10,8 +10,7 @@ namespace
 /// Code from https://arxiv.org/pdf/1406.2294.pdf
 inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets)
 {
-    int64_t b = -1;
-    int64_t j = 0;
+    int64_t b = -1, j = 0;
     while (j < num_buckets)
     {
         b = j;
@@ -30,7 +29,7 @@ struct JumpConsistentHashImpl
     using BucketsType = ResultType;
     static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
 
-    static ResultType apply(UInt64 hash, BucketsType n)
+    static inline ResultType apply(UInt64 hash, BucketsType n)
     {
         return JumpConsistentHash(hash, n);
     }

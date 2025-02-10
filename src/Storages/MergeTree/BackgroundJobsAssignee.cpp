@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <pcg_random.hpp>
 #include <random>
@@ -105,6 +104,7 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Moving:
             return "Moving";
     }
+    UNREACHABLE();
 }
 
 void BackgroundJobsAssignee::start()

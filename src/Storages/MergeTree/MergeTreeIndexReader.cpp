@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/SkippingIndexCache.h>
 
 namespace
 {
@@ -32,8 +31,6 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
         load_marks_threadpool,
         /*num_columns_in_mark=*/ 1);
 
-    marks_loader->startAsyncLoad();
-
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
         index->getFileName(), extension, marks_count,
@@ -52,62 +49,41 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeData::DataPartPtr part_,
     size_t marks_count_,
     const MarkRanges & all_mark_ranges_,
-    MarkCache * mark_cache_,
-    UncompressedCache * uncompressed_cache_,
-    SkippingIndexCache * skipping_index_cache_,
-    MergeTreeReaderSettings settings_)
+    MarkCache * mark_cache,
+    UncompressedCache * uncompressed_cache,
+    MergeTreeReaderSettings settings)
     : index(index_)
-    , part(std::move(part_))
-    , marks_count(marks_count_)
-    , all_mark_ranges(all_mark_ranges_)
-    , mark_cache(mark_cache_)
-    , uncompressed_cache(uncompressed_cache_)
-    , skipping_index_cache(skipping_index_cache_)
-    , settings(std::move(settings_))
 {
-}
-
-void MergeTreeIndexReader::initStreamIfNeeded()
-{
-    if (stream)
-        return;
-
-    auto index_format = index->getDeserializedFormat(part->getDataPartStorage(), index->getFileName());
+    auto index_format = index->getDeserializedFormat(part_->getDataPartStorage(), index->getFileName());
 
     stream = makeIndexReader(
         index_format.extension,
-        index,
-        part,
-        marks_count,
-        all_mark_ranges,
+        index_,
+        part_,
+        marks_count_,
+        all_mark_ranges_,
         mark_cache,
         uncompressed_cache,
         std::move(settings));
-
     version = index_format.version;
 
-    stream->adjustRightMark(getLastMark(all_mark_ranges));
+    stream->adjustRightMark(getLastMark(all_mark_ranges_));
     stream->seekToStart();
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
+MergeTreeIndexReader::~MergeTreeIndexReader() = default;
+
+void MergeTreeIndexReader::seek(size_t mark)
 {
-    auto load_func = [&] {
-        initStreamIfNeeded();
-        if (stream_mark != mark)
-            stream->seekToMark(mark);
+    stream->seekToMark(mark);
+}
 
-        auto granule = index->createIndexGranule();
-        granule->deserializeBinary(*stream->getDataBuffer(), version);
-        stream_mark = mark + 1;
-        return granule;
-    };
+void MergeTreeIndexReader::read(MergeTreeIndexGranulePtr & granule)
+{
+    if (granule == nullptr)
+        granule = index->createIndexGranule();
 
-    UInt128 key = SkippingIndexCache::hash(
-        part->getDataPartStorage().getFullPath(),
-        index->getFileName(),
-        mark);
-    return skipping_index_cache->getOrSet(key, load_func);
+    granule->deserializeBinary(*stream->getDataBuffer(), version);
 }
 
 }

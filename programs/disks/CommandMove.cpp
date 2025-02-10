@@ -1,6 +1,5 @@
-#include <Interpreters/Context.h>
 #include "ICommand.h"
-#include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -10,69 +9,51 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 class CommandMove final : public ICommand
 {
 public:
-    CommandMove() : ICommand("CommandMove")
+    CommandMove()
     {
         command_name = "move";
         description = "Move file or directory from `from_path` to `to_path`";
-        options_description.add_options()("path-from", po::value<String>(), "path from which we copy (mandatory, positional)")(
-            "path-to", po::value<String>(), "path to which we copy (mandatory, positional)");
-        positional_options_description.add("path-from", 1);
-        positional_options_description.add("path-to", 1);
+        usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
     }
 
-    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
+    void processOptions(
+        Poco::Util::LayeredConfiguration &,
+        po::variables_map &) const override
+    {}
+
+    void execute(
+        const std::vector<String> & command_arguments,
+        std::shared_ptr<DiskSelector> & disk_selector,
+        Poco::Util::LayeredConfiguration & config) override
     {
-        auto disk = client.getCurrentDiskWithPath();
-
-        String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
-        String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
-
-        if (disk.getDisk()->existsFile(path_from))
+        if (command_arguments.size() != 2)
         {
-            LOG_INFO(log, "Moving file from '{}' to '{}' at disk '{}'", path_from, path_to, disk.getDisk()->getName());
-            disk.getDisk()->moveFile(path_from, path_to);
+            printHelpMessage();
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
-        else if (disk.getDisk()->existsDirectory(path_from))
-        {
-            auto target_location = getTargetLocation(path_from, disk, path_to);
-            if (!disk.getDisk()->existsDirectory(target_location))
-            {
-                LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
-                disk.getDisk()->createDirectory(target_location);
-                disk.getDisk()->moveDirectory(path_from, target_location);
-            }
-            else
-            {
-                if (disk.getDisk()->existsFile(target_location))
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory '{}' with directory '{}'", target_location, path_from);
-                }
-                if (!disk.getDisk()->isDirectoryEmpty(target_location))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
-                }
-                LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
-                disk.getDisk()->moveDirectory(path_from, target_location);
-            }
-        }
+
+        String disk_name = config.getString("disk", "default");
+
+        const String & path_from = command_arguments[0];
+        const String & path_to = command_arguments[1];
+
+        DiskPtr disk = disk_selector->get(disk_name);
+
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
+
+        if (disk->isFile(relative_path_from))
+            disk->moveFile(relative_path_from, relative_path_to);
         else
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "cannot stat '{}' on disk: '{}': No such file or directory",
-                path_from,
-                disk.getDisk()->getName());
-        }
+            disk->moveDirectory(relative_path_from, relative_path_to);
     }
 };
-
-CommandPtr makeCommandMove()
-{
-    return std::make_shared<DB::CommandMove>();
 }
+
+std::unique_ptr <DB::ICommand> makeCommandMove()
+{
+    return std::make_unique<DB::CommandMove>();
 }

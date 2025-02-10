@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -18,10 +19,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <IO/ReadBufferFromPocoSocketChunked.h>
-#include <IO/WriteBufferFromPocoSocketChunked.h>
 
-#include <IO/WriteBuffer.h>
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
@@ -53,8 +51,6 @@ struct QueryState
     /// Identifier of the query.
     String query_id;
 
-    ContextMutablePtr query_context;
-
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
     Protocol::Compression compression = Protocol::Compression::Disable;
 
@@ -83,17 +79,24 @@ struct QueryState
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
-    /// Is request cancelled
-    bool allow_partial_result_on_first_cancel = false;
-    bool stop_read_return_partial_result = false;
-    bool stop_query = false;
+    enum class CancellationStatus: UInt8
+    {
+        FULLY_CANCELLED,
+        READ_CANCELLED,
+        NOT_CANCELLED
+    };
 
+    /// Is request cancelled
+    CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
+    bool is_connection_closed = false;
+    /// empty or not
+    bool is_empty = true;
     /// Data was sent.
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
     /// Data was read.
-    bool read_all_data = true;
+    bool read_all_data = false;
 
     /// A state got uuids to exclude from a query
     std::optional<std::vector<UUID>> part_uuids_to_ignore;
@@ -107,9 +110,6 @@ struct QueryState
 
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
-    bool query_duration_already_logged = false;
-
-    ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
@@ -119,23 +119,15 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
-    void finalizeOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
+    void reset()
     {
-        if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
-            maybe_compressed_out->finalize();
-        if (raw_out)
-            raw_out->next();
+        *this = QueryState();
     }
 
-    void cancelOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
+    bool empty() const
     {
-        if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
-            maybe_compressed_out->cancel();
-        if (raw_out)
-            raw_out->cancel();
+        return is_empty;
     }
-
-    bool isEnanbledPartialResultOnFirstCancel() const;
 };
 
 
@@ -194,9 +186,6 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
-    UInt32 client_parallel_replicas_protocol_version = 0;
-    String proto_send_chunked_cl = "notchunked";
-    String proto_recv_chunked_cl = "notchunked";
     String quota_key;
 
     /// Connection settings, which are extracted from a context.
@@ -211,14 +200,12 @@ private:
     Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
+    ContextMutablePtr query_context;
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
-    /// A state got uuids to exclude from a query
-    std::optional<std::vector<UUID>> part_uuids_to_ignore;
-
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
-    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
+    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<WriteBuffer> out;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
@@ -229,7 +216,7 @@ private:
 
     String default_database;
 
-    bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     bool is_interserver_authenticated = false;
@@ -239,14 +226,18 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
-    /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
-    /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
-    std::mutex callback_mutex;
+    std::mutex task_callback_mutex;
+    std::mutex fatal_error_mutex;
+
+    /// At the moment, only one ongoing query in the connection is supported at a time.
+    QueryState state;
 
     /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
     LastBlockInputParameters last_block_in;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
+
+    ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
@@ -257,73 +248,71 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
-
-    void checkIfQueryCanceled(QueryState & state) TSA_REQUIRES(callback_mutex);
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
     void receiveAddendum();
-    bool receivePacketsExpectQuery(std::optional<QueryState> & state);
-    bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
-    bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
-    void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
-    String receiveReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
-    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+    bool receivePacket();
+    void receiveQuery();
+    void receiveIgnoredPartUUIDs();
+    String receiveReadTaskResponseAssumeLocked();
+    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+    bool receiveData(bool scalar);
+    bool readDataNext();
+    void readData();
+    void skipData();
+    void receiveClusterNameAndSalt();
 
-    void processCancel(QueryState & state, bool throw_exception = true) TSA_REQUIRES(callback_mutex);
-    void processQuery(std::optional<QueryState> & state);
-    void processIgnoredPartUUIDs();
-    bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
-    void processClusterNameAndSalt();
-
-    void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
-
-    bool processUnexpectedData();
-    [[noreturn]] void processUnexpectedQuery();
-    [[noreturn]] void processUnexpectedIgnoredPartUUIDs();
-    [[noreturn]] void processUnexpectedHello();
-    [[noreturn]] void processUnexpectedTablesStatusRequest();
+    bool receiveUnexpectedData(bool throw_exception = true);
+    [[noreturn]] void receiveUnexpectedQuery();
+    [[noreturn]] void receiveUnexpectedIgnoredPartUUIDs();
+    [[noreturn]] void receiveUnexpectedHello();
+    [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
-    void startInsertQuery(QueryState & state);
-    void processInsertQuery(QueryState & state);
-    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(QueryState & state, AsynchronousInsertQueue & insert_queue);
+    void startInsertQuery();
+    void processInsertQuery();
+    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
-    void processOrdinaryQuery(QueryState & state);
+    void processOrdinaryQuery();
 
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(QueryState & state, const Block & block);    /// Write a block to the network.
-    void sendLogData(QueryState & state, const Block & block);
-    void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
+    void sendData(const Block & block);    /// Write a block to the network.
+    void sendLogData(const Block & block);
+    void sendTableColumns(const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
-    void sendProgress(QueryState & state);
-    void sendLogs(QueryState & state);
-    void sendEndOfStream(QueryState & state);
-    void sendPartUUIDs(QueryState & state);
-    void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
-    void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
-    void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);
-    void sendProfileInfo(QueryState & state, const ProfileInfo & info);
-    void sendTotals(QueryState & state, const Block & totals);
-    void sendExtremes(QueryState & state, const Block & extremes);
-    void sendProfileEvents(QueryState & state);
-    void sendSelectProfileEvents(QueryState & state);
-    void sendInsertProfileEvents(QueryState & state);
-    void sendTimezone(QueryState & state);
+    void sendProgress();
+    void sendLogs();
+    void sendEndOfStream();
+    void sendPartUUIDs();
+    void sendReadTaskRequestAssumeLocked();
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
+    void sendProfileInfo(const ProfileInfo & info);
+    void sendTotals(const Block & totals);
+    void sendExtremes(const Block & extremes);
+    void sendProfileEvents();
+    void sendSelectProfileEvents();
+    void sendInsertProfileEvents();
+    void sendTimezone();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
-    void initBlockInput(QueryState & state);
-    void initBlockOutput(QueryState & state, const Block & block);
-    void initLogsBlockOutput(QueryState & state, const Block & block);
-    void initProfileEventsBlockOutput(QueryState & state, const Block & block);
+    void initBlockInput();
+    void initBlockOutput(const Block & block);
+    void initLogsBlockOutput(const Block & block);
+    void initProfileEventsBlockOutput(const Block & block);
+
+    using CancellationStatus = QueryState::CancellationStatus;
+
+    void decreaseCancellationStatus(const std::string & log_message);
+    CancellationStatus getQueryCancellationStatus();
 
     /// This function is called from different threads.
-    void updateProgress(QueryState & state, const Progress & value);
-    void logQueryDuration(QueryState & state);
+    void updateProgress(const Progress & value);
 
     Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };

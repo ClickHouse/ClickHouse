@@ -41,7 +41,7 @@ namespace DB
  *
  * 3. Replaces AND chains with a single constant.
  * The replacement is done if:
- *  - one of the operands of the equality function is a constant
+ *  - one of the operands  of the equality function is a constant
  *  - constants are different for same expression
  * -------------------------------
  * SELECT *
@@ -95,44 +95,6 @@ namespace DB
  * will be transformed into
  *
  * SELECT * FROM t1 JOIN t2 ON a <=> b
- * -------------------------------
- *
- * 7. Remove redundant equality checks on boolean functions.
- *  - these redundant checks cause the primary index to not be used when if the query involves any primary key columns
- * -------------------------------
- * SELECT * FROM t1 WHERE a IN (n) = 1
- * SELECT * FROM t1 WHERE a IN (n) = 0
- *
- * will be transformed into
- *
- * SELECT * FROM t1 WHERE a IN (n)
- * SELECT * FROM t1 WHERE NOT a IN (n)
- * -------------------------------
- *
- * 8. Extract common subexpressions from AND expressions of a single OR expression only in WHERE and ON expressions.
- * If possible, AND and OR expressions will be flattened during performing this.
- * This might break some lazily evaluated expressions, but this optimization can be turned off by optimize_extract_common_expressions = 0.
- * -------------------------------
- * SELECT * FROM t1 WHERE a AND ((b AND c) OR (b AND d) OR (b AND e))
- * SELECT * FROM t1 WHERE a AND ((b AND c) OR ((b AND d) OR (b AND e))) -- needs flattening
- * SELECT * FROM t1 WHERE (a AND b AND c) OR (a AND b AND d)
- * SELECT * FROM t1 WHERE (a AND b) OR (a AND b AND c)
- *
- * will be transformed into
- *
- * SELECT * FROM t1 WHERE a AND b AND (c OR d AND e)
- * SELECT * FROM t1 WHERE a AND b AND (c OR d AND e)
- * SELECT * FROM t1 WHERE a AND b AND (c OR d)
- * SELECT * FROM t1 WHERE a AND b
- * -------------------------------
- *
- * 9. Populate constant comparison in AND chains. Support operators <, <=, >, >=, = and mix of them.
- * -------------------------------
- * SELECT * FROM table WHERE a < b AND b < c AND c < 5;
- *
- * will be transformed into
- *
- * SELECT * FROM table WHERE a < b AND b < c AND c < 5 AND b < 5 AND a < 5;
  * -------------------------------
  */
 

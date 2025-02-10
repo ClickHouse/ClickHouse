@@ -6,7 +6,6 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
-#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -50,7 +49,7 @@ Block TotalsHavingTransform::transformHeader(
 
     if (expression)
     {
-        block = expression->updateHeader(block);
+        block = expression->updateHeader(std::move(block));
         if (remove_filter)
             block.erase(filter_column_name);
     }
@@ -151,7 +150,11 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
     if (overflow_row)
     {
-        const auto & agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        const auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in TotalsHavingTransform.");
+
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in TotalsHavingTransform.");
 

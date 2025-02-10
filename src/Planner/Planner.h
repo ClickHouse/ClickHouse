@@ -3,13 +3,13 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Analyzer/QueryTreePassManager.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
-
-class QueryNode;
 
 class GlobalPlannerContext;
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;

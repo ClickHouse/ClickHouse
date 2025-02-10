@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Field.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Interpreters/PreparedSets.h>
 #include <Storages/SelectQueryInfo.h>
+
+#include <Interpreters/PreparedSets.h>
+#include <Core/Field.h>
+
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -22,7 +22,7 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
     const std::string & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info, const ContextPtr & context);
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const std::optional<ActionsDAG> & filter_actions_dag, const ContextPtr & context);
+    const String & primary_key, const DataTypePtr & primary_key_type, const ActionsDAGPtr & filter_actions_dag, const ContextPtr & context);
 
 template <typename K, typename V>
 void fillColumns(const K & key, const V & value, size_t key_pos, const Block & header, MutableColumns & columns)

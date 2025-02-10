@@ -44,15 +44,10 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
     }
 
     let options = SkimOptionsBuilder::default()
-        .height("30%".to_string())
-        .query(Some(prefix.to_str().unwrap().to_string()))
+        .height(Some("30%"))
+        .query(Some(prefix.to_str().unwrap()))
         .tac(true)
-        // Do not clear on start and clear on exit will clear skim output from the terminal.
-        //
-        // Refs: https://github.com/lotabout/skim/issues/494#issuecomment-1776565846
-        .no_clear_start(true)
-        .no_clear(false)
-        .tiebreak(vec![RankCriteria::NegScore])
+        .tiebreak(Some("-score".to_string()))
         // Exact mode performs better for SQL.
         //
         // Default fuzzy search is too smart for SQL, it even takes into account the case, which

@@ -4,9 +4,6 @@ sidebar_position: 200
 sidebar_label: url
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # url
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
@@ -53,23 +50,9 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Virtual Columns
 
-- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
+- `_path` — Path to the `URL`. Type: `LowCardinalty(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinalty(String)`.
 - `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
-
-## Hive-style partitioning {#hive-style-partitioning}
-
-When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
-
-**Example**
-
-Use virtual column, created with Hive-style partitioning
-
-``` sql
-SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
-```
 
 ## Storage Settings {#storage-settings}
 

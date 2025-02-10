@@ -7,6 +7,8 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
 
+#include <Analyzer/IQueryTreeNode.h>
+
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -23,7 +25,7 @@ class TableNode;
 
 struct FiltersForTableExpression
 {
-    std::optional<ActionsDAG> filter_actions;
+    ActionsDAGPtr filter_actions;
     PrewhereInfoPtr prewhere_info;
 };
 

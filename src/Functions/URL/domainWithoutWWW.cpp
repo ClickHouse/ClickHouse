@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/URL/domain.h>
+#include "domain.h"
 
 namespace DB
 {
@@ -23,13 +23,13 @@ The URL can be specified with or without a scheme.
 If the argument can't be parsed as URL, the function returns an empty string.
         )",
         .examples{{"domainWithoutWWW", "SELECT domainWithoutWWW('https://www.clickhouse.com')", ""}},
-        .category{"URL"}
+        .categories{"URL"}
     });
     factory.registerFunction<FunctionDomainWithoutWWWRFC>(
     FunctionDocumentation{
         .description=R"(Similar to `domainWithoutWWW` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
         .examples{},
-        .category{"URLs"}
+        .categories{"URL"}
     });
 }
 

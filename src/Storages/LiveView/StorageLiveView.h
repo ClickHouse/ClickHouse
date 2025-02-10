@@ -12,6 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include <Storages/IStorage.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -117,7 +118,7 @@ public:
         return 0;
     }
 
-    void writeBlock(StorageLiveView & live_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr context);
+    void writeBlock(const Block & block, ContextPtr context);
 
     void refresh();
 

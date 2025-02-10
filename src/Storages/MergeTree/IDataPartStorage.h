@@ -1,7 +1,7 @@
 #pragma once
+#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -16,7 +16,7 @@
 
 namespace DB
 {
-struct ReadSettings;
+
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
@@ -96,12 +96,11 @@ public:
     virtual MergeTreeDataPartStorageType getType() const = 0;
 
     /// Methods to get path components of a data part.
-    virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
-    virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
-    virtual std::string getPartDirectory() const = 0;    ///                                                'all_1_5_1'
-    virtual std::string getFullRootPath() const = 0;     /// '/var/lib/clickhouse/data/database/table/moving'
-    virtual std::string getParentDirectory() const = 0;  ///                                                '' (or 'detached' for 'detached/all_1_5_1')
-    /// Can add it if needed                             ///                          'database/table/moving'
+    virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
+    virtual std::string getRelativePath() const = 0;  ///                          'database/table/moving/all_1_5_1'
+    virtual std::string getPartDirectory() const = 0; ///                                                'all_1_5_1'
+    virtual std::string getFullRootPath() const = 0;  /// '/var/lib/clickhouse/data/database/table/moving'
+    /// Can add it if needed                          ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
@@ -112,8 +111,8 @@ public:
     virtual bool exists() const = 0;
 
     /// File inside part directory exists. Specified path is relative to the part path.
-    virtual bool existsFile(const std::string & name) const = 0;
-    virtual bool existsDirectory(const std::string & name) const = 0;
+    virtual bool exists(const std::string & name) const = 0;
+    virtual bool isDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;
@@ -137,17 +136,6 @@ public:
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
-
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const
-    {
-        if (existsFile(name))
-            return readFile(name, settings, read_hint, file_size);
-        return {};
-    }
 
     struct ProjectionChecksums
     {
@@ -232,6 +220,7 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
+        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs,
@@ -239,6 +228,7 @@ public:
         bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
+    /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
     /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise
@@ -267,15 +257,6 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
-
-    virtual std::shared_ptr<IDataPartStorage> freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
