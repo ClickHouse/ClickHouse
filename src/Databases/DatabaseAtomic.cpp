@@ -5,8 +5,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -583,7 +581,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
 
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::weakly_canonical(table->getDataPaths()[0]);
+        fs::path data = fs::proximate(table->getDataPaths()[0], path_to_table_symlinks);
 
         /// If it already points where needed.
         if (db_disk->equivalentNoThrow(data, link))
@@ -637,7 +635,8 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
             /// fs::exists could return false for broken symlink
             if (db_disk->isSymlinkNoThrow(metadata_symlink))
                 db_disk->removeFileIfExists(metadata_symlink);
-            db_disk->createDirectoriesSymlink(metadata_path, path_to_metadata_symlink);
+
+            db_disk->createDirectoriesSymlink(fs::proximate(metadata_path, fs::path(path_to_metadata_symlink).parent_path()), path_to_metadata_symlink);
         }
         catch (...)
         {
