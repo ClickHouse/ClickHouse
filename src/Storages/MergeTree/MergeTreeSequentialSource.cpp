@@ -183,8 +183,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         alter_conversions,
         reader_settings,
         /*avg_value_size_hints=*/ {},
-        /*profile_callback=*/ {},
-        nullptr);
+        /*profile_callback=*/ {});
 
     if (prefetch && !data_part->isEmpty())
         reader->prefetchBeginOfRange(Priority{});

@@ -450,14 +450,15 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto task = std::make_shared<DeserializationTask>(deserialize);
             static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
             {
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
                 SCOPE_EXIT_SAFE(
                     if (thread_group)
                         CurrentThread::detachFromGroupIfNotDetached();
                 );
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
 
-                setThreadName("DynamicPathsPrefixesReader");
+                setThreadName("PrefixReader");
                 task_ptr->tryExecute();
             }));
 

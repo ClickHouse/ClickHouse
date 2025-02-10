@@ -46,8 +46,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-    ThreadPool * prefixes_deserialization_thread_pool) const
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
     auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     return std::make_unique<MergeTreeReaderWide>(
@@ -62,8 +61,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
         reader_settings,
         avg_value_size_hints,
         profile_callback,
-        CLOCK_MONOTONIC_COARSE,
-        prefixes_deserialization_thread_pool);
+        CLOCK_MONOTONIC_COARSE);
 }
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(

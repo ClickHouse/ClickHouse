@@ -93,7 +93,6 @@ public:
         StorageSnapshotPtr storage_snapshot{};
         IMergeTreeReader::ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
-        ThreadPool * prefixes_deserialization_thread_pool = nullptr;
     };
 
     struct Readers

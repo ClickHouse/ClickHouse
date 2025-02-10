@@ -24,8 +24,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     MergeTreeReaderSettings settings_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_,
-    ThreadPool *)
+    clockid_t clock_type_)
     : IMergeTreeReader(
         data_part_info_for_read_,
         columns_,

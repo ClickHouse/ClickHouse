@@ -30,8 +30,7 @@ public:
         MergeTreeReaderSettings settings_,
         ValueSizeMap avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_,
-        ThreadPool * prefixes_deserialization_thread_pool);
+        clockid_t clock_type_);
 
     bool canReadIncompleteGranules() const final { return false; }
 

@@ -108,8 +108,7 @@ public:
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        ThreadPool * prefixes_deserialization_thread_pool) const = 0;
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;

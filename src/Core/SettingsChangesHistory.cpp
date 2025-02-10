@@ -114,7 +114,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
             {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
-            {"merge_tree_prefixes_deserialization_thread_pool_size", "auto", "auto", "A new setting controlling the size of the thread pool used in prefixes deserialization in MergeTree"},
+            {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the size of the thread pool used in prefixes deserialization in MergeTree"},
             {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},

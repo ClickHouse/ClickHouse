@@ -53,6 +53,7 @@ struct MergeTreeReaderSettings
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
     bool use_deserialization_prefixes_cache = false;
+    bool use_prefixes_deserialization_thread_pool = false;
 };
 
 struct MergeTreeWriterSettings

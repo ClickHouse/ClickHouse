@@ -1302,8 +1302,8 @@ Possible values:
 DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
 Enables caching of columns metadata from the file prefixes during reading from Wide parts in MergeTree.
 )", 0) \
-DECLARE(UInt64Auto, merge_tree_prefixes_deserialization_thread_pool_size, "auto", R"(
-The number of threads used in a thread pool for parallel reading of columns metadata from file prefixes in Wide parts in MergeTree.
+DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
+Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Merge parts only in one partition in select final

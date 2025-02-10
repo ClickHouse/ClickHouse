@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <IO/SharedThreadPools.h>
 
 namespace DB
 {
@@ -33,8 +34,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeReaderSettings settings_,
     IMergeTreeDataPart::ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_,
-    ThreadPool * prefixes_deserialization_thread_pool_)
+    clockid_t clock_type_)
     : IMergeTreeReader(
         data_part_info_,
         columns_,
@@ -51,7 +51,6 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     , read_without_marks(
         settings.can_read_part_without_marks
         && all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
-    , prefixes_deserialization_thread_pool(prefixes_deserialization_thread_pool_)
 {
     try
     {
@@ -341,7 +340,7 @@ void MergeTreeReaderWide::deserializePrefix(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
-        deserialize_settings.prefixes_deserialization_thread_pool = prefixes_deserialization_thread_pool;
+        deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);

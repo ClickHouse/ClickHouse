@@ -1527,8 +1527,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         std::make_shared<AlterConversions>(),
         MergeTreeReaderSettings{},
         ValueSizeMap{},
-        ReadBufferFromFileBase::ProfileCallback{},
-        nullptr);
+        ReadBufferFromFileBase::ProfileCallback{});
 
     if (!reader)
     {
@@ -2524,8 +2523,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         std::make_shared<AlterConversions>(),
         settings,
         ValueSizeMap{},
-        ReadBufferFromFileBase::ProfileCallback{},
-        nullptr);
+        ReadBufferFromFileBase::ProfileCallback{});
 
     Columns result;
     result.resize(1);

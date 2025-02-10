@@ -54,8 +54,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
-            extras.profile_callback,
-            extras.prefixes_deserialization_thread_pool);
+            extras.profile_callback);
     };
 
     new_readers.main = create_reader(read_info->task_columns.columns, false);

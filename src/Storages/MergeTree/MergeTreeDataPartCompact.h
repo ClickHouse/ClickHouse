@@ -39,8 +39,7 @@ public:
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-        ThreadPool * prefixes_deserialization_thread_pool) const override;
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
     bool isStoredOnReadonlyDisk() const override;
 

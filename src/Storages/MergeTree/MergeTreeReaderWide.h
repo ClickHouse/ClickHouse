@@ -26,8 +26,7 @@ public:
         MergeTreeReaderSettings settings_,
         ValueSizeMap avg_value_size_hints_ = {},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = {},
-        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE,
-        ThreadPool * prefixes_deserialization_thread_pool_ = nullptr);
+        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
@@ -106,7 +105,6 @@ private:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
     bool read_without_marks = false;
-    ThreadPool * prefixes_deserialization_thread_pool;
 };
 
 }

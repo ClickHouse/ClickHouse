@@ -4,12 +4,6 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric MergeTreeSubcolumnsReaderThreads;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
-}
 
 namespace DB
 {
@@ -18,7 +12,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
-    extern const SettingsUInt64Auto merge_tree_prefixes_deserialization_thread_pool_size;
     extern const SettingsMaxThreads max_threads;
 }
 
@@ -56,7 +49,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
     fillPerPartInfos(context_->getSettingsRef());
-    initializePrefixesReadingThreadPool();
 }
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
@@ -296,23 +288,7 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
         .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
         .profile_callback = profile_callback,
-        .prefixes_deserialization_thread_pool = prefixes_deserialization_thread_pool.get(),
     };
-}
-
-void MergeTreeReadPoolBase::initializePrefixesReadingThreadPool()
-{
-    auto prefixes_deserialization_thread_pool_size = getContext()->getSettingsRef()[Setting::merge_tree_prefixes_deserialization_thread_pool_size].valueOr(
-        getContext()->getSettingsRef()[Setting::max_threads].value);
-
-    if (prefixes_deserialization_thread_pool_size)
-        prefixes_deserialization_thread_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::MergeTreeSubcolumnsReaderThreads,
-            CurrentMetrics::MergeTreeSubcolumnsReaderThreadsActive,
-            CurrentMetrics::MergeTreeSubcolumnsReaderThreadsScheduled,
-            prefixes_deserialization_thread_pool_size,
-            prefixes_deserialization_thread_pool_size,
-            0);
 }
 
 }
