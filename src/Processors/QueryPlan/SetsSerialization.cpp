@@ -6,9 +6,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
-#include <Core/Settings.h>
 #include <Columns/ColumnSet.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>

@@ -6,6 +6,8 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Core/callOnTypeIndex.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>

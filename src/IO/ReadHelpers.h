@@ -26,9 +26,11 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+
 #include <Common/intExp.h>
 #include "Functions/DateTimeTransforms.h"
 
+#include <Common/exp10_i32.h>
 
 #include <Formats/FormatSettings.h>
 
