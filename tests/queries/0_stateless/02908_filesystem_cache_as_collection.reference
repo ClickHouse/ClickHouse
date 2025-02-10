@@ -1,2 +1,2 @@
-/var/lib/clickhouse/filesystem_caches/collection_sql	1048576	10000000	33554432	4194304	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
-/var/lib/clickhouse/filesystem_caches/collection	1048576	10000000	33554432	4194304	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
+/var/lib/clickhouse/filesystem_caches/collection_sql
+/var/lib/clickhouse/filesystem_caches/collection

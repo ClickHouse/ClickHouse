@@ -1,20 +1,20 @@
-/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	100	10	10	10	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
+100	10
 0
 10
 98
 set max_size from 100 to 10
-/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	10	10	10	10	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
+10	10
 1
 8
 set max_size from 10 to 100
-/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	100	10	10	10	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
+100	10
 10
 98
 set max_elements from 10 to 2
-/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	100	2	10	10	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
+100	2
 2
 18
 set max_elements from 2 to 10
-/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	100	10	10	10	0	LRU	0.6	5	5000	4194304	16	0	0	0	10	0	0	0	0	0	1
+100	10
 10
 98

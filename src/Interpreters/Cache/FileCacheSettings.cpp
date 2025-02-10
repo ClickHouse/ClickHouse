@@ -128,6 +128,13 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         ColumnDescription(
             "is_initialized", std::make_shared<DataTypeUInt8>(), "Indicates whether cache was successfully initialized"));
 
+    result.add(
+        ColumnDescription(
+            "current_size", std::make_shared<DataTypeUInt64>(), "Current cache size"));
+    result.add(
+        ColumnDescription(
+            "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
+
     return result;
 }
 
@@ -139,9 +146,13 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     MutableColumns & res_columns = params.res_columns;
     size_t i = 0;
     res_columns[i++]->insert(cache_name);
+
     for (const auto & setting : impl->all())
         res_columns[i++]->insert(setting.getValue());
+
     res_columns[i++]->insert(cache->isInitialized());
+    res_columns[i++]->insert(cache->getUsedCacheSize());
+    res_columns[i++]->insert(cache->getFileSegmentsNum());
 }
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
